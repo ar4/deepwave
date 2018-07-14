@@ -35,7 +35,7 @@ def test_scatter_1d():
     """Test propagation in a 1D model with a point scatterer."""
     expected, actual = model_scatter_1d(propagator=scalarprop)
     diff = (expected - actual).numpy().ravel()
-    assert np.linalg.norm(diff) < 1.8
+    assert np.linalg.norm(diff) < 1.83
 
 
 def test_scatter_2d():
