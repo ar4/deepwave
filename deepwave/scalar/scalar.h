@@ -93,8 +93,11 @@ void forward(
  * aux_wavefield: PML auxiliary wavefields.
  *      2 * AUX_SIZE * num_shots * numel_per_shot, where AUX_SIZE = 1 for 1D,
  *      2 for 2D, and 4 for 3D.
- * image: The output image/model gradient.
- *      The same size as the unpadded model.
+ * model_grad: The output image/model gradient.
+ *      The same size as the unpadded model. NULL if not doing model inversion.
+ * source_grad_amplitudes: The output source amplitudes gradient
+ *      The same size as source_amplitudes during forward. NULL if not doing
+ *      source inversion.
  * adjoint_wavefields: Saved wavefields from forward modeling.
  *      num_steps * num_shots * numel_per_shot.
  * scaling: The factor that multiplies the zero-lag cross-correlation imaging
@@ -110,9 +113,12 @@ void forward(
  * fd2: Second derivative finite difference coefficients (positive side).
  *      Half finite difference accuracy order * num_dims + 1. The "+ 1"
  *      contains the coefficient for the central element.
- * source_amplitudes: num_steps * num_shots * num_sources_per_shot
+ * receiver_grad_amplitudes: The gradient of the loss wrt the receiver
+ *      amplitudes. num_steps * num_shots * num_receivers_per_shot
  * source_locations: Locations in units of cells, from origin of model.
  *      num_shots * num_sources_per_shot * num_dims
+ * receiver_locations: Locations in units of cells, from origin of model.
+ *      num_shots * num_receivers_per_shot * num_dims
  * shape: Padded shape of the model. 3 elements, with minimum value 1, e.g.
  *      100, 1, 1 for 1D.
  * pml_width: Number of PML cells. 6 elements, beginning and end of each
@@ -124,26 +130,30 @@ void forward(
  *      each source amplitude time sample.
  * num_shots
  * num_sources_per_shot
+ * num_receivers_per_shot
  * dt: The time interval between propagator time steps (NOT the time interval
  *      between source amplitude samples - that would be dt * step_ratio).
  */
 void backward(
-		float *restrict const wavefield,
-		float *restrict const aux_wavefield,
-		float *restrict const image,
-		const float *restrict const adjoint_wavefield,
-		const float *restrict const scaling,
-		const float *restrict const sigma,
-		const float *restrict const model, 
-		const float *restrict const fd1,
-		const float *restrict const fd2,
-		const float *restrict const source_amplitudes,
-		const ptrdiff_t *restrict const source_locations,
-		const ptrdiff_t *restrict const shape,
-		const ptrdiff_t *restrict const pml_width,
-		const ptrdiff_t num_steps,
-		const ptrdiff_t step_ratio,
-		const ptrdiff_t num_shots,
-		const ptrdiff_t num_sources_per_shot,
-		const float dt);
+                float *restrict const wavefield,
+                float *restrict const aux_wavefield,
+                float *restrict const model_grad,
+                float *restrict const source_grad_amplitudes,
+                const float *restrict const adjoint_wavefield,
+                const float *restrict const scaling,
+                const float *restrict const sigma,
+                const float *restrict const model, 
+                const float *restrict const fd1,
+                const float *restrict const fd2,
+                const float *restrict const receiver_grad_amplitudes,
+                const ptrdiff_t *restrict const source_locations,
+                const ptrdiff_t *restrict const receiver_locations,
+                const ptrdiff_t *restrict const shape,
+                const ptrdiff_t *restrict const pml_width,
+                const ptrdiff_t num_steps,
+                const ptrdiff_t step_ratio,
+                const ptrdiff_t num_shots,
+                const ptrdiff_t num_sources_per_shot,
+                const ptrdiff_t num_receivers_per_shot,
+                const float dt);
 

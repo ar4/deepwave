@@ -135,13 +135,19 @@ class PropagatorFunction(torch.autograd.Function):
             # compensate for save beginning at step 2
             saved_wavefields = saved_wavefields[2:]
 
+        # Allocate gradients that will be calculated during backpropagation
+        model_gradient = _allocate_grad(model_tensor)
+        source_gradient = _allocate_grad(source_amplitudes)
+
         ctx.save_for_backward(saved_wavefields, pml.aux, pml.sigma,
                               model.padded_properties['vp2dt2'],
                               model.properties['scaling'],
                               model.pml_width,
+                              source_model_locations,
                               receiver_model_locations,
                               torch.tensor(timestep.step_ratio),
-                              torch.tensor(timestep.inner_dt), fd1, fd2)
+                              torch.tensor(timestep.inner_dt), fd1, fd2,
+                              model_gradient, source_gradient)
 
         return receiver_amplitudes
 
@@ -165,21 +171,22 @@ class PropagatorFunction(torch.autograd.Function):
         """
 
         (adjoint_wavefield, aux, sigma, vp2dt2, scaling,
-         pml_width, receiver_model_locations,
-         step_ratio, inner_dt, fd1, fd2) = ctx.saved_variables
+         pml_width, source_model_locations, receiver_model_locations,
+         step_ratio, inner_dt, fd1, fd2,
+         model_gradient, source_gradient) = ctx.saved_variables
         step_ratio = step_ratio.item()
         inner_dt = inner_dt.item()
 
         ndim = receiver_model_locations.shape[-1]
         ffi, lib = _select_propagator(ndim)
 
-        num_steps, num_shots, num_sources_per_shot = \
+        num_steps, num_shots, num_receivers_per_shot = \
             grad_receiver_amplitudes.shape
+        num_sources_per_shot = source_model_locations.shape[1]
         shape = torch.tensor(vp2dt2.shape)
 
         aux.fill_(0)
         wavefield = torch.zeros_like(aux[:2])
-        model_gradient = torch.zeros_like(scaling.view(1, *scaling.shape))
 
         # Call compiled C code to do backpropagation
         lib.backward(
@@ -187,6 +194,8 @@ class PropagatorFunction(torch.autograd.Function):
             ffi.cast("float *", aux.float().contiguous().data_ptr()),
             ffi.cast("float *",
                      model_gradient.float().contiguous().data_ptr()),
+            ffi.cast("float *",
+                     source_gradient.float().contiguous().data_ptr()),
             ffi.cast("float *",
                      adjoint_wavefield.float().contiguous().data_ptr()),
             ffi.cast("float *", scaling.float().contiguous().data_ptr()),
@@ -197,6 +206,8 @@ class PropagatorFunction(torch.autograd.Function):
             ffi.cast("float *",
                      grad_receiver_amplitudes.float().contiguous().data_ptr()),
             ffi.cast("ptrdiff_t *",
+                     source_model_locations.long().contiguous().data_ptr()),
+            ffi.cast("ptrdiff_t *",
                      receiver_model_locations.long().contiguous().data_ptr()),
             ffi.cast("ptrdiff_t *", shape.long().contiguous().data_ptr()),
             ffi.cast("ptrdiff_t *", pml_width.long().contiguous().data_ptr()),
@@ -204,9 +215,10 @@ class PropagatorFunction(torch.autograd.Function):
             step_ratio,
             num_shots,
             num_sources_per_shot,
+            num_receivers_per_shot,
             inner_dt)
 
-        return model_gradient, None, None, None, None, None, None
+        return model_gradient, source_gradient, None, None, None, None, None
 
 
 def _select_propagator(ndim):
@@ -321,6 +333,15 @@ def _allocate_wavefields(wavefield_save_strategy, lib, model, num_steps,
         saved_wavefields = model.allocate_wavefield(num_steps, num_shots)
 
     return wavefield, saved_wavefields
+
+
+def _allocate_grad(tensor):
+    if tensor.requires_grad:
+        grad = torch.zeros_like(tensor)
+    else:
+        grad = torch.empty(0)
+
+    return grad
 
 
 class Model(object):

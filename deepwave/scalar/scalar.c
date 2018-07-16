@@ -234,7 +234,7 @@ static void save_wavefields(
                 const ptrdiff_t step,
                 const enum wavefield_save_strategy save_strategy);
 static void imaging_condition(
-                float *restrict const image,
+                float *restrict const model_grad,
                 const float *restrict const current_wavefield,
                 const float *restrict const next_adjoint_wavefield,
                 const float *restrict const current_adjoint_wavefield,
@@ -243,8 +243,8 @@ static void imaging_condition(
                 const ptrdiff_t *restrict const pml_width,
                 const ptrdiff_t num_shots,
                 const float dt);
-static void image_scaling(
-                float *restrict const image,
+static void model_grad_scaling(
+                float *restrict const model_grad,
                 const float *restrict const scaling,
                 const ptrdiff_t *restrict const shape,
                 const ptrdiff_t *restrict const pml_width);
@@ -353,21 +353,24 @@ void forward(
 void backward(
                 float *restrict const wavefield,
                 float *restrict const aux_wavefield,
-                float *restrict const image,
+                float *restrict const model_grad,
+                float *restrict const source_grad_amplitudes,
                 const float *restrict const adjoint_wavefield,
                 const float *restrict const scaling,
                 const float *restrict const sigma,
                 const float *restrict const model, 
                 const float *restrict const fd1,
                 const float *restrict const fd2,
-                const float *restrict const source_amplitudes,
+                const float *restrict const receiver_grad_amplitudes,
                 const ptrdiff_t *restrict const source_locations,
+                const ptrdiff_t *restrict const receiver_locations,
                 const ptrdiff_t *restrict const shape,
                 const ptrdiff_t *restrict const pml_width,
                 const ptrdiff_t num_steps,
                 const ptrdiff_t step_ratio,
                 const ptrdiff_t num_shots,
                 const ptrdiff_t num_sources_per_shot,
+                const ptrdiff_t num_receivers_per_shot,
                 const float dt)
 {
 
@@ -393,16 +396,23 @@ void backward(
         for (ptrdiff_t step = num_steps-1; step >= 0; step--)
         {
 
-                float *current_source_amplitudes;
+                float *current_source_grad_amplitudes;
+                float *current_receiver_grad_amplitudes;
                 float *next_adjoint_wavefield;
                 float *current_adjoint_wavefield;
                 float *previous_adjoint_wavefield;
 
-                current_source_amplitudes = set_step_pointer(
-                                source_amplitudes,
+                current_source_grad_amplitudes = set_step_pointer(
+                                source_grad_amplitudes,
                                 step,
                                 num_shots,
                                 num_sources_per_shot);
+
+                current_receiver_grad_amplitudes = set_step_pointer(
+                                receiver_grad_amplitudes,
+                                step,
+                                num_shots,
+                                num_receivers_per_shot);
 
                 next_adjoint_wavefield = set_step_pointer(
                                 adjoint_wavefield,
@@ -432,20 +442,28 @@ void backward(
                                 model,
                                 fd1,
                                 fd2,
-                                current_source_amplitudes,
-                                source_locations,
+                                current_receiver_grad_amplitudes,
+                                receiver_locations,
                                 shape,
                                 pml_width,
                                 step_ratio,
                                 num_shots,
-                                num_sources_per_shot,
+                                num_receivers_per_shot,
                                 dt,
                                 save_strategy);
+
+                record_receivers(
+                                current_source_grad_amplitudes,
+                                current_wavefield,
+                                source_locations,
+                                shape,
+                                num_shots,
+                                num_sources_per_shot);
 
                 if ((step < num_steps) && (step > 1))
                 {
                         imaging_condition(
-                                        image,
+                                        model_grad,
                                         current_wavefield,
                                         next_adjoint_wavefield,
                                         current_adjoint_wavefield,
@@ -458,8 +476,8 @@ void backward(
 
         }
 
-        image_scaling(
-                        image,
+        model_grad_scaling(
+                        model_grad,
                         scaling,
                         shape,
                         pml_width);
@@ -764,6 +782,8 @@ static float * set_step_pointer(
                 const ptrdiff_t numel_per_shot)
 {
 
+	if (origin == NULL) return NULL;
+
         return (float *) origin + step * num_shots * numel_per_shot;
 
 }
@@ -777,6 +797,8 @@ static void record_receivers(
                 const ptrdiff_t num_shots,
                 const ptrdiff_t num_receivers_per_shot)
 {
+
+        if (receiver_amplitudes == NULL) return; /* no source inversion */
 
         for (ptrdiff_t shot = 0; shot < num_shots; shot++)
         {
@@ -820,7 +842,7 @@ static void save_wavefields(
 
 
 static void imaging_condition(
-                float *restrict const image,
+                float *restrict const model_grad,
                 const float *restrict const current_wavefield,
                 const float *restrict const next_adjoint_wavefield,
                 const float *restrict const current_adjoint_wavefield,
@@ -831,15 +853,17 @@ static void imaging_condition(
                 const float dt)
 {
 
-        const ptrdiff_t image_size_z = shape[0] - 2 * ZPAD -
-                pml_width[0] - pml_width[1];
-        const ptrdiff_t image_size_y = shape[1] - 2 * YPAD -
-                pml_width[2] - pml_width[3];
-        const ptrdiff_t image_size_x = shape[2] - 2 * XPAD -
-                pml_width[4] - pml_width[5];
-        const ptrdiff_t image_size_xy = image_size_y * image_size_x;
+        if (model_grad == NULL) return; /* Not doing model inversion */
 
-        LOOP(num_shots, 0, image_size_z, 0, image_size_y, 0, image_size_x);
+        const ptrdiff_t grad_size_z = shape[0] - 2 * ZPAD -
+                pml_width[0] - pml_width[1];
+        const ptrdiff_t grad_size_y = shape[1] - 2 * YPAD -
+                pml_width[2] - pml_width[3];
+        const ptrdiff_t grad_size_x = shape[2] - 2 * XPAD -
+                pml_width[4] - pml_width[5];
+        const ptrdiff_t grad_size_xy = grad_size_y * grad_size_x;
+
+        LOOP(num_shots, 0, grad_size_z, 0, grad_size_y, 0, grad_size_x);
 
         ptrdiff_t si = shot * shape[0] * shape[1] * shape[2] +
                 (z + ZPAD + pml_width[0]) * shape[1] * shape[2] +
@@ -850,7 +874,7 @@ static void imaging_condition(
                         2 * current_adjoint_wavefield[si] +
                         previous_adjoint_wavefield[si]) / (dt * dt);
 
-        image[z * image_size_xy + y * image_size_x + x] +=
+        model_grad[z * grad_size_xy + y * grad_size_x + x] +=
                 current_wavefield[si] *	adjoint_wavefield_tt;
 
         ENDLOOP;
@@ -858,24 +882,26 @@ static void imaging_condition(
 }
 
 
-static void image_scaling(
-                float *restrict const image,
+static void model_grad_scaling(
+                float *restrict const model_grad,
                 const float *restrict const scaling,
                 const ptrdiff_t *restrict const shape,
                 const ptrdiff_t *restrict const pml_width)
 {
 
-        const ptrdiff_t image_size_z = shape[0] - 2 * ZPAD -
-                pml_width[0] - pml_width[1];
-        const ptrdiff_t image_size_y = shape[1] - 2 * YPAD -
-                pml_width[2] - pml_width[3];
-        const ptrdiff_t image_size_x = shape[2] - 2 * XPAD -
-                pml_width[4] - pml_width[5];
-        ptrdiff_t image_size = image_size_z * image_size_y * image_size_x;
+        if (model_grad == NULL) return; /* Not doing model inversion */
 
-        for (ptrdiff_t i = 0; i < image_size; i++)
+        const ptrdiff_t grad_size_z = shape[0] - 2 * ZPAD -
+                pml_width[0] - pml_width[1];
+        const ptrdiff_t grad_size_y = shape[1] - 2 * YPAD -
+                pml_width[2] - pml_width[3];
+        const ptrdiff_t grad_size_x = shape[2] - 2 * XPAD -
+                pml_width[4] - pml_width[5];
+        ptrdiff_t grad_size = grad_size_z * grad_size_y * grad_size_x;
+
+        for (ptrdiff_t i = 0; i < grad_size; i++)
         {
-                image[i] *= scaling[i];
+                model_grad[i] *= scaling[i];
         }
 
 }
