@@ -89,40 +89,32 @@ class PropagatorFunction(torch.autograd.Function):
         source_model_locations = model.get_locations(source_locations)
         receiver_model_locations = model.get_locations(receiver_locations)
         shape = torch.tensor(model.padded_shape)
-        ffi, lib = _select_propagator(model.ndim)
+        scalar_wrapper = _select_propagator(model.ndim)
         wavefield_save_strategy = \
             _set_wavefield_save_strategy(model_tensor.requires_grad, dt,
-                                         timestep.inner_dt, lib)
+                                         timestep.inner_dt, scalar_wrapper)
         fd1, fd2 = _set_finite_diff_coeffs(model.ndim, dx, device)
         wavefield, saved_wavefields = \
-            _allocate_wavefields(wavefield_save_strategy, lib, model,
-                                 num_steps, num_shots)
+            _allocate_wavefields(wavefield_save_strategy, scalar_wrapper,
+                                 model, num_steps, num_shots)
         receiver_amplitudes = torch.zeros(
             num_steps, num_shots, num_receivers_per_shot, device=device)
 
         # Call compiled C code to do forward modeling
-        lib.forward(
-            ffi.cast("float *", wavefield.float().contiguous().data_ptr()),
-            ffi.cast("float *", pml.aux.float().contiguous().data_ptr()),
-            ffi.cast("float *",
-                     receiver_amplitudes.float().contiguous().data_ptr()),
-            ffi.cast("float *",
-                     saved_wavefields.float().contiguous().data_ptr()),
-            ffi.cast("float *", pml.sigma.float().contiguous().data_ptr()),
-            ffi.cast("float *",
-                     model.padded_properties['vp2dt2'].float().contiguous()
-                                                      .data_ptr()),
-            ffi.cast("float *", fd1.float().contiguous().data_ptr()),
-            ffi.cast("float *", fd2.float().contiguous().data_ptr()),
-            ffi.cast("float *",
-                     source_amplitudes.float().contiguous().data_ptr()),
-            ffi.cast("ptrdiff_t *",
-                     source_model_locations.long().contiguous().data_ptr()),
-            ffi.cast("ptrdiff_t *",
-                     receiver_model_locations.long().contiguous().data_ptr()),
-            ffi.cast("ptrdiff_t *", shape.long().contiguous().data_ptr()),
-            ffi.cast("ptrdiff_t *",
-                     model.pml_width.long().contiguous().data_ptr()),
+        scalar_wrapper.forward(
+            wavefield.float().contiguous(),
+            pml.aux.float().contiguous(),
+            receiver_amplitudes.float().contiguous(),
+            saved_wavefields.float().contiguous(),
+            pml.sigma.float().contiguous(),
+            model.padded_properties['vp2dt2'].float().contiguous(),
+            fd1.float().contiguous(),
+            fd2.float().contiguous(),
+            source_amplitudes.float().contiguous(),
+            source_model_locations.long().contiguous(),
+            receiver_model_locations.long().contiguous(),
+            shape.long().contiguous(),
+            model.pml_width.long().contiguous(),
             num_steps,
             timestep.step_ratio,
             num_shots,
@@ -131,7 +123,7 @@ class PropagatorFunction(torch.autograd.Function):
             timestep.inner_dt,
             wavefield_save_strategy)
 
-        if wavefield_save_strategy == lib.STRATEGY_INPLACE:
+        if wavefield_save_strategy == scalar_wrapper.STRATEGY_INPLACE:
             # compensate for save beginning at step 2
             saved_wavefields = saved_wavefields[2:]
 
@@ -178,7 +170,7 @@ class PropagatorFunction(torch.autograd.Function):
         inner_dt = inner_dt.item()
 
         ndim = receiver_model_locations.shape[-1]
-        ffi, lib = _select_propagator(ndim)
+        scalar_wrapper = _select_propagator(ndim)
 
         num_steps, num_shots, num_receivers_per_shot = \
             grad_receiver_amplitudes.shape
@@ -189,28 +181,22 @@ class PropagatorFunction(torch.autograd.Function):
         wavefield = torch.zeros_like(aux[:2])
 
         # Call compiled C code to do backpropagation
-        lib.backward(
-            ffi.cast("float *", wavefield.float().contiguous().data_ptr()),
-            ffi.cast("float *", aux.float().contiguous().data_ptr()),
-            ffi.cast("float *",
-                     model_gradient.float().contiguous().data_ptr()),
-            ffi.cast("float *",
-                     source_gradient.float().contiguous().data_ptr()),
-            ffi.cast("float *",
-                     adjoint_wavefield.float().contiguous().data_ptr()),
-            ffi.cast("float *", scaling.float().contiguous().data_ptr()),
-            ffi.cast("float *", sigma.float().contiguous().data_ptr()),
-            ffi.cast("float *", vp2dt2.float().contiguous().data_ptr()),
-            ffi.cast("float *", fd1.float().contiguous().data_ptr()),
-            ffi.cast("float *", fd2.float().contiguous().data_ptr()),
-            ffi.cast("float *",
-                     grad_receiver_amplitudes.float().contiguous().data_ptr()),
-            ffi.cast("ptrdiff_t *",
-                     source_model_locations.long().contiguous().data_ptr()),
-            ffi.cast("ptrdiff_t *",
-                     receiver_model_locations.long().contiguous().data_ptr()),
-            ffi.cast("ptrdiff_t *", shape.long().contiguous().data_ptr()),
-            ffi.cast("ptrdiff_t *", pml_width.long().contiguous().data_ptr()),
+        scalar_wrapper.backward(
+            wavefield.float().contiguous(),
+            aux.float().contiguous(),
+            model_gradient.float().contiguous(),
+            source_gradient.float().contiguous(),
+            adjoint_wavefield.float().contiguous(),
+            scaling.float().contiguous(),
+            sigma.float().contiguous(),
+            vp2dt2.float().contiguous(),
+            fd1.float().contiguous(),
+            fd2.float().contiguous(),
+            grad_receiver_amplitudes.float().contiguous(),
+            source_model_locations.long().contiguous(),
+            receiver_model_locations.long().contiguous(),
+            shape.long().contiguous(),
+            pml_width.long().contiguous(),
             num_steps,
             step_ratio,
             num_shots,
@@ -228,21 +214,21 @@ def _select_propagator(ndim):
         ndim: Int specifying number of dimensions
 
     Returns:
-        ffi, lib: CFFI objects to interact with the compiled propagators
+        scalar_wrapper: module wrapping the compiled propagators
     """
     if ndim == 1:
-        from deepwave.scalar1d import ffi, lib
+        import scalar1d_cpu_iso_4 as scalar_wrapper
     elif ndim == 2:
-        from deepwave.scalar2d import ffi, lib
+        import scalar2d_cpu_iso_4 as scalar_wrapper
     elif ndim == 3:
-        from deepwave.scalar3d import ffi, lib
+        import scalar3d_cpu_iso_4 as scalar_wrapper
     else:
         raise ValueError('unsupported number of dimensions')
 
-    return ffi, lib
+    return scalar_wrapper
 
 
-def _set_wavefield_save_strategy(requires_grad, dt, inner_dt, lib):
+def _set_wavefield_save_strategy(requires_grad, dt, inner_dt, scalar_wrapper):
     """Decides which of the source wavefield saving strategies to use.
 
     The source wavefield must be saved for backpropagation if model gradients
@@ -253,18 +239,18 @@ def _set_wavefield_save_strategy(requires_grad, dt, inner_dt, lib):
         requires_grad: Boolean specifying whether model gradients are required
         dt: The time interval between source samples
         inner_dt: The time interval between time steps of the wave propagator
-        lib: The CFFI object that contains enum values for the strategies
+        scalar_wrapper: The object that contains enum values for the strategies
 
     Returns:
         An enum value specifying which strategy to use
     """
     if requires_grad:
         if inner_dt == dt:
-            wavefield_save_strategy = lib.STRATEGY_INPLACE
+            wavefield_save_strategy = scalar_wrapper.STRATEGY_INPLACE
         else:
-            wavefield_save_strategy = lib.STRATEGY_COPY
+            wavefield_save_strategy = scalar_wrapper.STRATEGY_COPY
     else:
-        wavefield_save_strategy = lib.STRATEGY_NONE
+        wavefield_save_strategy = scalar_wrapper.STRATEGY_NONE
 
     return wavefield_save_strategy
 
@@ -298,8 +284,8 @@ def _set_finite_diff_coeffs(ndim, dx, device):
     return fd1, fd2
 
 
-def _allocate_wavefields(wavefield_save_strategy, lib, model, num_steps,
-                         num_shots):
+def _allocate_wavefields(wavefield_save_strategy, scalar_wrapper, model,
+                         num_steps, num_shots):
     """Allocate wavefield Tensors.
 
     These will be used for propagation and to store wavefields for
@@ -308,7 +294,7 @@ def _allocate_wavefields(wavefield_save_strategy, lib, model, num_steps,
     Args:
         wavefield_save_strategy: Enum specifying which strategy to use to
             save wavefields for backpropagation
-        lib: CFFI object containing the enum values
+        scalar_wrapper: An object containing the enum values
         model: A Model object that contains a method to allocate Tensors of
             the appropriate size
         num_steps: An int specifying the number of time samples in the input
@@ -322,13 +308,13 @@ def _allocate_wavefields(wavefield_save_strategy, lib, model, num_steps,
             backpropagation
     """
 
-    if wavefield_save_strategy == lib.STRATEGY_NONE:
+    if wavefield_save_strategy == scalar_wrapper.STRATEGY_NONE:
         wavefield = model.allocate_wavefield(2, num_shots)
         saved_wavefields = wavefield
-    elif wavefield_save_strategy == lib.STRATEGY_INPLACE:
+    elif wavefield_save_strategy == scalar_wrapper.STRATEGY_INPLACE:
         wavefield = model.allocate_wavefield(num_steps + 2, num_shots)
         saved_wavefields = wavefield
-    elif wavefield_save_strategy == lib.STRATEGY_COPY:
+    elif wavefield_save_strategy == scalar_wrapper.STRATEGY_COPY:
         wavefield = model.allocate_wavefield(2, num_shots)
         saved_wavefields = model.allocate_wavefield(num_steps, num_shots)
 

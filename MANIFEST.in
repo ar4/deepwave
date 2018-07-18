@@ -1,5 +1,4 @@
 include LICENSE
-include build.py
-include deepwave/scalar/*.c
+include deepwave/scalar/*.cpp
 include deepwave/scalar/*.h
 exclude test/*

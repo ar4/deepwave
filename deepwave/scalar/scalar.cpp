@@ -59,8 +59,8 @@
 }
 
 static inline ptrdiff_t location_index(
-                const ptrdiff_t *restrict const arr,
-                const ptrdiff_t *restrict const shape,
+                const ptrdiff_t *__restrict__ const arr,
+                const ptrdiff_t *__restrict__ const shape,
                 const ptrdiff_t index)
 {
         const ptrdiff_t z = arr[index];
@@ -94,8 +94,8 @@ static inline ptrdiff_t location_index(
 }
 
 static inline ptrdiff_t location_index(
-                const ptrdiff_t *restrict const arr,
-                const ptrdiff_t *restrict const shape,
+                const ptrdiff_t *__restrict__ const arr,
+                const ptrdiff_t *__restrict__ const shape,
                 const ptrdiff_t index)
 {
         const ptrdiff_t z = arr[index * 2];
@@ -131,8 +131,8 @@ static inline ptrdiff_t location_index(
 }
 
 static inline ptrdiff_t location_index(
-                const ptrdiff_t *restrict const arr,
-                const ptrdiff_t *restrict const shape,
+                const ptrdiff_t *__restrict__ const arr,
+                const ptrdiff_t *__restrict__ const shape,
                 const ptrdiff_t index)
 {
         const ptrdiff_t z = arr[index * 3];
@@ -154,44 +154,44 @@ static inline ptrdiff_t location_index(
 
 /* Static function declarations */
 static void advance_step(
-                float **restrict next_wavefield,
-                float **restrict next_aux_wavefield,
-                const float **restrict current_wavefield,
-                const float **restrict previous_wavefield,
-                const float **restrict current_aux_wavefield,
-                const float *restrict const sigma,
-                const float *restrict const model,
-                const float *restrict const fd1,
-                const float *restrict const fd2,
-                const float *restrict const source_amplitudes,
-                const ptrdiff_t *restrict const source_locations,
-                const ptrdiff_t *restrict const shape,
-                const ptrdiff_t *restrict const pml_width,
+                float **__restrict__ next_wavefield,
+                float **__restrict__ next_aux_wavefield,
+                const float **__restrict__ current_wavefield,
+                const float **__restrict__ previous_wavefield,
+                const float **__restrict__ current_aux_wavefield,
+                const float *__restrict__ const sigma,
+                const float *__restrict__ const model,
+                const float *__restrict__ const fd1,
+                const float *__restrict__ const fd2,
+                const float *__restrict__ const source_amplitudes,
+                const ptrdiff_t *__restrict__ const source_locations,
+                const ptrdiff_t *__restrict__ const shape,
+                const ptrdiff_t *__restrict__ const pml_width,
                 const ptrdiff_t step_ratio,
                 const ptrdiff_t num_shots,
                 const ptrdiff_t num_sources_per_shot,
                 const float dt,
                 const enum wavefield_save_strategy save_strategy);
 static void propagate(
-                float *restrict const wfn, /* next wavefield */
-                float *restrict const auxn, /* next aux_wavefield */
-                const float *restrict const wfc, /* current wavefield */
-                const float *restrict const wfp, /* previous wavefield */
-                const float *restrict const auxc, /* current aux_wavefield */
-                const float *restrict const sigma,
-                const float *restrict const model,
-                const float *restrict const fd1, /* 1st difference coeffs */
-                const float *restrict const fd2, /* 2nd difference coeffs */
-                const ptrdiff_t *restrict const shape,
-                const ptrdiff_t *restrict const pml_width,
+                float *__restrict__ const wfn, /* next wavefield */
+                float *__restrict__ const auxn, /* next aux_wavefield */
+                const float *__restrict__ const wfc, /* current wavefield */
+                const float *__restrict__ const wfp, /* previous wavefield */
+                const float *__restrict__ const auxc, /* current aux_wavefield */
+                const float *__restrict__ const sigma,
+                const float *__restrict__ const model,
+                const float *__restrict__ const fd1, /* 1st difference coeffs */
+                const float *__restrict__ const fd2, /* 2nd difference coeffs */
+                const ptrdiff_t *__restrict__ const shape,
+                const ptrdiff_t *__restrict__ const pml_width,
                 const ptrdiff_t num_shots,
                 const float dt);
 static void add_sources(
-                float *restrict const next_wavefield,
-                const float *restrict const model,
-                const float *restrict const source_amplitudes,
-                const ptrdiff_t *restrict const source_locations,
-                const ptrdiff_t *restrict const shape,
+                float *__restrict__ const next_wavefield,
+                const float *__restrict__ const model,
+                const float *__restrict__ const source_amplitudes,
+                const ptrdiff_t *__restrict__ const source_locations,
+                const ptrdiff_t *__restrict__ const shape,
                 const ptrdiff_t num_shots,
                 const ptrdiff_t num_sources_per_shot);
 static void set_pointers(
@@ -200,9 +200,9 @@ static void set_pointers(
                 const float **previous_wavefield,
                 const float **next_aux_wavefield,
                 const float **current_aux_wavefield,
-                const float *restrict const wavefield,
-                const float *restrict const aux_wavefield,
-                const ptrdiff_t *restrict const shape,
+                const float *__restrict__ const wavefield,
+                const float *__restrict__ const aux_wavefield,
+                const ptrdiff_t *__restrict__ const shape,
                 const ptrdiff_t num_shots,
                 const enum wavefield_save_strategy save_strategy);
 static void update_pointers(
@@ -211,59 +211,59 @@ static void update_pointers(
                 const float **previous_wavefield,
                 const float **next_aux_wavefield,
                 const float **current_aux_wavefield,
-                const ptrdiff_t *restrict const shape,
+                const ptrdiff_t *__restrict__ const shape,
                 const ptrdiff_t num_shots,
                 const enum wavefield_save_strategy save_strategy);
 static float * set_step_pointer(
-                const float *restrict const origin,
+                const float *__restrict__ const origin,
                 const ptrdiff_t step,
                 const ptrdiff_t num_shots,
                 const ptrdiff_t numel_per_shot);
 static void record_receivers(
-                float *restrict const receiver_amplitudes,
-                const float *restrict const current_wavefield,
-                const ptrdiff_t *restrict const receiver_locations,
-                const ptrdiff_t *restrict const shape,
+                float *__restrict__ const receiver_amplitudes,
+                const float *__restrict__ const current_wavefield,
+                const ptrdiff_t *__restrict__ const receiver_locations,
+                const ptrdiff_t *__restrict__ const shape,
                 const ptrdiff_t num_shots,
                 const ptrdiff_t num_receivers_per_shot);
 static void save_wavefields(
-                float *restrict const saved_wavefields,
-                const float *restrict const current_wavefield,
-                const ptrdiff_t *restrict const shape,
+                float *__restrict__ const saved_wavefields,
+                const float *__restrict__ const current_wavefield,
+                const ptrdiff_t *__restrict__ const shape,
                 const ptrdiff_t num_shots,
                 const ptrdiff_t step,
                 const enum wavefield_save_strategy save_strategy);
 static void imaging_condition(
-                float *restrict const model_grad,
-                const float *restrict const current_wavefield,
-                const float *restrict const next_adjoint_wavefield,
-                const float *restrict const current_adjoint_wavefield,
-                const float *restrict const previous_adjoint_wavefield,
-                const ptrdiff_t *restrict const shape,
-                const ptrdiff_t *restrict const pml_width,
+                float *__restrict__ const model_grad,
+                const float *__restrict__ const current_wavefield,
+                const float *__restrict__ const next_adjoint_wavefield,
+                const float *__restrict__ const current_adjoint_wavefield,
+                const float *__restrict__ const previous_adjoint_wavefield,
+                const ptrdiff_t *__restrict__ const shape,
+                const ptrdiff_t *__restrict__ const pml_width,
                 const ptrdiff_t num_shots,
                 const float dt);
 static void model_grad_scaling(
-                float *restrict const model_grad,
-                const float *restrict const scaling,
-                const ptrdiff_t *restrict const shape,
-                const ptrdiff_t *restrict const pml_width);
+                float *__restrict__ const model_grad,
+                const float *__restrict__ const scaling,
+                const ptrdiff_t *__restrict__ const shape,
+                const ptrdiff_t *__restrict__ const pml_width);
 
 
 void forward(
-                float *restrict const wavefield,
-                float *restrict const aux_wavefield,
-                float *restrict const receiver_amplitudes,
-                float *restrict const saved_wavefields,
-                const float *restrict const sigma,
-                const float *restrict const model, 
-                const float *restrict const fd1,
-                const float *restrict const fd2,
-                const float *restrict const source_amplitudes,
-                const ptrdiff_t *restrict const source_locations,
-                const ptrdiff_t *restrict const receiver_locations,
-                const ptrdiff_t *restrict const shape,
-                const ptrdiff_t *restrict const pml_width,
+                float *__restrict__ const wavefield,
+                float *__restrict__ const aux_wavefield,
+                float *__restrict__ const receiver_amplitudes,
+                float *__restrict__ const saved_wavefields,
+                const float *__restrict__ const sigma,
+                const float *__restrict__ const model, 
+                const float *__restrict__ const fd1,
+                const float *__restrict__ const fd2,
+                const float *__restrict__ const source_amplitudes,
+                const ptrdiff_t *__restrict__ const source_locations,
+                const ptrdiff_t *__restrict__ const receiver_locations,
+                const ptrdiff_t *__restrict__ const shape,
+                const ptrdiff_t *__restrict__ const pml_width,
                 const ptrdiff_t num_steps,
                 const ptrdiff_t step_ratio,
                 const ptrdiff_t num_shots,
@@ -351,21 +351,21 @@ void forward(
 
 
 void backward(
-                float *restrict const wavefield,
-                float *restrict const aux_wavefield,
-                float *restrict const model_grad,
-                float *restrict const source_grad_amplitudes,
-                const float *restrict const adjoint_wavefield,
-                const float *restrict const scaling,
-                const float *restrict const sigma,
-                const float *restrict const model, 
-                const float *restrict const fd1,
-                const float *restrict const fd2,
-                const float *restrict const receiver_grad_amplitudes,
-                const ptrdiff_t *restrict const source_locations,
-                const ptrdiff_t *restrict const receiver_locations,
-                const ptrdiff_t *restrict const shape,
-                const ptrdiff_t *restrict const pml_width,
+                float *__restrict__ const wavefield,
+                float *__restrict__ const aux_wavefield,
+                float *__restrict__ const model_grad,
+                float *__restrict__ const source_grad_amplitudes,
+                const float *__restrict__ const adjoint_wavefield,
+                const float *__restrict__ const scaling,
+                const float *__restrict__ const sigma,
+                const float *__restrict__ const model, 
+                const float *__restrict__ const fd1,
+                const float *__restrict__ const fd2,
+                const float *__restrict__ const receiver_grad_amplitudes,
+                const ptrdiff_t *__restrict__ const source_locations,
+                const ptrdiff_t *__restrict__ const receiver_locations,
+                const ptrdiff_t *__restrict__ const shape,
+                const ptrdiff_t *__restrict__ const pml_width,
                 const ptrdiff_t num_steps,
                 const ptrdiff_t step_ratio,
                 const ptrdiff_t num_shots,
@@ -486,19 +486,19 @@ void backward(
 
 
 static void advance_step(
-                float **restrict next_wavefield,
-                float **restrict next_aux_wavefield,
-                const float **restrict current_wavefield,
-                const float **restrict previous_wavefield,
-                const float **restrict current_aux_wavefield,
-                const float *restrict const sigma,
-                const float *restrict const model,
-                const float *restrict const fd1,
-                const float *restrict const fd2,
-                const float *restrict const source_amplitudes,
-                const ptrdiff_t *restrict const source_locations,
-                const ptrdiff_t *restrict const shape,
-                const ptrdiff_t *restrict const pml_width,
+                float **__restrict__ next_wavefield,
+                float **__restrict__ next_aux_wavefield,
+                const float **__restrict__ current_wavefield,
+                const float **__restrict__ previous_wavefield,
+                const float **__restrict__ current_aux_wavefield,
+                const float *__restrict__ const sigma,
+                const float *__restrict__ const model,
+                const float *__restrict__ const fd1,
+                const float *__restrict__ const fd2,
+                const float *__restrict__ const source_amplitudes,
+                const ptrdiff_t *__restrict__ const source_locations,
+                const ptrdiff_t *__restrict__ const shape,
+                const ptrdiff_t *__restrict__ const pml_width,
                 const ptrdiff_t step_ratio,
                 const ptrdiff_t num_shots,
                 const ptrdiff_t num_sources_per_shot,
@@ -549,17 +549,17 @@ static void advance_step(
 
 
 static void propagate(
-                float *restrict const wfn, /* next wavefield */
-                float *restrict const auxn, /* next auxilliary */
-                const float *restrict const wfc, /* current wavefield */
-                const float *restrict const wfp, /* previous wavefield */
-                const float *restrict const auxc, /* current auxiliary */
-                const float *restrict const sigma,
-                const float *restrict const model,
-                const float *restrict const fd1, /* 1st difference coeffs */
-                const float *restrict const fd2, /* 2nd difference coeffs */
-                const ptrdiff_t *restrict const shape,
-                const ptrdiff_t *restrict const pml_width,
+                float *__restrict__ const wfn, /* next wavefield */
+                float *__restrict__ const auxn, /* next auxilliary */
+                const float *__restrict__ const wfc, /* current wavefield */
+                const float *__restrict__ const wfp, /* previous wavefield */
+                const float *__restrict__ const auxc, /* current auxiliary */
+                const float *__restrict__ const sigma,
+                const float *__restrict__ const model,
+                const float *__restrict__ const fd1, /* 1st difference coeffs */
+                const float *__restrict__ const fd2, /* 2nd difference coeffs */
+                const ptrdiff_t *__restrict__ const shape,
+                const ptrdiff_t *__restrict__ const pml_width,
                 const ptrdiff_t num_shots,
                 const float dt)
 {
@@ -567,25 +567,25 @@ static void propagate(
         const ptrdiff_t numel_shot = shape[0] * shape[1] * shape[2];
         const ptrdiff_t size_x = shape[2];
         const ptrdiff_t size_xy = shape[1] * shape[2];
-        float *restrict const phizn = auxn;
-        const float *restrict const phizc = auxc;
-        const float *restrict const sigmaz = sigma;
+        float *__restrict__ const phizn = auxn;
+        const float *__restrict__ const phizc = auxc;
+        const float *__restrict__ const sigmaz = sigma;
 
 #if DIM >= 2
 
-        float *restrict const phiyn = auxn + num_shots * numel_shot;
-        const float *restrict const phiyc = auxc + num_shots * numel_shot;
-        const float *restrict const sigmay = sigma + shape[0];
+        float *__restrict__ const phiyn = auxn + num_shots * numel_shot;
+        const float *__restrict__ const phiyc = auxc + num_shots * numel_shot;
+        const float *__restrict__ const sigmay = sigma + shape[0];
 
 #endif /* DIM >= 2 */
 
 #if DIM == 3
 
-        float *restrict const phixn = auxn + 2 * num_shots * numel_shot;
-        float *restrict const psin = auxn + 3 * num_shots * numel_shot;
-        const float *restrict const phixc = auxc + 2 * num_shots * numel_shot;
-        const float *restrict const psic = auxc + 3 * num_shots * numel_shot;
-        const float *restrict const sigmax = sigma + shape[0] + shape[1];
+        float *__restrict__ const phixn = auxn + 2 * num_shots * numel_shot;
+        float *__restrict__ const psin = auxn + 3 * num_shots * numel_shot;
+        const float *__restrict__ const phixc = auxc + 2 * num_shots * numel_shot;
+        const float *__restrict__ const psic = auxc + 3 * num_shots * numel_shot;
+        const float *__restrict__ const sigmax = sigma + shape[0] + shape[1];
 
 #endif /* DIM  == 3 */
 
@@ -677,11 +677,11 @@ static void propagate(
 
 
 static void add_sources(
-                float *restrict const next_wavefield,
-                const float *restrict const model,
-                const float *restrict const source_amplitudes,
-                const ptrdiff_t *restrict const source_locations,
-                const ptrdiff_t *restrict const shape,
+                float *__restrict__ const next_wavefield,
+                const float *__restrict__ const model,
+                const float *__restrict__ const source_amplitudes,
+                const ptrdiff_t *__restrict__ const source_locations,
+                const ptrdiff_t *__restrict__ const shape,
                 const ptrdiff_t num_shots,
                 const ptrdiff_t num_sources_per_shot)
 {
@@ -711,9 +711,9 @@ static void set_pointers(
                 const float **previous_wavefield,
                 const float **next_aux_wavefield,
                 const float **current_aux_wavefield,
-                const float *restrict const wavefield,
-                const float *restrict const aux_wavefield,
-                const ptrdiff_t *restrict const shape,
+                const float *__restrict__ const wavefield,
+                const float *__restrict__ const aux_wavefield,
+                const ptrdiff_t *__restrict__ const shape,
                 const ptrdiff_t num_shots,
                 const enum wavefield_save_strategy save_strategy)
 {
@@ -745,7 +745,7 @@ static void update_pointers(
                 const float **previous_wavefield,
                 const float **next_aux_wavefield,
                 const float **current_aux_wavefield,
-                const ptrdiff_t *restrict const shape,
+                const ptrdiff_t *__restrict__ const shape,
                 const ptrdiff_t num_shots,
                 const enum wavefield_save_strategy save_strategy)
 {
@@ -776,7 +776,7 @@ static void update_pointers(
 
 
 static float * set_step_pointer(
-                const float *restrict const origin,
+                const float *__restrict__ const origin,
                 const ptrdiff_t step,
                 const ptrdiff_t num_shots,
                 const ptrdiff_t numel_per_shot)
@@ -790,10 +790,10 @@ static float * set_step_pointer(
 
 
 static void record_receivers(
-                float *restrict const receiver_amplitudes,
-                const float *restrict const current_wavefield,
-                const ptrdiff_t *restrict const receiver_locations,
-                const ptrdiff_t *restrict const shape,
+                float *__restrict__ const receiver_amplitudes,
+                const float *__restrict__ const current_wavefield,
+                const ptrdiff_t *__restrict__ const receiver_locations,
+                const ptrdiff_t *__restrict__ const shape,
                 const ptrdiff_t num_shots,
                 const ptrdiff_t num_receivers_per_shot)
 {
@@ -818,9 +818,9 @@ static void record_receivers(
 
 
 static void save_wavefields(
-                float *restrict const saved_wavefields,
-                const float *restrict const current_wavefield,
-                const ptrdiff_t *restrict const shape,
+                float *__restrict__ const saved_wavefields,
+                const float *__restrict__ const current_wavefield,
+                const ptrdiff_t *__restrict__ const shape,
                 const ptrdiff_t num_shots,
                 const ptrdiff_t step,
                 const enum wavefield_save_strategy save_strategy)
@@ -828,7 +828,7 @@ static void save_wavefields(
 
         if (save_strategy == STRATEGY_COPY)
         {
-                float *restrict current_saved_wavefield = set_step_pointer(
+                float *__restrict__ current_saved_wavefield = set_step_pointer(
                                 saved_wavefields,
                                 step,
                                 num_shots,
@@ -842,13 +842,13 @@ static void save_wavefields(
 
 
 static void imaging_condition(
-                float *restrict const model_grad,
-                const float *restrict const current_wavefield,
-                const float *restrict const next_adjoint_wavefield,
-                const float *restrict const current_adjoint_wavefield,
-                const float *restrict const previous_adjoint_wavefield,
-                const ptrdiff_t *restrict const shape,
-                const ptrdiff_t *restrict const pml_width,
+                float *__restrict__ const model_grad,
+                const float *__restrict__ const current_wavefield,
+                const float *__restrict__ const next_adjoint_wavefield,
+                const float *__restrict__ const current_adjoint_wavefield,
+                const float *__restrict__ const previous_adjoint_wavefield,
+                const ptrdiff_t *__restrict__ const shape,
+                const ptrdiff_t *__restrict__ const pml_width,
                 const ptrdiff_t num_shots,
                 const float dt)
 {
@@ -883,10 +883,10 @@ static void imaging_condition(
 
 
 static void model_grad_scaling(
-                float *restrict const model_grad,
-                const float *restrict const scaling,
-                const ptrdiff_t *restrict const shape,
-                const ptrdiff_t *restrict const pml_width)
+                float *__restrict__ const model_grad,
+                const float *__restrict__ const scaling,
+                const ptrdiff_t *__restrict__ const shape,
+                const ptrdiff_t *__restrict__ const pml_width)
 {
 
         if (model_grad == NULL) return; /* Not doing model inversion */
