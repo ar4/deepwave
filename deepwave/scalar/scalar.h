@@ -1,3 +1,5 @@
+#ifndef H_SCALAR
+#define H_SCALAR
 enum wavefield_save_strategy
 {
         /* NONE: Only forward modeling, do not save wavefields.
@@ -157,3 +159,82 @@ void backward(
                 const ptrdiff_t num_receivers_per_shot,
                 const float dt);
 
+float * set_step_pointer(
+                const float *__restrict__ const origin,
+                const ptrdiff_t step,
+                const ptrdiff_t num_shots,
+                const ptrdiff_t numel_per_shot);
+
+
+/* First order spatial finite differences */
+#define z_deriv(arr) \
+        fd1[0] * (arr[si + size_xy] - arr[si - size_xy]) + \
+        fd1[1] * (arr[si + 2 * size_xy] - arr[si - 2 * size_xy])
+
+#define y_deriv(arr) \
+        fd1[2] * (arr[si + size_x] - arr[si - size_x]) + \
+        fd1[3] * (arr[si + 2 * size_x] - arr[si - 2 * size_x])
+
+#define x_deriv(arr) \
+        fd1[4] * (arr[si + 1] - arr[si - 1]) + \
+        fd1[5] * (arr[si + 2] - arr[si - 2])
+
+/* Second order spatial finite difference (Laplacian) */
+#define laplacian1d(arr) \
+        fd2[0] * arr[si] + \
+        fd2[1] * (arr[si + size_xy] + arr[si - size_xy]) + \
+        fd2[2] * (arr[si + 2 * size_xy] + arr[si - 2 * size_xy])
+#define laplacian2d(arr) \
+        laplacian1d(arr) + \
+        fd2[3] * \
+        (arr[si + size_x] + arr[si - size_x]) + \
+        fd2[4] * \
+        (arr[si + 2 * size_x] + arr[si - 2 * size_x])
+#define laplacian3d(arr) \
+        laplacian2d(arr) + \
+        fd2[5] * \
+        (arr[si + 1] + arr[si - 1]) + \
+        fd2[6] * \
+        (arr[si + 2] + arr[si - 2])
+
+/* Dimension-specific definitions
+ *
+ * ZPAD/YPAD/XPAD: Number of cells of padding at the beginning and end of
+ *      z, y, and x dimensions to make finite difference calculation cleaner
+ * AUX_SIZE: Number of auxiliary wavefields
+ * */
+#if DIM == 1
+
+#define laplacian(arr) laplacian1d(arr)
+
+#define ZPAD 2
+#define YPAD 0
+#define XPAD 0
+
+#define AUX_SIZE 1
+
+#elif DIM == 2
+
+#define laplacian(arr) laplacian2d(arr)
+
+#define ZPAD 2
+#define YPAD 2
+#define XPAD 0
+
+#define AUX_SIZE 2
+
+#elif DIM == 3
+
+#define laplacian(arr) laplacian3d(arr)
+
+#define ZPAD 2
+#define YPAD 2
+#define XPAD 2
+
+#define AUX_SIZE 4
+
+#else
+#error "Must specify the dimension, e.g. -D DIM=1"
+#endif /* DIM */
+
+#endif /* H_SCALAR */

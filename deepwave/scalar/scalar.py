@@ -22,7 +22,7 @@ class Propagator(torch.nn.Module):
     def __init__(self, model, dx, pml_width=None):
         super(Propagator, self).__init__()
         self.model = model
-        self.dx = dx
+        self.dx = dx.cpu()
         self.pml_width = pml_width
 
     def forward(self, source_amplitudes, source_locations, receiver_locations,
@@ -89,7 +89,7 @@ class PropagatorFunction(torch.autograd.Function):
         source_model_locations = model.get_locations(source_locations)
         receiver_model_locations = model.get_locations(receiver_locations)
         shape = torch.tensor(model.padded_shape)
-        scalar_wrapper = _select_propagator(model.ndim)
+        scalar_wrapper = _select_propagator(model.ndim, model_tensor.is_cuda)
         wavefield_save_strategy = \
             _set_wavefield_save_strategy(model_tensor.requires_grad, dt,
                                          timestep.inner_dt, scalar_wrapper)
@@ -170,7 +170,7 @@ class PropagatorFunction(torch.autograd.Function):
         inner_dt = inner_dt.item()
 
         ndim = receiver_model_locations.shape[-1]
-        scalar_wrapper = _select_propagator(ndim)
+        scalar_wrapper = _select_propagator(ndim, vp2dt2.is_cuda)
 
         num_steps, num_shots, num_receivers_per_shot = \
             grad_receiver_amplitudes.shape
@@ -207,23 +207,34 @@ class PropagatorFunction(torch.autograd.Function):
         return model_gradient, source_gradient, None, None, None, None, None
 
 
-def _select_propagator(ndim):
+def _select_propagator(ndim, cuda):
     """Returns the appropriate propagator based on the number of dimensions.
 
     Args:
         ndim: Int specifying number of dimensions
+        cuda: Bool specifying whether will be running on GPU
 
     Returns:
         scalar_wrapper: module wrapping the compiled propagators
     """
-    if ndim == 1:
-        import scalar1d_cpu_iso_4 as scalar_wrapper
-    elif ndim == 2:
-        import scalar2d_cpu_iso_4 as scalar_wrapper
-    elif ndim == 3:
-        import scalar3d_cpu_iso_4 as scalar_wrapper
+    if cuda:
+        if ndim == 1:
+            import scalar1d_gpu_iso_4 as scalar_wrapper
+        elif ndim == 2:
+            import scalar2d_gpu_iso_4 as scalar_wrapper
+        elif ndim == 3:
+            import scalar3d_gpu_iso_4 as scalar_wrapper
+        else:
+            raise ValueError('unsupported number of dimensions')
     else:
-        raise ValueError('unsupported number of dimensions')
+        if ndim == 1:
+            import scalar1d_cpu_iso_4 as scalar_wrapper
+        elif ndim == 2:
+            import scalar2d_cpu_iso_4 as scalar_wrapper
+        elif ndim == 3:
+            import scalar3d_cpu_iso_4 as scalar_wrapper
+        else:
+            raise ValueError('unsupported number of dimensions')
 
     return scalar_wrapper
 
@@ -275,6 +286,7 @@ def _set_finite_diff_coeffs(ndim, dx, device):
 
     fd1 = torch.zeros(ndim, 2, device=device)
     fd2 = torch.zeros(ndim * 2 + 1, device=device)
+    dx = dx.to(device)
     for dim in range(ndim):
         fd1[dim] = torch.tensor([8 / 12, -1 / 12], device=device) / dx[dim]
         fd2[0] += -5 / 2 / dx[dim]**2
@@ -347,15 +359,14 @@ class Model(object):
         self.ndim = len(model_tensor.shape[1:])
         # Shape Tensor always contains 3 elements. When propagating in fewer
         # than three dimensions, extra dimensions are 1.
-        self.shape = torch.ones(3, device=self.device, dtype=torch.long)
-        self.shape[:self.ndim] = torch.tensor(
-            model_tensor.shape[1:]).to(self.device)
+        self.shape = torch.ones(3, dtype=torch.long)
+        self.shape[:self.ndim] = torch.tensor(model_tensor.shape[1:])
         # pml_width and pad_width Tensors always contain 6 elements each:
         # padding at the beginning and end of each dimension. When propagating
         # in fewer than three dimensions, extra dimensions are 0.
-        self.pml_width = torch.zeros(6, device=self.device, dtype=torch.long)
+        self.pml_width = torch.zeros(6, dtype=torch.long)
         self.pml_width[:2 * self.ndim] = pml_width
-        self.pad_width = torch.zeros(6, device=self.device, dtype=torch.long)
+        self.pad_width = torch.zeros(6, dtype=torch.long)
         self.pad_width[:2 * self.ndim] = pad_width
         self.total_pad = self.pad_width + self.pml_width
         self.padded_shape = [(self.shape[i] + self.total_pad[2 * i] +
@@ -410,8 +421,9 @@ class Model(object):
         Returns:
             Tensor of coordinates in units of cells from origin of model
         """
-        return ((real_locations / self.dx).long() +
-                self.total_pad[:2 * self.ndim:2])
+        device = real_locations.device
+        return ((real_locations / self.dx.to(device)).long() +
+                self.total_pad[:2 * self.ndim:2].to(device))
 
 
 class Pml(object):

@@ -3,7 +3,6 @@ import copy
 import torch
 import numpy as np
 import scipy.special
-import scipy.integrate
 from scipy.ndimage.interpolation import shift
 from deepwave.scalar import Propagator
 from wavelets import ricker
@@ -12,71 +11,71 @@ from wavelets import ricker
 def test_direct_1d():
     """Test propagation in a constant 1D model."""
     expected, actual = run_direct_1d(propagator=scalarprop)
-    diff = (expected - actual).numpy().ravel()
+    diff = (expected - actual.cpu()).numpy().ravel()
     assert np.linalg.norm(diff) < 41
 
 
 def test_direct_2d():
     """Test propagation in a constant 2D model."""
     expected, actual = run_direct_2d(propagator=scalarprop)
-    diff = (expected - actual).numpy().ravel()
+    diff = (expected - actual.cpu()).numpy().ravel()
     assert np.linalg.norm(diff) < 1.3
 
 
 def test_direct_3d():
     """Test propagation in a constant 3D model."""
     expected, actual = run_direct_3d(propagator=scalarprop,
-                                       dt=0.002,
-                                       prop_kwargs={'pml_width': 20})
-    diff = (expected - actual).numpy().ravel()
+                                     dt=0.002,
+                                     prop_kwargs={'pml_width': 20})
+    diff = (expected - actual.cpu()).numpy().ravel()
     assert np.linalg.norm(diff) < 0.25
 
 
 def test_scatter_1d():
     """Test propagation in a 1D model with a point scatterer."""
     expected, actual = run_scatter_1d(propagator=scalarprop)
-    diff = (expected - actual).numpy().ravel()
+    diff = (expected - actual.cpu()).numpy().ravel()
     assert np.linalg.norm(diff) < 1.83
 
 
 def test_scatter_2d():
     """Test propagation in a 2D model with a point scatterer."""
     expected, actual = run_scatter_2d(propagator=scalarprop,
-                                        prop_kwargs={'pml_width': 30})
-    diff = (expected - actual).numpy().ravel()
+                                      prop_kwargs={'pml_width': 30})
+    diff = (expected - actual.cpu()).numpy().ravel()
     assert np.linalg.norm(diff) < 0.051
 
 
 def test_scatter_3d():
     """Test propagation in a 3D model with a point scatterer."""
     expected, actual = run_scatter_3d(propagator=scalarprop,
-                                        dt=0.002,
-                                        prop_kwargs={'pml_width': 30})
-    diff = (expected - actual).numpy().ravel()
+                                      dt=0.002,
+                                      prop_kwargs={'pml_width': 30})
+    diff = (expected - actual.cpu()).numpy().ravel()
     assert np.linalg.norm(diff) < 0.005
 
 
 def test_model_grad_1d():
     """Test the gradient calculation in a 1D model with a point scatterer."""
     expected, actual = run_model_grad_1d(propagator=scalarprop)
-    diff = (expected - actual).numpy().ravel()
+    diff = (expected - actual.cpu()).numpy().ravel()
     assert np.linalg.norm(diff) < 5e-5
 
 
 def test_model_grad_2d():
     """Test the gradient calculation in a 2D model with a point scatterer."""
     expected, actual = run_model_grad_2d(propagator=scalarprop,
-                                     prop_kwargs={'pml_width': 30})
-    diff = (expected - actual).numpy().ravel()
+                                         prop_kwargs={'pml_width': 30})
+    diff = (expected - actual.cpu()).numpy().ravel()
     assert np.linalg.norm(diff[np.where(~np.isnan(diff))]) < 7e-8
 
 
 def test_model_grad_3d():
     """Test the gradient calculation in a 3D model with a point scatterer."""
     expected, actual = run_model_grad_3d(propagator=scalarprop,
-                                     dt=0.004,
-                                     prop_kwargs={'pml_width': 20})
-    diff = (expected - actual).numpy().ravel()
+                                         dt=0.004,
+                                         prop_kwargs={'pml_width': 20})
+    diff = (expected - actual.cpu()).numpy().ravel()
     assert np.linalg.norm(diff[np.where(~np.isnan(diff))]) < 2e-9
 
 
@@ -85,7 +84,7 @@ def test_source_grad_1d():
     expected, actual, true = run_source_grad_1d(propagator=scalarprop,
                                                 dt=0.004, nx=(20,),
                                                 calc_true_grad=True)
-    diff = (true - actual).numpy().ravel()
+    diff = (true - actual).cpu().numpy().ravel()
     assert np.linalg.norm(diff) < 0.006
 
 
@@ -94,7 +93,7 @@ def test_source_grad_2d():
     expected, actual, true = run_source_grad_2d(propagator=scalarprop,
                                                 dt=0.004, nx=(10, 10),
                                                 calc_true_grad=True)
-    diff = (true - actual).numpy().ravel()
+    diff = (true - actual).cpu().numpy().ravel()
     assert np.linalg.norm(diff) < 6e-5
 
 
@@ -102,17 +101,25 @@ def test_source_grad_3d():
     """Test the source estimation/inversion calculation in a 3D model."""
     expected, actual = run_source_grad_3d(propagator=scalarprop,
                                           dt=0.004, nx=(10, 5, 5))
-    diff = (expected - actual).numpy().ravel()
+    diff = (expected - actual.cpu()).numpy().ravel()
     assert np.linalg.norm(diff) < 0.6
 
 
 def scalarprop(model, dx, dt, sources, receiver_locations, grad=False,
-               source_grad=False,
+               grad_source=False,
                loss=False, forward_true=None, prop_kwargs=None):
     """Wraps the scalar propagator."""
 
     if prop_kwargs is None:
         prop_kwargs = {}
+
+    device = model.device
+    dx = dx
+    sources['amplitude'] = sources['amplitude'].to(device)
+    sources['locations'] = sources['locations'].to(device)
+    receiver_locations = receiver_locations.to(device)
+    if forward_true is not None:
+        forward_true = forward_true.to(device)
 
     prop = Propagator(model, dx, **prop_kwargs)
     receiver_amplitudes = prop.forward(sources['amplitude'],
@@ -120,14 +127,14 @@ def scalarprop(model, dx, dt, sources, receiver_locations, grad=False,
                                        receiver_locations, dt)
 
     if loss:
-        l = torch.nn.MSELoss()(receiver_amplitudes, torch.Tensor(forward_true))
+        l = torch.nn.MSELoss()(receiver_amplitudes, forward_true)
         return l.detach().item()
-    if grad or source_grad:
-        l = torch.nn.MSELoss()(receiver_amplitudes, torch.Tensor(forward_true))
+    if grad or grad_source:
+        l = torch.nn.MSELoss()(receiver_amplitudes, forward_true)
         l.backward()
         if grad:
             return model.grad.detach()
-        if source_grad:
+        if grad_source:
             return sources['amplitude'].grad.detach()
     return receiver_amplitudes.detach()
 
@@ -253,36 +260,36 @@ def grad_3d(nx, x_r, x_ss, x_p, dx, dt, c, dc, f):
     return grad
 
 
-def source_grad(nx, x_rs, x_ss, dx, dt, c, f_true, f_init, nt, direct):
+def source_grad(x_rs, x_ss, dx, dt, c, f_true, f_init, nt, direct):
     """Calculate the expected source gradient."""
     grad = torch.zeros(nt, x_ss.shape[0])
     for r in range(x_rs.shape[0]):
         d_true = torch.zeros(nt)
         d_init = torch.zeros(nt)
         for s in range(x_ss.shape[0]):
-            d_true += direct(x_ss[s], x_rs[r], dx, dt, c, f_true[:,s])
-            d_init += direct(x_ss[s], x_rs[r], dx, dt, c, f_init[:,s])
+            d_true += direct(x_ss[s], x_rs[r], dx, dt, c, f_true[:, s])
+            d_init += direct(x_ss[s], x_rs[r], dx, dt, c, f_init[:, s])
         d_err = d_init - d_true
         for s in range(x_ss.shape[0]):
-            grad[:,s]  += direct(x_ss[s], x_rs[r], dx, dt, c, flip(d_err, 0))
+            grad[:, s] += direct(x_ss[s], x_rs[r], dx, dt, c, flip(d_err, 0))
     return flip(2 / len(f_true) * grad, 0)
 
 
-def source_grad_1d(nx, x_rs, x_ss, dx, dt, c, f_true, f_init, nt):
+def source_grad_1d(x_rs, x_ss, dx, dt, c, f_true, f_init, nt):
     """Calculate the expected source gradient."""
-    return source_grad(nx, x_rs, x_ss, dx, dt, c, f_true, f_init, nt,
+    return source_grad(x_rs, x_ss, dx, dt, c, f_true, f_init, nt,
                        direct_1d)
 
 
-def source_grad_2d(nx, x_rs, x_ss, dx, dt, c, f_true, f_init, nt):
+def source_grad_2d(x_rs, x_ss, dx, dt, c, f_true, f_init, nt):
     """Calculate the expected source gradient."""
-    return source_grad(nx, x_rs, x_ss, dx, dt, c, f_true, f_init, nt,
+    return source_grad(x_rs, x_ss, dx, dt, c, f_true, f_init, nt,
                        direct_2d_approx)
 
 
-def source_grad_3d(nx, x_rs, x_ss, dx, dt, c, f_true, f_init, nt):
+def source_grad_3d(x_rs, x_ss, dx, dt, c, f_true, f_init, nt):
     """Calculate the expected source gradient."""
-    return source_grad(nx, x_rs, x_ss, dx, dt, c, f_true, f_init, nt,
+    return source_grad(x_rs, x_ss, dx, dt, c, f_true, f_init, nt,
                        direct_3d)
 
 
@@ -342,14 +349,16 @@ def _set_coords(num_shots, num_per_shot, nx, dx, location='top'):
 
 
 def run_direct(c, freq, dx, dt, nx,
-                 num_shots, num_sources_per_shot,
-                 num_receivers_per_shot,
-                 propagator, prop_kwargs):
+               num_shots, num_sources_per_shot,
+               num_receivers_per_shot,
+               propagator, prop_kwargs, device=None):
     """Create a constant model, and the expected waveform at point,
        and the forward propagated wave.
     """
     torch.manual_seed(1)
-    model = torch.ones(1, *nx) * c
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = torch.ones(1, *nx, device=device) * c
 
     nx = torch.Tensor(nx).long()
     dx = torch.Tensor(dx)
@@ -384,50 +393,52 @@ def run_direct(c, freq, dx, dt, nx,
 
 
 def run_direct_1d(c=1500, freq=25, dx=(5,), dt=0.0001, nx=(80,),
-                    num_shots=2, num_sources_per_shot=2,
-                    num_receivers_per_shot=2,
-                    propagator=None, prop_kwargs=None):
+                  num_shots=2, num_sources_per_shot=2,
+                  num_receivers_per_shot=2,
+                  propagator=None, prop_kwargs=None, device=None):
     """Runs run_direct with default parameters for 1D."""
 
     return run_direct(c, freq, dx, dt, nx,
-                        num_shots, num_sources_per_shot,
-                        num_receivers_per_shot,
-                        propagator, prop_kwargs)
+                      num_shots, num_sources_per_shot,
+                      num_receivers_per_shot,
+                      propagator, prop_kwargs, device)
 
 
 def run_direct_2d(c=1500, freq=25, dx=(5, 5), dt=0.0001, nx=(50, 50),
-                    num_shots=2, num_sources_per_shot=2,
-                    num_receivers_per_shot=2,
-                    propagator=None, prop_kwargs=None):
+                  num_shots=2, num_sources_per_shot=2,
+                  num_receivers_per_shot=2,
+                  propagator=None, prop_kwargs=None, device=None):
     """Runs run_direct with default parameters for 2D."""
 
     return run_direct(c, freq, dx, dt, nx,
-                        num_shots, num_sources_per_shot,
-                        num_receivers_per_shot,
-                        propagator, prop_kwargs)
+                      num_shots, num_sources_per_shot,
+                      num_receivers_per_shot,
+                      propagator, prop_kwargs, device)
 
 
 def run_direct_3d(c=1500, freq=25, dx=(5, 5, 5), dt=0.0001, nx=(20, 10, 20),
-                    num_shots=2, num_sources_per_shot=2,
-                    num_receivers_per_shot=2,
-                    propagator=None, prop_kwargs=None):
+                  num_shots=2, num_sources_per_shot=2,
+                  num_receivers_per_shot=2,
+                  propagator=None, prop_kwargs=None, device=None):
     """Runs run_direct with default parameters for 3D."""
 
     return run_direct(c, freq, dx, dt, nx,
-                        num_shots, num_sources_per_shot,
-                        num_receivers_per_shot,
-                        propagator, prop_kwargs)
+                      num_shots, num_sources_per_shot,
+                      num_receivers_per_shot,
+                      propagator, prop_kwargs, device)
 
 
 def run_scatter(c, dc, freq, dx, dt, nx,
-                  num_shots, num_sources_per_shot,
-                  num_receivers_per_shot,
-                  propagator, prop_kwargs):
+                num_shots, num_sources_per_shot,
+                num_receivers_per_shot,
+                propagator, prop_kwargs, device=None):
     """Create a point scatterer model, and the expected waveform at point,
        and the forward propagated wave.
     """
     torch.manual_seed(1)
-    model = torch.ones(1, *nx) * c
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = torch.ones(1, *nx, device=device) * c
     model_const = model.clone()
 
     nx = torch.Tensor(nx).long()
@@ -468,50 +479,53 @@ def run_scatter(c, dc, freq, dx, dt, nx,
 
 
 def run_scatter_1d(c=1500, dc=50, freq=25, dx=(5,), dt=0.0001, nx=(100,),
-                     num_shots=2, num_sources_per_shot=2,
-                     num_receivers_per_shot=2,
-                     propagator=None, prop_kwargs=None):
+                   num_shots=2, num_sources_per_shot=2,
+                   num_receivers_per_shot=2,
+                   propagator=None, prop_kwargs=None, device=None):
     """Runs run_scatter with default parameters for 1D."""
 
     return run_scatter(c, dc, freq, dx, dt, nx,
-                         num_shots, num_sources_per_shot,
-                         num_receivers_per_shot,
-                         propagator, prop_kwargs)
+                       num_shots, num_sources_per_shot,
+                       num_receivers_per_shot,
+                       propagator, prop_kwargs, device)
 
 
 def run_scatter_2d(c=1500, dc=150, freq=25, dx=(5, 5), dt=0.0001,
-                     nx=(50, 50),
-                     num_shots=2, num_sources_per_shot=2,
-                     num_receivers_per_shot=2,
-                     propagator=None, prop_kwargs=None):
+                   nx=(50, 50),
+                   num_shots=2, num_sources_per_shot=2,
+                   num_receivers_per_shot=2,
+                   propagator=None, prop_kwargs=None, device=None):
     """Runs run_scatter with default parameters for 2D."""
 
     return run_scatter(c, dc, freq, dx, dt, nx,
-                         num_shots, num_sources_per_shot,
-                         num_receivers_per_shot,
-                         propagator, prop_kwargs)
+                       num_shots, num_sources_per_shot,
+                       num_receivers_per_shot,
+                       propagator, prop_kwargs, device)
 
 
 def run_scatter_3d(c=1500, dc=100, freq=25, dx=(5, 5, 5), dt=0.0001,
-                     nx=(15, 5, 10),
-                     num_shots=2, num_sources_per_shot=2,
-                     num_receivers_per_shot=2,
-                     propagator=None, prop_kwargs=None):
+                   nx=(15, 5, 10),
+                   num_shots=2, num_sources_per_shot=2,
+                   num_receivers_per_shot=2,
+                   propagator=None, prop_kwargs=None, device=None):
     """Runs run_scatter with default parameters for 3D."""
 
     return run_scatter(c, dc, freq, dx, dt, nx,
-                         num_shots, num_sources_per_shot,
-                         num_receivers_per_shot,
-                         propagator, prop_kwargs)
+                       num_shots, num_sources_per_shot,
+                       num_receivers_per_shot,
+                       propagator, prop_kwargs, device)
 
 
 def run_model_grad(c, dc, freq, dx, dt, nx,
-               num_shots, num_sources_per_shot,
-               num_receivers_per_shot,
-               propagator, prop_kwargs, calc_true_grad=False):
+                   num_shots, num_sources_per_shot,
+                   num_receivers_per_shot,
+                   propagator, prop_kwargs, calc_true_grad=False,
+                   device=None):
     """Create a point scatterer model, and the gradient."""
     torch.manual_seed(1)
-    model_init = torch.ones(1, *nx) * c
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model_init = torch.ones(1, *nx, device=device) * c
     model_true = model_init.clone()
     model_init.requires_grad_()
 
@@ -549,7 +563,7 @@ def run_model_grad(c, dc, freq, dx, dt, nx,
                         forward_true=forward_true, prop_kwargs=prop_kwargs)
 
     if calc_true_grad:
-        true_grad = torch.zeros(1, *nx)
+        true_grad = torch.zeros_like(model_true)
         for idx, _ in np.ndenumerate(model_init.detach()):
             tmp_model = model_init.clone()
             tmp_model[(0, ) + idx] += dc
@@ -569,53 +583,56 @@ def run_model_grad(c, dc, freq, dx, dt, nx,
 
 
 def run_model_grad_1d(c=1500, dc=100, freq=25, dx=(5,), dt=0.0001, nx=(100,),
-                  num_shots=2, num_sources_per_shot=2,
-                  num_receivers_per_shot=2,
-                  propagator=None, prop_kwargs=None,
-                  calc_true_grad=False):
+                      num_shots=2, num_sources_per_shot=2,
+                      num_receivers_per_shot=2,
+                      propagator=None, prop_kwargs=None,
+                      calc_true_grad=False, device=None):
     """Runs run_model_grad with default parameters for 1D."""
 
     return run_model_grad(c, dc, freq, dx, dt, nx,
-                      num_shots, num_sources_per_shot,
-                      num_receivers_per_shot,
-                      propagator, prop_kwargs, calc_true_grad)
+                          num_shots, num_sources_per_shot,
+                          num_receivers_per_shot,
+                          propagator, prop_kwargs, calc_true_grad, device)
 
 
 def run_model_grad_2d(c=1500, dc=100, freq=25, dx=(5, 5), dt=0.0001,
-                  nx=(20, 20),
-                  num_shots=2, num_sources_per_shot=2,
-                  num_receivers_per_shot=2,
-                  propagator=None, prop_kwargs=None,
-                  calc_true_grad=False):
+                      nx=(20, 20),
+                      num_shots=2, num_sources_per_shot=2,
+                      num_receivers_per_shot=2,
+                      propagator=None, prop_kwargs=None,
+                      calc_true_grad=False, device=None):
     """Runs run_model_grad with default parameters for 2D."""
 
     return run_model_grad(c, dc, freq, dx, dt, nx,
-                      num_shots, num_sources_per_shot,
-                      num_receivers_per_shot,
-                      propagator, prop_kwargs, calc_true_grad)
+                          num_shots, num_sources_per_shot,
+                          num_receivers_per_shot,
+                          propagator, prop_kwargs, calc_true_grad, device)
 
 
 def run_model_grad_3d(c=1500, dc=200, freq=25, dx=(5, 5, 5), dt=0.0001,
-                  nx=(15, 5, 10),
-                  num_shots=2, num_sources_per_shot=2,
-                  num_receivers_per_shot=2,
-                  propagator=None, prop_kwargs=None,
-                  calc_true_grad=False):
+                      nx=(15, 5, 10),
+                      num_shots=2, num_sources_per_shot=2,
+                      num_receivers_per_shot=2,
+                      propagator=None, prop_kwargs=None,
+                      calc_true_grad=False, device=None):
     """Runs run_model_grad with default parameters for 3D."""
 
     return run_model_grad(c, dc, freq, dx, dt, nx,
-                      num_shots, num_sources_per_shot,
-                      num_receivers_per_shot,
-                      propagator, prop_kwargs, calc_true_grad)
+                          num_shots, num_sources_per_shot,
+                          num_receivers_per_shot,
+                          propagator, prop_kwargs, calc_true_grad, device)
 
 
 def run_source_grad(c, dsource, freq, dx, dt, nx,
                     num_shots, num_sources_per_shot,
                     num_receivers_per_shot,
-                    propagator, prop_kwargs, calc_true_grad=False):
+                    propagator, prop_kwargs, calc_true_grad=False,
+                    device=None):
     """Create a constant model, and the source gradient."""
     torch.manual_seed(1)
-    model = torch.ones(1, *nx) * c
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = torch.ones(1, *nx, device=device) * c
 
     nx = torch.Tensor(nx).long()
     dx = torch.Tensor(dx)
@@ -626,32 +643,34 @@ def run_source_grad(c, dsource, freq, dx, dt, nx,
     x_p = torch.randint(0, nt, (num_shots, num_sources_per_shot)).long()
     sources_true = _set_sources(x_s, freq, dt, nt)
     sources_init = copy.deepcopy(sources_true)
-    sources_init['amplitude'].requires_grad_()
     for shot in range(num_shots):
         for source in range(num_sources_per_shot):
             sources_true['amplitude'][x_p[shot, source], shot, source] += \
-                    dsource
+                dsource
 
     if len(nx) == 1:
         grad = source_grad_1d
     elif len(nx) == 2:
-       grad = source_grad_2d
+        grad = source_grad_2d
     elif len(nx) == 3:
-       grad = source_grad_3d
+        grad = source_grad_3d
     else:
-       raise ValueError("unsupported nx")
+        raise ValueError("unsupported nx")
 
     expected = torch.zeros(nt, num_shots, num_sources_per_shot)
     for shot in range(num_shots):
         expected[:, shot, :] = \
-                grad(nx, x_r[shot], x_s[shot], 
-                        dx, dt, c, sources_true['amplitude'][:, shot],
-                     sources_init['amplitude'][:, shot].detach(), nt)
+            grad(x_r[shot], x_s[shot],
+                 dx, dt, c, sources_true['amplitude'][:, shot],
+                 sources_init['amplitude'][:, shot].detach(), nt)
     expected /= (num_shots * num_receivers_per_shot)
+
+    sources_init['amplitude'] = sources_init['amplitude'].to(device)
+    sources_init['amplitude'].requires_grad_()
 
     forward_true = propagator(model, dx, dt, sources_true, x_r,
                               prop_kwargs=prop_kwargs)
-    actual = propagator(model, dx, dt, sources_init, x_r, source_grad=True,
+    actual = propagator(model, dx, dt, sources_init, x_r, grad_source=True,
                         forward_true=forward_true, prop_kwargs=prop_kwargs)
 
     if calc_true_grad:
@@ -679,38 +698,38 @@ def run_source_grad_1d(c=1500, dsource=0.1, freq=25, dx=(5,), dt=0.0001,
                        num_sources_per_shot=2,
                        num_receivers_per_shot=2,
                        propagator=None, prop_kwargs=None,
-                       calc_true_grad=False):
+                       calc_true_grad=False, device=None):
     """Runs run_source_grad with default parameters for 1D."""
 
     return run_source_grad(c, dsource, freq, dx, dt, nx,
                            num_shots, num_sources_per_shot,
                            num_receivers_per_shot,
-                           propagator, prop_kwargs, calc_true_grad)
+                           propagator, prop_kwargs, calc_true_grad, device)
 
 
 def run_source_grad_2d(c=1500, dc=100, freq=25, dx=(5, 5), dt=0.0001,
-                  nx=(20, 20),
-                  num_shots=2, num_sources_per_shot=2,
-                  num_receivers_per_shot=2,
-                  propagator=None, prop_kwargs=None,
-                  calc_true_grad=False):
+                       nx=(20, 20),
+                       num_shots=2, num_sources_per_shot=2,
+                       num_receivers_per_shot=2,
+                       propagator=None, prop_kwargs=None,
+                       calc_true_grad=False, device=None):
     """Runs run_source_grad with default parameters for 2D."""
 
     return run_source_grad(c, dc, freq, dx, dt, nx,
-                      num_shots, num_sources_per_shot,
-                      num_receivers_per_shot,
-                      propagator, prop_kwargs, calc_true_grad)
+                           num_shots, num_sources_per_shot,
+                           num_receivers_per_shot,
+                           propagator, prop_kwargs, calc_true_grad, device)
 
 
 def run_source_grad_3d(c=1500, dc=200, freq=25, dx=(5, 5, 5), dt=0.0001,
-                  nx=(15, 5, 10),
-                  num_shots=2, num_sources_per_shot=2,
-                  num_receivers_per_shot=2,
-                  propagator=None, prop_kwargs=None,
-                  calc_true_grad=False):
+                       nx=(15, 5, 10),
+                       num_shots=2, num_sources_per_shot=2,
+                       num_receivers_per_shot=2,
+                       propagator=None, prop_kwargs=None,
+                       calc_true_grad=False, device=None):
     """Runs run_source_grad with default parameters for 3D."""
 
     return run_source_grad(c, dc, freq, dx, dt, nx,
-                      num_shots, num_sources_per_shot,
-                      num_receivers_per_shot,
-                      propagator, prop_kwargs, calc_true_grad)
+                           num_shots, num_sources_per_shot,
+                           num_receivers_per_shot,
+                           propagator, prop_kwargs, calc_true_grad, device)
