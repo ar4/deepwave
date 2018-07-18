@@ -85,7 +85,7 @@ def run_timing(versions=None, model=None, model_kwargs=None):
         versions = _versions()
 
     if model is None:
-        model = test_scalar.model_direct_2d
+        model = test_scalar.run_direct_2d
 
     timing = []
     for version in versions:
