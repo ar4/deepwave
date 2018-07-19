@@ -550,6 +550,8 @@ def run_model_grad(c, dc, freq, dx, dt, nx,
     else:
         raise ValueError("unsupported nx")
 
+    import time
+    start = time.perf_counter()
     expected = torch.zeros(1, *nx)
     for shot in range(num_shots):
         for receiver in range(num_receivers_per_shot):
@@ -558,11 +560,16 @@ def run_model_grad(c, dc, freq, dx, dt, nx,
                      dx, dt, c, dc,
                      sources['amplitude'][:, shot])
     expected /= (num_shots * num_receivers_per_shot)
+    end = time.perf_counter()
+    print('expected', end-start)
 
+    start = time.perf_counter()
     forward_true = propagator(model_true, dx, dt, sources, x_r,
                               prop_kwargs=prop_kwargs)
     actual = propagator(model_init, dx, dt, sources, x_r, grad=True,
                         forward_true=forward_true, prop_kwargs=prop_kwargs)
+    end = time.perf_counter()
+    print('actual', end-start)
 
     if calc_true_grad:
         true_grad = torch.zeros_like(model_true)
