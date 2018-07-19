@@ -1,4 +1,5 @@
 """PyTorch Module and Function for scalar wave propagator."""
+import math
 import torch
 import numpy as np
 
@@ -17,13 +18,24 @@ class Propagator(torch.nn.Module):
         pml_width: Optional int specifying number of cells to use for the PML.
             This will be added to the beginning and end of each propagating
             dimension. Default 10.
+        survey_pad: A float, or list with 2 (2D) or 4 (3D) elements,
+            specifying the horizontal padding (in units of dx) to add.
+            The survey (wave propagation) area for each batch of shots
+            will be from the left-most source/receiver minus the left
+            survey_pad, to the right-most source/receiver plus the right
+            survey pad, over all shots in the batch, or to the edges of the
+            model, whichever comes first. If a Tensor, it specifies the 
+            left and right survey_pad in each dimension. If None, the survey
+            area will continue to the edges of the model. Optional, default
+            None.
     """
 
-    def __init__(self, model, dx, pml_width=None):
+    def __init__(self, model, dx, pml_width=None, survey_pad=None):
         super(Propagator, self).__init__()
         self.model = model
         self.dx = dx.cpu()
         self.pml_width = pml_width
+        self.survey_pad = survey_pad
 
     def forward(self, source_amplitudes, source_locations, receiver_locations,
                 dt):
@@ -50,7 +62,8 @@ class Propagator(torch.nn.Module):
                                         receiver_locations,
                                         self.dx,
                                         dt,
-                                        self.pml_width)
+                                        self.pml_width,
+                                        self.survey_pad)
 
 
 class PropagatorFunction(torch.autograd.Function):
@@ -63,7 +76,8 @@ class PropagatorFunction(torch.autograd.Function):
                 receiver_locations,
                 dx,
                 dt,
-                pml_width):
+                pml_width,
+                survey_pad):
         """Forward modeling. Not called by users - see Propagator instead.
 
         Args:
@@ -81,7 +95,13 @@ class PropagatorFunction(torch.autograd.Function):
         device = model_tensor.device
         num_steps, num_shots, num_sources_per_shot = source_amplitudes.shape
         num_receivers_per_shot = receiver_locations.shape[1]
-        model = Model(model_tensor, dx, pad_width, pml_width)
+        survey_extents = _get_survey_extents(model_tensor.shape, dx, survey_pad,
+                                             source_locations,
+                                             receiver_locations)
+        extracted_model_tensor = _extract_model(model_tensor, survey_extents)
+        survey_extents_tensor = _slice_to_tensor(survey_extents, model_tensor.shape)
+        model = Model(extracted_model_tensor, dx, pad_width, pml_width,
+                      survey_extents_tensor)
         pml = Pml(model, num_shots)
         timestep = Timestep(model, dt)
         model.add_padded_properties({'vp2dt2': model.vp**2 *
@@ -129,6 +149,10 @@ class PropagatorFunction(torch.autograd.Function):
 
         # Allocate gradients that will be calculated during backpropagation
         model_gradient = _allocate_grad(model_tensor)
+        if model_tensor.shape != extracted_model_tensor.shape:
+            extracted_model_gradient = _allocate_grad(extracted_model_tensor)
+        else:
+            extracted_model_gradient = model_gradient
         source_gradient = _allocate_grad(source_amplitudes)
 
         ctx.save_for_backward(saved_wavefields, pml.aux, pml.sigma,
@@ -139,7 +163,8 @@ class PropagatorFunction(torch.autograd.Function):
                               receiver_model_locations,
                               torch.tensor(timestep.step_ratio),
                               torch.tensor(timestep.inner_dt), fd1, fd2,
-                              model_gradient, source_gradient)
+                              model_gradient, extracted_model_gradient,
+                              survey_extents_tensor, source_gradient)
 
         return receiver_amplitudes
 
@@ -165,9 +190,11 @@ class PropagatorFunction(torch.autograd.Function):
         (adjoint_wavefield, aux, sigma, vp2dt2, scaling,
          pml_width, source_model_locations, receiver_model_locations,
          step_ratio, inner_dt, fd1, fd2,
-         model_gradient, source_gradient) = ctx.saved_variables
+         model_gradient, extracted_model_gradient, survey_extents_tensor,
+         source_gradient) = ctx.saved_variables
         step_ratio = step_ratio.item()
         inner_dt = inner_dt.item()
+        survey_extents = _tensor_to_slice(survey_extents_tensor)
 
         ndim = receiver_model_locations.shape[-1]
         scalar_wrapper = _select_propagator(ndim, vp2dt2.is_cuda)
@@ -184,7 +211,7 @@ class PropagatorFunction(torch.autograd.Function):
         scalar_wrapper.backward(
             wavefield.float().contiguous(),
             aux.float().contiguous(),
-            model_gradient.float().contiguous(),
+            extracted_model_gradient.float().contiguous(),
             source_gradient.float().contiguous(),
             adjoint_wavefield.float().contiguous(),
             scaling.float().contiguous(),
@@ -204,7 +231,11 @@ class PropagatorFunction(torch.autograd.Function):
             num_receivers_per_shot,
             inner_dt)
 
-        return model_gradient, source_gradient, None, None, None, None, None
+        _insert_model_gradient(extracted_model_gradient, survey_extents,
+                               model_gradient)
+
+        return (model_gradient, source_gradient, None, None, None, None, None,
+                None)
 
 
 def _select_propagator(ndim, cuda):
@@ -342,6 +373,86 @@ def _allocate_grad(tensor):
     return grad
 
 
+def _get_survey_extents(model_shape, dx, survey_pad, source_locations,
+                        receiver_locations):
+
+    ndims = len(model_shape)
+    if survey_pad is None:
+        survey_pad = [None] * 2 * (ndims - 2)
+    if isinstance(survey_pad, (int, float)):
+        survey_pad = [survey_pad] * 2 * (ndims - 2)
+    if len(survey_pad) != 2 * (ndims - 2):
+        raise ValueError('survey_pad has incorrect length: {} != {}'\
+                .format(len(survey_pad), 2 * (ndims - 2)))
+    extents = [slice(None), slice(None)] # property and z dims
+    for dim in range(1, ndims-1): # ndims-1 as no property dim
+        left_pad = survey_pad[(dim-1)*2] # dim-1 as no z dim
+        if left_pad is None:
+            left_extent = None
+        else:
+            left_source = (source_locations[..., dim] - left_pad).min()
+            left_receiver = (receiver_locations[..., dim] - left_pad).min()
+            left_sourec_cell = math.floor((min(left_source, left_receiver)
+                                           / dx[dim]).item())
+            left_extent = max(0, left_sourec_cell)
+            if left_extent == 0:
+                left_extent = None
+
+        right_pad = survey_pad[(dim-1)*2+1]
+        if right_pad is None:
+            right_extent = None
+        else:
+            right_source = (source_locations[..., dim] + right_pad).max()
+            right_receiver = (receiver_locations[..., dim] + right_pad).max()
+            right_sourec_cell = math.ceil((max(right_source, right_receiver)
+                                           / dx[dim]).item())
+            right_extent = min(model_shape[dim+1], right_sourec_cell) + 1
+            if right_extent >= model_shape[dim+1]:
+                right_extent = None
+
+        extents.append(slice(left_extent, right_extent))
+
+    return extents
+
+
+def _extract_model(model_tensor, extents):
+
+    return model_tensor[extents]
+
+
+def _slice_to_tensor(extents, model_shape):
+
+    ndims = len(extents)
+    extents_tensor = torch.zeros(ndims, 2)
+    for dim in range(ndims):
+        if extents[dim].start is None:
+            extents_tensor[dim, 0] = 0
+        else:
+            extents_tensor[dim, 0] = extents[dim].start
+        if extents[dim].stop is None:
+            extents_tensor[dim, 1] = model_shape[dim]
+        else:
+            extents_tensor[dim, 1] = extents[dim].stop
+
+    return extents_tensor.long()
+
+
+def _tensor_to_slice(extents_tensor):
+
+    ndims = extents_tensor.shape[0]
+    extents = []
+    for dim in range(ndims):
+        extents.append(slice(extents_tensor[dim, 0], extents_tensor[dim, 1]))
+
+    return extents
+
+
+def _insert_model_gradient(extracted_model_grad, extents, model_grad):
+
+    if model_grad.numel() > 0:
+        model_grad[extents] = extracted_model_grad
+
+
 class Model(object):
     """A class for models.
 
@@ -351,7 +462,7 @@ class Model(object):
         See Propagator for descriptions of the other arguments.
     """
 
-    def __init__(self, model_tensor, dx, pad_width, pml_width):
+    def __init__(self, model_tensor, dx, pad_width, pml_width, survey_extents):
         self.properties = {}
         self.padded_properties = {}
         self.dx = dx
@@ -375,6 +486,7 @@ class Model(object):
         self.vp = model_tensor[0]
         self.max_vel = self.vp.max().item()
         self.add_properties({'scaling': 2 / self.vp**3})  # for backpropagation
+        self.survey_extents = survey_extents
 
     def add_properties(self, properties):
         """Store an unpadded property."""
@@ -423,7 +535,8 @@ class Model(object):
         """
         device = real_locations.device
         return ((real_locations / self.dx.to(device)).long() +
-                self.total_pad[:2 * self.ndim:2].to(device))
+                self.total_pad[:2 * self.ndim:2].to(device) -
+                self.survey_extents[1:,0].view(-1).to(device))
 
 
 class Pml(object):
