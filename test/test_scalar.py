@@ -41,9 +41,10 @@ def test_scatter_1d():
 def test_scatter_2d():
     """Test propagation in a 2D model with a point scatterer."""
     expected, actual = run_scatter_2d(propagator=scalarprop,
+                                      dt=0.001,
                                       prop_kwargs={'pml_width': 30})
     diff = (expected - actual.cpu()).numpy().ravel()
-    assert np.linalg.norm(diff) < 0.051
+    assert np.linalg.norm(diff) < 0.017
 
 
 def test_scatter_3d():
@@ -65,9 +66,10 @@ def test_model_grad_1d():
 def test_model_grad_2d():
     """Test the gradient calculation in a 2D model with a point scatterer."""
     expected, actual = run_model_grad_2d(propagator=scalarprop,
+                                         dt=0.001,
                                          prop_kwargs={'pml_width': 30})
     diff = (expected - actual.cpu()).numpy().ravel()
-    assert np.linalg.norm(diff[np.where(~np.isnan(diff))]) < 7e-8
+    assert np.linalg.norm(diff[np.where(~np.isnan(diff))]) < 4e-8
 
 
 def test_model_grad_3d():
