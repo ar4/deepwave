@@ -75,6 +75,17 @@ def test_survey_pad3():
     assert survey_extents == expected_extents
 
 
+def test_pml_width_tensor():
+    """Verify that PML width supplied as int and Tensor give same result."""
+    _, actual_int = run_direct_2d(propagator=scalarprop,
+                                  prop_kwargs={'pml_width': 20})
+    pml_width_tensor = torch.Tensor([20, 20, 20, 20, 0, 0]).long()
+    _, actual_tensor = run_direct_2d(propagator=scalarprop,
+                                     prop_kwargs={'pml_width':
+                                                  pml_width_tensor})
+    assert np.allclose(actual_int.cpu().numpy(), actual_tensor.cpu().numpy())
+
+
 def test_direct_1d():
     """Test propagation in a constant 1D model."""
     expected, actual = run_direct_1d(propagator=scalarprop)

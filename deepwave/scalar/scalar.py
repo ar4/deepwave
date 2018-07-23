@@ -15,9 +15,13 @@ class Propagator(torch.nn.Module):
             [1, nz, ny, nx] in 3D.
         dx: A Float Tensor containing cell spacing in each dimension. In 3D, it
             contains [dz, dy, dx], while in 1D it is [dz].
-        pml_width: Optional int specifying number of cells to use for the PML.
-            This will be added to the beginning and end of each propagating
-            dimension. Default 10.
+        pml_width: Optional int or Tensor specifying number of cells to use
+            for the PML. This will be added to the beginning and end of each
+            propagating dimension. If provided as a Tensor, it should be of
+            length 6, with each sequential group of two integer elements
+            referring to the beginning and end PML width for a dimension.
+            For dimensions less than 3, the elements for the remaining
+            dimensions should be 0. Default 10.
         survey_pad: A float, or list with 2 (2D) or 4 (3D) elements,
             specifying the horizontal padding (in units of dx) to add.
             The survey (wave propagation) area for each batch of shots
@@ -559,8 +563,11 @@ class Model(object):
         # pml_width and pad_width Tensors always contain 6 elements each:
         # padding at the beginning and end of each dimension. When propagating
         # in fewer than three dimensions, extra dimensions are 0.
-        self.pml_width = torch.zeros(6, dtype=torch.long)
-        self.pml_width[:2 * self.ndim] = pml_width
+        if isinstance(pml_width, torch.Tensor):
+            self.pml_width = pml_width.long()
+        else:
+            self.pml_width = torch.zeros(6, dtype=torch.long)
+            self.pml_width[:2 * self.ndim] = pml_width
         self.pad_width = torch.zeros(6, dtype=torch.long)
         self.pad_width[:2 * self.ndim] = pad_width
         self.total_pad = self.pad_width + self.pml_width
