@@ -166,7 +166,7 @@ def test_source_grad_1d():
                                          dt=0.004, nx=(20,),
                                          calc_true_grad=True)
     diff = (true - actual).cpu().numpy().ravel()
-    assert np.linalg.norm(diff) < 0.006
+    assert np.linalg.norm(diff) < 0.0065
 
 
 def test_source_grad_2d():
