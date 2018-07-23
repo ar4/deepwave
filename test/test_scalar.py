@@ -1,5 +1,4 @@
 """Create constant and point scatterer models."""
-import math
 import copy
 import torch
 import numpy as np
@@ -9,6 +8,7 @@ import deepwave.scalar.scalar
 from deepwave.scalar import Propagator
 from wavelets import ricker
 
+
 def test_survey_pad1():
     """Two shots, padded survey within model."""
     dx = torch.Tensor([5.0, 5.0])
@@ -17,16 +17,17 @@ def test_survey_pad1():
     pad = 5.0
     num_shots = 2
     num_sources_per_shot = 2
-    num_receiveres_per_shot = 2
+    num_receivers_per_shot = 2
     # sources and receivers located in center of model
     source_locs = torch.ones(num_shots, num_sources_per_shot, 2) * 2 * 5.0
-    receiver_locs = torch.ones(num_shots, num_sources_per_shot, 2) * 2 * 5.0
+    receiver_locs = torch.ones(num_shots, num_receivers_per_shot, 2) * 2 * 5.0
     expected_extents = [slice(None), slice(None), slice(1, 4)]
     survey_extents = \
-            deepwave.scalar.scalar._get_survey_extents(model.shape, dx, pad,
-                                                       source_locs,
-                                                       receiver_locs)
+        deepwave.scalar.scalar._get_survey_extents(model.shape, dx, pad,
+                                                   source_locs,
+                                                   receiver_locs)
     assert survey_extents == expected_extents
+
 
 def test_survey_pad2():
     """Two shots, padded survey exceeds model."""
@@ -36,18 +37,18 @@ def test_survey_pad2():
     pad = 5.0
     num_shots = 2
     num_sources_per_shot = 2
-    num_receiveres_per_shot = 2
+    num_receivers_per_shot = 2
     # sources and receivers located in center of model
     source_locs = torch.ones(num_shots, num_sources_per_shot, 3) * 2 * dx
-    receiver_locs = torch.ones(num_shots, num_sources_per_shot, 3) * 2 * dx
+    receiver_locs = torch.ones(num_shots, num_receivers_per_shot, 3) * 2 * dx
     # except for these ones that cause padding to go outside the model
     source_locs[0, 0, 1] = 1 * dx[1]
     receiver_locs[-1, -1, 2] = 4 * dx[2]
     expected_extents = [slice(None)] * 4
     survey_extents = \
-            deepwave.scalar.scalar._get_survey_extents(model.shape, dx, pad,
-                                                       source_locs,
-                                                       receiver_locs)
+        deepwave.scalar.scalar._get_survey_extents(model.shape, dx, pad,
+                                                   source_locs,
+                                                   receiver_locs)
     assert survey_extents == expected_extents
 
 
@@ -59,18 +60,18 @@ def test_survey_pad3():
     pad = [0.0, 5.0, None, 1.0]
     num_shots = 2
     num_sources_per_shot = 2
-    num_receiveres_per_shot = 2
+    num_receivers_per_shot = 2
     # sources and receivers located in center of model
     source_locs = torch.ones(num_shots, num_sources_per_shot, 3) * 2 * dx
-    receiver_locs = torch.ones(num_shots, num_sources_per_shot, 3) * 2 * dx
+    receiver_locs = torch.ones(num_shots, num_receivers_per_shot, 3) * 2 * dx
     # except for these ones that cause padding to go outside the model
     source_locs[0, 0, 1] = 1 * dx[1]
     receiver_locs[-1, -1, 2] = 4 * dx[2]
     expected_extents = [slice(None), slice(None), slice(1, None), slice(None)]
     survey_extents = \
-            deepwave.scalar.scalar._get_survey_extents(model.shape, dx, pad,
-                                                       source_locs,
-                                                       receiver_locs)
+        deepwave.scalar.scalar._get_survey_extents(model.shape, dx, pad,
+                                                   source_locs,
+                                                   receiver_locs)
     assert survey_extents == expected_extents
 
 
@@ -141,7 +142,6 @@ def test_model_grad_2d():
 def test_model_grad_2d_pad1():
     """Similar to test_model_grad_2d, but with a single float survey_pad."""
     dx = (5, 6)
-    nx = (5, 6)
     pad = 5.0
     expected, actual = run_model_grad_2d(propagator=scalarprop,
                                          dt=0.001, dx=dx,
@@ -162,18 +162,18 @@ def test_model_grad_3d():
 
 def test_source_grad_1d():
     """Test the source estimation/inversion calculation in a 1D model."""
-    expected, actual, true = run_source_grad_1d(propagator=scalarprop,
-                                                dt=0.004, nx=(20,),
-                                                calc_true_grad=True)
+    _, actual, true = run_source_grad_1d(propagator=scalarprop,
+                                         dt=0.004, nx=(20,),
+                                         calc_true_grad=True)
     diff = (true - actual).cpu().numpy().ravel()
     assert np.linalg.norm(diff) < 0.006
 
 
 def test_source_grad_2d():
     """Test the source estimation/inversion calculation in a 2D model."""
-    expected, actual, true = run_source_grad_2d(propagator=scalarprop,
-                                                dt=0.004, nx=(10, 10),
-                                                calc_true_grad=True)
+    _, actual, true = run_source_grad_2d(propagator=scalarprop,
+                                         dt=0.004, nx=(10, 10),
+                                         calc_true_grad=True)
     diff = (true - actual).cpu().numpy().ravel()
     assert np.linalg.norm(diff) < 6e-5
 
@@ -641,11 +641,11 @@ def run_model_grad(c, dc, freq, dx, dt, nx,
     if prop_kwargs is not None and 'survey_pad' in prop_kwargs:
         pad = prop_kwargs['survey_pad']
         survey_extents = \
-                deepwave.scalar.scalar._get_survey_extents(expected.shape, dx,
-                                                           pad, x_s, x_r)
+            deepwave.scalar.scalar._get_survey_extents(expected.shape, dx,
+                                                       pad, x_s, x_r)
         extracted_expected = \
-                deepwave.scalar.scalar._extract_model(expected.clone(),
-                                                      survey_extents)
+            deepwave.scalar.scalar._extract_model(expected.clone(),
+                                                  survey_extents)
         expected.fill_(0)
         deepwave.scalar.scalar._insert_model_gradient(extracted_expected,
                                                       survey_extents,

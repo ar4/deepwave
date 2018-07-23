@@ -24,7 +24,7 @@ class Propagator(torch.nn.Module):
             will be from the left-most source/receiver minus the left
             survey_pad, to the right-most source/receiver plus the right
             survey pad, over all shots in the batch, or to the edges of the
-            model, whichever comes first. If a Tensor, it specifies the 
+            model, whichever comes first. If a Tensor, it specifies the
             left and right survey_pad in each dimension. If None, the survey
             area will continue to the edges of the model. Optional, default
             None.
@@ -95,11 +95,15 @@ class PropagatorFunction(torch.autograd.Function):
         device = model_tensor.device
         num_steps, num_shots, num_sources_per_shot = source_amplitudes.shape
         num_receivers_per_shot = receiver_locations.shape[1]
-        survey_extents = _get_survey_extents(model_tensor.shape, dx, survey_pad,
-                                             source_locations,
-                                             receiver_locations)
+        survey_extents = _get_survey_extents(
+            model_tensor.shape,
+            dx,
+            survey_pad,
+            source_locations,
+            receiver_locations)
         extracted_model_tensor = _extract_model(model_tensor, survey_extents)
-        survey_extents_tensor = _slice_to_tensor(survey_extents, model_tensor.shape)
+        survey_extents_tensor = _slice_to_tensor(
+            survey_extents, model_tensor.shape)
         model = Model(extracted_model_tensor, dx, pad_width, pml_width,
                       survey_extents_tensor)
         pml = Pml(model, num_shots)
@@ -365,6 +369,20 @@ def _allocate_wavefields(wavefield_save_strategy, scalar_wrapper, model,
 
 
 def _allocate_grad(tensor):
+    """Allocate a Tensor to store a gradient.
+
+    If the provided Tensor requires a gradient, then a Tensor of the
+    appropriate size will be allocated to store it. If it does not,
+    then an empty Tensor will be created (so that it can be passed to
+    save_for_backward either way without causing an error).
+
+    Args:
+        tensor: A Tensor that may or may not require a gradient
+
+    Returns:
+        Either a Tensor to store the gradient, or an empty Tensor.
+    """
+
     if tensor.requires_grad:
         grad = torch.zeros_like(tensor)
     else:
@@ -375,6 +393,24 @@ def _allocate_grad(tensor):
 
 def _get_survey_extents(model_shape, dx, survey_pad, source_locations,
                         receiver_locations):
+    """Calculate the extents of the model to use for the survey.
+
+    Args:
+        model_shape: A tuple containing the shape of the full model
+        dx: A Tensor containing the cell spacing in each dimension
+        survey_pad: Either a float or a Tensor with two entries for
+            each dimension, specifying the padding to add
+            around the sources and receivers included in all of the
+            shots being propagated. If None, the padding continues
+            to the edge of the model
+        source_locations: A Tensor containing source locations
+        receiver_locations: A Tensor containing receiver locations
+
+    Returns:
+        A list of slices of the same length as the model shape,
+            specifying the extents of the model that will be
+            used for wave propagation
+    """
 
     ndims = len(model_shape)
     if survey_pad is None:
@@ -382,32 +418,32 @@ def _get_survey_extents(model_shape, dx, survey_pad, source_locations,
     if isinstance(survey_pad, (int, float)):
         survey_pad = [survey_pad] * 2 * (ndims - 2)
     if len(survey_pad) != 2 * (ndims - 2):
-        raise ValueError('survey_pad has incorrect length: {} != {}'\
-                .format(len(survey_pad), 2 * (ndims - 2)))
-    extents = [slice(None), slice(None)] # property and z dims
-    for dim in range(1, ndims-1): # ndims-1 as no property dim
-        left_pad = survey_pad[(dim-1)*2] # dim-1 as no z dim
+        raise ValueError('survey_pad has incorrect length: {} != {}'
+                         .format(len(survey_pad), 2 * (ndims - 2)))
+    extents = [slice(None), slice(None)]  # property and z dims
+    for dim in range(1, ndims - 1):  # ndims-1 as no property dim
+        left_pad = survey_pad[(dim - 1) * 2]  # dim-1 as no z dim
         if left_pad is None:
             left_extent = None
         else:
             left_source = (source_locations[..., dim] - left_pad).min()
             left_receiver = (receiver_locations[..., dim] - left_pad).min()
-            left_sourec_cell = math.floor((min(left_source, left_receiver)
-                                           / dx[dim]).item())
+            left_sourec_cell = math.floor((min(left_source, left_receiver) /
+                                           dx[dim]).item())
             left_extent = max(0, left_sourec_cell)
             if left_extent == 0:
                 left_extent = None
 
-        right_pad = survey_pad[(dim-1)*2+1]
+        right_pad = survey_pad[(dim - 1) * 2 + 1]
         if right_pad is None:
             right_extent = None
         else:
             right_source = (source_locations[..., dim] + right_pad).max()
             right_receiver = (receiver_locations[..., dim] + right_pad).max()
-            right_sourec_cell = math.ceil((max(right_source, right_receiver)
-                                           / dx[dim]).item())
-            right_extent = min(model_shape[dim+1], right_sourec_cell) + 1
-            if right_extent >= model_shape[dim+1]:
+            right_sourec_cell = math.ceil((max(right_source, right_receiver) /
+                                           dx[dim]).item())
+            right_extent = min(model_shape[dim + 1], right_sourec_cell) + 1
+            if right_extent >= model_shape[dim + 1]:
                 right_extent = None
 
         extents.append(slice(left_extent, right_extent))
@@ -416,12 +452,34 @@ def _get_survey_extents(model_shape, dx, survey_pad, source_locations,
 
 
 def _extract_model(model_tensor, extents):
+    """Extract the specified portion of the model.
+
+    Args:
+        model_tensor: A Tensor containing the model
+        extents: A list of slices specifying the portion of the model to
+            extract
+
+    Returns:
+        A Tensor containing the desired portion of the model
+    """
 
     return model_tensor[extents]
 
 
 def _slice_to_tensor(extents, model_shape):
+    """Convert a list of slices to a Tensor.
 
+    This is needed to convert the list of extents into a Tensor so that it
+    can be passed to save_for_backward. It is undone by _tensor_to_slice.
+
+    Args:
+        extents: A list of slices created by _get_survey_extents
+        model_shape: The shape of the full model
+
+    Returns:
+        A Tensor containing 2 entries for each dimension of the model
+        (the beginning and end of the slice).
+    """
     ndims = len(extents)
     extents_tensor = torch.zeros(ndims, 2)
     for dim in range(ndims):
@@ -438,6 +496,18 @@ def _slice_to_tensor(extents, model_shape):
 
 
 def _tensor_to_slice(extents_tensor):
+    """Convert a Tensor to a list of slices.
+
+    Needed because save_for_backward requires Tensors. This undoes
+    _slice_to_tensor, and is called in backward to convert back to
+    a list of slices.
+
+    Args:
+        extents_tensor: The Tensor created by _slice_to_tensor
+
+    Returns:
+        A list of slices
+    """
 
     ndims = extents_tensor.shape[0]
     extents = []
@@ -448,7 +518,21 @@ def _tensor_to_slice(extents_tensor):
 
 
 def _insert_model_gradient(extracted_model_grad, extents, model_grad):
+    """Insert the calculated gradient into the full model.
 
+    The gradient might have been calculated on only a portion of the model
+    (if survey_pad was not None), but the returned gradient is expected
+    to be of the same size as the full model, so this inserts the
+    calculated gradient into the full model (the areas not calculated
+    will be zero).
+
+    Args:
+        extracted_model_grad: A Tensor containing the calculated model grad
+        extents: A list of slices specifying the extents covered by
+            the calculated model gradient
+        model_grad: A Tensor of the same size as the full model, initialized
+            to zero, which the model gradient will be inserted into.
+    """
     if model_grad.numel() > 0:
         model_grad[extents] = extracted_model_grad
 
@@ -536,7 +620,7 @@ class Model(object):
         device = real_locations.device
         return ((real_locations / self.dx.to(device)).long() +
                 self.total_pad[:2 * self.ndim:2].to(device) -
-                self.survey_extents[1:,0].view(-1).to(device))
+                self.survey_extents[1:, 0].view(-1).to(device))
 
 
 class Pml(object):
