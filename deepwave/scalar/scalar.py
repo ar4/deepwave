@@ -432,8 +432,9 @@ def _get_survey_extents(model_shape, dx, survey_pad, source_locations,
         else:
             left_source = (source_locations[..., dim] - left_pad).min()
             left_receiver = (receiver_locations[..., dim] - left_pad).min()
-            left_sourec_cell = math.floor((min(left_source, left_receiver) /
-                                           dx[dim]).item())
+            left_sourec_cell = \
+                    math.floor((min(left_source, left_receiver).cpu() /
+                                dx[dim]).item())
             left_extent = max(0, left_sourec_cell)
             if left_extent == 0:
                 left_extent = None
@@ -444,8 +445,9 @@ def _get_survey_extents(model_shape, dx, survey_pad, source_locations,
         else:
             right_source = (source_locations[..., dim] + right_pad).max()
             right_receiver = (receiver_locations[..., dim] + right_pad).max()
-            right_sourec_cell = math.ceil((max(right_source, right_receiver) /
-                                           dx[dim]).item())
+            right_sourec_cell = \
+                    math.ceil((max(right_source, right_receiver).cpu() /
+                               dx[dim]).item())
             right_extent = min(model_shape[dim + 1], right_sourec_cell) + 1
             if right_extent >= model_shape[dim + 1]:
                 right_extent = None
@@ -564,7 +566,7 @@ class Model(object):
         # padding at the beginning and end of each dimension. When propagating
         # in fewer than three dimensions, extra dimensions are 0.
         if isinstance(pml_width, torch.Tensor):
-            self.pml_width = pml_width.long()
+            self.pml_width = pml_width.cpu().long()
         else:
             self.pml_width = torch.zeros(6, dtype=torch.long)
             self.pml_width[:2 * self.ndim] = pml_width
@@ -587,10 +589,11 @@ class Model(object):
     def add_padded_properties(self, properties):
         """Add padding to a property and store it."""
         for key, value in properties.items():
+            padding = self.total_pad[:2 * self.ndim].tolist()[::-1]
             self.padded_properties[key] = \
                 torch.nn.functional.pad(value.reshape(1, 1,
                                                       *self.shape[:self.ndim]),
-                                        self.total_pad[:2 * self.ndim].tolist(),
+                                        padding,
                                         mode='replicate')\
                 .reshape(*self.padded_shape)
 

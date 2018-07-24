@@ -437,7 +437,7 @@ void __global__ add_sources_kernel(
                 ptrdiff_t i = location_index(source_locations, shape_y,
                                 shape_x, s);
                 ptrdiff_t si = shot * shape_z * shape_y * shape_x + i;
-                next_wavefield[si] += source_amplitudes[s] * model[i];
+                atomicAdd(next_wavefield + si, source_amplitudes[s] * model[i]);
 
         }
 
