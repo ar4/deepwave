@@ -1,5 +1,8 @@
 #ifndef H_SCALAR_DEVICE
 #define H_SCALAR_DEVICE
+void setup(
+		const float *__restrict__ const fd1,
+		const float *__restrict__ const fd2);
 void propagate(
                 float *__restrict__ const wfn, /* next wavefield */
                 float *__restrict__ const auxn, /* next aux_wavefield */

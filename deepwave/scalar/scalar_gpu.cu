@@ -4,6 +4,9 @@
 #include "scalar.h"
 #include "scalar_device.h"
 
+__constant__ float fd1[2 * DIM];
+__constant__ float fd2[2 * DIM + 1];
+
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
 inline void gpuAssert(cudaError_t code, const char *file, int line,
                 bool abort=true)
@@ -104,6 +107,15 @@ inline __device__ ptrdiff_t location_index(
 #endif /* DIM */
 
 
+void setup(
+                const float *__restrict__ const fd1_d,
+                const float *__restrict__ const fd2_d)
+{
+        gpuErrchk(cudaMemcpyToSymbol(fd1, fd1_d, 2 * DIM * sizeof(float)));
+        gpuErrchk(cudaMemcpyToSymbol(fd2, fd2_d, (2 * DIM + 1) * sizeof(float)));
+}
+
+
 #if DIM == 1
 
 __global__ void propagate_kernel(
@@ -114,12 +126,12 @@ __global__ void propagate_kernel(
                 const float *__restrict__ const phizc,
                 const float *__restrict__ const sigmaz,
                 const float *__restrict__ const model,
-                const float *__restrict__ const fd1,
-                const float *__restrict__ const fd2,
                 const ptrdiff_t shape_z,
                 const ptrdiff_t numel_shot,
                 const ptrdiff_t size_xy,
                 const ptrdiff_t num_shots,
+                const ptrdiff_t pmlz0,
+                const ptrdiff_t pmlz1,
                 const float dt)
 {
 
@@ -132,19 +144,33 @@ __global__ void propagate_kernel(
         ptrdiff_t i = z;
         ptrdiff_t si = shot * numel_shot + i;
 
-        /* Spatial finite differences */
         float lap = laplacian(wfc);
-        float wfc_z = z_deriv(wfc);
-        float phizc_z = z_deriv(phizc);
 
-        /* Update wavefield */
-        wfn[si] = 1 / (1 + dt * sigmaz[z] / 2) *
-                (model[i] * (lap + phizc_z)
-                 + dt * sigmaz[z] * wfp[si] / 2
-                 + (2 * wfc[si] - wfp[si]));
+        if (
+                        (z >= pmlz0 + 2 * ZPAD) &&
+                        (z < shape_z - pmlz1 - 2 * ZPAD)
+           )
+        {
 
-        /* Update phi */
-        phizn[si] = phizc[si] - dt * sigmaz[z] * (wfc_z + phizc[si]);
+                /* Update wavefield */
+                wfn[si] = model[i] * lap + 2 * wfc[si] - wfp[si];
+        }
+        else
+        {
+                /* Inside PML region */
+
+                float wfc_z = z_deriv(wfc);
+                float phizc_z = z_deriv(phizc);
+
+                /* Update wavefield */
+                wfn[si] = 1 / (1 + dt * sigmaz[z] / 2) *
+                        (model[i] * (lap + phizc_z)
+                         + dt * sigmaz[z] * wfp[si] / 2
+                         + (2 * wfc[si] - wfp[si]));
+
+                /* Update phi */
+                phizn[si] = phizc[si] - dt * sigmaz[z] * (wfc_z + phizc[si]);
+        }
 
         ENDLOOP;
 }
@@ -162,14 +188,16 @@ __global__ void propagate_kernel(
                 const float *__restrict__ const phiyc,
                 const float *__restrict__ const sigmay,
                 const float *__restrict__ const model,
-                const float *__restrict__ const fd1,
-                const float *__restrict__ const fd2,
                 const ptrdiff_t shape_z,
                 const ptrdiff_t shape_y,
                 const ptrdiff_t numel_shot,
                 const ptrdiff_t size_x,
                 const ptrdiff_t size_xy,
                 const ptrdiff_t num_shots,
+                const ptrdiff_t pmlz0,
+                const ptrdiff_t pmlz1,
+                const ptrdiff_t pmly0,
+                const ptrdiff_t pmly1,
                 const float dt)
 {
 
@@ -182,25 +210,41 @@ __global__ void propagate_kernel(
         ptrdiff_t i = z * size_xy + y;
         ptrdiff_t si = shot * numel_shot + i;
 
-        /* Spatial finite differences */
         float lap = laplacian(wfc);
-        float wfc_z = z_deriv(wfc);
-        float phizc_z = z_deriv(phizc);
-        float wfc_y = y_deriv(wfc);
-        float phiyc_y = y_deriv(phiyc);
 
-        /* Update wavefield */
-        wfn[si] = 1 / (1 + dt * (sigmaz[z] + sigmay[y]) / 2) *
-                (model[i] * (lap + phizc_z + phiyc_y) +
-                 dt * (sigmaz[z] + sigmay[y]) * wfp[si] / 2 +
-                 (2 * wfc[si] - wfp[si]) -
-                 dt * dt * sigmaz[z] * sigmay[y] * wfc[si]);
+        if (
+                        (z >= pmlz0 + 2 * ZPAD) &&
+                        (z < shape_z - pmlz1 - 2 * ZPAD) &&
+                        (y >= pmly0 + 2 * YPAD) &&
+                        (y < shape_y - pmly1 - 2 * YPAD)
+           )
+        {
 
-        /* Update phi */
-        phizn[si] = phizc[si] - dt * (sigmaz[z] * phizc[si] +
-                        (sigmaz[z] - sigmay[y]) * wfc_z);
-        phiyn[si] = phiyc[si] - dt * (sigmay[y] * phiyc[si] +
-                        (sigmay[y] - sigmaz[z]) * wfc_y);
+                /* Update wavefield */
+                wfn[si] = model[i] * lap + 2 * wfc[si] - wfp[si];
+        }
+        else
+        {
+                /* Inside PML region */
+
+                float wfc_z = z_deriv(wfc);
+                float phizc_z = z_deriv(phizc);
+                float wfc_y = y_deriv(wfc);
+                float phiyc_y = y_deriv(phiyc);
+
+                /* Update wavefield */
+                wfn[si] = 1 / (1 + dt * (sigmaz[z] + sigmay[y]) / 2) *
+                        (model[i] * (lap + phizc_z + phiyc_y) +
+                         dt * (sigmaz[z] + sigmay[y]) * wfp[si] / 2 +
+                         (2 * wfc[si] - wfp[si]) -
+                         dt * dt * sigmaz[z] * sigmay[y] * wfc[si]);
+
+                /* Update phi */
+                phizn[si] = phizc[si] - dt * (sigmaz[z] * phizc[si] +
+                                (sigmaz[z] - sigmay[y]) * wfc_z);
+                phiyn[si] = phiyc[si] - dt * (sigmay[y] * phiyc[si] +
+                                (sigmay[y] - sigmaz[z]) * wfc_y);
+        }
 
         ENDLOOP;
 }
@@ -223,8 +267,6 @@ __global__ void propagate_kernel(
                 const float *__restrict__ const sigmax,
                 const float *__restrict__ const psic,
                 const float *__restrict__ const model,
-                const float *__restrict__ const fd1,
-                const float *__restrict__ const fd2,
                 const ptrdiff_t shape_z,
                 const ptrdiff_t shape_y,
                 const ptrdiff_t shape_x,
@@ -232,6 +274,12 @@ __global__ void propagate_kernel(
                 const ptrdiff_t size_x,
                 const ptrdiff_t size_xy,
                 const ptrdiff_t num_shots,
+                const ptrdiff_t pmlz0,
+                const ptrdiff_t pmlz1,
+                const ptrdiff_t pmly0,
+                const ptrdiff_t pmly1,
+                const ptrdiff_t pmlx0,
+                const ptrdiff_t pmlx1,
                 const float dt)
 {
         LOOP(
@@ -243,45 +291,65 @@ __global__ void propagate_kernel(
         ptrdiff_t i = z * size_xy + y * size_x + x;
         ptrdiff_t si = shot * numel_shot + i;
 
-        /* Spatial finite differences */
         float lap = laplacian(wfc);
-        float wfc_z = z_deriv(wfc);
-        float phizc_z = z_deriv(phizc);
-        float wfc_y = y_deriv(wfc);
-        float wfc_x = x_deriv(wfc);
-        float phiyc_y = y_deriv(phiyc);
-        float phixc_x = x_deriv(phixc);
-        float psic_z = z_deriv(psic);
-        float psic_y = y_deriv(psic);
-        float psic_x = x_deriv(psic);
 
-        /* Update wavefield */
-        wfn[si] = 1 / (1 + dt * (sigmaz[z] + sigmay[y] + sigmax[x]) / 2) *
-                (model[i] * lap + dt * dt * (phizc_z + phiyc_y + phixc_x -
-                                             sigmaz[z] * sigmay[y] * sigmax[x] *
-                                             psic[si]) +
-                 dt * (sigmaz[z] + sigmay[y] + sigmax[x]) * wfp[si] / 2 +
-                 (2 * wfc[si] - wfp[si]) -
-                 dt * dt * wfc[si] *
-                 (sigmax[x] * sigmay[y] +
-                  sigmay[y] * sigmaz[z] +
-                  sigmax[x] * sigmaz[z]));
+        if (
+                        (z >= pmlz0 + 2 * ZPAD) &&
+                        (z < shape_z - pmlz1 - 2 * ZPAD) &&
+                        (y >= pmly0 + 2 * YPAD) &&
+                        (y < shape_y - pmly1 - 2 * YPAD) &&
+                        (x >= pmlx0 + 2 * XPAD) &&
+                        (x < shape_x - pmlx1 - 2 * XPAD)
+           )
+        {
 
-        /* Update phi */
-        phizn[si] = phizc[si] - dt * sigmaz[z] * phizc[si] +
-                model[i] / dt * (sigmay[y] + sigmax[x]) * wfc_z +
-                dt * sigmax[x] * sigmay[y] * psic_z;
-        phiyn[si] = phiyc[si] - dt * sigmay[y] * phiyc[si] +
-                model[i] / dt * (sigmaz[z] + sigmax[x]) * wfc_y +
-                dt * sigmax[x] * sigmaz[z] * psic_y;
-        phixn[si] = phixc[si] - dt * sigmax[x] * phixc[si] +
-                model[i] / dt * (sigmaz[z] + sigmay[y]) * wfc_x +
-                dt * sigmaz[z] * sigmay[y] * psic_x;
+                /* Update wavefield */
+                wfn[si] = model[i] * lap + 2 * wfc[si] - wfp[si];
+        }
+        else
+        {
+                /* Inside PML region */
 
-        /* Update psi */
-        psin[si] = psic[si] + dt * wfc[si];
+                float wfc_z = z_deriv(wfc);
+                float phizc_z = z_deriv(phizc);
+                float wfc_y = y_deriv(wfc);
+                float wfc_x = x_deriv(wfc);
+                float phiyc_y = y_deriv(phiyc);
+                float phixc_x = x_deriv(phixc);
+                float psic_z = z_deriv(psic);
+                float psic_y = y_deriv(psic);
+                float psic_x = x_deriv(psic);
 
-        ENDLOOP;
+                /* Update wavefield */
+                wfn[si] =
+                        1 / (1 + dt * (sigmaz[z] + sigmay[y] + sigmax[x]) / 2) *
+                        (model[i] * lap + dt * dt *
+                         (phizc_z + phiyc_y + phixc_x -
+                          sigmaz[z] * sigmay[y] * sigmax[x] *
+                          psic[si]) +
+                         dt * (sigmaz[z] + sigmay[y] + sigmax[x]) * wfp[si] / 2 +
+                         (2 * wfc[si] - wfp[si]) -
+                         dt * dt * wfc[si] *
+                         (sigmax[x] * sigmay[y] +
+                          sigmay[y] * sigmaz[z] +
+                          sigmax[x] * sigmaz[z]));
+
+                /* Update phi */
+                phizn[si] = phizc[si] - dt * sigmaz[z] * phizc[si] +
+                        model[i] / dt * (sigmay[y] + sigmax[x]) * wfc_z +
+                        dt * sigmax[x] * sigmay[y] * psic_z;
+                phiyn[si] = phiyc[si] - dt * sigmay[y] * phiyc[si] +
+                        model[i] / dt * (sigmaz[z] + sigmax[x]) * wfc_y +
+                        dt * sigmax[x] * sigmaz[z] * psic_y;
+                phixn[si] = phixc[si] - dt * sigmax[x] * phixc[si] +
+                        model[i] / dt * (sigmaz[z] + sigmay[y]) * wfc_x +
+                        dt * sigmaz[z] * sigmay[y] * psic_x;
+
+                /* Update psi */
+                psin[si] = psic[si] + dt * wfc[si];
+
+                ENDLOOP;
+        }
 }
 
 #endif /* DIM */
@@ -295,8 +363,8 @@ void propagate(
                 const float *__restrict__ const auxc, /* current auxiliary */
                 const float *__restrict__ const sigma,
                 const float *__restrict__ const model,
-                const float *__restrict__ const fd1, /* 1st difference coeffs */
-                const float *__restrict__ const fd2, /* 2nd difference coeffs */
+                const float *__restrict__ const fd1_d, /* 1st diff coeffs */
+                const float *__restrict__ const fd2_d, /* 2nd diff coeffs */
                 const ptrdiff_t *__restrict__ const shape,
                 const ptrdiff_t *__restrict__ const pml_width,
                 const ptrdiff_t num_shots,
@@ -344,12 +412,12 @@ void propagate(
                         phizc,
                         sigmaz,
                         model,
-                        fd1,
-                        fd2,
                         shape[0],
                         numel_shot,
                         size_xy,
                         num_shots,
+                        pml_width[0],
+                        pml_width[1],
                         dt);
 #elif DIM == 2
         int gridx = (shape[1] - (2 * YPAD) + dimBlock.x - 1) / dimBlock.x;
@@ -367,14 +435,16 @@ void propagate(
                         phiyc,
                         sigmay,
                         model,
-                        fd1,
-                        fd2,
                         shape[0],
                         shape[1],
                         numel_shot,
                         size_x,
                         size_xy,
                         num_shots,
+                        pml_width[0],
+                        pml_width[1],
+                        pml_width[2],
+                        pml_width[3],
                         dt);
 #elif DIM == 3
         int gridx = (shape[2] - (2 * XPAD) + dimBlock.x - 1) / dimBlock.x;
@@ -398,8 +468,6 @@ void propagate(
                         sigmax,
                         psic,
                         model,
-                        fd1,
-                        fd2,
                         shape[0],
                         shape[1],
                         shape[2],
@@ -407,10 +475,16 @@ void propagate(
                         size_x,
                         size_xy,
                         num_shots,
+                        pml_width[0],
+                        pml_width[1],
+                        pml_width[2],
+                        pml_width[3],
+                        pml_width[4],
+                        pml_width[5],
                         dt);
 #endif /* DIM */
 
-                        gpuErrchk( cudaPeekAtLastError() );
+        gpuErrchk( cudaPeekAtLastError() );
 
 }
 
@@ -603,7 +677,7 @@ void __global__ imaging_condition_kernel(
                         previous_adjoint_wavefield[si]) / (dt * dt);
 
         atomicAdd(model_grad + z * grad_size_xy + y * grad_size_x + x,
-                        current_wavefield[si] *	adjoint_wavefield_tt);
+                        current_wavefield[si] * adjoint_wavefield_tt);
 
         ENDLOOP;
 

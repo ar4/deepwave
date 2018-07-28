@@ -95,7 +95,11 @@ inline ptrdiff_t location_index(
 #error "Must specify the dimension, e.g. -D DIM=1"
 #endif /* DIM */
 
-
+void setup(
+		const float *__restrict__ const fd1,
+		const float *__restrict__ const fd2)
+{
+}
 
 void propagate(
                 float *__restrict__ const wfn, /* next wavefield */

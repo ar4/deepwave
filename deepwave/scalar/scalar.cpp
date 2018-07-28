@@ -74,6 +74,10 @@ void forward(
         float *next_aux_wavefield;
         float *current_aux_wavefield;
 
+	setup(
+			fd1,
+			fd2);
+
         set_pointers(
                         (const float **) &next_wavefield,
                         (const float **) &current_wavefield,
