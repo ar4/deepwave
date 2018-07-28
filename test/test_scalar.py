@@ -6,7 +6,7 @@ import scipy.special
 from scipy.ndimage.interpolation import shift
 import deepwave.scalar.scalar
 from deepwave.scalar import Propagator
-from wavelets import ricker
+from deepwave.wavelets import ricker
 
 
 def test_survey_pad1():

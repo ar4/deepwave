@@ -2,3 +2,4 @@
 
 import deepwave.scalar
 import deepwave.utils
+import deepwave.wavelets
