@@ -294,12 +294,12 @@ def grad_1d(nx, x_r, x_ss, x_p, dx, dt, c, dc, f):
     """Calculate the expected model gradient."""
     d = []
     for i, x_s in enumerate(x_ss):
-        d.append(-flip(scattered_1d(x_r, x_s, x_p, dx, dt, c, dc, f[:, i]), 0))
+        d.append(-scattered_1d(x_r, x_s, x_p, dx, dt, c, dc, f[:, i]).flip(0))
     d = sum(d)
     grad = torch.zeros(torch.split(nx, 1))
     for x_idx in range(nx[0]):
         x = x_idx * dx[0]
-        u_r = flip(direct_1d(x, x_r, dx, dt, c, d), 0)
+        u_r = direct_1d(x, x_r, dx, dt, c, d).flip(0)
         u_0 = []
         for i, x_s in enumerate(x_ss):
             u_0.append(direct_1d(x, x_s, dx, dt, c, f[:, i]))
@@ -313,13 +313,13 @@ def grad_2d(nx, x_r, x_ss, x_p, dx, dt, c, dc, f):
     """Calculate the expected model gradient."""
     d = []
     for i, x_s in enumerate(x_ss):
-        d.append(-flip(scattered_2d(x_r, x_s, x_p, dx, dt, c, dc, f[:, i]), 0))
+        d.append(-scattered_2d(x_r, x_s, x_p, dx, dt, c, dc, f[:, i]).flip(0))
     d = sum(d)
     grad = torch.zeros(torch.split(nx, 1))
     for z_idx in range(nx[0]):
         for y_idx in range(nx[1]):
             x = torch.Tensor([z_idx * dx[0], y_idx * dx[1]])
-            u_r = flip(direct_2d_approx(x, x_r, dx, dt, c, d), 0)
+            u_r = direct_2d_approx(x, x_r, dx, dt, c, d).flip(0)
             u_0 = []
             for i, x_s in enumerate(x_ss):
                 u_0.append(direct_2d_approx(x, x_s, dx, dt, c, f[:, i]))
@@ -334,14 +334,14 @@ def grad_3d(nx, x_r, x_ss, x_p, dx, dt, c, dc, f):
     """Calculate the expected model gradient."""
     d = []
     for i, x_s in enumerate(x_ss):
-        d.append(-flip(scattered_3d(x_r, x_s, x_p, dx, dt, c, dc, f[:, i]), 0))
+        d.append(-scattered_3d(x_r, x_s, x_p, dx, dt, c, dc, f[:, i]).flip(0))
     d = sum(d)
     grad = torch.zeros(torch.split(nx, 1))
     for z_idx in range(nx[0]):
         for y_idx in range(nx[1]):
             for x_idx in range(nx[2]):
                 x = torch.Tensor([z_idx * dx[0], y_idx * dx[1], x_idx * dx[2]])
-                u_r = flip(direct_3d(x, x_r, dx, dt, c, d), 0)
+                u_r = direct_3d(x, x_r, dx, dt, c, d).flip(0)
                 u_0 = []
                 for i, x_s in enumerate(x_ss):
                     u_0.append(direct_3d(x, x_s, dx, dt, c, f[:, i]))
@@ -363,8 +363,8 @@ def source_grad(x_rs, x_ss, dx, dt, c, f_true, f_init, nt, direct):
             d_init += direct(x_ss[s], x_rs[r], dx, dt, c, f_init[:, s])
         d_err = d_init - d_true
         for s in range(x_ss.shape[0]):
-            grad[:, s] += direct(x_ss[s], x_rs[r], dx, dt, c, flip(d_err, 0))
-    return flip(2 / len(f_true) * grad, 0)
+            grad[:, s] += direct(x_ss[s], x_rs[r], dx, dt, c, d_err.flip(0))
+    return (2 / len(f_true) * grad).flip(0)
 
 
 def source_grad_1d(x_rs, x_ss, dx, dt, c, f_true, f_init, nt):
@@ -383,18 +383,6 @@ def source_grad_3d(x_rs, x_ss, dx, dt, c, f_true, f_init, nt):
     """Calculate the expected source gradient."""
     return source_grad(x_rs, x_ss, dx, dt, c, f_true, f_init, nt,
                        direct_3d)
-
-
-def flip(x, dim):
-    """Reverses the order of element in one dimension.
-
-    This is necessary as PyTorch does not support negative steps, so [::-1]
-    is not allowed.
-    """
-    indices = [slice(None)] * x.dim()
-    indices[dim] = torch.arange(x.size(dim) - 1, -1, -1,
-                                dtype=torch.long, device=x.device)
-    return x[tuple(indices)]
 
 
 def _second_deriv(arr, dt):
