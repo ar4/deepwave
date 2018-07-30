@@ -55,8 +55,8 @@ setuptools.setup(
         "Operating System :: OS Independent",
     ),
     install_requires=["numpy",
-                      "torch>=0.4.0"],
-    setup_requires=["torch>=0.4.0"],
+                      "torch>=0.4.1"],
+    setup_requires=["torch>=0.4.1"],
     extras_require={"testing": ["pytest",
                                 "scipy"]},
     ext_modules=[
