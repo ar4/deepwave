@@ -21,7 +21,7 @@ def test_survey_pad1():
     # sources and receivers located in center of model
     source_locs = torch.ones(num_shots, num_sources_per_shot, 2) * 2 * 5.0
     receiver_locs = torch.ones(num_shots, num_receivers_per_shot, 2) * 2 * 5.0
-    expected_extents = [slice(None), slice(None), slice(1, 4)]
+    expected_extents = [slice(None), slice(1, 4), slice(1, 4)]
     survey_extents = \
         deepwave.scalar.scalar._get_survey_extents(model.shape, dx, pad,
                                                    source_locs,
@@ -45,6 +45,7 @@ def test_survey_pad2():
     source_locs[0, 0, 1] = 1 * dx[1]
     receiver_locs[-1, -1, 2] = 4 * dx[2]
     expected_extents = [slice(None)] * 4
+    expected_extents[1] = slice(1, 4)
     survey_extents = \
         deepwave.scalar.scalar._get_survey_extents(model.shape, dx, pad,
                                                    source_locs,
@@ -57,7 +58,7 @@ def test_survey_pad3():
     dx = torch.Tensor([5.0, 4.0, 3.0])
     nx = (5, 5, 5)
     model = torch.ones((1,) + nx) * 1500
-    pad = [0.0, 5.0, None, 1.0]
+    pad = [2.0, 6.0, 0.0, 5.0, None, 1.0]
     num_shots = 2
     num_sources_per_shot = 2
     num_receivers_per_shot = 2
@@ -67,7 +68,7 @@ def test_survey_pad3():
     # except for these ones that cause padding to go outside the model
     source_locs[0, 0, 1] = 1 * dx[1]
     receiver_locs[-1, -1, 2] = 4 * dx[2]
-    expected_extents = [slice(None), slice(None), slice(1, None), slice(None)]
+    expected_extents = [slice(None), slice(1, None), slice(1, None), slice(None)]
     survey_extents = \
         deepwave.scalar.scalar._get_survey_extents(model.shape, dx, pad,
                                                    source_locs,
@@ -153,7 +154,7 @@ def test_model_grad_2d():
 def test_model_grad_2d_pad1():
     """Similar to test_model_grad_2d, but with a single float survey_pad."""
     dx = (5, 6)
-    pad = 5.0
+    pad = [None, None, 5.0, 5.0]
     expected, actual = run_model_grad_2d(propagator=scalarprop,
                                          dt=0.001, dx=dx,
                                          prop_kwargs={'pml_width': 30,

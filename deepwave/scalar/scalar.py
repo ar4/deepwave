@@ -22,16 +22,17 @@ class Propagator(torch.nn.Module):
             referring to the beginning and end PML width for a dimension.
             For dimensions less than 3, the elements for the remaining
             dimensions should be 0. Default 10.
-        survey_pad: A float, or list with 2 (2D) or 4 (3D) elements,
-            specifying the horizontal padding (in units of dx) to add.
-            The survey (wave propagation) area for each batch of shots
-            will be from the left-most source/receiver minus the left
-            survey_pad, to the right-most source/receiver plus the right
-            survey pad, over all shots in the batch, or to the edges of the
-            model, whichever comes first. If a Tensor, it specifies the
+        survey_pad: A float, or list with 2 elements for each dimension,
+            specifying the padding (in units of dx) to add.
+            In each dimension, the survey (wave propagation) area for each
+            batch of shots will be from the left-most source/receiver minus
+            the left survey_pad, to the right-most source/receiver plus the
+            right survey pad, over all shots in the batch, or to the edges of
+            the model, whichever comes first. If a Tensor, it specifies the
             left and right survey_pad in each dimension. If None, the survey
-            area will continue to the edges of the model. Optional, default
-            None.
+            area will continue to the edges of the model. If a float, that
+            value will be used on the left and right of each dimension.
+            Optional, default None.
     """
 
     def __init__(self, model, dx, pml_width=None, survey_pad=None):
@@ -418,15 +419,15 @@ def _get_survey_extents(model_shape, dx, survey_pad, source_locations,
 
     ndims = len(model_shape)
     if survey_pad is None:
-        survey_pad = [None] * 2 * (ndims - 2)
+        survey_pad = [None] * 2 * (ndims - 1)
     if isinstance(survey_pad, (int, float)):
-        survey_pad = [survey_pad] * 2 * (ndims - 2)
-    if len(survey_pad) != 2 * (ndims - 2):
+        survey_pad = [survey_pad] * 2 * (ndims - 1)
+    if len(survey_pad) != 2 * (ndims - 1):
         raise ValueError('survey_pad has incorrect length: {} != {}'
-                         .format(len(survey_pad), 2 * (ndims - 2)))
-    extents = [slice(None), slice(None)]  # property and z dims
-    for dim in range(1, ndims - 1):  # ndims-1 as no property dim
-        left_pad = survey_pad[(dim - 1) * 2]  # dim-1 as no z dim
+                         .format(len(survey_pad), 2 * (ndims - 1)))
+    extents = [slice(None)]  # property dim
+    for dim in range(ndims - 1):  # ndims - 1 as no property dim
+        left_pad = survey_pad[dim * 2]
         if left_pad is None:
             left_extent = None
         else:
@@ -439,7 +440,7 @@ def _get_survey_extents(model_shape, dx, survey_pad, source_locations,
             if left_extent == 0:
                 left_extent = None
 
-        right_pad = survey_pad[(dim - 1) * 2 + 1]
+        right_pad = survey_pad[dim * 2 + 1]
         if right_pad is None:
             right_extent = None
         else:
