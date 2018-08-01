@@ -660,16 +660,16 @@ def run_model_grad(c, dc, freq, dx, dt, nx,
         true_grad = torch.zeros_like(model_true)
         for idx, _ in np.ndenumerate(model_init.detach()):
             tmp_model = model_init.clone()
-            tmp_model[(0, ) + idx] += dc
+            tmp_model[idx] += dc
             lossp = propagator(tmp_model, dx, dt, sources, x_r,
                                loss=True, forward_true=forward_true,
                                prop_kwargs=prop_kwargs)
             tmp_model = model_init.clone()
-            tmp_model[(0, ) + idx] -= dc
+            tmp_model[idx] -= dc
             lossm = propagator(tmp_model, dx, dt, sources, x_r,
                                loss=True, forward_true=forward_true,
                                prop_kwargs=prop_kwargs)
-            true_grad[(0, ) + idx] = (lossp - lossm) / (2 * dc)
+            true_grad[idx] = (lossp - lossm) / (2 * dc)
 
         return expected, actual, true_grad
 

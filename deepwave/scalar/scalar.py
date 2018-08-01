@@ -214,6 +214,8 @@ class PropagatorFunction(torch.autograd.Function):
         shape = torch.tensor(vp2dt2.shape)
 
         aux.fill_(0)
+        extracted_model_gradient.fill_(0)
+        source_gradient.fill_(0)
         wavefield = torch.zeros_like(aux[:2])
 
         # Call compiled C code to do backpropagation
