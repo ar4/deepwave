@@ -67,15 +67,15 @@ enum wavefield_save_strategy
  * save_strategy: Enum specifying how to store wavefield for backpropagation.
  */
 void forward(
-		float *__restrict__ const wavefield,
-		float *__restrict__ const aux_wavefield,
-		float *__restrict__ const receiver_amplitudes,
-		float *__restrict__ const saved_wavefields,
-		const float *__restrict__ const sigma,
-		const float *__restrict__ const model, 
-		const float *__restrict__ const fd1,
-		const float *__restrict__ const fd2,
-		const float *__restrict__ const source_amplitudes,
+		TYPE *__restrict__ const wavefield,
+		TYPE *__restrict__ const aux_wavefield,
+		TYPE *__restrict__ const receiver_amplitudes,
+		TYPE *__restrict__ const saved_wavefields,
+		const TYPE *__restrict__ const sigma,
+		const TYPE *__restrict__ const model, 
+		const TYPE *__restrict__ const fd1,
+		const TYPE *__restrict__ const fd2,
+		const TYPE *__restrict__ const source_amplitudes,
 		const ptrdiff_t *__restrict__ const source_locations,
 		const ptrdiff_t *__restrict__ const receiver_locations,
 		const ptrdiff_t *__restrict__ const shape,
@@ -85,7 +85,7 @@ void forward(
 		const ptrdiff_t num_shots,
 		const ptrdiff_t num_sources_per_shot,
 		const ptrdiff_t num_receivers_per_shot,
-		const float dt,
+		const TYPE dt,
 		const enum wavefield_save_strategy save_strategy);
 
 /* Backpropagation
@@ -137,17 +137,17 @@ void forward(
  *      between source amplitude samples - that would be dt * step_ratio).
  */
 void backward(
-                float *__restrict__ const wavefield,
-                float *__restrict__ const aux_wavefield,
-                float *__restrict__ const model_grad,
-                float *__restrict__ const source_grad_amplitudes,
-                const float *__restrict__ const adjoint_wavefield,
-                const float *__restrict__ const scaling,
-                const float *__restrict__ const sigma,
-                const float *__restrict__ const model, 
-                const float *__restrict__ const fd1,
-                const float *__restrict__ const fd2,
-                const float *__restrict__ const receiver_grad_amplitudes,
+                TYPE *__restrict__ const wavefield,
+                TYPE *__restrict__ const aux_wavefield,
+                TYPE *__restrict__ const model_grad,
+                TYPE *__restrict__ const source_grad_amplitudes,
+                const TYPE *__restrict__ const adjoint_wavefield,
+                const TYPE *__restrict__ const scaling,
+                const TYPE *__restrict__ const sigma,
+                const TYPE *__restrict__ const model, 
+                const TYPE *__restrict__ const fd1,
+                const TYPE *__restrict__ const fd2,
+                const TYPE *__restrict__ const receiver_grad_amplitudes,
                 const ptrdiff_t *__restrict__ const source_locations,
                 const ptrdiff_t *__restrict__ const receiver_locations,
                 const ptrdiff_t *__restrict__ const shape,
@@ -157,10 +157,10 @@ void backward(
                 const ptrdiff_t num_shots,
                 const ptrdiff_t num_sources_per_shot,
                 const ptrdiff_t num_receivers_per_shot,
-                const float dt);
+                const TYPE dt);
 
-float * set_step_pointer(
-                const float *__restrict__ const origin,
+TYPE * set_step_pointer(
+                const TYPE *__restrict__ const origin,
                 const ptrdiff_t step,
                 const ptrdiff_t num_shots,
                 const ptrdiff_t numel_per_shot);

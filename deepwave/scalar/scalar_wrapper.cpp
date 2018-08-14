@@ -15,24 +15,24 @@ void forward_wrapper(
 		at::Tensor receiver_locations,
 		at::Tensor shape,
 		at::Tensor pml_width,
+		at::Tensor dt,
 		const ptrdiff_t num_steps,
 		const ptrdiff_t step_ratio,
 		const ptrdiff_t num_shots,
 		const ptrdiff_t num_sources_per_shot,
 		const ptrdiff_t num_receivers_per_shot,
-		const float dt,
 		const enum wavefield_save_strategy save_strategy)
 {
         forward(
-                        wavefield.data<float>(),
-                        aux_wavefield.data<float>(),
-                        receiver_amplitudes.data<float>(),
-                        saved_wavefields.data<float>(),
-                        sigma.data<float>(),
-                        model.data<float>(), 
-                        fd1.data<float>(),
-                        fd2.data<float>(),
-                        source_amplitudes.data<float>(),
+                        wavefield.data<TYPE>(),
+                        aux_wavefield.data<TYPE>(),
+                        receiver_amplitudes.data<TYPE>(),
+                        saved_wavefields.data<TYPE>(),
+                        sigma.data<TYPE>(),
+                        model.data<TYPE>(), 
+                        fd1.data<TYPE>(),
+                        fd2.data<TYPE>(),
+                        source_amplitudes.data<TYPE>(),
                         source_locations.data<ptrdiff_t>(),
                         receiver_locations.data<ptrdiff_t>(),
                         shape.data<ptrdiff_t>(),
@@ -42,7 +42,7 @@ void forward_wrapper(
                         num_shots,
                         num_sources_per_shot,
                         num_receivers_per_shot,
-                        dt,
+                        dt.data<TYPE>()[0],
                         save_strategy);
 }
 
@@ -63,25 +63,26 @@ void backward_wrapper(
                 at::Tensor receiver_locations,
                 at::Tensor shape,
                 at::Tensor pml_width,
+		at::Tensor dt,
                 const ptrdiff_t num_steps,
                 const ptrdiff_t step_ratio,
                 const ptrdiff_t num_shots,
                 const ptrdiff_t num_sources_per_shot,
-                const ptrdiff_t num_receivers_per_shot,
-                const float dt)
+                const ptrdiff_t num_receivers_per_shot)
 {
+
         backward(
-                        wavefield.data<float>(),
-                        aux_wavefield.data<float>(),
-                        model_grad.data<float>(),
-                        source_grad_amplitudes.data<float>(),
-                        adjoint_wavefield.data<float>(),
-                        scaling.data<float>(),
-                        sigma.data<float>(),
-                        model.data<float>(), 
-                        fd1.data<float>(),
-                        fd2.data<float>(),
-                        receiver_grad_amplitudes.data<float>(),
+                        wavefield.data<TYPE>(),
+                        aux_wavefield.data<TYPE>(),
+                        model_grad.data<TYPE>(),
+                        source_grad_amplitudes.data<TYPE>(),
+                        adjoint_wavefield.data<TYPE>(),
+                        scaling.data<TYPE>(),
+                        sigma.data<TYPE>(),
+                        model.data<TYPE>(), 
+                        fd1.data<TYPE>(),
+                        fd2.data<TYPE>(),
+                        receiver_grad_amplitudes.data<TYPE>(),
                         source_locations.data<ptrdiff_t>(),
                         receiver_locations.data<ptrdiff_t>(),
                         shape.data<ptrdiff_t>(),
@@ -91,7 +92,7 @@ void backward_wrapper(
                         num_shots,
                         num_sources_per_shot,
                         num_receivers_per_shot,
-                        dt);
+                        dt.data<TYPE>()[0]);
 }
 
 

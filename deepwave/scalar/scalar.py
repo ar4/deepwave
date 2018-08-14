@@ -1,155 +1,94 @@
 """PyTorch Module and Function for scalar wave propagator."""
-import math
 import torch
 import numpy as np
+import deepwave.base.propagator
 
-
-class Propagator(torch.nn.Module):
+class Propagator(deepwave.base.propagator.Propagator):
     """PyTorch Module for scalar wave propagator.
 
-    Args:
-        model: A [1, nz, (ny, (nx))] shape Float Tensor containing wave speed,
-            where nz, ny, and nz are the numbers of cells in the z, y, and x
-            directions, respectively. For 1D propagation, it will therefore
-            have shape [1, nz], while for 2D it will be [1, nz, ny], and
-            [1, nz, ny, nx] in 3D.
-        dx: A Float Tensor containing cell spacing in each dimension. In 3D, it
-            contains [dz, dy, dx], while in 1D it is [dz].
-        pml_width: Optional int or Tensor specifying number of cells to use
-            for the PML. This will be added to the beginning and end of each
-            propagating dimension. If provided as a Tensor, it should be of
-            length 6, with each sequential group of two integer elements
-            referring to the beginning and end PML width for a dimension.
-            For dimensions less than 3, the elements for the remaining
-            dimensions should be 0. Default 10.
-        survey_pad: A float, or list with 2 elements for each dimension,
-            specifying the padding (in units of dx) to add.
-            In each dimension, the survey (wave propagation) area for each
-            batch of shots will be from the left-most source/receiver minus
-            the left survey_pad, to the right-most source/receiver plus the
-            right survey pad, over all shots in the batch, or to the edges of
-            the model, whichever comes first. If a Tensor, it specifies the
-            left and right survey_pad in each dimension. If None, the survey
-            area will continue to the edges of the model. If a float, that
-            value will be used on the left and right of each dimension.
-            Optional, default None.
+    See deepwave.base.propagator.Propagator for description.
     """
 
-    def __init__(self, model, dx, pml_width=None, survey_pad=None):
-        super(Propagator, self).__init__()
-        self.model = model
-        self.dx = dx.cpu()
-        self.pml_width = pml_width
-        self.survey_pad = survey_pad
-
-    def forward(self, source_amplitudes, source_locations, receiver_locations,
-                dt):
-        """Forward modeling of sources to create synthetic data.
-
-        Args:
-            source_amplitudes: A [nt, num_shots, num_sources_per_shot] Float
-                Tensor containing source amplitudes.
-            source_locations: A [num_shots, num_sources_per_shot, num_dim]
-                Float Tensor containing coordinates of the sources relative
-                to the origin of the model.
-            receiver_locations: A [num_shots, num_receivers_per_shot, num_dim]
-                Float Tensor containing coordinates of the receivers relative
-                to the origin of the model.
-            dt: A float specifying the time interval between source samples.
-
-        Returns:
-            receiver_amplitudes: A [nt, num_shots, num_receivers_per_shot]
-                Float Tensor containing synthetic receiver data.
-        """
-        return PropagatorFunction.apply(self.model,
-                                        source_amplitudes,
-                                        source_locations,
-                                        receiver_locations,
-                                        self.dx,
-                                        dt,
-                                        self.pml_width,
-                                        self.survey_pad)
+    def __init__(self, model, dx, pml_width=None, survey_pad=None, vpmax=None):
+        super(Propagator, self).__init__(PropagatorFunction, model, dx,
+                                         fd_width=2,  # also in Pml
+                                         pml_width=pml_width,
+                                         survey_pad=survey_pad)
+        self.model.extra_info['vpmax'] = vpmax
 
 
 class PropagatorFunction(torch.autograd.Function):
     """Forward modeling and backpropagation functions. Not called by users."""
     @staticmethod
     def forward(ctx,
-                model_tensor,
                 source_amplitudes,
                 source_locations,
                 receiver_locations,
-                dx,
-                dt,
-                pml_width,
-                survey_pad):
+                dt, model, property_names, vp):
         """Forward modeling. Not called by users - see Propagator instead.
 
         Args:
             ctx: Context provided by PyTorch and used to store Tensors for
                 backpropagation.
+            property_names: The list ['vp']
+            vp: P wave speed
             See Propagator for descriptions of the other arguments.
 
         Returns:
             receiver amplitudes
         """
-
-        pad_width = 2
-        if pml_width is None:
-            pml_width = 10
-        device = model_tensor.device
+        if property_names != ['vp']:
+            raise RuntimeError('Model must only contain vp, but contains {}'
+                               .format(property_names))
+        device = model.device
+        dtype = model.dtype
         num_steps, num_shots, num_sources_per_shot = source_amplitudes.shape
         num_receivers_per_shot = receiver_locations.shape[1]
-        survey_extents = _get_survey_extents(
-            model_tensor.shape,
-            dx,
-            survey_pad,
-            source_locations,
-            receiver_locations)
-        extracted_model_tensor = _extract_model(model_tensor, survey_extents)
-        survey_extents_tensor = _slice_to_tensor(
-            survey_extents, model_tensor.shape)
-        model = Model(extracted_model_tensor, dx, pad_width, pml_width,
-                      survey_extents_tensor)
-        pml = Pml(model, num_shots)
-        timestep = Timestep(model, dt)
-        model.add_padded_properties({'vp2dt2': model.vp**2 *
-                                     timestep.inner_dt**2})
+
+        if model.extra_info['vpmax'] is None:
+            max_vel = vp.max().item()
+        else:
+            max_vel = model.extra_info['vpmax']
+        timestep = Timestep(dt, model.dx, max_vel)
+        model.add_properties({'vp2dt2': vp**2 * timestep.inner_dt**2,
+                              'scaling': 2 / vp**3})
         source_model_locations = model.get_locations(source_locations)
         receiver_model_locations = model.get_locations(receiver_locations)
-        shape = torch.tensor(model.padded_shape)
-        scalar_wrapper = _select_propagator(model.ndim, model_tensor.is_cuda)
+        scalar_wrapper = _select_propagator(model.ndim, vp.dtype, vp.is_cuda)
         wavefield_save_strategy = \
-            _set_wavefield_save_strategy(model_tensor.requires_grad, dt,
+            _set_wavefield_save_strategy(ctx.needs_input_grad[6], dt,
                                          timestep.inner_dt, scalar_wrapper)
-        fd1, fd2 = _set_finite_diff_coeffs(model.ndim, dx, device)
+        fd1, fd2 = _set_finite_diff_coeffs(model.ndim, model.dx, device, dtype)
         wavefield, saved_wavefields = \
             _allocate_wavefields(wavefield_save_strategy, scalar_wrapper,
                                  model, num_steps, num_shots)
         receiver_amplitudes = torch.zeros(
-            num_steps, num_shots, num_receivers_per_shot, device=device)
+            num_steps, num_shots, num_receivers_per_shot, device=device,
+            dtype=dtype)
+        inner_dt = torch.tensor([timestep.inner_dt]).to(dtype)
+        pml = Pml(model, num_shots, max_vel)
 
         # Call compiled C code to do forward modeling
         scalar_wrapper.forward(
-            wavefield.float().contiguous(),
-            pml.aux.float().contiguous(),
-            receiver_amplitudes.float().contiguous(),
-            saved_wavefields.float().contiguous(),
-            pml.sigma.float().contiguous(),
-            model.padded_properties['vp2dt2'].float().contiguous(),
-            fd1.float().contiguous(),
-            fd2.float().contiguous(),
-            source_amplitudes.float().contiguous(),
+            wavefield.to(dtype).contiguous(),
+            pml.aux.to(dtype).contiguous(),
+            receiver_amplitudes.to(dtype).contiguous(),
+            saved_wavefields.to(dtype).contiguous(),
+            pml.sigma.to(dtype).contiguous(),
+            model.properties['vp2dt2'].to(dtype).contiguous(),
+            fd1.to(dtype).contiguous(),
+            fd2.to(dtype).contiguous(),
+            source_amplitudes.to(dtype).contiguous(),
             source_model_locations.long().contiguous(),
             receiver_model_locations.long().contiguous(),
-            shape.long().contiguous(),
-            model.pml_width.long().contiguous(),
+            model.shape.contiguous(),
+            pml.pml_width.long().contiguous(),
+            inner_dt,
             num_steps,
             timestep.step_ratio,
             num_shots,
             num_sources_per_shot,
             num_receivers_per_shot,
-            timestep.inner_dt,
             wavefield_save_strategy)
 
         if wavefield_save_strategy == scalar_wrapper.STRATEGY_INPLACE:
@@ -157,23 +96,19 @@ class PropagatorFunction(torch.autograd.Function):
             saved_wavefields = saved_wavefields[2:]
 
         # Allocate gradients that will be calculated during backpropagation
-        model_gradient = _allocate_grad(model_tensor)
-        if model_tensor.shape != extracted_model_tensor.shape:
-            extracted_model_gradient = _allocate_grad(extracted_model_tensor)
-        else:
-            extracted_model_gradient = model_gradient
-        source_gradient = _allocate_grad(source_amplitudes)
+        model_gradient = _allocate_grad(vp, ctx.needs_input_grad[6])
+        source_gradient = _allocate_grad(source_amplitudes,
+                                         ctx.needs_input_grad[0])
 
         ctx.save_for_backward(saved_wavefields, pml.aux, pml.sigma,
-                              model.padded_properties['vp2dt2'],
+                              model.properties['vp2dt2'],
                               model.properties['scaling'],
-                              model.pml_width,
+                              pml.pml_width,
                               source_model_locations,
                               receiver_model_locations,
                               torch.tensor(timestep.step_ratio),
-                              torch.tensor(timestep.inner_dt), fd1, fd2,
-                              model_gradient, extracted_model_gradient,
-                              survey_extents_tensor, source_gradient)
+                              inner_dt, fd1, fd2,
+                              model_gradient, source_gradient)
 
         return receiver_amplitudes
 
@@ -199,84 +134,111 @@ class PropagatorFunction(torch.autograd.Function):
         (adjoint_wavefield, aux, sigma, vp2dt2, scaling,
          pml_width, source_model_locations, receiver_model_locations,
          step_ratio, inner_dt, fd1, fd2,
-         model_gradient, extracted_model_gradient, survey_extents_tensor,
-         source_gradient) = ctx.saved_variables
+         model_gradient, source_gradient) = ctx.saved_variables
         step_ratio = step_ratio.item()
-        inner_dt = inner_dt.item()
-        survey_extents = _tensor_to_slice(survey_extents_tensor)
 
+        dtype = vp2dt2.dtype
         ndim = receiver_model_locations.shape[-1]
-        scalar_wrapper = _select_propagator(ndim, vp2dt2.is_cuda)
+        scalar_wrapper = _select_propagator(ndim, vp2dt2.dtype, vp2dt2.is_cuda)
 
         num_steps, num_shots, num_receivers_per_shot = \
             grad_receiver_amplitudes.shape
         num_sources_per_shot = source_model_locations.shape[1]
-        shape = torch.tensor(vp2dt2.shape)
+        shape = torch.ones(3).long()
+        shape[:ndim] = torch.tensor(vp2dt2.shape)
 
         aux.fill_(0)
-        extracted_model_gradient.fill_(0)
+        model_gradient.fill_(0)
         source_gradient.fill_(0)
         wavefield = torch.zeros_like(aux[:2])
 
+        # Ensure that gradient Tensors are of the right type and contiguous
+        model_gradient = model_gradient.to(dtype).contiguous()
+        source_gradient = source_gradient.to(dtype).contiguous()
+
         # Call compiled C code to do backpropagation
         scalar_wrapper.backward(
-            wavefield.float().contiguous(),
-            aux.float().contiguous(),
-            extracted_model_gradient.float().contiguous(),
-            source_gradient.float().contiguous(),
-            adjoint_wavefield.float().contiguous(),
-            scaling.float().contiguous(),
-            sigma.float().contiguous(),
-            vp2dt2.float().contiguous(),
-            fd1.float().contiguous(),
-            fd2.float().contiguous(),
-            grad_receiver_amplitudes.float().contiguous(),
+            wavefield.to(dtype).contiguous(),
+            aux.to(dtype).contiguous(),
+            model_gradient,
+            source_gradient,
+            adjoint_wavefield.to(dtype).contiguous(),
+            scaling.to(dtype).contiguous(),
+            sigma.to(dtype).contiguous(),
+            vp2dt2.to(dtype).contiguous(),
+            fd1.to(dtype).contiguous(),
+            fd2.to(dtype).contiguous(),
+            grad_receiver_amplitudes.to(dtype).contiguous(),
             source_model_locations.long().contiguous(),
             receiver_model_locations.long().contiguous(),
             shape.long().contiguous(),
             pml_width.long().contiguous(),
+            inner_dt,
             num_steps,
             step_ratio,
             num_shots,
             num_sources_per_shot,
-            num_receivers_per_shot,
-            inner_dt)
+            num_receivers_per_shot)
 
-        _insert_model_gradient(extracted_model_gradient, survey_extents,
-                               model_gradient)
+        if not ctx.needs_input_grad[0]:
+            source_gradient = None
 
-        return (model_gradient, source_gradient, None, None, None, None, None,
-                None)
+        if not ctx.needs_input_grad[6]:
+            model_gradient = None
+
+        return (source_gradient, None, None, None, None, None, model_gradient)
 
 
-def _select_propagator(ndim, cuda):
+def _select_propagator(ndim, dtype, cuda):
     """Returns the appropriate propagator based on the number of dimensions.
 
     Args:
         ndim: Int specifying number of dimensions
+        dtype: Datatype, either torch.float or torch.double
         cuda: Bool specifying whether will be running on GPU
 
     Returns:
         scalar_wrapper: module wrapping the compiled propagators
     """
+    if ndim not in [1, 2, 3]:
+        raise RuntimeError('unsupported number of dimensions: {}'.format(ndim))
+    if dtype not in [torch.float, torch.double]:
+        raise RuntimeError('unsupported datatype: {}'.format(dtype))
+
     if cuda:
-        if ndim == 1:
-            import scalar1d_gpu_iso_4 as scalar_wrapper
-        elif ndim == 2:
-            import scalar2d_gpu_iso_4 as scalar_wrapper
-        elif ndim == 3:
-            import scalar3d_gpu_iso_4 as scalar_wrapper
-        else:
-            raise ValueError('unsupported number of dimensions')
+        if dtype == torch.float:
+            if ndim == 1:
+                import scalar1d_gpu_iso_4_float as scalar_wrapper
+            elif ndim == 2:
+                import scalar2d_gpu_iso_4_float as scalar_wrapper
+            elif ndim == 3:
+                import scalar3d_gpu_iso_4_float as scalar_wrapper
+        elif dtype == torch.double:
+            raise NotImplementedError('To enable double-precision GPU '
+                                      'propagators (on supported hardware) '
+                                      'add "double" to the list of dtypes in '
+                                      'the CUDA portion of setup.py')
+            #if ndim == 1:
+            #    import scalar1d_gpu_iso_4_double as scalar_wrapper
+            #elif ndim == 2:
+            #    import scalar2d_gpu_iso_4_double as scalar_wrapper
+            #elif ndim == 3:
+            #    import scalar3d_gpu_iso_4_double as scalar_wrapper
     else:
-        if ndim == 1:
-            import scalar1d_cpu_iso_4 as scalar_wrapper
-        elif ndim == 2:
-            import scalar2d_cpu_iso_4 as scalar_wrapper
-        elif ndim == 3:
-            import scalar3d_cpu_iso_4 as scalar_wrapper
-        else:
-            raise ValueError('unsupported number of dimensions')
+        if dtype == torch.float:
+            if ndim == 1:
+                import scalar1d_cpu_iso_4_float as scalar_wrapper
+            elif ndim == 2:
+                import scalar2d_cpu_iso_4_float as scalar_wrapper
+            elif ndim == 3:
+                import scalar3d_cpu_iso_4_float as scalar_wrapper
+        elif dtype == torch.double:
+            if ndim == 1:
+                import scalar1d_cpu_iso_4_double as scalar_wrapper
+            elif ndim == 2:
+                import scalar2d_cpu_iso_4_double as scalar_wrapper
+            elif ndim == 3:
+                import scalar3d_cpu_iso_4_double as scalar_wrapper
 
     return scalar_wrapper
 
@@ -308,7 +270,7 @@ def _set_wavefield_save_strategy(requires_grad, dt, inner_dt, scalar_wrapper):
     return wavefield_save_strategy
 
 
-def _set_finite_diff_coeffs(ndim, dx, device):
+def _set_finite_diff_coeffs(ndim, dx, device, dtype):
     """Calculates coefficients for finite difference derivatives.
 
     Currently only supports 4th order accurate derivatives.
@@ -317,6 +279,7 @@ def _set_finite_diff_coeffs(ndim, dx, device):
         ndim: Int specifying number of dimensions (1, 2, or 3)
         dx: Float Tensor containing cell spacing in each dimension
         device: PyTorch device to create coefficient Tensors on
+        dtype: PyTorch datatype to use
 
     Returns:
         Float Tensors containing the coefficients for 1st and 2nd
@@ -326,14 +289,16 @@ def _set_finite_diff_coeffs(ndim, dx, device):
             2 coefficients for each dimension
     """
 
-    fd1 = torch.zeros(ndim, 2, device=device)
-    fd2 = torch.zeros(ndim * 2 + 1, device=device)
-    dx = dx.to(device)
+    fd1 = torch.zeros(ndim, 2, device=device, dtype=dtype)
+    fd2 = torch.zeros(ndim * 2 + 1, device=device, dtype=dtype)
+    dx = dx.to(device).to(dtype)
     for dim in range(ndim):
-        fd1[dim] = torch.tensor([8 / 12, -1 / 12], device=device) / dx[dim]
+        fd1[dim] = (torch.tensor([8 / 12, -1 / 12], device=device, dtype=dtype)
+                    / dx[dim])
         fd2[0] += -5 / 2 / dx[dim]**2
         fd2[1 + dim * 2: 1 + (dim + 1) * 2] = \
-            torch.tensor([4 / 3, -1 / 12], device=device) / dx[dim]**2
+            (torch.tensor([4 / 3, -1 / 12], device=device, dtype=dtype)
+             / dx[dim]**2)
 
     return fd1, fd2
 
@@ -375,7 +340,7 @@ def _allocate_wavefields(wavefield_save_strategy, scalar_wrapper, model,
     return wavefield, saved_wavefields
 
 
-def _allocate_grad(tensor):
+def _allocate_grad(tensor, requires_grad):
     """Allocate a Tensor to store a gradient.
 
     If the provided Tensor requires a gradient, then a Tensor of the
@@ -385,255 +350,18 @@ def _allocate_grad(tensor):
 
     Args:
         tensor: A Tensor that may or may not require a gradient
+        requires_grad: Bool specifying whether tensor requires gradient
 
     Returns:
         Either a Tensor to store the gradient, or an empty Tensor.
     """
 
-    if tensor.requires_grad:
+    if requires_grad:
         grad = torch.zeros_like(tensor)
     else:
         grad = torch.empty(0)
 
     return grad
-
-
-def _get_survey_extents(model_shape, dx, survey_pad, source_locations,
-                        receiver_locations):
-    """Calculate the extents of the model to use for the survey.
-
-    Args:
-        model_shape: A tuple containing the shape of the full model
-        dx: A Tensor containing the cell spacing in each dimension
-        survey_pad: Either a float or a Tensor with two entries for
-            each dimension, specifying the padding to add
-            around the sources and receivers included in all of the
-            shots being propagated. If None, the padding continues
-            to the edge of the model
-        source_locations: A Tensor containing source locations
-        receiver_locations: A Tensor containing receiver locations
-
-    Returns:
-        A list of slices of the same length as the model shape,
-            specifying the extents of the model that will be
-            used for wave propagation
-    """
-
-    ndims = len(model_shape)
-    if survey_pad is None:
-        survey_pad = [None] * 2 * (ndims - 1)
-    if isinstance(survey_pad, (int, float)):
-        survey_pad = [survey_pad] * 2 * (ndims - 1)
-    if len(survey_pad) != 2 * (ndims - 1):
-        raise ValueError('survey_pad has incorrect length: {} != {}'
-                         .format(len(survey_pad), 2 * (ndims - 1)))
-    extents = [slice(None)]  # property dim
-    for dim in range(ndims - 1):  # ndims - 1 as no property dim
-        left_pad = survey_pad[dim * 2]
-        if left_pad is None:
-            left_extent = None
-        else:
-            left_source = (source_locations[..., dim] - left_pad).min()
-            left_receiver = (receiver_locations[..., dim] - left_pad).min()
-            left_sourec_cell = \
-                    math.floor((min(left_source, left_receiver).cpu() /
-                                dx[dim]).item())
-            left_extent = max(0, left_sourec_cell)
-            if left_extent == 0:
-                left_extent = None
-
-        right_pad = survey_pad[dim * 2 + 1]
-        if right_pad is None:
-            right_extent = None
-        else:
-            right_source = (source_locations[..., dim] + right_pad).max()
-            right_receiver = (receiver_locations[..., dim] + right_pad).max()
-            right_sourec_cell = \
-                    math.ceil((max(right_source, right_receiver).cpu() /
-                               dx[dim]).item())
-            right_extent = min(model_shape[dim + 1], right_sourec_cell) + 1
-            if right_extent >= model_shape[dim + 1]:
-                right_extent = None
-
-        extents.append(slice(left_extent, right_extent))
-
-    return extents
-
-
-def _extract_model(model_tensor, extents):
-    """Extract the specified portion of the model.
-
-    Args:
-        model_tensor: A Tensor containing the model
-        extents: A list of slices specifying the portion of the model to
-            extract
-
-    Returns:
-        A Tensor containing the desired portion of the model
-    """
-
-    return model_tensor[extents]
-
-
-def _slice_to_tensor(extents, model_shape):
-    """Convert a list of slices to a Tensor.
-
-    This is needed to convert the list of extents into a Tensor so that it
-    can be passed to save_for_backward. It is undone by _tensor_to_slice.
-
-    Args:
-        extents: A list of slices created by _get_survey_extents
-        model_shape: The shape of the full model
-
-    Returns:
-        A Tensor containing 2 entries for each dimension of the model
-        (the beginning and end of the slice).
-    """
-    ndims = len(extents)
-    extents_tensor = torch.zeros(ndims, 2)
-    for dim in range(ndims):
-        if extents[dim].start is None:
-            extents_tensor[dim, 0] = 0
-        else:
-            extents_tensor[dim, 0] = extents[dim].start
-        if extents[dim].stop is None:
-            extents_tensor[dim, 1] = model_shape[dim]
-        else:
-            extents_tensor[dim, 1] = extents[dim].stop
-
-    return extents_tensor.long()
-
-
-def _tensor_to_slice(extents_tensor):
-    """Convert a Tensor to a list of slices.
-
-    Needed because save_for_backward requires Tensors. This undoes
-    _slice_to_tensor, and is called in backward to convert back to
-    a list of slices.
-
-    Args:
-        extents_tensor: The Tensor created by _slice_to_tensor
-
-    Returns:
-        A list of slices
-    """
-
-    ndims = extents_tensor.shape[0]
-    extents = []
-    for dim in range(ndims):
-        extents.append(slice(extents_tensor[dim, 0], extents_tensor[dim, 1]))
-
-    return extents
-
-
-def _insert_model_gradient(extracted_model_grad, extents, model_grad):
-    """Insert the calculated gradient into the full model.
-
-    The gradient might have been calculated on only a portion of the model
-    (if survey_pad was not None), but the returned gradient is expected
-    to be of the same size as the full model, so this inserts the
-    calculated gradient into the full model (the areas not calculated
-    will be zero).
-
-    Args:
-        extracted_model_grad: A Tensor containing the calculated model grad
-        extents: A list of slices specifying the extents covered by
-            the calculated model gradient
-        model_grad: A Tensor of the same size as the full model, initialized
-            to zero, which the model gradient will be inserted into.
-    """
-    if model_grad.numel() > 0:
-        model_grad[extents] = extracted_model_grad
-
-
-class Model(object):
-    """A class for models.
-
-    Args:
-        pad_width: Padding added around the edge of the model to make
-            finite difference calculation code cleaner (no edge cases)
-        See Propagator for descriptions of the other arguments.
-    """
-
-    def __init__(self, model_tensor, dx, pad_width, pml_width, survey_extents):
-        self.properties = {}
-        self.padded_properties = {}
-        self.dx = dx
-        self.device = model_tensor.device
-        self.ndim = len(model_tensor.shape[1:])
-        # Shape Tensor always contains 3 elements. When propagating in fewer
-        # than three dimensions, extra dimensions are 1.
-        self.shape = torch.ones(3, dtype=torch.long)
-        self.shape[:self.ndim] = torch.tensor(model_tensor.shape[1:])
-        # pml_width and pad_width Tensors always contain 6 elements each:
-        # padding at the beginning and end of each dimension. When propagating
-        # in fewer than three dimensions, extra dimensions are 0.
-        if isinstance(pml_width, torch.Tensor):
-            self.pml_width = pml_width.cpu().long()
-        else:
-            self.pml_width = torch.zeros(6, dtype=torch.long)
-            self.pml_width[:2 * self.ndim] = pml_width
-        self.pad_width = torch.zeros(6, dtype=torch.long)
-        self.pad_width[:2 * self.ndim] = pad_width
-        self.total_pad = self.pad_width + self.pml_width
-        self.padded_shape = [(self.shape[i] + self.total_pad[2 * i] +
-                              self.total_pad[2 * i + 1]).item()
-                             for i in range(3)]
-        self.vp = model_tensor[0]
-        self.max_vel = self.vp.max().item()
-        self.add_properties({'scaling': 2 / self.vp**3})  # for backpropagation
-        self.survey_extents = survey_extents
-
-    def add_properties(self, properties):
-        """Store an unpadded property."""
-        for key, value in properties.items():
-            self.properties[key] = value
-
-    def add_padded_properties(self, properties):
-        """Add padding to a property and store it."""
-        for key, value in properties.items():
-            padding = self.total_pad[:2 * self.ndim].tolist()[::-1]
-            self.padded_properties[key] = \
-                torch.nn.functional.pad(value.reshape(1, 1,
-                                                      *self.shape[:self.ndim]),
-                                        padding,
-                                        mode='replicate')\
-                .reshape(*self.padded_shape)
-
-    def allocate_wavefield(self, num_steps, num_shots):
-        """Allocate a multiple of the shape of the padded model.
-
-        Used for allocating wavefield Tensors.
-
-        Args:
-            num_steps: Int specifying number of time samples in source/receiver
-                (and thus number of wavefields to be stored)
-            num_shots: Int specifying number of shots to be propagated
-                simultaneously
-
-        Returns:
-            Float Tensor of shape [num_steps, num_shots, padded model shape]
-                on the PyTorch device and filled with zeros
-        """
-
-        return torch.zeros(num_steps, num_shots, *self.padded_shape,
-                           device=self.device)
-
-    def get_locations(self, real_locations):
-        """Convert spatial coordinates into model cell coordinates.
-
-        E.g. [5.0, 10.0] -> [1, 2] if [dz, dy] == [5, 5]
-
-        Args:
-            real_locations: Tensor of coordinates in units of dx
-
-        Returns:
-            Tensor of coordinates in units of cells from origin of model
-        """
-        device = real_locations.device
-        return ((real_locations / self.dx.to(device)).long() +
-                self.total_pad[:2 * self.ndim:2].to(device) -
-                self.survey_extents[1:, 0].view(-1).to(device))
 
 
 class Pml(object):
@@ -645,9 +373,9 @@ class Pml(object):
             simultaneously
     """
 
-    def __init__(self, model, num_shots):
+    def __init__(self, model, num_shots, max_vel):
 
-        def _set_sigma(model, profile, dim):
+        def _set_sigma(model, profile, dim, fd_pad):
             """Create the sigma vector needed for the PML for one dimension.
 
             Makes a vector of the appropriate length, and copies the PML
@@ -660,29 +388,31 @@ class Pml(object):
                     the beginning will be reversed (so it increases away from
                     the propagation domain)
                 dim: Int specifying the dimension to use
+                fd_pad: Int specifying spatial finite difference padding
 
             Returns:
                 A Float Tensor of the same length as the padded model in the
                     specified dimension.
             """
 
-            total_pad = model.total_pad[2 * dim:2 * dim + 2]
             pad_width = model.pad_width[2 * dim:2 * dim + 2]
-            sigma = np.zeros(model.padded_shape[dim], np.float32)
-            sigma[total_pad[0] - 1:pad_width[0] - 1:-1] = profile[0]
-            sigma[-total_pad[1]:-pad_width[1]] = profile[1]
-            sigma[:pad_width[0]] = sigma[pad_width[0]]
-            sigma[-pad_width[1]:] = sigma[-pad_width[1] - 1]
-            return torch.tensor(sigma).to(model.device)
+            sigma = np.zeros(model.shape[dim])
+            sigma[pad_width[0] - 1:fd_pad - 1:-1] = profile[0]
+            sigma[-pad_width[1]:-fd_pad] = profile[1]
+            sigma[:fd_pad] = sigma[fd_pad]
+            sigma[-fd_pad:] = sigma[-fd_pad - 1]
+            return torch.tensor(sigma).to(model.dtype).to(model.device)
 
+        fd_pad = 2
         sigma = []
+        self.pml_width = model.pad_width - fd_pad
         for dim in range(model.ndim):
-            pml_widths = model.pml_width[2 * dim:2 * dim + 2]
+            pml_widths = self.pml_width[2 * dim:2 * dim + 2]
             profile = [((np.arange(w) / w)**2 *
-                        3 * model.max_vel * np.log(1000) /
+                        3 * max_vel * np.log(1000) /
                         (2 * model.dx[dim].numpy() * w))
                        for w in pml_widths.numpy()]
-            sigma.append(_set_sigma(model, profile, dim))
+            sigma.append(_set_sigma(model, profile, dim, fd_pad))
         self.sigma = torch.cat(sigma)
 
         # The number of auxiliary wavefields needed for the PML depends on
@@ -711,7 +441,7 @@ class Timestep(object):
         dt: A float specifying the time interval between source samples
     """
 
-    def __init__(self, model, dt):
-        max_dt = 0.6 / np.linalg.norm(1 / model.dx.numpy()) / model.max_vel
+    def __init__(self, dt, dx, max_vel):
+        max_dt = 0.6 / np.linalg.norm(1 / dx.numpy()) / max_vel
         self.step_ratio = int(np.ceil(dt / max_dt))
         self.inner_dt = dt / self.step_ratio

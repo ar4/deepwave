@@ -5,56 +5,56 @@
 
 /* Static function declarations */
 static void advance_step(
-                float **__restrict__ next_wavefield,
-                float **__restrict__ next_aux_wavefield,
-                const float **__restrict__ current_wavefield,
-                const float **__restrict__ previous_wavefield,
-                const float **__restrict__ current_aux_wavefield,
-                const float *__restrict__ const sigma,
-                const float *__restrict__ const model,
-                const float *__restrict__ const fd1,
-                const float *__restrict__ const fd2,
-                const float *__restrict__ const source_amplitudes,
+                TYPE **__restrict__ next_wavefield,
+                TYPE **__restrict__ next_aux_wavefield,
+                const TYPE **__restrict__ current_wavefield,
+                const TYPE **__restrict__ previous_wavefield,
+                const TYPE **__restrict__ current_aux_wavefield,
+                const TYPE *__restrict__ const sigma,
+                const TYPE *__restrict__ const model,
+                const TYPE *__restrict__ const fd1,
+                const TYPE *__restrict__ const fd2,
+                const TYPE *__restrict__ const source_amplitudes,
                 const ptrdiff_t *__restrict__ const source_locations,
                 const ptrdiff_t *__restrict__ const shape,
                 const ptrdiff_t *__restrict__ const pml_width,
                 const ptrdiff_t step_ratio,
                 const ptrdiff_t num_shots,
                 const ptrdiff_t num_sources_per_shot,
-                const float dt,
+                const TYPE dt,
                 const enum wavefield_save_strategy save_strategy);
 static void set_pointers(
-                const float **next_wavefield,
-                const float **current_wavefield,
-                const float **previous_wavefield,
-                const float **next_aux_wavefield,
-                const float **current_aux_wavefield,
-                const float *__restrict__ const wavefield,
-                const float *__restrict__ const aux_wavefield,
+                const TYPE **next_wavefield,
+                const TYPE **current_wavefield,
+                const TYPE **previous_wavefield,
+                const TYPE **next_aux_wavefield,
+                const TYPE **current_aux_wavefield,
+                const TYPE *__restrict__ const wavefield,
+                const TYPE *__restrict__ const aux_wavefield,
                 const ptrdiff_t *__restrict__ const shape,
                 const ptrdiff_t num_shots,
                 const enum wavefield_save_strategy save_strategy);
 static void update_pointers(
-                const float **next_wavefield,
-                const float **current_wavefield,
-                const float **previous_wavefield,
-                const float **next_aux_wavefield,
-                const float **current_aux_wavefield,
+                const TYPE **next_wavefield,
+                const TYPE **current_wavefield,
+                const TYPE **previous_wavefield,
+                const TYPE **next_aux_wavefield,
+                const TYPE **current_aux_wavefield,
                 const ptrdiff_t *__restrict__ const shape,
                 const ptrdiff_t num_shots,
                 const enum wavefield_save_strategy save_strategy);
 
 
 void forward(
-                float *__restrict__ const wavefield,
-                float *__restrict__ const aux_wavefield,
-                float *__restrict__ const receiver_amplitudes,
-                float *__restrict__ const saved_wavefields,
-                const float *__restrict__ const sigma,
-                const float *__restrict__ const model, 
-                const float *__restrict__ const fd1,
-                const float *__restrict__ const fd2,
-                const float *__restrict__ const source_amplitudes,
+                TYPE *__restrict__ const wavefield,
+                TYPE *__restrict__ const aux_wavefield,
+                TYPE *__restrict__ const receiver_amplitudes,
+                TYPE *__restrict__ const saved_wavefields,
+                const TYPE *__restrict__ const sigma,
+                const TYPE *__restrict__ const model, 
+                const TYPE *__restrict__ const fd1,
+                const TYPE *__restrict__ const fd2,
+                const TYPE *__restrict__ const source_amplitudes,
                 const ptrdiff_t *__restrict__ const source_locations,
                 const ptrdiff_t *__restrict__ const receiver_locations,
                 const ptrdiff_t *__restrict__ const shape,
@@ -64,26 +64,26 @@ void forward(
                 const ptrdiff_t num_shots,
                 const ptrdiff_t num_sources_per_shot,
                 const ptrdiff_t num_receivers_per_shot,
-                const float dt,
+                const TYPE dt,
                 const enum wavefield_save_strategy save_strategy)
 {
 
-        float *next_wavefield;
-        float *current_wavefield;
-        float *previous_wavefield;
-        float *next_aux_wavefield;
-        float *current_aux_wavefield;
+        TYPE *next_wavefield;
+        TYPE *current_wavefield;
+        TYPE *previous_wavefield;
+        TYPE *next_aux_wavefield;
+        TYPE *current_aux_wavefield;
 
 	setup(
 			fd1,
 			fd2);
 
         set_pointers(
-                        (const float **) &next_wavefield,
-                        (const float **) &current_wavefield,
-                        (const float **) &previous_wavefield,
-                        (const float **) &next_aux_wavefield,
-                        (const float **) &current_aux_wavefield,
+                        (const TYPE **) &next_wavefield,
+                        (const TYPE **) &current_wavefield,
+                        (const TYPE **) &previous_wavefield,
+                        (const TYPE **) &next_aux_wavefield,
+                        (const TYPE **) &current_aux_wavefield,
                         wavefield,
                         aux_wavefield,
                         shape,
@@ -93,8 +93,8 @@ void forward(
         for (ptrdiff_t step = 0; step < num_steps; step++)
         {
 
-                float *current_source_amplitudes;
-                float *current_receiver_amplitudes;
+                TYPE *current_source_amplitudes;
+                TYPE *current_receiver_amplitudes;
 
                 current_source_amplitudes = set_step_pointer(
                                 source_amplitudes,
@@ -111,9 +111,9 @@ void forward(
                 advance_step(
                                 &next_wavefield,
                                 &next_aux_wavefield,
-                                (const float **) &current_wavefield,
-                                (const float **) &previous_wavefield,
-                                (const float **) &current_aux_wavefield,
+                                (const TYPE **) &current_wavefield,
+                                (const TYPE **) &previous_wavefield,
+                                (const TYPE **) &current_aux_wavefield,
                                 sigma,
                                 model,
                                 fd1,
@@ -150,17 +150,17 @@ void forward(
 
 
 void backward(
-                float *__restrict__ const wavefield,
-                float *__restrict__ const aux_wavefield,
-                float *__restrict__ const model_grad,
-                float *__restrict__ const source_grad_amplitudes,
-                const float *__restrict__ const adjoint_wavefield,
-                const float *__restrict__ const scaling,
-                const float *__restrict__ const sigma,
-                const float *__restrict__ const model, 
-                const float *__restrict__ const fd1,
-                const float *__restrict__ const fd2,
-                const float *__restrict__ const receiver_grad_amplitudes,
+                TYPE *__restrict__ const wavefield,
+                TYPE *__restrict__ const aux_wavefield,
+                TYPE *__restrict__ const model_grad,
+                TYPE *__restrict__ const source_grad_amplitudes,
+                const TYPE *__restrict__ const adjoint_wavefield,
+                const TYPE *__restrict__ const scaling,
+                const TYPE *__restrict__ const sigma,
+                const TYPE *__restrict__ const model, 
+                const TYPE *__restrict__ const fd1,
+                const TYPE *__restrict__ const fd2,
+                const TYPE *__restrict__ const receiver_grad_amplitudes,
                 const ptrdiff_t *__restrict__ const source_locations,
                 const ptrdiff_t *__restrict__ const receiver_locations,
                 const ptrdiff_t *__restrict__ const shape,
@@ -170,22 +170,22 @@ void backward(
                 const ptrdiff_t num_shots,
                 const ptrdiff_t num_sources_per_shot,
                 const ptrdiff_t num_receivers_per_shot,
-                const float dt)
+                const TYPE dt)
 {
 
-        float *next_wavefield;
-        float *current_wavefield;
-        float *previous_wavefield;
-        float *next_aux_wavefield;
-        float *current_aux_wavefield;
+        TYPE *next_wavefield;
+        TYPE *current_wavefield;
+        TYPE *previous_wavefield;
+        TYPE *next_aux_wavefield;
+        TYPE *current_aux_wavefield;
         const enum wavefield_save_strategy save_strategy = STRATEGY_NONE;
 
         set_pointers(
-                        (const float **) &next_wavefield,
-                        (const float **) &current_wavefield,
-                        (const float **) &previous_wavefield,
-                        (const float **) &next_aux_wavefield,
-                        (const float **) &current_aux_wavefield,
+                        (const TYPE **) &next_wavefield,
+                        (const TYPE **) &current_wavefield,
+                        (const TYPE **) &previous_wavefield,
+                        (const TYPE **) &next_aux_wavefield,
+                        (const TYPE **) &current_aux_wavefield,
                         wavefield,
                         aux_wavefield,
                         shape,
@@ -195,11 +195,11 @@ void backward(
         for (ptrdiff_t step = num_steps-1; step >= 0; step--)
         {
 
-                float *current_source_grad_amplitudes;
-                float *current_receiver_grad_amplitudes;
-                float *next_adjoint_wavefield;
-                float *current_adjoint_wavefield;
-                float *previous_adjoint_wavefield;
+                TYPE *current_source_grad_amplitudes;
+                TYPE *current_receiver_grad_amplitudes;
+                TYPE *next_adjoint_wavefield;
+                TYPE *current_adjoint_wavefield;
+                TYPE *previous_adjoint_wavefield;
 
                 current_source_grad_amplitudes = set_step_pointer(
                                 source_grad_amplitudes,
@@ -234,9 +234,9 @@ void backward(
                 advance_step(
                                 &next_wavefield,
                                 &next_aux_wavefield,
-                                (const float **) &current_wavefield,
-                                (const float **) &previous_wavefield,
-                                (const float **) &current_aux_wavefield,
+                                (const TYPE **) &current_wavefield,
+                                (const TYPE **) &previous_wavefield,
+                                (const TYPE **) &current_aux_wavefield,
                                 sigma,
                                 model,
                                 fd1,
@@ -267,6 +267,7 @@ void backward(
                                         next_adjoint_wavefield,
                                         current_adjoint_wavefield,
                                         previous_adjoint_wavefield,
+					sigma,
                                         shape,
                                         pml_width,
                                         num_shots,
@@ -285,23 +286,23 @@ void backward(
 
 
 static void advance_step(
-                float **__restrict__ next_wavefield,
-                float **__restrict__ next_aux_wavefield,
-                const float **__restrict__ current_wavefield,
-                const float **__restrict__ previous_wavefield,
-                const float **__restrict__ current_aux_wavefield,
-                const float *__restrict__ const sigma,
-                const float *__restrict__ const model,
-                const float *__restrict__ const fd1,
-                const float *__restrict__ const fd2,
-                const float *__restrict__ const source_amplitudes,
+                TYPE **__restrict__ next_wavefield,
+                TYPE **__restrict__ next_aux_wavefield,
+                const TYPE **__restrict__ current_wavefield,
+                const TYPE **__restrict__ previous_wavefield,
+                const TYPE **__restrict__ current_aux_wavefield,
+                const TYPE *__restrict__ const sigma,
+                const TYPE *__restrict__ const model,
+                const TYPE *__restrict__ const fd1,
+                const TYPE *__restrict__ const fd2,
+                const TYPE *__restrict__ const source_amplitudes,
                 const ptrdiff_t *__restrict__ const source_locations,
                 const ptrdiff_t *__restrict__ const shape,
                 const ptrdiff_t *__restrict__ const pml_width,
                 const ptrdiff_t step_ratio,
                 const ptrdiff_t num_shots,
                 const ptrdiff_t num_sources_per_shot,
-                const float dt,
+                const TYPE dt,
                 const enum wavefield_save_strategy save_strategy)
 {
 
@@ -333,10 +334,10 @@ static void advance_step(
                                 num_sources_per_shot);
 
                 update_pointers(
-                                (const float **) next_wavefield,
+                                (const TYPE **) next_wavefield,
                                 current_wavefield,
                                 previous_wavefield,
-                                (const float **) next_aux_wavefield,
+                                (const TYPE **) next_aux_wavefield,
                                 current_aux_wavefield,
                                 shape,
                                 num_shots,
@@ -348,13 +349,13 @@ static void advance_step(
 
 
 static void set_pointers(
-                const float **next_wavefield,
-                const float **current_wavefield,
-                const float **previous_wavefield,
-                const float **next_aux_wavefield,
-                const float **current_aux_wavefield,
-                const float *__restrict__ const wavefield,
-                const float *__restrict__ const aux_wavefield,
+                const TYPE **next_wavefield,
+                const TYPE **current_wavefield,
+                const TYPE **previous_wavefield,
+                const TYPE **next_aux_wavefield,
+                const TYPE **current_aux_wavefield,
+                const TYPE *__restrict__ const wavefield,
+                const TYPE *__restrict__ const aux_wavefield,
                 const ptrdiff_t *__restrict__ const shape,
                 const ptrdiff_t num_shots,
                 const enum wavefield_save_strategy save_strategy)
@@ -382,11 +383,11 @@ static void set_pointers(
 
 
 static void update_pointers(
-                const float **next_wavefield,
-                const float **current_wavefield,
-                const float **previous_wavefield,
-                const float **next_aux_wavefield,
-                const float **current_aux_wavefield,
+                const TYPE **next_wavefield,
+                const TYPE **current_wavefield,
+                const TYPE **previous_wavefield,
+                const TYPE **next_aux_wavefield,
+                const TYPE **current_aux_wavefield,
                 const ptrdiff_t *__restrict__ const shape,
                 const ptrdiff_t num_shots,
                 const enum wavefield_save_strategy save_strategy)
@@ -410,15 +411,15 @@ static void update_pointers(
                 *previous_wavefield = *next_wavefield;
         }
 
-        const float *tmp = *next_aux_wavefield;
+        const TYPE *tmp = *next_aux_wavefield;
         *next_aux_wavefield = *current_aux_wavefield;
         *current_aux_wavefield = tmp;
 
 }
 
 
-float * set_step_pointer(
-                const float *__restrict__ const origin,
+TYPE * set_step_pointer(
+                const TYPE *__restrict__ const origin,
                 const ptrdiff_t step,
                 const ptrdiff_t num_shots,
                 const ptrdiff_t numel_per_shot)
@@ -426,6 +427,6 @@ float * set_step_pointer(
 
         if (origin == NULL) return NULL;
 
-        return (float *) origin + step * num_shots * numel_per_shot;
+        return (TYPE *) origin + step * num_shots * numel_per_shot;
 
 }
