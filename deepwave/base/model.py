@@ -204,6 +204,8 @@ def _get_model_shape(model):
 
 def _set_dx(dx, ndim):
     """Check dx is appropriate and convert to Tensor."""
+    if isinstance(dx, int):
+        dx = float(dx)
     dx = _set_tensor(dx, 'dx', ndim, float, torch.float)
     if (dx <= 0).any() or not torch.isfinite(dx).all():
         raise RuntimeError('All entries of dx must be positive, but got {}'
@@ -226,6 +228,8 @@ def _set_pad_width(pad_width, ndim):
 def _set_origin(origin, ndim):
     """Initialize, check, and convert origin to Tensor."""
     if origin is None:
+        origin = 0.0
+    if isinstance(origin, int) and origin == 0:
         origin = 0.0
     origin = _set_tensor(origin, 'origin', ndim, float, torch.float)
     if not torch.isfinite(origin).all():

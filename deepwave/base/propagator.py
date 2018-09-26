@@ -43,6 +43,10 @@ class Propagator(torch.nn.Module):
     def __init__(self, propfunc, model, dx, fd_width, pml_width=None,
                  survey_pad=None):
         super(Propagator, self).__init__()
+        if not isinstance(model, dict):
+            raise RuntimeError("Model must be a dict, e.g. {'vp': vp}, where "
+                               "vp is a Tensor, but got a " + str(type(model)))
+
         self.propfunc = propfunc
         self.model = deepwave.base.model.Model(model, dx)
         self.extract = deepwave.base.extract.Extract(survey_pad)
@@ -69,6 +73,67 @@ class Propagator(torch.nn.Module):
             receiver_amplitudes: A [nt, num_shots, num_receivers_per_shot]
                 Float Tensor containing synthetic receiver data.
         """
+        # Check dt
+        if not isinstance(dt, float):
+            raise RuntimeError('dt must be a float, but has type {}'
+                               .format(type(dt)))
+        if dt <= 0.0:
+            raise RuntimeError('dt must be > 0, but is {}'.format(dt))
+
+        # Check same device as model
+        if not (self.model.device == source_amplitudes.device ==
+                source_locations.device == receiver_locations.device):
+            raise RuntimeError('model, source amplitudes, source_locations, '
+                               'and receiver_locations must all have the same '
+                               'device, but got {} {} {} {}'
+                               .format(self.model.device,
+                                       source_amplitudes.device,
+                                       source_locations.device,
+                                       receiver_locations.device))
+
+        # Check shapes
+        if source_amplitudes.dim() != 3:
+            raise RuntimeError('source_amplitude must have shape '
+                               '[nt, num_shots, num_sources_per_shot]')
+
+        if source_locations.dim() != 3:
+            raise RuntimeError('source_locations must have shape '
+                               '[num_shots, num_sources_per_shot, num_dims]')
+
+        if receiver_locations.dim() != 3:
+            raise RuntimeError('receiver_locations must have shape '
+                               '[num_shots, num_receivers_per_shot, num_dims]')
+
+        if not (source_amplitudes.shape[1] == source_locations.shape[0] ==
+                receiver_locations.shape[0]):
+            raise RuntimeError('Shape mismatch, expected '
+                               'source_amplitudes.shape[1] '
+                               '== source_locations.shape[0] '
+                               '== receiver_locations.shape[0], but got '
+                               '{} {} {}'.format(source_amplitudes.shape[1],
+                                                 source_locations.shape[0],
+                                                 receiver_locations.shape[0]))
+
+        if not (source_amplitudes.shape[2] == source_locations.shape[1]):
+            raise RuntimeError('Shape mismatch, expected '
+                               'source_amplitudes.shape[2] '
+                               '== source_locations.shape[1], but got '
+                               '{} {}'.format(source_amplitudes.shape[2],
+                                              source_locations.shape[1]))
+
+        if not (self.model.ndim == source_locations.shape[2] ==
+                receiver_locations.shape[2]):
+            raise RuntimeError('Shape mismatch, expected '
+                               'model num dims == source_locations.shape[2] '
+                               '== receiver_locations.shape[2], but got '
+                               '{} {} {}'.format(self.model.ndim,
+                                                 source_locations.shape[2],
+                                                 receiver_locations.shape[2]))
+
+        # Check src/rec locations within model
+        _check_locations_with_model(self.model, source_locations, 'source')
+        _check_locations_with_model(self.model, receiver_locations, 'receiver')
+
         # Extract a region of the model around the sources/receivers
         model = self.extract(self.model, source_locations, receiver_locations)
 
@@ -80,3 +145,17 @@ class Propagator(torch.nn.Module):
                                    receiver_locations, dt, model,
                                    list(model.properties.keys()),
                                    *model.properties.values())
+
+
+def _check_locations_with_model(model, locations, name):
+    for dim in range(model.ndim):
+        model_min = model.origin[dim]
+        model_max = model_min + (model.shape[dim] - 1).float() * model.dx[dim]
+        if locations[..., dim].min() < model_min:
+            raise RuntimeError('{} locations not within model: {} < {}'
+                               .format(name, locations[..., dim].min(),
+                                       model_min))
+        if locations[..., dim].max() > model_max:
+            raise RuntimeError('{} locations not within model: {} > {}'
+                               .format(name, locations[..., dim].max(),
+                                       model_max))

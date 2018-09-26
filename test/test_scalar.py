@@ -1,4 +1,5 @@
 """Create constant and point scatterer models."""
+import pytest
 import torch
 import numpy as np
 import scipy.special
@@ -16,6 +17,24 @@ def test_pml_width_tensor():
                                      prop_kwargs={'pml_width':
                                                   pml_width_tensor})
     assert np.allclose(actual_int.cpu().numpy(), actual_tensor.cpu().numpy())
+
+
+def test_zero_vp():
+    """Verify that a 0 element in vp Tensor raises error."""
+    model = torch.ones(2, 3) * 1500
+    model[1, 1] = 0.0
+    dx = 5.0
+    with pytest.raises(RuntimeError):
+        prop = Propagator({'vp': model}, dx)
+
+
+def test_negative_vp():
+    """Verify that a < 0 element in vp Tensor raises error."""
+    model = torch.ones(2, 3) * 1500
+    model[1, 1] *= -1
+    dx = 5.0
+    with pytest.raises(RuntimeError):
+        prop = Propagator({'vp': model}, dx)
 
 
 def test_direct_1d():
@@ -95,7 +114,8 @@ def scalarprop(model, dx, dt, source_amplitude, source_locations,
 
     if prop_kwargs is None:
         prop_kwargs = {}
-    prop_kwargs['vpmax'] = 2000 # For consistency when actual max speed changes
+    # For consistency when actual max speed changes
+    prop_kwargs['vpmax'] = 2000
 
     # Workaround for gradcheck not accepting prop_kwargs dictionary
     if pml_width is not None:
@@ -209,7 +229,7 @@ def _set_coords(num_shots, num_per_shot, nx, dx, location='top'):
     if location == 'top':
         pass
     elif location == 'bottom':
-        coords[..., 0] = nx[0].float() - coords[..., 0]
+        coords[..., 0] = (nx[0] - 1).float() - coords[..., 0]
     elif location == 'middle':
         coords[..., 0] += int(nx[0] / 2)
     else:
@@ -449,7 +469,7 @@ def run_gradcheck_1d(c=1500, dc=100, freq=25, dx=(5,), dt=0.001, nx=(10,),
 
 
 def run_gradcheck_2d(c=1500, dc=100, freq=25, dx=(5, 5), dt=0.001,
-                     nx=(3, 3),
+                     nx=(4, 3),
                      num_shots=2, num_sources_per_shot=2,
                      num_receivers_per_shot=2,
                      propagator=None, prop_kwargs=None,
@@ -464,7 +484,7 @@ def run_gradcheck_2d(c=1500, dc=100, freq=25, dx=(5, 5), dt=0.001,
 
 
 def run_gradcheck_3d(c=1500, dc=100, freq=25, dx=(5, 5, 5), dt=0.0005,
-                     nx=(3, 3, 3),
+                     nx=(4, 3, 3),
                      num_shots=2, num_sources_per_shot=2,
                      num_receivers_per_shot=2,
                      propagator=None, prop_kwargs=None,

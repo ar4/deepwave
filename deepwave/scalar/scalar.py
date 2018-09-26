@@ -10,11 +10,17 @@ class Propagator(deepwave.base.propagator.Propagator):
     """
 
     def __init__(self, model, dx, pml_width=None, survey_pad=None, vpmax=None):
+        if list(model.keys()) != ['vp']:
+            raise RuntimeError('Model must only contain vp, but contains {}'
+                               .format(list(model.keys())))
         super(Propagator, self).__init__(PropagatorFunction, model, dx,
                                          fd_width=2,  # also in Pml
                                          pml_width=pml_width,
                                          survey_pad=survey_pad)
         self.model.extra_info['vpmax'] = vpmax
+        if model['vp'].min() <= 0.0:
+            raise RuntimeError('vp must be > 0, but min is {}'
+                               .format(model['vp'].min()))
 
 
 class PropagatorFunction(torch.autograd.Function):
@@ -40,6 +46,9 @@ class PropagatorFunction(torch.autograd.Function):
         if property_names != ['vp']:
             raise RuntimeError('Model must only contain vp, but contains {}'
                                .format(property_names))
+        if vp.min() <= 0.0:
+            raise RuntimeError('vp must be > 0, but min is {}'
+                               .format(vp.min()))
         device = model.device
         dtype = model.dtype
         num_steps, num_shots, num_sources_per_shot = source_amplitudes.shape
