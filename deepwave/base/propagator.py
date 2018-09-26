@@ -149,13 +149,14 @@ class Propagator(torch.nn.Module):
 
 def _check_locations_with_model(model, locations, name):
     for dim in range(model.ndim):
-        model_min = model.origin[dim]
-        model_max = model_min + (model.shape[dim] - 1).float() * model.dx[dim]
-        if locations[..., dim].min() < model_min:
+        model_min = model.origin[dim].item()
+        model_max = (model_min
+                     + ((model.shape[dim] - 1).float() * model.dx[dim]).item())
+        if locations[..., dim].min().item() < model_min:
             raise RuntimeError('{} locations not within model: {} < {}'
-                               .format(name, locations[..., dim].min(),
+                               .format(name, locations[..., dim].min().item(),
                                        model_min))
-        if locations[..., dim].max() > model_max:
+        if locations[..., dim].max().item() > model_max:
             raise RuntimeError('{} locations not within model: {} > {}'
-                               .format(name, locations[..., dim].max(),
+                               .format(name, locations[..., dim].max().item(),
                                        model_max))
