@@ -167,3 +167,13 @@ def test_pad2():
             torch.Tensor([2, 2, 2, 2, 0, 0]).long()).all()
     assert (model_pad.origin == torch.Tensor([2.0, 2.0])).all()
     assert model_pad.interior == [slice(2, 3), slice(2, 4)]
+
+
+def test_pad3():
+    """Verify that padded model has correct values"""
+    properties = {'a': torch.arange(6).float().reshape(2, 3)}
+    model = deepwave.base.model.Model(properties, 5.0)
+    model_pad = model.pad([1,0,0,0,0,0])
+    assert (model_pad.properties['a'] == torch.tensor([[0.0, 1.0, 2.0],
+                                                       [0.0, 1.0, 2.0],
+                                                       [3.0, 4.0, 5.0]])).all()

@@ -90,7 +90,10 @@ class Model(object):
             return self
         padded_properties = {}
         for key, value in self.properties.items():
-            padding = pad_width[:2 * self.ndim].tolist()[::-1]
+            # Flip order of dimensions (as required by pad), but not order
+            # within dimension, so [1, 0, ...] -> [..., 1, 0]
+            padding = pad_width[:2 * self.ndim].reshape(-1, 2).flip(0)
+            padding = padding.flatten().tolist()
             value_for_pad = value.reshape(1, 1, *self.shape[:self.ndim])
             value_for_pad = value_for_pad[[...] + self.interior]
             padded_properties[key] = torch.nn.functional.pad(
