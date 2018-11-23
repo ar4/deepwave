@@ -1,25 +1,25 @@
-#ifndef H_SCALAR
-#define H_SCALAR
-enum wavefield_save_strategy
-{
-        /* NONE: Only forward modeling, do not save wavefields.
-         * INPLACE: Save by advancing through an array. E.g., if A, B, C, ...
-         *      are pointers into an array, separated by at least the size of
-         *      the wavefield, then during the first timestep, the wave
-         *      propagator will write the propagated wavefield into C, and use
-         *      B and A as the current and previous wavefields (read only).
-         *      Then during the second timestep, it will write into D, and use
-         *      C and B as the current and previous wavefields. This strategy
-         *      avoids copying the wavefield, but is memory inefficient
-         *      if step_ratio != 1, that is, if the propagator needs to
-         *      do extra "inner" time steps between the wavefields that need
-         *      to be stored.
-         * COPY: Copy the wavefields to be saved from the array used during
-         *      propagation into a separate storage array.
-         */
-	STRATEGY_NONE,
-	STRATEGY_INPLACE, 
-	STRATEGY_COPY
+#ifndef DEEPWAVE_SCALAR_SCALAR_H
+#define DEEPWAVE_SCALAR_SCALAR_H
+#include <stddef.h>
+enum wavefield_save_strategy {
+  /* NONE: Only forward modeling, do not save wavefields.
+   * INPLACE: Save by advancing through an array. E.g., if A, B, C, ...
+   *      are pointers into an array, separated by at least the size of
+   *      the wavefield, then during the first timestep, the wave
+   *      propagator will write the propagated wavefield into C, and use
+   *      B and A as the current and previous wavefields (read only).
+   *      Then during the second timestep, it will write into D, and use
+   *      C and B as the current and previous wavefields. This strategy
+   *      avoids copying the wavefield, but is memory inefficient
+   *      if step_ratio != 1, that is, if the propagator needs to
+   *      do extra "inner" time steps between the wavefields that need
+   *      to be stored.
+   * COPY: Copy the wavefields to be saved from the array used during
+   *      propagation into a separate storage array.
+   */
+  STRATEGY_NONE,
+  STRATEGY_INPLACE,
+  STRATEGY_COPY
 };
 
 /* Forward modeling
@@ -66,27 +66,23 @@ enum wavefield_save_strategy
  *      between source amplitude samples - that would be dt * step_ratio).
  * save_strategy: Enum specifying how to store wavefield for backpropagation.
  */
-void forward(
-		TYPE *__restrict__ const wavefield,
-		TYPE *__restrict__ const aux_wavefield,
-		TYPE *__restrict__ const receiver_amplitudes,
-		TYPE *__restrict__ const saved_wavefields,
-		const TYPE *__restrict__ const sigma,
-		const TYPE *__restrict__ const model, 
-		const TYPE *__restrict__ const fd1,
-		const TYPE *__restrict__ const fd2,
-		const TYPE *__restrict__ const source_amplitudes,
-		const ptrdiff_t *__restrict__ const source_locations,
-		const ptrdiff_t *__restrict__ const receiver_locations,
-		const ptrdiff_t *__restrict__ const shape,
-		const ptrdiff_t *__restrict__ const pml_width,
-		const ptrdiff_t num_steps,
-		const ptrdiff_t step_ratio,
-		const ptrdiff_t num_shots,
-		const ptrdiff_t num_sources_per_shot,
-		const ptrdiff_t num_receivers_per_shot,
-		const TYPE dt,
-		const enum wavefield_save_strategy save_strategy);
+void forward(TYPE *__restrict__ const wavefield,
+             TYPE *__restrict__ const aux_wavefield,
+             TYPE *__restrict__ const receiver_amplitudes,
+             TYPE *__restrict__ const saved_wavefields,
+             const TYPE *__restrict__ const sigma,
+             const TYPE *__restrict__ const model,
+             const TYPE *__restrict__ const fd1,
+             const TYPE *__restrict__ const fd2,
+             const TYPE *__restrict__ const source_amplitudes,
+             const ptrdiff_t *__restrict__ const source_locations,
+             const ptrdiff_t *__restrict__ const receiver_locations,
+             const ptrdiff_t *__restrict__ const shape,
+             const ptrdiff_t *__restrict__ const pml_width,
+             const ptrdiff_t num_steps, const ptrdiff_t step_ratio,
+             const ptrdiff_t num_shots, const ptrdiff_t num_sources_per_shot,
+             const ptrdiff_t num_receivers_per_shot, const TYPE dt,
+             const enum wavefield_save_strategy save_strategy);
 
 /* Backpropagation
  * wavefield: Two time steps of the wavefield for propagation.
@@ -136,66 +132,51 @@ void forward(
  * dt: The time interval between propagator time steps (NOT the time interval
  *      between source amplitude samples - that would be dt * step_ratio).
  */
-void backward(
-                TYPE *__restrict__ const wavefield,
-                TYPE *__restrict__ const aux_wavefield,
-                TYPE *__restrict__ const model_grad,
-                TYPE *__restrict__ const source_grad_amplitudes,
-                const TYPE *__restrict__ const adjoint_wavefield,
-                const TYPE *__restrict__ const scaling,
-                const TYPE *__restrict__ const sigma,
-                const TYPE *__restrict__ const model, 
-                const TYPE *__restrict__ const fd1,
-                const TYPE *__restrict__ const fd2,
-                const TYPE *__restrict__ const receiver_grad_amplitudes,
-                const ptrdiff_t *__restrict__ const source_locations,
-                const ptrdiff_t *__restrict__ const receiver_locations,
-                const ptrdiff_t *__restrict__ const shape,
-                const ptrdiff_t *__restrict__ const pml_width,
-                const ptrdiff_t num_steps,
-                const ptrdiff_t step_ratio,
-                const ptrdiff_t num_shots,
-                const ptrdiff_t num_sources_per_shot,
-                const ptrdiff_t num_receivers_per_shot,
-                const TYPE dt);
+void backward(TYPE *__restrict__ const wavefield,
+              TYPE *__restrict__ const aux_wavefield,
+              TYPE *__restrict__ const model_grad,
+              TYPE *__restrict__ const source_grad_amplitudes,
+              const TYPE *__restrict__ const adjoint_wavefield,
+              const TYPE *__restrict__ const scaling,
+              const TYPE *__restrict__ const sigma,
+              const TYPE *__restrict__ const model,
+              const TYPE *__restrict__ const fd1,
+              const TYPE *__restrict__ const fd2,
+              const TYPE *__restrict__ const receiver_grad_amplitudes,
+              const ptrdiff_t *__restrict__ const source_locations,
+              const ptrdiff_t *__restrict__ const receiver_locations,
+              const ptrdiff_t *__restrict__ const shape,
+              const ptrdiff_t *__restrict__ const pml_width,
+              const ptrdiff_t num_steps, const ptrdiff_t step_ratio,
+              const ptrdiff_t num_shots, const ptrdiff_t num_sources_per_shot,
+              const ptrdiff_t num_receivers_per_shot, const TYPE dt);
 
-TYPE * set_step_pointer(
-                const TYPE *__restrict__ const origin,
-                const ptrdiff_t step,
-                const ptrdiff_t num_shots,
-                const ptrdiff_t numel_per_shot);
-
+TYPE *set_step_pointer(const TYPE *__restrict__ const origin,
+                       const ptrdiff_t step, const ptrdiff_t num_shots,
+                       const ptrdiff_t numel_per_shot);
 
 /* First order spatial finite differences */
-#define z_deriv(arr) \
-        fd1[0] * (arr[si + size_xy] - arr[si - size_xy]) + \
-        fd1[1] * (arr[si + 2 * size_xy] - arr[si - 2 * size_xy])
+#define z_deriv(arr)                                 \
+  fd1[0] * (arr[si + size_xy] - arr[si - size_xy]) + \
+      fd1[1] * (arr[si + 2 * size_xy] - arr[si - 2 * size_xy])
 
-#define y_deriv(arr) \
-        fd1[2] * (arr[si + size_x] - arr[si - size_x]) + \
-        fd1[3] * (arr[si + 2 * size_x] - arr[si - 2 * size_x])
+#define y_deriv(arr)                               \
+  fd1[2] * (arr[si + size_x] - arr[si - size_x]) + \
+      fd1[3] * (arr[si + 2 * size_x] - arr[si - 2 * size_x])
 
 #define x_deriv(arr) \
-        fd1[4] * (arr[si + 1] - arr[si - 1]) + \
-        fd1[5] * (arr[si + 2] - arr[si - 2])
+  fd1[4] * (arr[si + 1] - arr[si - 1]) + fd1[5] * (arr[si + 2] - arr[si - 2])
 
 /* Second order spatial finite difference (Laplacian) */
-#define laplacian1d(arr) \
-        fd2[0] * arr[si] + \
-        fd2[1] * (arr[si + size_xy] + arr[si - size_xy]) + \
-        fd2[2] * (arr[si + 2 * size_xy] + arr[si - 2 * size_xy])
-#define laplacian2d(arr) \
-        laplacian1d(arr) + \
-        fd2[3] * \
-        (arr[si + size_x] + arr[si - size_x]) + \
-        fd2[4] * \
-        (arr[si + 2 * size_x] + arr[si - 2 * size_x])
-#define laplacian3d(arr) \
-        laplacian2d(arr) + \
-        fd2[5] * \
-        (arr[si + 1] + arr[si - 1]) + \
-        fd2[6] * \
-        (arr[si + 2] + arr[si - 2])
+#define laplacian1d(arr)                                                \
+  fd2[0] * arr[si] + fd2[1] * (arr[si + size_xy] + arr[si - size_xy]) + \
+      fd2[2] * (arr[si + 2 * size_xy] + arr[si - 2 * size_xy])
+#define laplacian2d(arr)                                              \
+  laplacian1d(arr) + fd2[3] * (arr[si + size_x] + arr[si - size_x]) + \
+      fd2[4] * (arr[si + 2 * size_x] + arr[si - 2 * size_x])
+#define laplacian3d(arr)                                    \
+  laplacian2d(arr) + fd2[5] * (arr[si + 1] + arr[si - 1]) + \
+      fd2[6] * (arr[si + 2] + arr[si - 2])
 
 /* Dimension-specific definitions
  *
@@ -237,4 +218,4 @@ TYPE * set_step_pointer(
 #error "Must specify the dimension, e.g. -D DIM=1"
 #endif /* DIM */
 
-#endif /* H_SCALAR */
+#endif /* DEEPWAVE_SCALAR_SCALAR_H */
