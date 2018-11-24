@@ -209,11 +209,7 @@ static void set_pointers(const TYPE **next_wavefield,
   *previous_wavefield = wavefield;
   *current_wavefield = *previous_wavefield + num_shots * shot_size;
 
-  if (save_strategy == STRATEGY_INPLACE) {
-    *next_wavefield = *current_wavefield + num_shots * shot_size;
-  } else {
-    *next_wavefield = *previous_wavefield;
-  }
+  *next_wavefield = *previous_wavefield;
 
   *current_aux_wavefield = aux_wavefield;
   *next_aux_wavefield =
@@ -228,20 +224,13 @@ static void update_pointers(const TYPE **next_wavefield,
                             const ptrdiff_t *__restrict__ const shape,
                             const ptrdiff_t num_shots,
                             const enum wavefield_save_strategy save_strategy) {
-  if (save_strategy == STRATEGY_INPLACE) {
-    const ptrdiff_t shot_size = shape[0] * shape[1] * shape[2];
-    *next_wavefield += num_shots * shot_size;
-    *current_wavefield += num_shots * shot_size;
-    *previous_wavefield += num_shots * shot_size;
-  } else {
-    /* Before: next_wavefield -> previous_wavefield -> A
-     *         current_wavefield -> B
-     * After: next_wavefield -> previous_wavefield -> B
-     *        current_wavefield -> A */
-    *next_wavefield = *current_wavefield;
-    *current_wavefield = *previous_wavefield;
-    *previous_wavefield = *next_wavefield;
-  }
+  /* Before: next_wavefield -> previous_wavefield -> A
+   *         current_wavefield -> B
+   * After: next_wavefield -> previous_wavefield -> B
+   *        current_wavefield -> A */
+  *next_wavefield = *current_wavefield;
+  *current_wavefield = *previous_wavefield;
+  *previous_wavefield = *next_wavefield;
 
   const TYPE *tmp = *next_aux_wavefield;
   *next_aux_wavefield = *current_aux_wavefield;

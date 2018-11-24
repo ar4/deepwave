@@ -100,10 +100,6 @@ class PropagatorFunction(torch.autograd.Function):
             num_receivers_per_shot,
             wavefield_save_strategy)
 
-        if wavefield_save_strategy == scalar_wrapper.STRATEGY_INPLACE:
-            # compensate for save beginning at step 2
-            saved_wavefields = saved_wavefields[2:]
-
         # Allocate gradients that will be calculated during backpropagation
         model_gradient = _allocate_grad(vp, ctx.needs_input_grad[6])
         source_gradient = _allocate_grad(source_amplitudes,
@@ -269,10 +265,7 @@ def _set_wavefield_save_strategy(requires_grad, dt, inner_dt, scalar_wrapper):
         An enum value specifying which strategy to use
     """
     if requires_grad:
-        if inner_dt == dt:
-            wavefield_save_strategy = scalar_wrapper.STRATEGY_INPLACE
-        else:
-            wavefield_save_strategy = scalar_wrapper.STRATEGY_COPY
+        wavefield_save_strategy = scalar_wrapper.STRATEGY_COPY
     else:
         wavefield_save_strategy = scalar_wrapper.STRATEGY_NONE
 
@@ -338,9 +331,6 @@ def _allocate_wavefields(wavefield_save_strategy, scalar_wrapper, model,
 
     if wavefield_save_strategy == scalar_wrapper.STRATEGY_NONE:
         wavefield = model.allocate_wavefield(2, num_shots)
-        saved_wavefields = wavefield
-    elif wavefield_save_strategy == scalar_wrapper.STRATEGY_INPLACE:
-        wavefield = model.allocate_wavefield(num_steps + 2, num_shots)
         saved_wavefields = wavefield
     elif wavefield_save_strategy == scalar_wrapper.STRATEGY_COPY:
         wavefield = model.allocate_wavefield(2, num_shots)

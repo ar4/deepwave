@@ -53,7 +53,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   py::enum_<wavefield_save_strategy>(m, "wavefield_save_strategy",
                                      py::module_local())
       .value("STRATEGY_NONE", STRATEGY_NONE)
-      .value("STRATEGY_INPLACE", STRATEGY_INPLACE)
       .value("STRATEGY_COPY", STRATEGY_COPY)
       .export_values();
 }

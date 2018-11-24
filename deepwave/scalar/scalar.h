@@ -3,29 +3,16 @@
 #include <stddef.h>
 enum wavefield_save_strategy {
   /* NONE: Only forward modeling, do not save wavefields.
-   * INPLACE: Save by advancing through an array. E.g., if A, B, C, ...
-   *      are pointers into an array, separated by at least the size of
-   *      the wavefield, then during the first timestep, the wave
-   *      propagator will write the propagated wavefield into C, and use
-   *      B and A as the current and previous wavefields (read only).
-   *      Then during the second timestep, it will write into D, and use
-   *      C and B as the current and previous wavefields. This strategy
-   *      avoids copying the wavefield, but is memory inefficient
-   *      if step_ratio != 1, that is, if the propagator needs to
-   *      do extra "inner" time steps between the wavefields that need
-   *      to be stored.
    * COPY: Copy the wavefields to be saved from the array used during
    *      propagation into a separate storage array.
    */
   STRATEGY_NONE,
-  STRATEGY_INPLACE,
   STRATEGY_COPY
 };
 
 /* Forward modeling
  * wavefield: At least two time steps of the wavefield for propagation.
  *      2 * num_shots * numel_per_shot if save strategy is NONE or COPY,
- *      (num_steps + 2) * num_shots * numel_per_shot for INPLACE,
  *      where numel_per_shot is the number of elements in the padded model.
  * aux_wavefield: PML auxiliary wavefields.
  *      2 * AUX_SIZE * num_shots * numel_per_shot, where AUX_SIZE = 1 for 1D,
@@ -33,7 +20,7 @@ enum wavefield_save_strategy {
  * receiver_amplitudes: Output receiver amplitudes.
  *      num_steps * num_shots * num_receivers_per_shot
  * saved_wavefields: Output saved wavefields for backpropagation.
- *      Unused if save strategy is NONE or INPLACE,
+ *      Unused if save strategy is NONE,
  *      num_steps * num_shots * numel_per_shot for COPY.
  * sigma: PML sigma. Number of elements is the sum of the padded length of
  *      each dimension, e.g. shape[0] + shape[1] + shape[2] in 3D.
