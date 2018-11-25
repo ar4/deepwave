@@ -65,7 +65,7 @@ def test_direct_3d():
                                      dt=0.002,
                                      prop_kwargs={'pml_width': 20})
     diff = (expected - actual.cpu()).numpy().ravel()
-    assert np.linalg.norm(diff) < 0.25
+    assert np.linalg.norm(diff) < 0.33
 
 
 def test_scatter_1d():
@@ -90,7 +90,7 @@ def test_scatter_3d():
                                       dt=0.002,
                                       prop_kwargs={'pml_width': 30})
     diff = (expected - actual.cpu()).numpy().ravel()
-    assert np.linalg.norm(diff) < 0.005
+    assert np.linalg.norm(diff) < 0.0015
 
 
 def test_gradcheck_1d():

@@ -73,7 +73,7 @@ void forward(TYPE *__restrict__ const wavefield,
     TYPE *current_receiver_amplitudes;
 
     current_source_amplitudes = set_step_pointer(
-        source_amplitudes, step, num_shots, num_sources_per_shot);
+        source_amplitudes, step * step_ratio, num_shots, num_sources_per_shot);
 
     current_receiver_amplitudes = set_step_pointer(
         receiver_amplitudes, step, num_shots, num_receivers_per_shot);
@@ -136,7 +136,8 @@ void backward(TYPE *__restrict__ const wavefield,
         source_grad_amplitudes, step, num_shots, num_sources_per_shot);
 
     current_receiver_grad_amplitudes = set_step_pointer(
-        receiver_grad_amplitudes, step, num_shots, num_receivers_per_shot);
+        receiver_grad_amplitudes, step * step_ratio, num_shots,
+        num_receivers_per_shot);
 
     next_adjoint_wavefield = set_step_pointer(
         adjoint_wavefield, step, num_shots, shape[0] * shape[1] * shape[2]);
@@ -185,8 +186,11 @@ static void advance_step(
               *previous_wavefield, *current_aux_wavefield, sigma, model, fd1,
               fd2, shape, pml_width, num_shots, dt);
 
-    add_sources(*next_wavefield, model, source_amplitudes, source_locations,
-                shape, num_shots, num_sources_per_shot);
+    const TYPE *__restrict__ const current_source_amplitudes = set_step_pointer(
+        source_amplitudes, inner_step, num_shots, num_sources_per_shot);
+
+    add_sources(*next_wavefield, model, current_source_amplitudes,
+                source_locations, shape, num_shots, num_sources_per_shot);
 
     update_pointers((const TYPE **)next_wavefield, current_wavefield,
                     previous_wavefield, (const TYPE **)next_aux_wavefield,

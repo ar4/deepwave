@@ -1,6 +1,7 @@
 """PyTorch Module and Function for scalar wave propagator."""
 import torch
 import numpy as np
+import scipy.signal
 import deepwave.base.propagator
 
 class Propagator(deepwave.base.propagator.Propagator):
@@ -76,6 +77,14 @@ class PropagatorFunction(torch.autograd.Function):
             dtype=dtype)
         inner_dt = torch.tensor([timestep.inner_dt]).to(dtype)
         pml = Pml(model, num_shots, max_vel)
+        source_amplitudes_resampled = \
+                scipy.signal.resample(source_amplitudes.detach().cpu().numpy(),
+                                      num_steps * timestep.step_ratio)
+        source_amplitudes_resampled = \
+                torch.tensor(source_amplitudes_resampled)\
+                    .to(dtype).to(source_amplitudes.device)
+        source_amplitudes_resampled.requires_grad = \
+                source_amplitudes.requires_grad
 
         # Call compiled C code to do forward modeling
         scalar_wrapper.forward(
@@ -87,7 +96,7 @@ class PropagatorFunction(torch.autograd.Function):
             model.properties['vp2dt2'].to(dtype).contiguous(),
             fd1.to(dtype).contiguous(),
             fd2.to(dtype).contiguous(),
-            source_amplitudes.to(dtype).contiguous(),
+            source_amplitudes_resampled.to(dtype).contiguous(),
             source_model_locations.long().contiguous(),
             receiver_model_locations.long().contiguous(),
             model.shape.contiguous(),
@@ -157,6 +166,16 @@ class PropagatorFunction(torch.autograd.Function):
         source_gradient.fill_(0)
         wavefield = torch.zeros_like(aux[:2])
 
+        grad_receiver_amplitudes_resampled = \
+                scipy.signal.resample(grad_receiver_amplitudes
+                                      .detach().cpu().numpy(),
+                                      num_steps * step_ratio)
+        grad_receiver_amplitudes_resampled = \
+                torch.tensor(grad_receiver_amplitudes_resampled)\
+                    .to(dtype).to(grad_receiver_amplitudes.device)
+        grad_receiver_amplitudes_resampled.requires_grad = \
+                grad_receiver_amplitudes.requires_grad
+
         # Ensure that gradient Tensors are of the right type and contiguous
         model_gradient = model_gradient.to(dtype).contiguous()
         source_gradient = source_gradient.to(dtype).contiguous()
@@ -173,7 +192,7 @@ class PropagatorFunction(torch.autograd.Function):
             vp2dt2.to(dtype).contiguous(),
             fd1.to(dtype).contiguous(),
             fd2.to(dtype).contiguous(),
-            grad_receiver_amplitudes.to(dtype).contiguous(),
+            grad_receiver_amplitudes_resampled.to(dtype).contiguous(),
             source_model_locations.long().contiguous(),
             receiver_model_locations.long().contiguous(),
             shape.long().contiguous(),
