@@ -148,7 +148,7 @@ class PropagatorFunction(torch.autograd.Function):
         (adjoint_wavefield, aux, sigma, vp2dt2, scaling,
          pml_width, source_model_locations, receiver_model_locations,
          step_ratio, inner_dt, fd1, fd2,
-         model_gradient, source_gradient) = ctx.saved_variables
+         model_gradient, source_gradient) = ctx.saved_tensors
         step_ratio = step_ratio.item()
 
         dtype = vp2dt2.dtype
