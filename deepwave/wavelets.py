@@ -5,7 +5,7 @@ import torch
 
 def ricker(freq, length, dt, peak_time, dtype=None):
     """Return a Ricker wavelet with the specified central frequency.
-    
+
     Args:
         freq: A float specifying the central frequency
         length: An int specifying the number of time samples

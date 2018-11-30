@@ -41,7 +41,7 @@ def test_direct_1d():
     """Test propagation in a constant 1D model."""
     expected, actual = run_direct_1d(propagator=scalarprop)
     diff = (expected - actual.cpu()).numpy().ravel()
-    assert np.linalg.norm(diff) < 41
+    assert np.linalg.norm(diff) < 47
 
 
 def test_direct_1d_double():
@@ -49,14 +49,14 @@ def test_direct_1d_double():
     expected, actual = run_direct_1d(propagator=scalarprop, dtype=torch.double,
                                      device=torch.device('cpu'))
     diff = (expected - actual.cpu()).numpy().ravel()
-    assert np.linalg.norm(diff) < 41
+    assert np.linalg.norm(diff) < 47
 
 
 def test_direct_2d():
     """Test propagation in a constant 2D model."""
     expected, actual = run_direct_2d(propagator=scalarprop)
     diff = (expected - actual.cpu()).numpy().ravel()
-    assert np.linalg.norm(diff) < 1.3
+    assert np.linalg.norm(diff) < 1.46
 
 
 def test_direct_3d():
@@ -72,7 +72,7 @@ def test_scatter_1d():
     """Test propagation in a 1D model with a point scatterer."""
     expected, actual = run_scatter_1d(propagator=scalarprop)
     diff = (expected - actual.cpu()).numpy().ravel()
-    assert np.linalg.norm(diff) < 1.83
+    assert np.linalg.norm(diff) < 1.86
 
 
 def test_scatter_2d():

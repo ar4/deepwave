@@ -6,10 +6,11 @@
 
 /* Static function declarations */
 static void advance_step(
-    TYPE **__restrict__ next_wavefield, TYPE **__restrict__ next_aux_wavefield,
-    const TYPE **__restrict__ current_wavefield,
-    const TYPE **__restrict__ previous_wavefield,
-    const TYPE **__restrict__ current_aux_wavefield,
+    TYPE *__restrict__ *__restrict__ const next_wavefield,
+    TYPE *__restrict__ *__restrict__ const next_aux_wavefield,
+    TYPE *__restrict__ *__restrict__ const current_wavefield,
+    TYPE *__restrict__ *__restrict__ const previous_wavefield,
+    TYPE *__restrict__ *__restrict__ const current_aux_wavefield,
     const TYPE *__restrict__ const sigma, const TYPE *__restrict__ const model,
     const TYPE *__restrict__ const fd1, const TYPE *__restrict__ const fd2,
     const TYPE *__restrict__ const source_amplitudes,
@@ -17,25 +18,19 @@ static void advance_step(
     const ptrdiff_t *__restrict__ const shape,
     const ptrdiff_t *__restrict__ const pml_width, const ptrdiff_t step_ratio,
     const ptrdiff_t num_shots, const ptrdiff_t num_sources_per_shot,
-    const TYPE dt, const enum wavefield_save_strategy save_strategy);
-static void set_pointers(const TYPE **next_wavefield,
-                         const TYPE **current_wavefield,
-                         const TYPE **previous_wavefield,
-                         const TYPE **next_aux_wavefield,
-                         const TYPE **current_aux_wavefield,
-                         const TYPE *__restrict__ const wavefield,
-                         const TYPE *__restrict__ const aux_wavefield,
-                         const ptrdiff_t *__restrict__ const shape,
-                         const ptrdiff_t num_shots,
-                         const enum wavefield_save_strategy save_strategy);
-static void update_pointers(const TYPE **next_wavefield,
-                            const TYPE **current_wavefield,
-                            const TYPE **previous_wavefield,
-                            const TYPE **next_aux_wavefield,
-                            const TYPE **current_aux_wavefield,
-                            const ptrdiff_t *__restrict__ const shape,
-                            const ptrdiff_t num_shots,
-                            const enum wavefield_save_strategy save_strategy);
+    const TYPE dt);
+static void set_pointers(
+    TYPE **const next_wavefield, TYPE **const current_wavefield,
+    TYPE **const previous_wavefield, TYPE **const next_aux_wavefield,
+    TYPE **const current_aux_wavefield, TYPE *__restrict__ const wavefield,
+    TYPE *__restrict__ const aux_wavefield,
+    const ptrdiff_t *__restrict__ const shape, const ptrdiff_t num_shots);
+static void update_pointers(
+    TYPE *__restrict__ *__restrict__ const next_wavefield,
+    TYPE *__restrict__ *__restrict__ const current_wavefield,
+    TYPE *__restrict__ *__restrict__ const previous_wavefield,
+    TYPE *__restrict__ *__restrict__ const next_aux_wavefield,
+    TYPE *__restrict__ *__restrict__ const current_aux_wavefield);
 
 void forward(TYPE *__restrict__ const wavefield,
              TYPE *__restrict__ const aux_wavefield,
@@ -62,34 +57,45 @@ void forward(TYPE *__restrict__ const wavefield,
 
   setup(fd1, fd2);
 
-  set_pointers(
-      (const TYPE **)&next_wavefield, (const TYPE **)&current_wavefield,
-      (const TYPE **)&previous_wavefield, (const TYPE **)&next_aux_wavefield,
-      (const TYPE **)&current_aux_wavefield, wavefield, aux_wavefield, shape,
-      num_shots, save_strategy);
+  set_pointers(&next_wavefield, &current_wavefield, &previous_wavefield,
+               &next_aux_wavefield, &current_aux_wavefield, wavefield,
+               aux_wavefield, shape, num_shots);
 
-  for (ptrdiff_t step = 0; step < num_steps; step++) {
-    TYPE *current_source_amplitudes;
-    TYPE *current_receiver_amplitudes;
-
-    current_source_amplitudes = set_step_pointer(
+  for (ptrdiff_t step = 0; step < num_steps - 1; step++) {
+    const TYPE *__restrict__ const current_source_amplitudes = set_step_pointer(
         source_amplitudes, step * step_ratio, num_shots, num_sources_per_shot);
 
-    current_receiver_amplitudes = set_step_pointer(
-        receiver_amplitudes, step, num_shots, num_receivers_per_shot);
+    /* step + 1 as this step computes the wavefield at step + 1 */
+    TYPE *__restrict__ const current_receiver_amplitudes = set_step_pointer(
+        receiver_amplitudes, step + 1, num_shots, num_receivers_per_shot);
 
-    advance_step(
-        &next_wavefield, &next_aux_wavefield, (const TYPE **)&current_wavefield,
-        (const TYPE **)&previous_wavefield,
-        (const TYPE **)&current_aux_wavefield, sigma, model, fd1, fd2,
-        current_source_amplitudes, source_locations, shape, pml_width,
-        step_ratio, num_shots, num_sources_per_shot, dt, save_strategy);
+    TYPE *__restrict__ const current_saved_wavefield = set_step_pointer(
+        saved_wavefields, 3 * step, num_shots, shape[0] * shape[1] * shape[2]);
+
+    TYPE *__restrict__ const current_saved_wavefield_t =
+        set_step_pointer(saved_wavefields, 3 * step + 1, num_shots,
+                         shape[0] * shape[1] * shape[2]);
+
+    TYPE *__restrict__ const current_saved_wavefield_tt =
+        set_step_pointer(saved_wavefields, 3 * step + 2, num_shots,
+                         shape[0] * shape[1] * shape[2]);
+
+    advance_step(&next_wavefield, &next_aux_wavefield, &current_wavefield,
+                 &previous_wavefield, &current_aux_wavefield, sigma, model, fd1,
+                 fd2, current_source_amplitudes, source_locations, shape,
+                 pml_width, step_ratio, num_shots, num_sources_per_shot, dt);
 
     record_receivers(current_receiver_amplitudes, current_wavefield,
                      receiver_locations, shape, num_shots,
                      num_receivers_per_shot);
 
-    save_wavefields(saved_wavefields, current_wavefield, shape, num_shots, step,
+    /* pointers already updated:
+     * next_wavefield now in current_wavefield
+     * current_wavefield now in previous_wavefield
+     * previous_wavefield now in next_wavefield */
+    save_wavefields(current_saved_wavefield, current_saved_wavefield_t,
+                    current_saved_wavefield_tt, current_wavefield,
+                    previous_wavefield, next_wavefield, shape, num_shots, dt,
                     save_strategy);
   }
 }
@@ -117,51 +123,45 @@ void backward(TYPE *__restrict__ const wavefield,
   TYPE *previous_wavefield;
   TYPE *next_aux_wavefield;
   TYPE *current_aux_wavefield;
-  const enum wavefield_save_strategy save_strategy = STRATEGY_NONE;
 
-  set_pointers(
-      (const TYPE **)&next_wavefield, (const TYPE **)&current_wavefield,
-      (const TYPE **)&previous_wavefield, (const TYPE **)&next_aux_wavefield,
-      (const TYPE **)&current_aux_wavefield, wavefield, aux_wavefield, shape,
-      num_shots, save_strategy);
+  set_pointers(&next_wavefield, &current_wavefield, &previous_wavefield,
+               &next_aux_wavefield, &current_aux_wavefield, wavefield,
+               aux_wavefield, shape, num_shots);
 
-  for (ptrdiff_t step = num_steps - 1; step >= 0; step--) {
-    TYPE *current_source_grad_amplitudes;
-    TYPE *current_receiver_grad_amplitudes;
-    TYPE *next_adjoint_wavefield;
-    TYPE *current_adjoint_wavefield;
-    TYPE *previous_adjoint_wavefield;
+  for (ptrdiff_t step = num_steps - 1; step > 0; step--) {
+    TYPE *__restrict__ const current_source_grad_amplitudes = set_step_pointer(
+        source_grad_amplitudes, step - 1, num_shots, num_sources_per_shot);
 
-    current_source_grad_amplitudes = set_step_pointer(
-        source_grad_amplitudes, step, num_shots, num_sources_per_shot);
+    const TYPE *__restrict__ const current_receiver_grad_amplitudes =
+        set_step_pointer(receiver_grad_amplitudes, step * step_ratio, num_shots,
+                         num_receivers_per_shot);
 
-    current_receiver_grad_amplitudes = set_step_pointer(
-        receiver_grad_amplitudes, step * step_ratio, num_shots,
-        num_receivers_per_shot);
+    const TYPE *__restrict__ const current_adjoint_wavefield =
+        set_step_pointer(adjoint_wavefield, 3 * (step - 1), num_shots,
+                         shape[0] * shape[1] * shape[2]);
 
-    next_adjoint_wavefield = set_step_pointer(
-        adjoint_wavefield, step, num_shots, shape[0] * shape[1] * shape[2]);
+    const TYPE *__restrict__ const current_adjoint_wavefield_t =
+        set_step_pointer(adjoint_wavefield, 3 * (step - 1) + 1, num_shots,
+                         shape[0] * shape[1] * shape[2]);
 
-    current_adjoint_wavefield = set_step_pointer(
-        adjoint_wavefield, step - 1, num_shots, shape[0] * shape[1] * shape[2]);
+    const TYPE *__restrict__ const current_adjoint_wavefield_tt =
+        set_step_pointer(adjoint_wavefield, 3 * (step - 1) + 2, num_shots,
+                         shape[0] * shape[1] * shape[2]);
 
-    previous_adjoint_wavefield = set_step_pointer(
-        adjoint_wavefield, step - 2, num_shots, shape[0] * shape[1] * shape[2]);
-
-    advance_step(
-        &next_wavefield, &next_aux_wavefield, (const TYPE **)&current_wavefield,
-        (const TYPE **)&previous_wavefield,
-        (const TYPE **)&current_aux_wavefield, sigma, model, fd1, fd2,
-        current_receiver_grad_amplitudes, receiver_locations, shape, pml_width,
-        step_ratio, num_shots, num_receivers_per_shot, dt, save_strategy);
+    advance_step(&next_wavefield, &next_aux_wavefield, &current_wavefield,
+                 &previous_wavefield, &current_aux_wavefield, sigma, model, fd1,
+                 fd2, current_receiver_grad_amplitudes, receiver_locations,
+                 shape, pml_width, step_ratio, num_shots,
+                 num_receivers_per_shot, dt);
 
     record_receivers(current_source_grad_amplitudes, current_wavefield,
                      source_locations, shape, num_shots, num_sources_per_shot);
 
     if ((step < num_steps) && (step > 1)) {
-      imaging_condition(model_grad, current_wavefield, next_adjoint_wavefield,
-                        current_adjoint_wavefield, previous_adjoint_wavefield,
-                        sigma, shape, pml_width, num_shots, dt * step_ratio);
+      imaging_condition(model_grad, current_wavefield,
+                        current_adjoint_wavefield, current_adjoint_wavefield_t,
+                        current_adjoint_wavefield_tt, sigma, shape, pml_width,
+                        num_shots);
     }
   }
 
@@ -169,10 +169,11 @@ void backward(TYPE *__restrict__ const wavefield,
 }
 
 static void advance_step(
-    TYPE **__restrict__ next_wavefield, TYPE **__restrict__ next_aux_wavefield,
-    const TYPE **__restrict__ current_wavefield,
-    const TYPE **__restrict__ previous_wavefield,
-    const TYPE **__restrict__ current_aux_wavefield,
+    TYPE *__restrict__ *__restrict__ const next_wavefield,
+    TYPE *__restrict__ *__restrict__ const next_aux_wavefield,
+    TYPE *__restrict__ *__restrict__ const current_wavefield,
+    TYPE *__restrict__ *__restrict__ const previous_wavefield,
+    TYPE *__restrict__ *__restrict__ const current_aux_wavefield,
     const TYPE *__restrict__ const sigma, const TYPE *__restrict__ const model,
     const TYPE *__restrict__ const fd1, const TYPE *__restrict__ const fd2,
     const TYPE *__restrict__ const source_amplitudes,
@@ -180,7 +181,7 @@ static void advance_step(
     const ptrdiff_t *__restrict__ const shape,
     const ptrdiff_t *__restrict__ const pml_width, const ptrdiff_t step_ratio,
     const ptrdiff_t num_shots, const ptrdiff_t num_sources_per_shot,
-    const TYPE dt, const enum wavefield_save_strategy save_strategy) {
+    const TYPE dt) {
   for (ptrdiff_t inner_step = 0; inner_step < step_ratio; inner_step++) {
     propagate(*next_wavefield, *next_aux_wavefield, *current_wavefield,
               *previous_wavefield, *current_aux_wavefield, sigma, model, fd1,
@@ -192,51 +193,47 @@ static void advance_step(
     add_sources(*next_wavefield, model, current_source_amplitudes,
                 source_locations, shape, num_shots, num_sources_per_shot);
 
-    update_pointers((const TYPE **)next_wavefield, current_wavefield,
-                    previous_wavefield, (const TYPE **)next_aux_wavefield,
-                    current_aux_wavefield, shape, num_shots, save_strategy);
+    update_pointers(next_wavefield, current_wavefield, previous_wavefield,
+                    next_aux_wavefield, current_aux_wavefield);
   }
 }
 
-static void set_pointers(const TYPE **next_wavefield,
-                         const TYPE **current_wavefield,
-                         const TYPE **previous_wavefield,
-                         const TYPE **next_aux_wavefield,
-                         const TYPE **current_aux_wavefield,
-                         const TYPE *__restrict__ const wavefield,
-                         const TYPE *__restrict__ const aux_wavefield,
-                         const ptrdiff_t *__restrict__ const shape,
-                         const ptrdiff_t num_shots,
-                         const enum wavefield_save_strategy save_strategy) {
+static void set_pointers(
+    TYPE **const next_wavefield, TYPE **const current_wavefield,
+    TYPE **const previous_wavefield, TYPE **const next_aux_wavefield,
+    TYPE **const current_aux_wavefield, TYPE *__restrict__ const wavefield,
+    TYPE *__restrict__ const aux_wavefield,
+    const ptrdiff_t *__restrict__ const shape, const ptrdiff_t num_shots) {
   const ptrdiff_t shot_size = shape[0] * shape[1] * shape[2];
 
   *previous_wavefield = wavefield;
   *current_wavefield = *previous_wavefield + num_shots * shot_size;
-
-  *next_wavefield = *previous_wavefield;
+  *next_wavefield = *current_wavefield + num_shots * shot_size;
 
   *current_aux_wavefield = aux_wavefield;
   *next_aux_wavefield =
       *current_aux_wavefield + AUX_SIZE * num_shots * shot_size;
 }
 
-static void update_pointers(const TYPE **next_wavefield,
-                            const TYPE **current_wavefield,
-                            const TYPE **previous_wavefield,
-                            const TYPE **next_aux_wavefield,
-                            const TYPE **current_aux_wavefield,
-                            const ptrdiff_t *__restrict__ const shape,
-                            const ptrdiff_t num_shots,
-                            const enum wavefield_save_strategy save_strategy) {
-  /* Before: next_wavefield -> previous_wavefield -> A
+static void update_pointers(
+    TYPE *__restrict__ *__restrict__ const next_wavefield,
+    TYPE *__restrict__ *__restrict__ const current_wavefield,
+    TYPE *__restrict__ *__restrict__ const previous_wavefield,
+    TYPE *__restrict__ *__restrict__ const next_aux_wavefield,
+    TYPE *__restrict__ *__restrict__ const current_aux_wavefield) {
+  TYPE *tmp;
+  /* Before: next_wavefield -> A
    *         current_wavefield -> B
-   * After: next_wavefield -> previous_wavefield -> B
-   *        current_wavefield -> A */
-  *next_wavefield = *current_wavefield;
-  *current_wavefield = *previous_wavefield;
-  *previous_wavefield = *next_wavefield;
+   *	     previous_wavefield -> C
+   * After: next_wavefield -> C
+   *        current_wavefield -> A
+   *        previous_wavefield -> B */
+  tmp = *previous_wavefield;
+  *previous_wavefield = *current_wavefield;
+  *current_wavefield = *next_wavefield;
+  *next_wavefield = tmp;
 
-  const TYPE *tmp = *next_aux_wavefield;
+  tmp = *next_aux_wavefield;
   *next_aux_wavefield = *current_aux_wavefield;
   *current_aux_wavefield = tmp;
 }
