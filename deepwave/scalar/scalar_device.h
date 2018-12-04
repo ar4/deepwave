@@ -24,6 +24,13 @@ void add_sources(TYPE *__restrict__ const next_wavefield,
                  const ptrdiff_t *__restrict__ const shape,
                  const ptrdiff_t num_shots,
                  const ptrdiff_t num_sources_per_shot);
+void add_scattering(TYPE *__restrict__ const next_scattered_wavefield,
+                    const TYPE *__restrict__ const next_wavefield,
+                    const TYPE *__restrict__ const current_wavefield,
+                    const TYPE *__restrict__ const previous_wavefield,
+                    const TYPE *__restrict__ const scatter,
+                    const ptrdiff_t *__restrict__ const shape,
+                    const ptrdiff_t num_shots);
 void record_receivers(TYPE *__restrict__ const receiver_amplitudes,
                       const TYPE *__restrict__ const current_wavefield,
                       const ptrdiff_t *__restrict__ const receiver_locations,

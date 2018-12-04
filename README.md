@@ -103,12 +103,30 @@ For a full example of using Deepwave for FWI, see [this notebook](https://colab.
 
 It is also possible to perform source inversion with Deepwave. Simply set `requires_grad` to `True` on the source amplitude Tensor.
 
+### Born forward modeling (for demigration and LSRTM)
+To perform Born forward modeling, use `BornPropagator`. In addition to a background wave speed model, you will also need a scattering model ("image"). As an example, add the following line to the regular forward modeling example above:
+
+```python
+scatter = torch.zeros_like(model)
+scatter[10, 20] = 100
+```
+
+This creates a scattering model with a point scatterer of amplitude 100 m/s. Then, replace the line that creates the propagator with one that uses the Born propagator:
+
+```python
+prop = deepwave.scalar.BornPropagator({'vp': model, 'scatter': scatter}, dx)
+```
+
+The resulting data should only contain recordings from the scattered wavefield, so there will not be any direct arrival.
+
+To perform LSRTM, optimize the variable `scatter`. Optimizing the source amplitude or the wave speed model is not currently supported with the Born propagator.
+
 ## Notes
 * Deepwave is only tested with Python 3.6.
 * For a reflective free surface, set the PML width to zero at the surface. For example, in 3D and when the PML width on the other sides is 10 cells, provide the argument `pml_width=[0,10,10,10,10,10]` when creating the propagator if the free surface is at the beginning of the first dimension. The format is [z1, z2, y1, y2, x1, x2], where z1, y1, and x1 are the PML widths at the beginning of the z, y, and x dimensions, and z2, y2, and x2 are the PML widths at the ends of those dimensions.
 * To limit wave simulation to the region covered by the survey (the sources and receivers), provide the `survey_pad` keyword argument when creating the propagator. For example, to use the whole z dimension, but only up to 100m from the first and last source/receiver in the y and x dimensions, use `survey_pad=[None, None, 100, 100, 100, 100]`, where `None` means continue to the edge of the model, and the format is similar to that used for `pml_width`. The default is `None` for every entry.
 * [@LukasMosser](https://github.com/LukasMosser) discovered that GCC 4.9 or above is necessary ([#18](https://github.com/ar4/deepwave/issues/18)).
-* Distributed parallelization over shots is supported, but not within a shot; each shot must run on one node.
+* Distributed parallelization over shots is supported, but not within a shot; each shot must run within one node.
 * Currently, the forward source wavefield is saved in memory for use during backpropagation. This means that realistic 3D surveys will probably require more memory than is available. This will be fixed in a future release.
 
 ## Contributing

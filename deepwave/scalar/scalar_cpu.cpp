@@ -351,6 +351,33 @@ void add_sources(TYPE *__restrict__ const next_wavefield,
   }
 }
 
+void add_scattering(TYPE *__restrict__ const next_scattered_wavefield,
+                    const TYPE *__restrict__ const next_wavefield,
+                    const TYPE *__restrict__ const current_wavefield,
+                    const TYPE *__restrict__ const previous_wavefield,
+                    const TYPE *__restrict__ const scatter,
+                    const ptrdiff_t *__restrict__ const shape,
+                    const ptrdiff_t num_shots) {
+  const ptrdiff_t numel_shot = shape[0] * shape[1] * shape[2];
+  const ptrdiff_t size_x = shape[2];
+  const ptrdiff_t size_xy = shape[1] * shape[2];
+
+  for (ptrdiff_t shot = 0; shot < num_shots; shot++) {
+    for (ptrdiff_t z = ZPAD; z < shape[0] - ZPAD; z++) {
+      for (ptrdiff_t y = YPAD; y < shape[1] - YPAD; y++) {
+        for (ptrdiff_t x = XPAD; x < shape[2] - XPAD; x++) {
+          const ptrdiff_t i = z * size_xy + y * size_x + x;
+          const ptrdiff_t si = shot * numel_shot + i;
+          const TYPE current_wavefield_tt =
+              (next_wavefield[si] - 2 * current_wavefield[si] +
+               previous_wavefield[si]); /* no dt^2 because of cancellation */
+          next_scattered_wavefield[si] += current_wavefield_tt * scatter[i];
+        }
+      }
+    }
+  }
+}
+
 void record_receivers(TYPE *__restrict__ const receiver_amplitudes,
                       const TYPE *__restrict__ const current_wavefield,
                       const ptrdiff_t *__restrict__ const receiver_locations,

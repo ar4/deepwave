@@ -12,7 +12,7 @@ enum wavefield_save_strategy {
 
 /* Forward modeling
  * wavefield: At least two time steps of the wavefield for propagation.
- *      2 * num_shots * numel_per_shot if save strategy is NONE or COPY,
+ *      3 * num_shots * numel_per_shot if save strategy is NONE or COPY,
  *      where numel_per_shot is the number of elements in the padded model.
  * aux_wavefield: PML auxiliary wavefields.
  *      2 * AUX_SIZE * num_shots * numel_per_shot, where AUX_SIZE = 1 for 1D,
@@ -71,9 +71,36 @@ void forward(TYPE *__restrict__ const wavefield,
              const ptrdiff_t num_receivers_per_shot, const TYPE dt,
              const enum wavefield_save_strategy save_strategy);
 
+/* Born forward modeling
+ * Arguments are the same as regular forward modeling, except for the following
+ * scattered_wavefield: Like wavefield, but for scattered waves
+ * scattered_aux_wavefield: Like aux_wavefield, but for scattered waves
+ * scatter: Like model, but contains the scattering amplitude
+ */
+void forward_born(TYPE *__restrict__ const wavefield,
+             TYPE *__restrict__ const aux_wavefield,
+    	     TYPE *__restrict__ const scattered_wavefield,
+	     TYPE *__restrict__ const scattered_aux_wavefield,
+             TYPE *__restrict__ const receiver_amplitudes,
+             TYPE *__restrict__ const saved_wavefields,
+             const TYPE *__restrict__ const sigma,
+             const TYPE *__restrict__ const model,
+	     const TYPE *__restrict__ const scatter,
+             const TYPE *__restrict__ const fd1,
+             const TYPE *__restrict__ const fd2,
+             const TYPE *__restrict__ const source_amplitudes,
+             const ptrdiff_t *__restrict__ const source_locations,
+             const ptrdiff_t *__restrict__ const receiver_locations,
+             const ptrdiff_t *__restrict__ const shape,
+             const ptrdiff_t *__restrict__ const pml_width,
+             const ptrdiff_t num_steps, const ptrdiff_t step_ratio,
+             const ptrdiff_t num_shots, const ptrdiff_t num_sources_per_shot,
+             const ptrdiff_t num_receivers_per_shot, const TYPE dt,
+             const enum wavefield_save_strategy save_strategy);
+
 /* Backpropagation
  * wavefield: Two time steps of the wavefield for propagation.
- *      2 * num_shots * numel_per_shot,
+ *      3 * num_shots * numel_per_shot,
  *      where numel_per_shot is the number of elements in the padded model.
  * aux_wavefield: PML auxiliary wavefields.
  *      2 * AUX_SIZE * num_shots * numel_per_shot, where AUX_SIZE = 1 for 1D,

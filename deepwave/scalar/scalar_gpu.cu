@@ -151,6 +151,47 @@ void imaging_condition(
   gpuErrchk(cudaPeekAtLastError());
 }
 
+void __global__ add_scattering_kernel(
+    TYPE *__restrict__ const next_scattered_wavefield,
+    const TYPE *__restrict__ const next_wavefield,
+    const TYPE *__restrict__ const current_wavefield,
+    const TYPE *__restrict__ const previous_wavefield,
+    const TYPE *__restrict__ const scatter,
+    const ptrdiff_t shape_z,
+    const ptrdiff_t num_shots) {
+  const ptrdiff_t shot = blockIdx.y * blockDim.y + threadIdx.y;
+  const ptrdiff_t z = blockIdx.x * blockDim.x + threadIdx.x + ZPAD;
+  if ((shot < num_shots) && (z < shape_z - ZPAD)) {
+    const ptrdiff_t i = z;
+    const ptrdiff_t si = shot * shape_z + i;
+
+    const TYPE current_wavefield_tt =
+        (next_wavefield[si] - 2 * current_wavefield[si] +
+         previous_wavefield[si]); /* no dt^2 because of cancellation */
+    next_scattered_wavefield[si] += current_wavefield_tt * scatter[i];
+  }
+}
+
+void add_scattering(
+                     TYPE *__restrict__ const next_scattered_wavefield,
+                     const TYPE *__restrict__ const next_wavefield,
+                     const TYPE *__restrict__ const current_wavefield,
+                     const TYPE *__restrict__ const previous_wavefield,
+                     const TYPE *__restrict__ const scatter,
+                     const ptrdiff_t *__restrict__ const shape,
+                     const ptrdiff_t num_shots) {
+  const dim3 dimBlock(32, 32, 1);
+  const int gridx = (shape[0] - (2 * ZPAD) + dimBlock.x - 1) / dimBlock.x;
+  const int gridy = (num_shots + dimBlock.y - 1) / dimBlock.y;
+  const int gridz = 1;
+
+  const dim3 dimGrid(gridx, gridy, gridz);
+  add_scattering_kernel<<<dimGrid, dimBlock>>>(
+      next_scattered_wavefield, next_wavefield,
+      current_wavefield, previous_wavefield, scatter, shape[0], num_shots);
+  gpuErrchk(cudaPeekAtLastError());
+}
+
 void __global__ save_wavefields_kernel(
     TYPE *__restrict__ const current_saved_wavefield_t,
     TYPE *__restrict__ const current_saved_wavefield_tt,
@@ -348,6 +389,50 @@ void imaging_condition(
       current_saved_wavefield_t, current_saved_wavefield_tt, sigmaz, sigmay,
       shape[0], shape[1], shape[0] * shape[1], num_shots);
 
+  gpuErrchk(cudaPeekAtLastError());
+}
+
+void __global__ add_scattering_kernel(
+    TYPE *__restrict__ const next_scattered_wavefield,
+    const TYPE *__restrict__ const next_wavefield,
+    const TYPE *__restrict__ const current_wavefield,
+    const TYPE *__restrict__ const previous_wavefield,
+    const TYPE *__restrict__ const scatter,
+    const ptrdiff_t shape_z,
+    const ptrdiff_t shape_y, const ptrdiff_t numel_shot,
+    const ptrdiff_t num_shots) {
+  const ptrdiff_t shot = blockIdx.y * blockDim.y + threadIdx.y;
+  const ptrdiff_t z = blockIdx.x * blockDim.x + threadIdx.x + ZPAD;
+  const ptrdiff_t y = blockIdx.x * blockDim.x + threadIdx.x + YPAD;
+  if ((shot < num_shots) && (z < shape_z - ZPAD) && (y < shape_y - YPAD)) {
+    const ptrdiff_t i = z * shape_y + y;
+    const ptrdiff_t si = shot * numel_shot + i;
+
+    const TYPE current_wavefield_tt =
+        (next_wavefield[si] - 2 * current_wavefield[si] +
+         previous_wavefield[si]); /* no dt^2 because of cancellation */
+    next_scattered_wavefield[si] += current_wavefield_tt * scatter[i];
+  }
+}
+
+void add_scattering(
+                     TYPE *__restrict__ const next_scattered_wavefield,
+                     const TYPE *__restrict__ const next_wavefield,
+                     const TYPE *__restrict__ const current_wavefield,
+                     const TYPE *__restrict__ const previous_wavefield,
+                     const TYPE *__restrict__ const scatter,
+                     const ptrdiff_t *__restrict__ const shape,
+                     const ptrdiff_t num_shots) {
+  const dim3 dimBlock(32, 32, 1);
+  const int gridx = (shape[1] - (2 * YPAD) + dimBlock.x - 1) / dimBlock.x;
+  const int gridy = (shape[0] - (2 * ZPAD) + dimBlock.y - 1) / dimBlock.y;
+  const int gridz = (num_shots + dimBlock.z - 1) / dimBlock.z;
+
+  const dim3 dimGrid(gridx, gridy, gridz);
+  add_scattering_kernel<<<dimGrid, dimBlock>>>(
+      next_scattered_wavefield, next_wavefield,
+      current_wavefield, previous_wavefield, scatter, shape[0], shape[1],
+      shape[0] * shape[1], num_shots);
   gpuErrchk(cudaPeekAtLastError());
 }
 
@@ -604,6 +689,56 @@ void imaging_condition(
       sigmax, shape[0], shape[1], shape[2], shape[0] * shape[1] * shape[2],
       shape[1] * shape[2], num_shots);
 
+  gpuErrchk(cudaPeekAtLastError());
+}
+
+void __global__ add_scattering_kernel(
+    TYPE *__restrict__ const next_scattered_wavefield,
+    const TYPE *__restrict__ const next_wavefield,
+    const TYPE *__restrict__ const current_wavefield,
+    const TYPE *__restrict__ const previous_wavefield,
+    const TYPE *__restrict__ const scatter,
+    const ptrdiff_t shape_z,
+    const ptrdiff_t shape_y,
+    const ptrdiff_t shape_x,
+    const ptrdiff_t numel_shot, const ptrdiff_t size_xy,
+    const ptrdiff_t num_shots) {
+  const ptrdiff_t threadz = blockIdx.z * blockDim.z + threadIdx.z;
+  const ptrdiff_t shot = threadz / (shape_z - ZPAD - ZPAD + 1);
+  const ptrdiff_t z = threadz % (shape_z - ZPAD - ZPAD + 1) + ZPAD;
+  const ptrdiff_t y = blockIdx.y * blockDim.y + threadIdx.y + YPAD;
+  const ptrdiff_t x = blockIdx.x * blockDim.x + threadIdx.x + XPAD;
+  if ((shot < num_shots) && (z < shape_z - ZPAD) && (y < shape_y - YPAD) &&
+      (x < shape_x - XPAD)) {
+    const ptrdiff_t i = z * size_xy + y * shape_x + x;
+    const ptrdiff_t si = shot * numel_shot + i;
+
+    const TYPE current_wavefield_tt =
+        (next_wavefield[si] - 2 * current_wavefield[si] +
+         previous_wavefield[si]); /* no dt^2 because of cancellation */
+    next_scattered_wavefield[si] += current_wavefield_tt * scatter[i];
+  }
+}
+
+void add_scattering(
+                     TYPE *__restrict__ const next_scattered_wavefield,
+                     const TYPE *__restrict__ const next_wavefield,
+                     const TYPE *__restrict__ const current_wavefield,
+                     const TYPE *__restrict__ const previous_wavefield,
+                     const TYPE *__restrict__ const scatter,
+                     const ptrdiff_t *__restrict__ const shape,
+                     const ptrdiff_t num_shots) {
+  const dim3 dimBlock(32, 32, 1);
+  const int gridx = (shape[2] - (2 * XPAD) + dimBlock.x - 1) / dimBlock.x;
+  const int gridy = (shape[1] - (2 * YPAD) + dimBlock.y - 1) / dimBlock.y;
+  const int gridz =
+      (num_shots * (shape[0] - (2 * ZPAD)) + dimBlock.z - 1) / dimBlock.z;
+
+  const dim3 dimGrid(gridx, gridy, gridz);
+  add_scattering_kernel<<<dimGrid, dimBlock>>>(
+      next_scattered_wavefield, next_wavefield,
+      current_wavefield, previous_wavefield, scatter, shape[0], shape[1],
+      shape[2], shape[0] * shape[1] * shape[2], shape[1] * shape[2], num_shots);
   gpuErrchk(cudaPeekAtLastError());
 }
 

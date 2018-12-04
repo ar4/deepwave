@@ -5,6 +5,7 @@ import numpy as np
 import scipy.special
 from scipy.ndimage.interpolation import shift
 from deepwave.scalar import Propagator
+from deepwave.scalar import BornPropagator
 from deepwave.wavelets import ricker
 
 
@@ -93,6 +94,31 @@ def test_scatter_3d():
     assert np.linalg.norm(diff) < 0.0015
 
 
+def test_born_scatter_1d():
+    """Test Born propagation in a 1D model with a point scatterer."""
+    expected, actual = run_born_scatter_1d(propagator=scalarbornprop)
+    diff = (expected - actual.cpu()).numpy().ravel()
+    assert np.linalg.norm(diff) < 1.86
+
+
+def test_born_scatter_2d():
+    """Test Born propagation in a 2D model with a point scatterer."""
+    expected, actual = run_born_scatter_2d(propagator=scalarbornprop,
+                                           dt=0.001,
+                                           prop_kwargs={'pml_width': 30})
+    diff = (expected - actual.cpu()).numpy().ravel()
+    assert np.linalg.norm(diff) < 0.0025
+
+
+def test_born_scatter_3d():
+    """Test Born propagation in a 3D model with a point scatterer."""
+    expected, actual = run_born_scatter_3d(propagator=scalarbornprop,
+                                           dt=0.002,
+                                           prop_kwargs={'pml_width': 30})
+    diff = (expected - actual.cpu()).numpy().ravel()
+    assert np.linalg.norm(diff) < 6e-5
+
+
 def test_gradcheck_1d():
     """Test gradcheck in a 1D model."""
     run_gradcheck_1d(propagator=scalarprop)
@@ -106,6 +132,21 @@ def test_gradcheck_2d():
 def test_gradcheck_3d():
     """Test gradcheck in a 3D model."""
     run_gradcheck_3d(propagator=scalarprop)
+
+
+def test_born_gradcheck_1d():
+    """Test gradcheck in a 1D model with Born propagator."""
+    run_born_gradcheck_1d(propagator=scalarbornprop)
+
+
+def test_born_gradcheck_2d():
+    """Test gradcheck in a 2D model with Born propagator."""
+    run_born_gradcheck_2d(propagator=scalarbornprop)
+
+
+def test_born_gradcheck_3d():
+    """Test gradcheck in a 3D model with Born propagator."""
+    run_born_gradcheck_3d(propagator=scalarbornprop)
 
 
 def scalarprop(model, dx, dt, source_amplitude, source_locations,
@@ -127,6 +168,32 @@ def scalarprop(model, dx, dt, source_amplitude, source_locations,
     receiver_locations = receiver_locations.to(device)
 
     prop = Propagator({'vp': model}, dx, **prop_kwargs)
+    receiver_amplitudes = prop(source_amplitude,
+                               source_locations,
+                               receiver_locations, dt)
+
+    return receiver_amplitudes
+
+
+def scalarbornprop(model, scatter, dx, dt, source_amplitude, source_locations,
+                   receiver_locations, prop_kwargs=None, pml_width=None):
+    """Wraps the scalar propagator."""
+
+    if prop_kwargs is None:
+        prop_kwargs = {}
+    # For consistency when actual max speed changes
+    prop_kwargs['vpmax'] = 2000
+
+    # Workaround for gradcheck not accepting prop_kwargs dictionary
+    if pml_width is not None:
+        prop_kwargs['pml_width'] = pml_width
+
+    device = model.device
+    source_amplitude = source_amplitude.to(device)
+    source_locations = source_locations.to(device)
+    receiver_locations = receiver_locations.to(device)
+
+    prop = BornPropagator({'vp': model, 'scatter': scatter}, dx, **prop_kwargs)
     receiver_amplitudes = prop(source_amplitude,
                                source_locations,
                                receiver_locations, dt)
@@ -419,6 +486,94 @@ def run_scatter_3d(c=1500, dc=100, freq=25, dx=(5, 5, 5), dt=0.0001,
                        propagator, prop_kwargs, device, dtype)
 
 
+def run_born_scatter(c, dc, freq, dx, dt, nx,
+                     num_shots, num_sources_per_shot,
+                     num_receivers_per_shot,
+                     propagator, prop_kwargs, device=None, dtype=None):
+    """Create a point scatterer model, and the expected waveform at point,
+       and the forward propagated wave.
+    """
+    torch.manual_seed(1)
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = torch.ones(*nx, device=device, dtype=dtype) * c
+
+    nx = torch.Tensor(nx).long()
+    dx = torch.Tensor(dx)
+
+    nt = int((2 * torch.norm(nx.float() * dx) / c + 0.35 + 2 / freq) / dt)
+    x_s = _set_coords(num_shots, num_sources_per_shot, nx, dx)
+    x_r = _set_coords(num_shots, num_receivers_per_shot, nx, dx)
+    x_p = _set_coords(1, 1, nx, dx, 'middle')[0, 0]
+    scatter = torch.zeros_like(model)
+    scatter[torch.split((x_p / dx).long(), 1)] = dc
+    sources = _set_sources(x_s, freq, dt, nt, dtype)
+
+    if len(nx) == 1:
+        scattered = scattered_1d
+    elif len(nx) == 2:
+        scattered = scattered_2d
+    elif len(nx) == 3:
+        scattered = scattered_3d
+    else:
+        raise ValueError("unsupported nx")
+
+    expected = torch.zeros(nt, num_shots, num_receivers_per_shot, dtype=dtype)
+    for shot in range(num_shots):
+        for source in range(num_sources_per_shot):
+            for receiver in range(num_receivers_per_shot):
+                expected[:, shot, receiver] += \
+                    scattered(x_r[shot, receiver], x_s[shot, source], x_p,
+                              dx, dt, c, dc,
+                              sources['amplitude'][:, shot, source]).to(dtype)
+
+    actual = propagator(model, scatter, dx, dt, sources['amplitude'],
+                        sources['locations'], x_r, prop_kwargs=prop_kwargs)
+
+    return expected, actual
+
+
+def run_born_scatter_1d(c=1500, dc=50, freq=25, dx=(5,), dt=0.0001, nx=(100,),
+                        num_shots=2, num_sources_per_shot=2,
+                        num_receivers_per_shot=2,
+                        propagator=None, prop_kwargs=None, device=None,
+                        dtype=None):
+    """Runs run_born_scatter with default parameters for 1D."""
+
+    return run_born_scatter(c, dc, freq, dx, dt, nx,
+                            num_shots, num_sources_per_shot,
+                            num_receivers_per_shot,
+                            propagator, prop_kwargs, device, dtype)
+
+
+def run_born_scatter_2d(c=1500, dc=150, freq=25, dx=(5, 5), dt=0.0001,
+                        nx=(50, 50),
+                        num_shots=2, num_sources_per_shot=2,
+                        num_receivers_per_shot=2,
+                        propagator=None, prop_kwargs=None, device=None,
+                        dtype=None):
+    """Runs run_born_scatter with default parameters for 2D."""
+
+    return run_born_scatter(c, dc, freq, dx, dt, nx,
+                            num_shots, num_sources_per_shot,
+                            num_receivers_per_shot,
+                            propagator, prop_kwargs, device, dtype)
+
+
+def run_born_scatter_3d(c=1500, dc=100, freq=25, dx=(5, 5, 5), dt=0.0001,
+                        nx=(15, 5, 10),
+                        num_shots=2, num_sources_per_shot=2,
+                        num_receivers_per_shot=2,
+                        propagator=None, prop_kwargs=None, device=None,
+                        dtype=None):
+    """Runs run_born_scatter with default parameters for 3D."""
+
+    return run_born_scatter(c, dc, freq, dx, dt, nx,
+                            num_shots, num_sources_per_shot,
+                            num_receivers_per_shot,
+                            propagator, prop_kwargs, device, dtype)
+
+
 def run_gradcheck(c, dc, freq, dx, dt, nx,
                   num_shots, num_sources_per_shot,
                   num_receivers_per_shot,
@@ -498,3 +653,81 @@ def run_gradcheck_3d(c=1500, dc=100, freq=25, dx=(5, 5, 5), dt=0.0005,
                          num_receivers_per_shot,
                          propagator, prop_kwargs, device=device,
                          dtype=dtype, atol=3e-4)
+
+
+def run_born_gradcheck(c, dc, freq, dx, dt, nx,
+                  num_shots, num_sources_per_shot,
+                  num_receivers_per_shot,
+                  propagator, prop_kwargs,
+                  device=None, dtype=None, atol=1e-5, eps=1e-6):
+    """Create a point scatterer model, and the gradient."""
+    torch.manual_seed(1)
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if device == torch.device("cuda"):
+        # double-precision not currently enabled for GPUs
+        dtype = torch.float
+        eps = 10
+    model = torch.ones(*nx, device=device, dtype=dtype) * c
+    scatter = torch.rand(*nx, device=device, dtype=dtype) * dc
+
+    nx = torch.Tensor(nx).long()
+    dx = torch.Tensor(dx)
+
+    nt = int((2 * torch.norm(nx.float() * dx) / c + 0.1 + 2 / freq) / dt)
+    x_s = _set_coords(num_shots, num_sources_per_shot, nx, dx)
+    x_r = _set_coords(num_shots, num_receivers_per_shot, nx, dx)
+    sources = _set_sources(x_s, freq, dt, nt, dtype, dpeak_time=0.05)
+
+    scatter.requires_grad_()
+
+    pml_width = 3
+
+    torch.autograd.gradcheck(propagator, (model, scatter, dx, dt, sources['amplitude'],
+                                          sources['locations'], x_r,
+                                          prop_kwargs, pml_width),
+                             atol=atol, eps=eps)
+
+
+def run_born_gradcheck_1d(c=1500, dc=100, freq=25, dx=(5,), dt=0.001, nx=(10,),
+                     num_shots=2, num_sources_per_shot=2,
+                     num_receivers_per_shot=2,
+                     propagator=None, prop_kwargs=None,
+                     device=None, dtype=torch.double):
+    """Runs run_gradcheck with default parameters for 1D."""
+
+    return run_born_gradcheck(c, dc, freq, dx, dt, nx,
+                         num_shots, num_sources_per_shot,
+                         num_receivers_per_shot,
+                         propagator, prop_kwargs, device=device,
+                         dtype=dtype)
+
+
+def run_born_gradcheck_2d(c=1500, dc=100, freq=25, dx=(5, 5), dt=0.001,
+                     nx=(4, 3),
+                     num_shots=2, num_sources_per_shot=2,
+                     num_receivers_per_shot=2,
+                     propagator=None, prop_kwargs=None,
+                     device=None, dtype=torch.double):
+    """Runs run_gradcheck with default parameters for 2D."""
+
+    return run_born_gradcheck(c, dc, freq, dx, dt, nx,
+                         num_shots, num_sources_per_shot,
+                         num_receivers_per_shot,
+                         propagator, prop_kwargs, device=device,
+                         dtype=dtype)
+
+
+def run_born_gradcheck_3d(c=1500, dc=100, freq=25, dx=(5, 5, 5), dt=0.0005,
+                     nx=(4, 3, 3),
+                     num_shots=2, num_sources_per_shot=2,
+                     num_receivers_per_shot=2,
+                     propagator=None, prop_kwargs=None,
+                     device=None, dtype=torch.double):
+    """Runs run_gradcheck with default parameters for 3D."""
+
+    return run_born_gradcheck(c, dc, freq, dx, dt, nx,
+                         num_shots, num_sources_per_shot,
+                         num_receivers_per_shot,
+                         propagator, prop_kwargs, device=device,
+                         dtype=dtype)
