@@ -401,8 +401,8 @@ void __global__ add_scattering_kernel(
     const ptrdiff_t shape_z,
     const ptrdiff_t shape_y, const ptrdiff_t numel_shot,
     const ptrdiff_t num_shots) {
-  const ptrdiff_t shot = blockIdx.y * blockDim.y + threadIdx.y;
-  const ptrdiff_t z = blockIdx.x * blockDim.x + threadIdx.x + ZPAD;
+  const ptrdiff_t shot = blockIdx.z * blockDim.z + threadIdx.z;
+  const ptrdiff_t z = blockIdx.y * blockDim.y + threadIdx.y + ZPAD;
   const ptrdiff_t y = blockIdx.x * blockDim.x + threadIdx.x + YPAD;
   if ((shot < num_shots) && (z < shape_z - ZPAD) && (y < shape_y - YPAD)) {
     const ptrdiff_t i = z * shape_y + y;
