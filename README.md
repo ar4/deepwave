@@ -121,6 +121,8 @@ The resulting data should only contain recordings from the scattered wavefield, 
 
 To perform LSRTM, optimize the variable `scatter`. Optimizing the source amplitude or the wave speed model is not currently supported with the Born propagator.
 
+For an example of using Deepwave for LSRTM, see [this notebook](https://colab.research.google.com/drive/1BgQM5VGgyFp7Q--pAJX-vGb2bW9mcbM8).
+
 ## Notes
 * Deepwave is only tested with Python 3.6.
 * For a reflective free surface, set the PML width to zero at the surface. For example, in 3D and when the PML width on the other sides is 10 cells, provide the argument `pml_width=[0,10,10,10,10,10]` when creating the propagator if the free surface is at the beginning of the first dimension. The format is [z1, z2, y1, y2, x1, x2], where z1, y1, and x1 are the PML widths at the beginning of the z, y, and x dimensions, and z2, y2, and x2 are the PML widths at the ends of those dimensions.

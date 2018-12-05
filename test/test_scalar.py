@@ -659,7 +659,7 @@ def run_born_gradcheck(c, dc, freq, dx, dt, nx,
                   num_shots, num_sources_per_shot,
                   num_receivers_per_shot,
                   propagator, prop_kwargs,
-                  device=None, dtype=None, atol=1e-5, eps=1e-6):
+                  device=None, dtype=None, atol=1e-5, rtol=1e-3, eps=1e-6):
     """Create a point scatterer model, and the gradient."""
     torch.manual_seed(1)
     if device is None:
@@ -700,7 +700,7 @@ def run_born_gradcheck_1d(c=1500, dc=100, freq=25, dx=(5,), dt=0.001, nx=(10,),
                          num_shots, num_sources_per_shot,
                          num_receivers_per_shot,
                          propagator, prop_kwargs, device=device,
-                         dtype=dtype)
+                         dtype=dtype, atol=6e-6, rtol=1e-3, eps=1)
 
 
 def run_born_gradcheck_2d(c=1500, dc=100, freq=25, dx=(5, 5), dt=0.001,
@@ -715,7 +715,7 @@ def run_born_gradcheck_2d(c=1500, dc=100, freq=25, dx=(5, 5), dt=0.001,
                          num_shots, num_sources_per_shot,
                          num_receivers_per_shot,
                          propagator, prop_kwargs, device=device,
-                         dtype=dtype)
+                         dtype=dtype, atol=1e-7, rtol=1e-4, eps=1)
 
 
 def run_born_gradcheck_3d(c=1500, dc=100, freq=25, dx=(5, 5, 5), dt=0.0005,
@@ -730,4 +730,4 @@ def run_born_gradcheck_3d(c=1500, dc=100, freq=25, dx=(5, 5, 5), dt=0.0005,
                          num_shots, num_sources_per_shot,
                          num_receivers_per_shot,
                          propagator, prop_kwargs, device=device,
-                         dtype=dtype)
+                         dtype=dtype, atol=1e-8, rtol=1e-5, eps=1)
