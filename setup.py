@@ -62,8 +62,8 @@ setuptools.setup(
     ),
     install_requires=["numpy",
                       "scipy",
-                      "torch>=0.4.1"],
-    setup_requires=["torch>=0.4.1"],
+                      "torch>=1.0.0"],
+    setup_requires=["torch>=1.0.0"],
     extras_require={"testing": ["pytest"]},
     ext_modules=cpp_extensions + cuda_extensions,
     cmdclass={'build_ext': BuildExtension}

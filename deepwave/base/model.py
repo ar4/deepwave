@@ -245,7 +245,7 @@ def _set_tensor(var, name, length, dtype, dtype_torch):
     """Set and check a Tensor.
 
     Args:
-        var: list or scalar of type dtype
+        var: list, tuple, Tensor, or scalar of type dtype
         name: String specifying the name to use in error messages
         length: List specifying the desired length
         dtype: The Python type that var must have
@@ -272,7 +272,11 @@ def _set_tensor(var, name, length, dtype, dtype_torch):
     #                    .format(name, dtype))
 
     # Convert to Tensor
-    var = torch.tensor(var).to(dtype_torch)
+    if not isinstance(var, torch.Tensor):
+        var = torch.tensor(var)
+
+    # Convert to desired dtype
+    var = var.to(dtype_torch)
 
     return var
 

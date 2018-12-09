@@ -1,4 +1,4 @@
-#include <torch/torch.h>
+#include <torch/extension.h>
 #include "scalar.h"
 
 void forward_wrapper(at::Tensor wavefield, at::Tensor aux_wavefield,
