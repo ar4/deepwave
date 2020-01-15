@@ -47,7 +47,7 @@ else:
 
 setuptools.setup(
     name="deepwave",
-    version="0.0.6",
+    version="0.0.7",
     author="Alan Richardson",
     author_email="alan@ausargeo.com",
     description="Wave propagation modules for PyTorch.",
