@@ -4,6 +4,7 @@ import numpy as np
 import scipy.signal
 import deepwave.base.propagator
 
+
 class Propagator(deepwave.base.propagator.Propagator):
     """PyTorch Module for scalar wave propagator.
 
@@ -11,27 +12,41 @@ class Propagator(deepwave.base.propagator.Propagator):
     """
 
     def __init__(self, model, dx, pml_width=None, survey_pad=None, vpmax=None):
-        if list(model.keys()) != ['vp']:
-            raise RuntimeError('Model must only contain vp, but contains {}'
-                               .format(list(model.keys())))
-        super(Propagator, self).__init__(PropagatorFunction, model, dx,
-                                         fd_width=2,  # also in Pml
-                                         pml_width=pml_width,
-                                         survey_pad=survey_pad)
-        self.model.extra_info['vpmax'] = vpmax
-        if model['vp'].min() <= 0.0:
-            raise RuntimeError('vp must be > 0, but min is {}'
-                               .format(model['vp'].min()))
+        if list(model.keys()) != ["vp"]:
+            raise RuntimeError(
+                "Model must only contain vp, but contains {}".format(
+                    list(model.keys())
+                )
+            )
+        super(Propagator, self).__init__(
+            PropagatorFunction,
+            model,
+            dx,
+            fd_width=2,  # also in Pml
+            pml_width=pml_width,
+            survey_pad=survey_pad,
+        )
+        self.model.extra_info["vpmax"] = vpmax
+        if model["vp"].min() <= 0.0:
+            raise RuntimeError(
+                "vp must be > 0, but min is {}".format(model["vp"].min())
+            )
 
 
 class PropagatorFunction(torch.autograd.Function):
     """Forward modeling and backpropagation functions. Not called by users."""
+
     @staticmethod
-    def forward(ctx,
-                source_amplitudes,
-                source_locations,
-                receiver_locations,
-                dt, model, property_names, vp):
+    def forward(
+        ctx,
+        source_amplitudes,
+        source_locations,
+        receiver_locations,
+        dt,
+        model,
+        property_names,
+        vp,
+    ):
         """Forward modeling. Not called by users - see Propagator instead.
 
         Args:
@@ -44,47 +59,67 @@ class PropagatorFunction(torch.autograd.Function):
         Returns:
             receiver amplitudes
         """
-        if property_names != ['vp']:
-            raise RuntimeError('Model must only contain vp, but contains {}'
-                               .format(property_names))
+        if property_names != ["vp"]:
+            raise RuntimeError(
+                "Model must only contain vp, but contains {}".format(
+                    property_names
+                )
+            )
         if vp.min() <= 0.0:
-            raise RuntimeError('vp must be > 0, but min is {}'
-                               .format(vp.min()))
+            raise RuntimeError(
+                "vp must be > 0, but min is {}".format(vp.min())
+            )
         device = model.device
         dtype = model.dtype
         num_steps, num_shots, num_sources_per_shot = source_amplitudes.shape
         num_receivers_per_shot = receiver_locations.shape[1]
 
-        if model.extra_info['vpmax'] is None:
+        if model.extra_info["vpmax"] is None:
             max_vel = vp.max().item()
         else:
-            max_vel = model.extra_info['vpmax']
+            max_vel = model.extra_info["vpmax"]
         timestep = Timestep(dt, model.dx, max_vel)
-        model.add_properties({'vp2dt2': vp**2 * timestep.inner_dt**2,
-                              'scaling': 2 / vp**3})
+        model.add_properties(
+            {
+                "vp2dt2": vp ** 2 * timestep.inner_dt ** 2,
+                "scaling": 2 / vp ** 3,
+            }
+        )
         source_model_locations = model.get_locations(source_locations)
         receiver_model_locations = model.get_locations(receiver_locations)
         scalar_wrapper = _select_propagator(model.ndim, vp.dtype, vp.is_cuda)
-        wavefield_save_strategy = \
-            _set_wavefield_save_strategy(ctx.needs_input_grad[6], dt,
-                                         timestep.inner_dt, scalar_wrapper)
+        wavefield_save_strategy = _set_wavefield_save_strategy(
+            ctx.needs_input_grad[6], dt, timestep.inner_dt, scalar_wrapper
+        )
         fd1, fd2 = _set_finite_diff_coeffs(model.ndim, model.dx, device, dtype)
-        wavefield, saved_wavefields = \
-            _allocate_wavefields(wavefield_save_strategy, scalar_wrapper,
-                                 model, num_steps, num_shots)
+        wavefield, saved_wavefields = _allocate_wavefields(
+            wavefield_save_strategy,
+            scalar_wrapper,
+            model,
+            num_steps,
+            num_shots,
+        )
         receiver_amplitudes = torch.zeros(
-            num_steps, num_shots, num_receivers_per_shot, device=device,
-            dtype=dtype)
+            num_steps,
+            num_shots,
+            num_receivers_per_shot,
+            device=device,
+            dtype=dtype,
+        )
         inner_dt = torch.tensor([timestep.inner_dt]).to(dtype)
         pml = Pml(model, num_shots, max_vel)
-        source_amplitudes_resampled = \
-                scipy.signal.resample(source_amplitudes.detach().cpu().numpy(),
-                                      num_steps * timestep.step_ratio)
-        source_amplitudes_resampled = \
-                torch.tensor(source_amplitudes_resampled)\
-                    .to(dtype).to(source_amplitudes.device)
-        source_amplitudes_resampled.requires_grad = \
-                source_amplitudes.requires_grad
+        source_amplitudes_resampled = scipy.signal.resample(
+            source_amplitudes.detach().cpu().numpy(),
+            num_steps * timestep.step_ratio,
+        )
+        source_amplitudes_resampled = (
+            torch.tensor(source_amplitudes_resampled)
+            .to(dtype)
+            .to(source_amplitudes.device)
+        )
+        source_amplitudes_resampled.requires_grad = (
+            source_amplitudes.requires_grad
+        )
 
         # Call compiled C code to do forward modeling
         scalar_wrapper.forward(
@@ -93,7 +128,7 @@ class PropagatorFunction(torch.autograd.Function):
             receiver_amplitudes.to(dtype).contiguous(),
             saved_wavefields.to(dtype).contiguous(),
             pml.sigma.to(dtype).contiguous(),
-            model.properties['vp2dt2'].to(dtype).contiguous(),
+            model.properties["vp2dt2"].to(dtype).contiguous(),
             fd1.to(dtype).contiguous(),
             fd2.to(dtype).contiguous(),
             source_amplitudes_resampled.to(dtype).contiguous(),
@@ -107,28 +142,36 @@ class PropagatorFunction(torch.autograd.Function):
             num_shots,
             num_sources_per_shot,
             num_receivers_per_shot,
-            wavefield_save_strategy)
+            wavefield_save_strategy,
+        )
 
         # Allocate gradients that will be calculated during backpropagation
         model_gradient = _allocate_grad(vp, ctx.needs_input_grad[6])
-        source_gradient = _allocate_grad(source_amplitudes,
-                                         ctx.needs_input_grad[0])
+        source_gradient = _allocate_grad(
+            source_amplitudes, ctx.needs_input_grad[0]
+        )
 
-        ctx.save_for_backward(saved_wavefields, pml.aux, pml.sigma,
-                              model.properties['vp2dt2'],
-                              model.properties['scaling'],
-                              pml.pml_width,
-                              source_model_locations,
-                              receiver_model_locations,
-                              torch.tensor(timestep.step_ratio),
-                              inner_dt, fd1, fd2,
-                              model_gradient, source_gradient)
+        ctx.save_for_backward(
+            saved_wavefields,
+            pml.aux,
+            pml.sigma,
+            model.properties["vp2dt2"],
+            model.properties["scaling"],
+            pml.pml_width,
+            source_model_locations,
+            receiver_model_locations,
+            torch.tensor(timestep.step_ratio),
+            inner_dt,
+            fd1,
+            fd2,
+            model_gradient,
+            source_gradient,
+        )
 
         return receiver_amplitudes
 
     @staticmethod
-    def backward(ctx,
-                 grad_receiver_amplitudes):
+    def backward(ctx, grad_receiver_amplitudes):
         """Performs backpropagation of gradient. Not directly called by users.
 
         Args:
@@ -145,18 +188,33 @@ class PropagatorFunction(torch.autograd.Function):
             None for the other inputs to forward modeling.
         """
 
-        (saved_wavefields, aux, sigma, vp2dt2, scaling,
-         pml_width, source_model_locations, receiver_model_locations,
-         step_ratio, inner_dt, fd1, fd2,
-         model_gradient, source_gradient) = ctx.saved_tensors
+        (
+            saved_wavefields,
+            aux,
+            sigma,
+            vp2dt2,
+            scaling,
+            pml_width,
+            source_model_locations,
+            receiver_model_locations,
+            step_ratio,
+            inner_dt,
+            fd1,
+            fd2,
+            model_gradient,
+            source_gradient,
+        ) = ctx.saved_tensors
         step_ratio = step_ratio.item()
 
         dtype = vp2dt2.dtype
         ndim = receiver_model_locations.shape[-1]
         scalar_wrapper = _select_propagator(ndim, vp2dt2.dtype, vp2dt2.is_cuda)
 
-        num_steps, num_shots, num_receivers_per_shot = \
-            grad_receiver_amplitudes.shape
+        (
+            num_steps,
+            num_shots,
+            num_receivers_per_shot,
+        ) = grad_receiver_amplitudes.shape
         num_sources_per_shot = source_model_locations.shape[1]
         shape = torch.ones(3).long()
         shape[:ndim] = torch.tensor(vp2dt2.shape)
@@ -166,15 +224,18 @@ class PropagatorFunction(torch.autograd.Function):
         source_gradient.fill_(0)
         wavefield = torch.zeros(3, *aux[0].shape, device=aux.device)
 
-        grad_receiver_amplitudes_resampled = \
-                scipy.signal.resample(grad_receiver_amplitudes
-                                      .detach().cpu().numpy(),
-                                      num_steps * step_ratio)
-        grad_receiver_amplitudes_resampled = \
-                torch.tensor(grad_receiver_amplitudes_resampled)\
-                    .to(dtype).to(grad_receiver_amplitudes.device)
-        grad_receiver_amplitudes_resampled.requires_grad = \
-                grad_receiver_amplitudes.requires_grad
+        grad_receiver_amplitudes_resampled = scipy.signal.resample(
+            grad_receiver_amplitudes.detach().cpu().numpy(),
+            num_steps * step_ratio,
+        )
+        grad_receiver_amplitudes_resampled = (
+            torch.tensor(grad_receiver_amplitudes_resampled)
+            .to(dtype)
+            .to(grad_receiver_amplitudes.device)
+        )
+        grad_receiver_amplitudes_resampled.requires_grad = (
+            grad_receiver_amplitudes.requires_grad
+        )
 
         # Ensure that gradient Tensors are of the right type and contiguous
         model_gradient = model_gradient.to(dtype).contiguous()
@@ -202,7 +263,8 @@ class PropagatorFunction(torch.autograd.Function):
             step_ratio,
             num_shots,
             num_sources_per_shot,
-            num_receivers_per_shot)
+            num_receivers_per_shot,
+        )
 
         if not ctx.needs_input_grad[0]:
             source_gradient = None
@@ -225,9 +287,9 @@ def _select_propagator(ndim, dtype, cuda):
         scalar_wrapper: module wrapping the compiled propagators
     """
     if ndim not in [1, 2, 3]:
-        raise RuntimeError('unsupported number of dimensions: {}'.format(ndim))
+        raise RuntimeError("unsupported number of dimensions: {}".format(ndim))
     if dtype not in [torch.float, torch.double]:
-        raise RuntimeError('unsupported datatype: {}'.format(dtype))
+        raise RuntimeError("unsupported datatype: {}".format(dtype))
 
     if cuda:
         if dtype == torch.float:
@@ -238,15 +300,17 @@ def _select_propagator(ndim, dtype, cuda):
             elif ndim == 3:
                 import scalar3d_gpu_iso_4_float as scalar_wrapper
         elif dtype == torch.double:
-            raise NotImplementedError('To enable double-precision GPU '
-                                      'propagators (on supported hardware) '
-                                      'add "double" to the list of dtypes in '
-                                      'the CUDA portion of setup.py')
-            #if ndim == 1:
+            raise NotImplementedError(
+                "To enable double-precision GPU "
+                "propagators (on supported hardware) "
+                'add "double" to the list of dtypes in '
+                "the CUDA portion of setup.py"
+            )
+            # if ndim == 1:
             #    import scalar1d_gpu_iso_4_double as scalar_wrapper
-            #elif ndim == 2:
+            # elif ndim == 2:
             #    import scalar2d_gpu_iso_4_double as scalar_wrapper
-            #elif ndim == 3:
+            # elif ndim == 3:
             #    import scalar3d_gpu_iso_4_double as scalar_wrapper
     else:
         if dtype == torch.float:
@@ -314,18 +378,22 @@ def _set_finite_diff_coeffs(ndim, dx, device, dtype):
     fd2 = torch.zeros(ndim * 2 + 1, device=device, dtype=dtype)
     dx = dx.to(device).to(dtype)
     for dim in range(ndim):
-        fd1[dim] = (torch.tensor([8 / 12, -1 / 12], device=device, dtype=dtype)
-                    / dx[dim])
-        fd2[0] += -5 / 2 / dx[dim]**2
-        fd2[1 + dim * 2: 1 + (dim + 1) * 2] = \
-            (torch.tensor([4 / 3, -1 / 12], device=device, dtype=dtype)
-             / dx[dim]**2)
+        fd1[dim] = (
+            torch.tensor([8 / 12, -1 / 12], device=device, dtype=dtype)
+            / dx[dim]
+        )
+        fd2[0] += -5 / 2 / dx[dim] ** 2
+        fd2[1 + dim * 2 : 1 + (dim + 1) * 2] = (
+            torch.tensor([4 / 3, -1 / 12], device=device, dtype=dtype)
+            / dx[dim] ** 2
+        )
 
     return fd1, fd2
 
 
-def _allocate_wavefields(wavefield_save_strategy, scalar_wrapper, model,
-                         num_steps, num_shots):
+def _allocate_wavefields(
+    wavefield_save_strategy, scalar_wrapper, model, num_steps, num_shots
+):
     """Allocate wavefield Tensors.
 
     These will be used for propagation and to store wavefields for
@@ -392,7 +460,6 @@ class Pml(object):
     """
 
     def __init__(self, model, num_shots, max_vel):
-
         def _set_sigma(model, profile, dim, fd_pad):
             """Create the sigma vector needed for the PML for one dimension.
 
@@ -413,10 +480,10 @@ class Pml(object):
                     specified dimension.
             """
 
-            pad_width = model.pad_width[2 * dim:2 * dim + 2]
+            pad_width = model.pad_width[2 * dim : 2 * dim + 2]
             sigma = np.zeros(model.shape[dim])
-            sigma[pad_width[0] - 1:fd_pad - 1:-1] = profile[0]
-            sigma[-pad_width[1]:-fd_pad] = profile[1]
+            sigma[pad_width[0] - 1 : fd_pad - 1 : -1] = profile[0]
+            sigma[-pad_width[1] : -fd_pad] = profile[1]
             sigma[:fd_pad] = sigma[fd_pad]
             sigma[-fd_pad:] = sigma[-fd_pad - 1]
             return torch.tensor(sigma).to(model.dtype).to(model.device)
@@ -425,11 +492,17 @@ class Pml(object):
         sigma = []
         self.pml_width = model.pad_width - fd_pad
         for dim in range(model.ndim):
-            pml_widths = self.pml_width[2 * dim:2 * dim + 2]
-            profile = [((np.arange(w) / w)**2 *
-                        3 * max_vel * np.log(1000) /
-                        (2 * model.dx[dim].numpy() * w))
-                       for w in pml_widths.numpy()]
+            pml_widths = self.pml_width[2 * dim : 2 * dim + 2]
+            profile = [
+                (
+                    (np.arange(w) / w) ** 2
+                    * 3
+                    * max_vel
+                    * np.log(1000)
+                    / (2 * model.dx[dim].numpy() * w)
+                )
+                for w in pml_widths.numpy()
+            ]
             sigma.append(_set_sigma(model, profile, dim, fd_pad))
         self.sigma = torch.cat(sigma)
 

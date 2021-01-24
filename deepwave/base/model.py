@@ -18,8 +18,9 @@ class Model(object):
         extra_info: Dict to store extra information. Optional, default None.
     """
 
-    def __init__(self, properties, dx, pad_width=None, origin=None,
-                 extra_info=None):
+    def __init__(
+        self, properties, dx, pad_width=None, origin=None, extra_info=None
+    ):
         _check_properties(properties)
         self.properties = properties
         self.device = _get_model_device(properties)
@@ -44,8 +45,9 @@ class Model(object):
         for k, v in self.properties.items():
             properties[k] = v[self.interior][key]
         origin = self._new_origin(key)
-        model_nopad = Model(properties, self.dx, origin=origin,
-                            extra_info=self.extra_info)
+        model_nopad = Model(
+            properties, self.dx, origin=origin, extra_info=self.extra_info
+        )
         return model_nopad.pad(self.pad_width)
 
     def to(self, device):
@@ -53,8 +55,13 @@ class Model(object):
         properties = {}
         for k, v in self.properties.items():
             properties[k] = v[k].to(device)
-        return Model(properties, self.dx, self.pad_width, self.origin,
-                     extra_info=self.extra_info)
+        return Model(
+            properties,
+            self.dx,
+            self.pad_width,
+            self.origin,
+            extra_info=self.extra_info,
+        )
 
     def _new_origin(self, key):
         """Return the new origin after extracting key.
@@ -92,16 +99,20 @@ class Model(object):
         for key, value in self.properties.items():
             # Flip order of dimensions (as required by pad), but not order
             # within dimension, so [1, 0, ...] -> [..., 1, 0]
-            padding = pad_width[:2 * self.ndim].reshape(-1, 2).flip(0)
+            padding = pad_width[: 2 * self.ndim].reshape(-1, 2).flip(0)
             padding = padding.flatten().tolist()
-            value_for_pad = value.reshape(1, 1, *self.shape[:self.ndim])
+            value_for_pad = value.reshape(1, 1, *self.shape[: self.ndim])
             value_for_pad = value_for_pad[[...] + self.interior]
             padded_properties[key] = torch.nn.functional.pad(
-                value_for_pad,
-                padding,
-                mode='replicate')[0, 0]
-        return Model(padded_properties, self.dx, pad_width=pad_width,
-                     origin=self.origin, extra_info=self.extra_info)
+                value_for_pad, padding, mode="replicate"
+            )[0, 0]
+        return Model(
+            padded_properties,
+            self.dx,
+            pad_width=pad_width,
+            origin=self.origin,
+            extra_info=self.extra_info,
+        )
 
     def add_properties(self, properties):
         """Store model property Tensors.
@@ -130,8 +141,13 @@ class Model(object):
                 on the PyTorch device and filled with zeros
         """
 
-        return torch.zeros(num_steps, num_shots, *self.shape,
-                           device=self.device, dtype=self.dtype)
+        return torch.zeros(
+            num_steps,
+            num_shots,
+            *self.shape,
+            device=self.device,
+            dtype=self.dtype
+        )
 
     def get_locations(self, real_locations):
         """Convert spatial coordinates into model cell coordinates.
@@ -146,13 +162,15 @@ class Model(object):
         """
         device = real_locations.device
         if real_locations.shape[-1] != self.ndim:
-            raise RuntimeError('locations must have same dimension as model, '
-                               'but {} != {}'
-                               .format(real_locations.shape[-1].item(),
-                                       self.ndim))
-        return (((real_locations - self.origin.to(device)) /
-                 self.dx.to(device)).long() +
-                self.pad_width[:2 * self.ndim:2].to(device))
+            raise RuntimeError(
+                "locations must have same dimension as model, "
+                "but {} != {}".format(
+                    real_locations.shape[-1].item(), self.ndim
+                )
+            )
+        return (
+            (real_locations - self.origin.to(device)) / self.dx.to(device)
+        ).long() + self.pad_width[: 2 * self.ndim : 2].to(device)
 
 
 def _check_properties(model):
@@ -162,23 +180,31 @@ def _check_properties(model):
     for key, value in model.items():
         # Check is a Tensor
         if not isinstance(value, torch.Tensor):
-            raise TypeError('model properties must be Tensors, but {} '
-                            'is of type {}'.format(key, type(value)))
+            raise TypeError(
+                "model properties must be Tensors, but {} "
+                "is of type {}".format(key, type(value))
+            )
 
         # Check is same type of Tensor
         if tensor_type is not None:
             if value.type() != tensor_type:
-                raise RuntimeError('model properties must have same type, '
-                                   'expected {}, but {} is of type {}'
-                                   .format(tensor_type, key, value.type()))
+                raise RuntimeError(
+                    "model properties must have same type, "
+                    "expected {}, but {} is of type {}".format(
+                        tensor_type, key, value.type()
+                    )
+                )
         tensor_type = value.type()
 
         # Check is same size
         if shape is not None:
             if value.shape != shape:
-                raise RuntimeError('model properties should have same shape, '
-                                   'expected {}, but {} has shape {}'
-                                   .format(shape, key, value.shape))
+                raise RuntimeError(
+                    "model properties should have same shape, "
+                    "expected {}, but {} has shape {}".format(
+                        shape, key, value.shape
+                    )
+                )
         shape = value.shape
 
 
@@ -209,10 +235,11 @@ def _set_dx(dx, ndim):
     """Check dx is appropriate and convert to Tensor."""
     if isinstance(dx, int):
         dx = float(dx)
-    dx = _set_tensor(dx, 'dx', ndim, float, torch.float)
+    dx = _set_tensor(dx, "dx", ndim, float, torch.float)
     if (dx <= 0).any() or not torch.isfinite(dx).all():
-        raise RuntimeError('All entries of dx must be positive, but got {}'
-                           .format(dx))
+        raise RuntimeError(
+            "All entries of dx must be positive, but got {}".format(dx)
+        )
     return dx
 
 
@@ -220,11 +247,13 @@ def _set_pad_width(pad_width, ndim):
     """Initialize, check, and convert pad_width to Tensor."""
     if pad_width is None:
         pad_width = 0
-    pad_width = _set_tensor(pad_width, 'pad_width', 6, int, torch.long)
-    pad_width[2*ndim:] = 0
+    pad_width = _set_tensor(pad_width, "pad_width", 6, int, torch.long)
+    pad_width[2 * ndim :] = 0
     if (pad_width < 0).any():
-        raise RuntimeError('All entries of pad_width must be non-negative, '
-                           'but got {}'.format(pad_width))
+        raise RuntimeError(
+            "All entries of pad_width must be non-negative, "
+            "but got {}".format(pad_width)
+        )
     return pad_width
 
 
@@ -234,10 +263,12 @@ def _set_origin(origin, ndim):
         origin = 0.0
     if isinstance(origin, int) and origin == 0:
         origin = 0.0
-    origin = _set_tensor(origin, 'origin', ndim, float, torch.float)
+    origin = _set_tensor(origin, "origin", ndim, float, torch.float)
     if not torch.isfinite(origin).all():
-        raise RuntimeError('All entries of origin must be finite, '
-                           'but got {}'.format(origin))
+        raise RuntimeError(
+            "All entries of origin must be finite, "
+            "but got {}".format(origin)
+        )
     return origin
 
 
@@ -257,19 +288,16 @@ def _set_tensor(var, name, length, dtype, dtype_torch):
 
     # Check is a list, tuple, or Tensor
     if not isinstance(var, (list, tuple, torch.Tensor)):
-        raise TypeError('Expected {} to be a list, tuple, Tensor, or {}, '
-                        'but got {}'.format(name, dtype, type(var)))
+        raise TypeError(
+            "Expected {} to be a list, tuple, Tensor, or {}, "
+            "but got {}".format(name, dtype, type(var))
+        )
 
     # Check has correct length
     if len(var) != length:
-        raise RuntimeError('{} must have length {}, but got {}'
-                           .format(name, length, len(var)))
-
-    ## If list/tuple, check every entry correct type
-    #if isinstance(var, [list, tuple])
-    #if not all(isinstance(entry, dtype) for entry in var):
-    #    raise TypeError('Not every entry in {} is of type {}'
-    #                    .format(name, dtype))
+        raise RuntimeError(
+            "{} must have length {}, but got {}".format(name, length, len(var))
+        )
 
     # Convert to Tensor
     if not isinstance(var, torch.Tensor):
@@ -286,9 +314,12 @@ def _set_interior(shape, pad_width, ndim):
 
     Apply to a property tensor to extract its interior (non-pad) region.
     """
-    return [slice(pad_width[2 * i].item(),
-                  (shape[i] - pad_width[2 * i + 1]).item())
-            for i in range(ndim)]
+    return [
+        slice(
+            pad_width[2 * i].item(), (shape[i] - pad_width[2 * i + 1]).item()
+        )
+        for i in range(ndim)
+    ]
 
 
 def _set_dtype(properties):
@@ -302,5 +333,6 @@ def _set_extra_info(extra_info):
         return {}
     if isinstance(extra_info, dict):
         return extra_info
-    raise RuntimeError('extra_info must be None or a dict, but got {}'
-                       .format(extra_info))
+    raise RuntimeError(
+        "extra_info must be None or a dict, but got {}".format(extra_info)
+    )

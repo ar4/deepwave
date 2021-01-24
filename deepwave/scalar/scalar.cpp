@@ -392,7 +392,7 @@ static void update_pointers(
 TYPE *set_step_pointer(const TYPE * const origin,
                        const ptrdiff_t step, const ptrdiff_t num_shots,
                        const ptrdiff_t numel_per_shot) {
-  if (origin == NULL) return NULL;
+  if (origin == nullptr) return nullptr;
 
-  return (TYPE *)origin + step * num_shots * numel_per_shot;
+  return const_cast<TYPE *>(origin) + step * num_shots * numel_per_shot;
 }

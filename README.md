@@ -1,5 +1,5 @@
 # Deepwave
-[![Build Status](https://travis-ci.org/ar4/deepwave.svg?branch=master)](https://travis-ci.org/ar4/deepwave)[![Codacy Badge](https://api.codacy.com/project/badge/Grade/52d27677ef0a439195d574964a6b4be4)](https://www.codacy.com/app/ar4/deepwave?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=ar4/deepwave&amp;utm_campaign=Badge_Grade)
+[![Codacy Badge](https://api.codacy.com/project/badge/Grade/52d27677ef0a439195d574964a6b4be4)](https://www.codacy.com/app/ar4/deepwave?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=ar4/deepwave&amp;utm_campaign=Badge_Grade)
 
 Deepwave provides wave propagation modules for PyTorch (currently only for the constant density acoustic / scalar wave equation). It is primarily aimed at seismic imaging/inversion. One interesting advantage of this is that it allows you to chain operations together. You could, for example, use Deepwave to perform FWI using a custom cost function (as long as PyTorch is able to automatically differentiate it), or add some other operations before and after wave propagation and PyTorch will backpropagate through all of them.
 
@@ -124,7 +124,6 @@ To perform LSRTM, optimize the variable `scatter`. Optimizing the source amplitu
 For an example of using Deepwave for LSRTM, see [this notebook](https://colab.research.google.com/drive/1BgQM5VGgyFp7Q--pAJX-vGb2bW9mcbM8).
 
 ## Notes
-* Deepwave is only tested with Python 3.6.
 * For a reflective free surface, set the PML width to zero at the surface. For example, in 3D and when the PML width on the other sides is 10 cells, provide the argument `pml_width=[0,10,10,10,10,10]` when creating the propagator if the free surface is at the beginning of the first dimension. The format is [z1, z2, y1, y2, x1, x2], where z1, y1, and x1 are the PML widths at the beginning of the z, y, and x dimensions, and z2, y2, and x2 are the PML widths at the ends of those dimensions.
 * To limit wave simulation to the region covered by the survey (the sources and receivers), provide the `survey_pad` keyword argument when creating the propagator. For example, to use the whole z dimension, but only up to 100m from the first and last source/receiver in the y and x dimensions, use `survey_pad=[None, None, 100, 100, 100, 100]`, where `None` means continue to the edge of the model, and the format is similar to that used for `pml_width`. The default is `None` for every entry.
 * [@LukasMosser](https://github.com/LukasMosser) discovered that GCC 4.9 or above is necessary ([#18](https://github.com/ar4/deepwave/issues/18)).

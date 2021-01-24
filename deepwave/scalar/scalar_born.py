@@ -12,28 +12,42 @@ class BornPropagator(deepwave.base.propagator.Propagator):
     """
 
     def __init__(self, model, dx, pml_width=None, survey_pad=None, vpmax=None):
-        if list(model.keys()) != ['vp', 'scatter']:
-            raise RuntimeError('Model must only contain vp and scatter, '
-                               'but contains {}'.format(list(model.keys())))
-        super(BornPropagator, self).__init__(BornPropagatorFunction, model, dx,
-                                             # also in Pml, zero_edges, ...
-                                             fd_width=2,
-                                             pml_width=pml_width,
-                                             survey_pad=survey_pad)
-        self.model.extra_info['vpmax'] = vpmax
-        if model['vp'].min() <= 0.0:
-            raise RuntimeError('vp must be > 0, but min is {}'
-                               .format(model['vp'].min()))
+        if list(model.keys()) != ["vp", "scatter"]:
+            raise RuntimeError(
+                "Model must only contain vp and scatter, "
+                "but contains {}".format(list(model.keys()))
+            )
+        super(BornPropagator, self).__init__(
+            BornPropagatorFunction,
+            model,
+            dx,
+            # also in Pml, zero_edges, ...
+            fd_width=2,
+            pml_width=pml_width,
+            survey_pad=survey_pad,
+        )
+        self.model.extra_info["vpmax"] = vpmax
+        if model["vp"].min() <= 0.0:
+            raise RuntimeError(
+                "vp must be > 0, but min is {}".format(model["vp"].min())
+            )
 
 
 class BornPropagatorFunction(torch.autograd.Function):
     """Forward modeling and backpropagation functions. Not called by users."""
+
     @staticmethod
-    def forward(ctx,
-                source_amplitudes,
-                source_locations,
-                receiver_locations,
-                dt, model, property_names, property1, property2):
+    def forward(
+        ctx,
+        source_amplitudes,
+        source_locations,
+        receiver_locations,
+        dt,
+        model,
+        property_names,
+        property1,
+        property2,
+    ):
         """Forward modeling. Not called by users - see Propagator instead.
 
         Args:
@@ -47,10 +61,13 @@ class BornPropagatorFunction(torch.autograd.Function):
         Returns:
             receiver amplitudes
         """
-        if set(property_names) != set(['vp', 'scatter']):
-            raise RuntimeError('Model must only contain vp, but contains {}'
-                               .format(property_names))
-        if property_names[0] == 'vp':
+        if set(property_names) != set(["vp", "scatter"]):
+            raise RuntimeError(
+                "Model must only contain vp, but contains {}".format(
+                    property_names
+                )
+            )
+        if property_names[0] == "vp":
             vp = property1
             scatter = property2
             vp_index = 6
@@ -61,14 +78,18 @@ class BornPropagatorFunction(torch.autograd.Function):
             vp_index = 7
             scatter_index = 6
         if ctx.needs_input_grad[vp_index]:
-            raise RuntimeError('Born propagator does not support vp requiring '
-                               'a gradient.')
+            raise RuntimeError(
+                "Born propagator does not support vp requiring " "a gradient."
+            )
         if ctx.needs_input_grad[0]:
-            raise RuntimeError('Born propagator does not support source '
-                               'requiring a gradient.')
+            raise RuntimeError(
+                "Born propagator does not support source "
+                "requiring a gradient."
+            )
         if vp.min() <= 0.0:
-            raise RuntimeError('vp must be > 0, but min is {}'
-                               .format(vp.min()))
+            raise RuntimeError(
+                "vp must be > 0, but min is {}".format(vp.min())
+            )
         device = model.device
         dtype = model.dtype
         num_steps, num_shots, num_sources_per_shot = source_amplitudes.shape
@@ -76,39 +97,58 @@ class BornPropagatorFunction(torch.autograd.Function):
 
         zero_edges(scatter, model.pad_width - 2)
 
-        if model.extra_info['vpmax'] is None:
+        if model.extra_info["vpmax"] is None:
             max_vel = vp.max().item()
         else:
-            max_vel = model.extra_info['vpmax']
+            max_vel = model.extra_info["vpmax"]
         timestep = Timestep(dt, model.dx, max_vel)
-        model.add_properties({'vp2dt2': vp**2 * timestep.inner_dt**2,
-                              'scatter': 2 * scatter / vp,  # dt^2 cancels
-                              'scaling': 2 / vp**3, })
+        model.add_properties(
+            {
+                "vp2dt2": vp ** 2 * timestep.inner_dt ** 2,
+                "scatter": 2 * scatter / vp,  # dt^2 cancels
+                "scaling": 2 / vp ** 3,
+            }
+        )
         source_model_locations = model.get_locations(source_locations)
         receiver_model_locations = model.get_locations(receiver_locations)
         scalar_wrapper = _select_propagator(model.ndim, vp.dtype, vp.is_cuda)
-        wavefield_save_strategy = \
-            _set_wavefield_save_strategy(ctx.needs_input_grad[scatter_index], dt,
-                                         timestep.inner_dt, scalar_wrapper)
+        wavefield_save_strategy = _set_wavefield_save_strategy(
+            ctx.needs_input_grad[scatter_index],
+            dt,
+            timestep.inner_dt,
+            scalar_wrapper,
+        )
         fd1, fd2 = _set_finite_diff_coeffs(model.ndim, model.dx, device, dtype)
-        wavefield, saved_wavefields = \
-            _allocate_wavefields(wavefield_save_strategy, scalar_wrapper,
-                                 model, num_steps, num_shots)
+        wavefield, saved_wavefields = _allocate_wavefields(
+            wavefield_save_strategy,
+            scalar_wrapper,
+            model,
+            num_steps,
+            num_shots,
+        )
         scatter_wavefield = wavefield.clone()
         receiver_amplitudes = torch.zeros(
-            num_steps, num_shots, num_receivers_per_shot, device=device,
-            dtype=dtype)
+            num_steps,
+            num_shots,
+            num_receivers_per_shot,
+            device=device,
+            dtype=dtype,
+        )
         inner_dt = torch.tensor([timestep.inner_dt]).to(dtype)
         pml = Pml(model, num_shots, max_vel)
         scatter_pml = Pml(model, num_shots, max_vel)
-        source_amplitudes_resampled = \
-            scipy.signal.resample(source_amplitudes.detach().cpu().numpy(),
-                                  num_steps * timestep.step_ratio)
-        source_amplitudes_resampled = \
-            torch.tensor(source_amplitudes_resampled)\
-            .to(dtype).to(source_amplitudes.device)
-        source_amplitudes_resampled.requires_grad = \
+        source_amplitudes_resampled = scipy.signal.resample(
+            source_amplitudes.detach().cpu().numpy(),
+            num_steps * timestep.step_ratio,
+        )
+        source_amplitudes_resampled = (
+            torch.tensor(source_amplitudes_resampled)
+            .to(dtype)
+            .to(source_amplitudes.device)
+        )
+        source_amplitudes_resampled.requires_grad = (
             source_amplitudes.requires_grad
+        )
 
         # Call compiled C code to do forward modeling
         scalar_wrapper.forward_born(
@@ -119,8 +159,8 @@ class BornPropagatorFunction(torch.autograd.Function):
             receiver_amplitudes.to(dtype).contiguous(),
             saved_wavefields.to(dtype).contiguous(),
             pml.sigma.to(dtype).contiguous(),
-            model.properties['vp2dt2'].to(dtype).contiguous(),
-            model.properties['scatter'].to(dtype).contiguous(),
+            model.properties["vp2dt2"].to(dtype).contiguous(),
+            model.properties["scatter"].to(dtype).contiguous(),
             fd1.to(dtype).contiguous(),
             fd2.to(dtype).contiguous(),
             source_amplitudes_resampled.to(dtype).contiguous(),
@@ -134,30 +174,39 @@ class BornPropagatorFunction(torch.autograd.Function):
             num_shots,
             num_sources_per_shot,
             num_receivers_per_shot,
-            wavefield_save_strategy)
+            wavefield_save_strategy,
+        )
 
         # Allocate gradients that will be calculated during backpropagation
         model_gradient = _allocate_grad(
-            vp, ctx.needs_input_grad[scatter_index])
-        source_gradient = _allocate_grad(source_amplitudes,
-                                         ctx.needs_input_grad[0])
+            vp, ctx.needs_input_grad[scatter_index]
+        )
+        source_gradient = _allocate_grad(
+            source_amplitudes, ctx.needs_input_grad[0]
+        )
 
-        ctx.save_for_backward(saved_wavefields, pml.aux, pml.sigma,
-                              model.properties['vp2dt2'],
-                              model.properties['scaling'],
-                              pml.pml_width,
-                              source_model_locations,
-                              receiver_model_locations,
-                              torch.tensor(timestep.step_ratio),
-                              inner_dt, fd1, fd2,
-                              model_gradient, source_gradient,
-                              torch.tensor(scatter_index))
+        ctx.save_for_backward(
+            saved_wavefields,
+            pml.aux,
+            pml.sigma,
+            model.properties["vp2dt2"],
+            model.properties["scaling"],
+            pml.pml_width,
+            source_model_locations,
+            receiver_model_locations,
+            torch.tensor(timestep.step_ratio),
+            inner_dt,
+            fd1,
+            fd2,
+            model_gradient,
+            source_gradient,
+            torch.tensor(scatter_index),
+        )
 
         return receiver_amplitudes
 
     @staticmethod
-    def backward(ctx,
-                 grad_receiver_amplitudes):
+    def backward(ctx, grad_receiver_amplitudes):
         """Performs backpropagation of gradient. Not directly called by users.
 
         Args:
@@ -174,10 +223,23 @@ class BornPropagatorFunction(torch.autograd.Function):
             None for the other inputs to forward modeling.
         """
 
-        (saved_wavefields, aux, sigma, vp2dt2, scaling,
-         pml_width, source_model_locations, receiver_model_locations,
-         step_ratio, inner_dt, fd1, fd2,
-         model_gradient, source_gradient, scatter_index) = ctx.saved_tensors
+        (
+            saved_wavefields,
+            aux,
+            sigma,
+            vp2dt2,
+            scaling,
+            pml_width,
+            source_model_locations,
+            receiver_model_locations,
+            step_ratio,
+            inner_dt,
+            fd1,
+            fd2,
+            model_gradient,
+            source_gradient,
+            scatter_index,
+        ) = ctx.saved_tensors
         step_ratio = step_ratio.item()
         scatter_index = scatter_index.item()
 
@@ -185,8 +247,11 @@ class BornPropagatorFunction(torch.autograd.Function):
         ndim = receiver_model_locations.shape[-1]
         scalar_wrapper = _select_propagator(ndim, vp2dt2.dtype, vp2dt2.is_cuda)
 
-        num_steps, num_shots, num_receivers_per_shot = \
-            grad_receiver_amplitudes.shape
+        (
+            num_steps,
+            num_shots,
+            num_receivers_per_shot,
+        ) = grad_receiver_amplitudes.shape
         num_sources_per_shot = source_model_locations.shape[1]
         shape = torch.ones(3).long()
         shape[:ndim] = torch.tensor(vp2dt2.shape)
@@ -196,15 +261,18 @@ class BornPropagatorFunction(torch.autograd.Function):
         source_gradient.fill_(0)
         wavefield = torch.zeros(3, *aux[0].shape, device=aux.device)
 
-        grad_receiver_amplitudes_resampled = \
-            scipy.signal.resample(grad_receiver_amplitudes
-                                  .detach().cpu().numpy(),
-                                  num_steps * step_ratio)
-        grad_receiver_amplitudes_resampled = \
-            torch.tensor(grad_receiver_amplitudes_resampled)\
-            .to(dtype).to(grad_receiver_amplitudes.device)
-        grad_receiver_amplitudes_resampled.requires_grad = \
+        grad_receiver_amplitudes_resampled = scipy.signal.resample(
+            grad_receiver_amplitudes.detach().cpu().numpy(),
+            num_steps * step_ratio,
+        )
+        grad_receiver_amplitudes_resampled = (
+            torch.tensor(grad_receiver_amplitudes_resampled)
+            .to(dtype)
+            .to(grad_receiver_amplitudes.device)
+        )
+        grad_receiver_amplitudes_resampled.requires_grad = (
             grad_receiver_amplitudes.requires_grad
+        )
 
         # Ensure that gradient Tensors are of the right type and contiguous
         model_gradient = model_gradient.to(dtype).contiguous()
@@ -232,7 +300,8 @@ class BornPropagatorFunction(torch.autograd.Function):
             step_ratio,
             num_shots,
             num_sources_per_shot,
-            num_receivers_per_shot)
+            num_receivers_per_shot,
+        )
 
         if not ctx.needs_input_grad[0]:
             source_gradient = None
@@ -242,7 +311,16 @@ class BornPropagatorFunction(torch.autograd.Function):
 
         zero_edges(model_gradient, pml_width.long())
 
-        return_list = [source_gradient, None, None, None, None, None, None, None]
+        return_list = [
+            source_gradient,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ]
         return_list[scatter_index] = model_gradient
 
         return tuple(return_list)
@@ -260,9 +338,9 @@ def _select_propagator(ndim, dtype, cuda):
         scalar_wrapper: module wrapping the compiled propagators
     """
     if ndim not in [1, 2, 3]:
-        raise RuntimeError('unsupported number of dimensions: {}'.format(ndim))
+        raise RuntimeError("unsupported number of dimensions: {}".format(ndim))
     if dtype not in [torch.float, torch.double]:
-        raise RuntimeError('unsupported datatype: {}'.format(dtype))
+        raise RuntimeError("unsupported datatype: {}".format(dtype))
 
     if cuda:
         if dtype == torch.float:
@@ -273,10 +351,12 @@ def _select_propagator(ndim, dtype, cuda):
             elif ndim == 3:
                 import scalar3d_gpu_iso_4_float as scalar_wrapper
         elif dtype == torch.double:
-            raise NotImplementedError('To enable double-precision GPU '
-                                      'propagators (on supported hardware) '
-                                      'add "double" to the list of dtypes in '
-                                      'the CUDA portion of setup.py')
+            raise NotImplementedError(
+                "To enable double-precision GPU "
+                "propagators (on supported hardware) "
+                'add "double" to the list of dtypes in '
+                "the CUDA portion of setup.py"
+            )
             # if ndim == 1:
             #    import scalar1d_gpu_iso_4_double as scalar_wrapper
             # elif ndim == 2:
@@ -349,18 +429,22 @@ def _set_finite_diff_coeffs(ndim, dx, device, dtype):
     fd2 = torch.zeros(ndim * 2 + 1, device=device, dtype=dtype)
     dx = dx.to(device).to(dtype)
     for dim in range(ndim):
-        fd1[dim] = (torch.tensor([8 / 12, -1 / 12],
-                                 device=device, dtype=dtype) / dx[dim])
-        fd2[0] += -5 / 2 / dx[dim]**2
-        fd2[1 + dim * 2: 1 + (dim + 1) * 2] = \
-            (torch.tensor([4 / 3, -1 / 12], device=device, dtype=dtype) /
-             dx[dim]**2)
+        fd1[dim] = (
+            torch.tensor([8 / 12, -1 / 12], device=device, dtype=dtype)
+            / dx[dim]
+        )
+        fd2[0] += -5 / 2 / dx[dim] ** 2
+        fd2[1 + dim * 2 : 1 + (dim + 1) * 2] = (
+            torch.tensor([4 / 3, -1 / 12], device=device, dtype=dtype)
+            / dx[dim] ** 2
+        )
 
     return fd1, fd2
 
 
-def _allocate_wavefields(wavefield_save_strategy, scalar_wrapper, model,
-                         num_steps, num_shots):
+def _allocate_wavefields(
+    wavefield_save_strategy, scalar_wrapper, model, num_steps, num_shots
+):
     """Allocate wavefield Tensors.
 
     These will be used for propagation and to store wavefields for
@@ -426,7 +510,6 @@ class Pml(object):
     """
 
     def __init__(self, model, num_shots, max_vel):
-
         def _set_sigma(model, profile, dim, fd_pad):
             """Create the sigma vector needed for the PML for one dimension.
 
@@ -447,10 +530,10 @@ class Pml(object):
                     specified dimension.
             """
 
-            pad_width = model.pad_width[2 * dim:2 * dim + 2]
+            pad_width = model.pad_width[2 * dim : 2 * dim + 2]
             sigma = np.zeros(model.shape[dim])
-            sigma[pad_width[0] - 1:fd_pad - 1:-1] = profile[0]
-            sigma[-pad_width[1]:-fd_pad] = profile[1]
+            sigma[pad_width[0] - 1 : fd_pad - 1 : -1] = profile[0]
+            sigma[-pad_width[1] : -fd_pad] = profile[1]
             sigma[:fd_pad] = sigma[fd_pad]
             sigma[-fd_pad:] = sigma[-fd_pad - 1]
             return torch.tensor(sigma).to(model.dtype).to(model.device)
@@ -459,11 +542,17 @@ class Pml(object):
         sigma = []
         self.pml_width = model.pad_width - fd_pad
         for dim in range(model.ndim):
-            pml_widths = self.pml_width[2 * dim:2 * dim + 2]
-            profile = [((np.arange(w) / w)**2 *
-                        3 * max_vel * np.log(1000) /
-                        (2 * model.dx[dim].numpy() * w))
-                       for w in pml_widths.numpy()]
+            pml_widths = self.pml_width[2 * dim : 2 * dim + 2]
+            profile = [
+                (
+                    (np.arange(w) / w) ** 2
+                    * 3
+                    * max_vel
+                    * np.log(1000)
+                    / (2 * model.dx[dim].numpy() * w)
+                )
+                for w in pml_widths.numpy()
+            ]
             sigma.append(_set_sigma(model, profile, dim, fd_pad))
         self.sigma = torch.cat(sigma)
 
@@ -498,15 +587,16 @@ class Timestep(object):
         self.step_ratio = int(np.ceil(dt / max_dt))
         self.inner_dt = dt / self.step_ratio
 
+
 def zero_edges(arr, width):
     fd_width = 2
     width = width + fd_width + 1
-    arr[:width[0]] = 0.0
-    arr[-width[1]:] = 0.0
+    arr[: width[0]] = 0.0
+    arr[-width[1] :] = 0.0
     if arr.dim() >= 2:
-        arr[:, :width[2]] = 0.0
-        arr[:, -width[3]:] = 0.0
+        arr[:, : width[2]] = 0.0
+        arr[:, -width[3] :] = 0.0
     if arr.dim() >= 3:
-        arr[:, :, :width[4]] = 0.0
-        arr[:, :, -width[5]:] = 0.0
+        arr[:, :, : width[4]] = 0.0
+        arr[:, :, -width[5] :] = 0.0
     return arr

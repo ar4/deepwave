@@ -8,16 +8,22 @@
 static inline ptrdiff_t location_index(
     const ptrdiff_t * const arr,
     const ptrdiff_t * const shape, const ptrdiff_t index);
+#if DIM == 1
 static inline TYPE laplacian_1d(const TYPE * const arr,
                                 const TYPE * const fd2,
                                 const ptrdiff_t si);
+#endif
+#if DIM == 2
 static inline TYPE laplacian_2d(const TYPE * const arr,
                                 const TYPE * const fd2,
                                 const ptrdiff_t si, const ptrdiff_t size_x);
+#endif
+#if DIM == 3
 static inline TYPE laplacian_3d(const TYPE * const arr,
                                 const TYPE * const fd2,
                                 const ptrdiff_t si, const ptrdiff_t size_x,
                                 const ptrdiff_t size_xy);
+#endif
 static inline TYPE z_deriv(const TYPE * const arr,
                            const TYPE * const fd1,
                            const ptrdiff_t si, const ptrdiff_t size_xy);
@@ -28,8 +34,8 @@ static inline TYPE x_deriv(const TYPE * const arr,
                            const TYPE * const fd1,
                            const ptrdiff_t si);
 
-void setup(const TYPE * const fd1,
-           const TYPE * const fd2) {}
+void setup(const TYPE * const /*fd1*/,
+           const TYPE * const /*fd2*/) {}
 
 #if DIM == 1
 void propagate(TYPE * const wfn,        /* next wavefield */
@@ -80,7 +86,7 @@ void imaging_condition(TYPE * const model_grad,
                        const ptrdiff_t * const shape,
                        const ptrdiff_t * const pml_width,
                        const ptrdiff_t num_shots) {
-  if (model_grad == NULL) return; /* Not doing model inversion */
+  if (model_grad == nullptr) return; /* Not doing model inversion */
 
   const ptrdiff_t numel_shot = shape[0];
   const TYPE * const sigmaz = sigma;
@@ -168,7 +174,7 @@ void imaging_condition(TYPE * const model_grad,
                        const ptrdiff_t * const shape,
                        const ptrdiff_t * const pml_width,
                        const ptrdiff_t num_shots) {
-  if (model_grad == NULL) return; /* Not doing model inversion */
+  if (model_grad == nullptr) return; /* Not doing model inversion */
 
   const ptrdiff_t numel_shot = shape[0] * shape[1];
   const ptrdiff_t size_xy = shape[1];
@@ -288,7 +294,7 @@ void imaging_condition(TYPE * const model_grad,
                        const ptrdiff_t * const shape,
                        const ptrdiff_t * const pml_width,
                        const ptrdiff_t num_shots) {
-  if (model_grad == NULL) return; /* Not doing model inversion */
+  if (model_grad == nullptr) return; /* Not doing model inversion */
 
   const ptrdiff_t numel_shot = shape[0] * shape[1] * shape[2];
   const ptrdiff_t size_x = shape[2];
@@ -384,7 +390,7 @@ void record_receivers(TYPE * const receiver_amplitudes,
                       const ptrdiff_t * const shape,
                       const ptrdiff_t num_shots,
                       const ptrdiff_t num_receivers_per_shot) {
-  if (receiver_amplitudes == NULL) return; /* no source inversion */
+  if (receiver_amplitudes == nullptr) return; /* no source inversion */
 
   for (ptrdiff_t shot = 0; shot < num_shots; shot++) {
     for (ptrdiff_t receiver = 0; receiver < num_receivers_per_shot;
@@ -411,7 +417,8 @@ void save_wavefields(TYPE * const current_saved_wavefield,
     const ptrdiff_t size_x = shape[2];
     const ptrdiff_t size_xy = shape[1] * shape[2];
     memcpy(current_saved_wavefield, current_wavefield,
-           num_shots * shape[0] * shape[1] * shape[2] * sizeof(TYPE));
+           static_cast<size_t>(num_shots * shape[0] * shape[1] * shape[2])
+           * sizeof(TYPE));
 
     for (ptrdiff_t shot = 0; shot < num_shots; shot++) {
       for (ptrdiff_t z = ZPAD; z < shape[0] - ZPAD; z++) {
@@ -436,7 +443,7 @@ void model_grad_scaling(TYPE * const model_grad,
                         const TYPE * const scaling,
                         const ptrdiff_t * const shape,
                         const ptrdiff_t * const pml_width) {
-  if (model_grad == NULL) return; /* Not doing model inversion */
+  if (model_grad == nullptr) return; /* Not doing model inversion */
 
   const ptrdiff_t numel_shot = shape[0] * shape[1] * shape[2];
 
@@ -445,13 +452,16 @@ void model_grad_scaling(TYPE * const model_grad,
   }
 }
 
+#if DIM == 1
 static inline TYPE laplacian_1d(const TYPE * const arr,
                                 const TYPE * const fd2,
                                 const ptrdiff_t si) {
   return fd2[0] * arr[si] + fd2[1] * (arr[si + 1] + arr[si - 1]) +
          fd2[2] * (arr[si + 2] + arr[si - 2]);
 }
+#endif
 
+#if DIM == 2
 static inline TYPE laplacian_2d(const TYPE * const arr,
                                 const TYPE * const fd2,
                                 const ptrdiff_t si, const ptrdiff_t size_x) {
@@ -460,7 +470,9 @@ static inline TYPE laplacian_2d(const TYPE * const arr,
          +fd2[3] * (arr[si + 1] + arr[si - 1]) +
          fd2[4] * (arr[si + 2] + arr[si - 2]);
 }
+#endif
 
+#if DIM == 3
 static inline TYPE laplacian_3d(const TYPE * const arr,
                                 const TYPE * const fd2,
                                 const ptrdiff_t si, const ptrdiff_t size_x,
@@ -472,6 +484,7 @@ static inline TYPE laplacian_3d(const TYPE * const arr,
          fd2[5] * (arr[si + 1] + arr[si - 1]) +
          fd2[6] * (arr[si + 2] + arr[si - 2]);
 }
+#endif
 
 static inline TYPE z_deriv(const TYPE * const arr,
                            const TYPE * const fd1,
