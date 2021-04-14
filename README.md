@@ -129,6 +129,7 @@ For an example of using Deepwave for LSRTM, see [this notebook](https://colab.re
 * [@LukasMosser](https://github.com/LukasMosser) discovered that GCC 4.9 or above is necessary ([#18](https://github.com/ar4/deepwave/issues/18)).
 * Distributed parallelization over shots is supported, but not within a shot; each shot must run within one node.
 * Currently, the forward source wavefield is saved in memory for use during backpropagation. This means that realistic 3D surveys will probably require more memory than is available. This will be fixed in a future release.
+* [@erellaz](https://github.com/erellaz) has created [a nice tool](https://github.com/erellaz/SEGY_Wrapper) to make loading and saving SEG-Y files easier, and a demonstration of using Deepwave for forward modeling with a realistic 2D model.
 
 ## Contributing
 Your help to improve Deepwave would be greatly appreciated. If you encounter any difficulty using Deepwave, please report it as a Github Issue so that it can be fixed. If you have feature suggestions or other ideas to make Deepwave better, please also report those as Github Issues. If you want to help with the coding, that would be especially wonderful. The Github Issues contain a list of things that need work. If you see one that you would like to attempt, please ask for it to be assigned to you.
