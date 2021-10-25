@@ -8,52 +8,52 @@
 static inline ptrdiff_t location_index(
     const ptrdiff_t * const arr,
     const ptrdiff_t * const shape, const ptrdiff_t index);
-#if DIM == 1
-static inline TYPE laplacian_1d(const TYPE * const arr,
-                                const TYPE * const fd2,
+#if DEEPWAVE_DIM == 1
+static inline DEEPWAVE_TYPE laplacian_1d(const DEEPWAVE_TYPE * const arr,
+                                const DEEPWAVE_TYPE * const fd2,
                                 const ptrdiff_t si);
 #endif
-#if DIM == 2
-static inline TYPE laplacian_2d(const TYPE * const arr,
-                                const TYPE * const fd2,
+#if DEEPWAVE_DIM == 2
+static inline DEEPWAVE_TYPE laplacian_2d(const DEEPWAVE_TYPE * const arr,
+                                const DEEPWAVE_TYPE * const fd2,
                                 const ptrdiff_t si, const ptrdiff_t size_x);
 #endif
-#if DIM == 3
-static inline TYPE laplacian_3d(const TYPE * const arr,
-                                const TYPE * const fd2,
+#if DEEPWAVE_DIM == 3
+static inline DEEPWAVE_TYPE laplacian_3d(const DEEPWAVE_TYPE * const arr,
+                                const DEEPWAVE_TYPE * const fd2,
                                 const ptrdiff_t si, const ptrdiff_t size_x,
                                 const ptrdiff_t size_xy);
 #endif
-static inline TYPE z_deriv(const TYPE * const arr,
-                           const TYPE * const fd1,
+static inline DEEPWAVE_TYPE z_deriv(const DEEPWAVE_TYPE * const arr,
+                           const DEEPWAVE_TYPE * const fd1,
                            const ptrdiff_t si, const ptrdiff_t size_xy);
-static inline TYPE y_deriv(const TYPE * const arr,
-                           const TYPE * const fd1,
+static inline DEEPWAVE_TYPE y_deriv(const DEEPWAVE_TYPE * const arr,
+                           const DEEPWAVE_TYPE * const fd1,
                            const ptrdiff_t si, const ptrdiff_t size_x);
-static inline TYPE x_deriv(const TYPE * const arr,
-                           const TYPE * const fd1,
+static inline DEEPWAVE_TYPE x_deriv(const DEEPWAVE_TYPE * const arr,
+                           const DEEPWAVE_TYPE * const fd1,
                            const ptrdiff_t si);
 
-void setup(const TYPE * const /*fd1*/,
-           const TYPE * const /*fd2*/) {}
+void setup(const DEEPWAVE_TYPE * const /*fd1*/,
+           const DEEPWAVE_TYPE * const /*fd2*/) {}
 
-#if DIM == 1
-void propagate(TYPE * const wfn,        /* next wavefield */
-               TYPE * const auxn,       /* next auxiliary */
-               const TYPE * const wfc,  /* current wavefield */
-               const TYPE * const wfp,  /* previous wavefield */
-               const TYPE * const auxc, /* current auxiliary */
-               const TYPE * const sigma,
-               const TYPE * const model,
-               const TYPE * const fd1, /* 1st difference coeffs */
-               const TYPE * const fd2, /* 2nd difference coeffs */
+#if DEEPWAVE_DIM == 1
+void propagate(DEEPWAVE_TYPE * const wfn,        /* next wavefield */
+               DEEPWAVE_TYPE * const auxn,       /* next auxiliary */
+               const DEEPWAVE_TYPE * const wfc,  /* current wavefield */
+               const DEEPWAVE_TYPE * const wfp,  /* previous wavefield */
+               const DEEPWAVE_TYPE * const auxc, /* current auxiliary */
+               const DEEPWAVE_TYPE * const sigma,
+               const DEEPWAVE_TYPE * const model,
+               const DEEPWAVE_TYPE * const fd1, /* 1st difference coeffs */
+               const DEEPWAVE_TYPE * const fd2, /* 2nd difference coeffs */
                const ptrdiff_t * const shape,
                const ptrdiff_t * const pml_width,
-               const ptrdiff_t num_shots, const TYPE dt) {
+               const ptrdiff_t num_shots, const DEEPWAVE_TYPE dt) {
   const ptrdiff_t numel_shot = shape[0];
-  TYPE * const phizn = auxn;
-  const TYPE * const phizc = auxc;
-  const TYPE * const sigmaz = sigma;
+  DEEPWAVE_TYPE * const phizn = auxn;
+  const DEEPWAVE_TYPE * const phizc = auxc;
+  const DEEPWAVE_TYPE * const sigmaz = sigma;
 
 #pragma omp parallel for collapse(2)
   for (ptrdiff_t shot = 0; shot < num_shots; shot++) {
@@ -62,9 +62,9 @@ void propagate(TYPE * const wfn,        /* next wavefield */
       const ptrdiff_t si = shot * numel_shot + i;
 
       /* Spatial finite differences */
-      const TYPE lap = laplacian_1d(wfc, fd2, si);
-      const TYPE wfc_z = z_deriv(wfc, fd1, si, 1);
-      const TYPE phizc_z = z_deriv(phizc, fd1, si, 1);
+      const DEEPWAVE_TYPE lap = laplacian_1d(wfc, fd2, si);
+      const DEEPWAVE_TYPE wfc_z = z_deriv(wfc, fd1, si, 1);
+      const DEEPWAVE_TYPE phizc_z = z_deriv(phizc, fd1, si, 1);
 
       /* Update wavefield */
       wfn[si] = 1 / (1 + dt * sigmaz[z] / 2) *
@@ -77,19 +77,19 @@ void propagate(TYPE * const wfn,        /* next wavefield */
   }
 }
 
-void imaging_condition(TYPE * const model_grad,
-                       const TYPE * const current_wavefield,
-                       const TYPE * const saved_wavefield,
-                       const TYPE * const saved_wavefield_t,
-                       const TYPE * const saved_wavefield_tt,
-                       const TYPE * const sigma,
+void imaging_condition(DEEPWAVE_TYPE * const model_grad,
+                       const DEEPWAVE_TYPE * const current_wavefield,
+                       const DEEPWAVE_TYPE * const saved_wavefield,
+                       const DEEPWAVE_TYPE * const saved_wavefield_t,
+                       const DEEPWAVE_TYPE * const saved_wavefield_tt,
+                       const DEEPWAVE_TYPE * const sigma,
                        const ptrdiff_t * const shape,
                        const ptrdiff_t * const pml_width,
                        const ptrdiff_t num_shots) {
   if (model_grad == nullptr) return; /* Not doing model inversion */
 
   const ptrdiff_t numel_shot = shape[0];
-  const TYPE * const sigmaz = sigma;
+  const DEEPWAVE_TYPE * const sigmaz = sigma;
 
   for (ptrdiff_t shot = 0; shot < num_shots; shot++) {
     for (ptrdiff_t z = ZPAD; z < shape[0] - ZPAD; z++) {
@@ -111,28 +111,28 @@ static inline ptrdiff_t location_index(
   return z;
 }
 
-#elif DIM == 2
+#elif DEEPWAVE_DIM == 2
 
-void propagate(TYPE * const wfn,        /* next wavefield */
-               TYPE * const auxn,       /* next auxiliary */
-               const TYPE * const wfc,  /* current wavefield */
-               const TYPE * const wfp,  /* previous wavefield */
-               const TYPE * const auxc, /* current auxiliary */
-               const TYPE * const sigma,
-               const TYPE * const model,
-               const TYPE * const fd1, /* 1st difference coeffs */
-               const TYPE * const fd2, /* 2nd difference coeffs */
+void propagate(DEEPWAVE_TYPE * const wfn,        /* next wavefield */
+               DEEPWAVE_TYPE * const auxn,       /* next auxiliary */
+               const DEEPWAVE_TYPE * const wfc,  /* current wavefield */
+               const DEEPWAVE_TYPE * const wfp,  /* previous wavefield */
+               const DEEPWAVE_TYPE * const auxc, /* current auxiliary */
+               const DEEPWAVE_TYPE * const sigma,
+               const DEEPWAVE_TYPE * const model,
+               const DEEPWAVE_TYPE * const fd1, /* 1st difference coeffs */
+               const DEEPWAVE_TYPE * const fd2, /* 2nd difference coeffs */
                const ptrdiff_t * const shape,
                const ptrdiff_t * const pml_width,
-               const ptrdiff_t num_shots, const TYPE dt) {
+               const ptrdiff_t num_shots, const DEEPWAVE_TYPE dt) {
   const ptrdiff_t numel_shot = shape[0] * shape[1];
   const ptrdiff_t size_xy = shape[1];
-  TYPE * const phizn = auxn;
-  TYPE * const phiyn = auxn + num_shots * numel_shot;
-  const TYPE * const phizc = auxc;
-  const TYPE * const phiyc = auxc + num_shots * numel_shot;
-  const TYPE * const sigmaz = sigma;
-  const TYPE * const sigmay = sigma + shape[0];
+  DEEPWAVE_TYPE * const phizn = auxn;
+  DEEPWAVE_TYPE * const phiyn = auxn + num_shots * numel_shot;
+  const DEEPWAVE_TYPE * const phizc = auxc;
+  const DEEPWAVE_TYPE * const phiyc = auxc + num_shots * numel_shot;
+  const DEEPWAVE_TYPE * const sigmaz = sigma;
+  const DEEPWAVE_TYPE * const sigmay = sigma + shape[0];
 
 #pragma omp parallel for collapse(2)
   for (ptrdiff_t shot = 0; shot < num_shots; shot++) {
@@ -142,11 +142,11 @@ void propagate(TYPE * const wfn,        /* next wavefield */
         const ptrdiff_t si = shot * numel_shot + i;
 
         /* Spatial finite differences */
-        const TYPE lap = laplacian_2d(wfc, fd2, si, size_xy);
-        const TYPE wfc_z = z_deriv(wfc, fd1, si, size_xy);
-        const TYPE wfc_y = y_deriv(wfc, fd1, si, 1);
-        const TYPE phizc_z = z_deriv(phizc, fd1, si, size_xy);
-        const TYPE phiyc_y = y_deriv(phiyc, fd1, si, 1);
+        const DEEPWAVE_TYPE lap = laplacian_2d(wfc, fd2, si, size_xy);
+        const DEEPWAVE_TYPE wfc_z = z_deriv(wfc, fd1, si, size_xy);
+        const DEEPWAVE_TYPE wfc_y = y_deriv(wfc, fd1, si, 1);
+        const DEEPWAVE_TYPE phizc_z = z_deriv(phizc, fd1, si, size_xy);
+        const DEEPWAVE_TYPE phiyc_y = y_deriv(phiyc, fd1, si, 1);
 
         /* Update wavefield */
         wfn[si] = 1 / (1 + dt * (sigmaz[z] + sigmay[y]) / 2) *
@@ -165,12 +165,12 @@ void propagate(TYPE * const wfn,        /* next wavefield */
   }
 }
 
-void imaging_condition(TYPE * const model_grad,
-                       const TYPE * const current_wavefield,
-                       const TYPE * const saved_wavefield,
-                       const TYPE * const saved_wavefield_t,
-                       const TYPE * const saved_wavefield_tt,
-                       const TYPE * const sigma,
+void imaging_condition(DEEPWAVE_TYPE * const model_grad,
+                       const DEEPWAVE_TYPE * const current_wavefield,
+                       const DEEPWAVE_TYPE * const saved_wavefield,
+                       const DEEPWAVE_TYPE * const saved_wavefield_t,
+                       const DEEPWAVE_TYPE * const saved_wavefield_tt,
+                       const DEEPWAVE_TYPE * const sigma,
                        const ptrdiff_t * const shape,
                        const ptrdiff_t * const pml_width,
                        const ptrdiff_t num_shots) {
@@ -178,8 +178,8 @@ void imaging_condition(TYPE * const model_grad,
 
   const ptrdiff_t numel_shot = shape[0] * shape[1];
   const ptrdiff_t size_xy = shape[1];
-  const TYPE * const sigmaz = sigma;
-  const TYPE * const sigmay = sigma + shape[0];
+  const DEEPWAVE_TYPE * const sigmaz = sigma;
+  const DEEPWAVE_TYPE * const sigmay = sigma + shape[0];
 
   for (ptrdiff_t shot = 0; shot < num_shots; shot++) {
     for (ptrdiff_t z = ZPAD; z < shape[0] - ZPAD; z++) {
@@ -205,34 +205,34 @@ static inline ptrdiff_t location_index(
   return z * shape[1] + y;
 }
 
-#elif DIM == 3
+#elif DEEPWAVE_DIM == 3
 
-void propagate(TYPE * const wfn,        /* next wavefield */
-               TYPE * const auxn,       /* next auxiliary */
-               const TYPE * const wfc,  /* current wavefield */
-               const TYPE * const wfp,  /* previous wavefield */
-               const TYPE * const auxc, /* current auxiliary */
-               const TYPE * const sigma,
-               const TYPE * const model,
-               const TYPE * const fd1, /* 1st difference coeffs */
-               const TYPE * const fd2, /* 2nd difference coeffs */
+void propagate(DEEPWAVE_TYPE * const wfn,        /* next wavefield */
+               DEEPWAVE_TYPE * const auxn,       /* next auxiliary */
+               const DEEPWAVE_TYPE * const wfc,  /* current wavefield */
+               const DEEPWAVE_TYPE * const wfp,  /* previous wavefield */
+               const DEEPWAVE_TYPE * const auxc, /* current auxiliary */
+               const DEEPWAVE_TYPE * const sigma,
+               const DEEPWAVE_TYPE * const model,
+               const DEEPWAVE_TYPE * const fd1, /* 1st difference coeffs */
+               const DEEPWAVE_TYPE * const fd2, /* 2nd difference coeffs */
                const ptrdiff_t * const shape,
                const ptrdiff_t * const pml_width,
-               const ptrdiff_t num_shots, const TYPE dt) {
+               const ptrdiff_t num_shots, const DEEPWAVE_TYPE dt) {
   const ptrdiff_t numel_shot = shape[0] * shape[1] * shape[2];
   const ptrdiff_t size_x = shape[2];
   const ptrdiff_t size_xy = shape[1] * shape[2];
-  TYPE * const phizn = auxn;
-  TYPE * const phiyn = auxn + num_shots * numel_shot;
-  TYPE * const phixn = auxn + 2 * num_shots * numel_shot;
-  TYPE * const psin = auxn + 3 * num_shots * numel_shot;
-  const TYPE * const phizc = auxc;
-  const TYPE * const phiyc = auxc + num_shots * numel_shot;
-  const TYPE * const phixc = auxc + 2 * num_shots * numel_shot;
-  const TYPE * const psic = auxc + 3 * num_shots * numel_shot;
-  const TYPE * const sigmaz = sigma;
-  const TYPE * const sigmay = sigma + shape[0];
-  const TYPE * const sigmax = sigma + shape[0] + shape[1];
+  DEEPWAVE_TYPE * const phizn = auxn;
+  DEEPWAVE_TYPE * const phiyn = auxn + num_shots * numel_shot;
+  DEEPWAVE_TYPE * const phixn = auxn + 2 * num_shots * numel_shot;
+  DEEPWAVE_TYPE * const psin = auxn + 3 * num_shots * numel_shot;
+  const DEEPWAVE_TYPE * const phizc = auxc;
+  const DEEPWAVE_TYPE * const phiyc = auxc + num_shots * numel_shot;
+  const DEEPWAVE_TYPE * const phixc = auxc + 2 * num_shots * numel_shot;
+  const DEEPWAVE_TYPE * const psic = auxc + 3 * num_shots * numel_shot;
+  const DEEPWAVE_TYPE * const sigmaz = sigma;
+  const DEEPWAVE_TYPE * const sigmay = sigma + shape[0];
+  const DEEPWAVE_TYPE * const sigmax = sigma + shape[0] + shape[1];
 
 #pragma omp parallel for collapse(2)
   for (ptrdiff_t shot = 0; shot < num_shots; shot++) {
@@ -243,16 +243,16 @@ void propagate(TYPE * const wfn,        /* next wavefield */
           const ptrdiff_t si = shot * numel_shot + i;
 
           /* Spatial finite differences */
-          const TYPE lap = laplacian_3d(wfc, fd2, si, size_x, size_xy);
-          const TYPE wfc_z = z_deriv(wfc, fd1, si, size_xy);
-          const TYPE wfc_y = y_deriv(wfc, fd1, si, size_x);
-          const TYPE wfc_x = x_deriv(wfc, fd1, si);
-          const TYPE phizc_z = z_deriv(phizc, fd1, si, size_xy);
-          const TYPE phiyc_y = y_deriv(phiyc, fd1, si, size_x);
-          const TYPE phixc_x = x_deriv(phixc, fd1, si);
-          const TYPE psic_z = z_deriv(psic, fd1, si, size_xy);
-          const TYPE psic_y = y_deriv(psic, fd1, si, size_x);
-          const TYPE psic_x = x_deriv(psic, fd1, si);
+          const DEEPWAVE_TYPE lap = laplacian_3d(wfc, fd2, si, size_x, size_xy);
+          const DEEPWAVE_TYPE wfc_z = z_deriv(wfc, fd1, si, size_xy);
+          const DEEPWAVE_TYPE wfc_y = y_deriv(wfc, fd1, si, size_x);
+          const DEEPWAVE_TYPE wfc_x = x_deriv(wfc, fd1, si);
+          const DEEPWAVE_TYPE phizc_z = z_deriv(phizc, fd1, si, size_xy);
+          const DEEPWAVE_TYPE phiyc_y = y_deriv(phiyc, fd1, si, size_x);
+          const DEEPWAVE_TYPE phixc_x = x_deriv(phixc, fd1, si);
+          const DEEPWAVE_TYPE psic_z = z_deriv(psic, fd1, si, size_xy);
+          const DEEPWAVE_TYPE psic_y = y_deriv(psic, fd1, si, size_x);
+          const DEEPWAVE_TYPE psic_x = x_deriv(psic, fd1, si);
 
           /* Update wavefield */
           wfn[si] = 1 / (1 + dt * (sigmaz[z] + sigmay[y] + sigmax[x]) / 2) *
@@ -285,12 +285,12 @@ void propagate(TYPE * const wfn,        /* next wavefield */
   }
 }
 
-void imaging_condition(TYPE * const model_grad,
-                       const TYPE * const current_wavefield,
-                       const TYPE * const saved_wavefield,
-                       const TYPE * const saved_wavefield_t,
-                       const TYPE * const saved_wavefield_tt,
-                       const TYPE * const sigma,
+void imaging_condition(DEEPWAVE_TYPE * const model_grad,
+                       const DEEPWAVE_TYPE * const current_wavefield,
+                       const DEEPWAVE_TYPE * const saved_wavefield,
+                       const DEEPWAVE_TYPE * const saved_wavefield_t,
+                       const DEEPWAVE_TYPE * const saved_wavefield_tt,
+                       const DEEPWAVE_TYPE * const sigma,
                        const ptrdiff_t * const shape,
                        const ptrdiff_t * const pml_width,
                        const ptrdiff_t num_shots) {
@@ -299,9 +299,9 @@ void imaging_condition(TYPE * const model_grad,
   const ptrdiff_t numel_shot = shape[0] * shape[1] * shape[2];
   const ptrdiff_t size_x = shape[2];
   const ptrdiff_t size_xy = shape[1] * shape[2];
-  const TYPE * const sigmaz = sigma;
-  const TYPE * const sigmay = sigma + shape[0];
-  const TYPE * const sigmax = sigma + shape[0] + shape[1];
+  const DEEPWAVE_TYPE * const sigmaz = sigma;
+  const DEEPWAVE_TYPE * const sigmay = sigma + shape[0];
+  const DEEPWAVE_TYPE * const sigmax = sigma + shape[0] + shape[1];
 
   for (ptrdiff_t shot = 0; shot < num_shots; shot++) {
     for (ptrdiff_t z = ZPAD; z < shape[0] - ZPAD; z++) {
@@ -337,12 +337,12 @@ static inline ptrdiff_t location_index(
 }
 
 #else
-#error "Must specify the dimension, e.g. -D DIM=1"
-#endif /* DIM */
+#error "Must specify the dimension, e.g. -D DEEPWAVE_DIM=1"
+#endif /* DEEPWAVE_DIM */
 
-void add_sources(TYPE * const next_wavefield,
-                 const TYPE * const model,
-                 const TYPE * const source_amplitudes,
+void add_sources(DEEPWAVE_TYPE * const next_wavefield,
+                 const DEEPWAVE_TYPE * const model,
+                 const DEEPWAVE_TYPE * const source_amplitudes,
                  const ptrdiff_t * const source_locations,
                  const ptrdiff_t * const shape,
                  const ptrdiff_t num_shots,
@@ -357,11 +357,11 @@ void add_sources(TYPE * const next_wavefield,
   }
 }
 
-void add_scattering(TYPE * const next_scattered_wavefield,
-                    const TYPE * const next_wavefield,
-                    const TYPE * const current_wavefield,
-                    const TYPE * const previous_wavefield,
-                    const TYPE * const scatter,
+void add_scattering(DEEPWAVE_TYPE * const next_scattered_wavefield,
+                    const DEEPWAVE_TYPE * const next_wavefield,
+                    const DEEPWAVE_TYPE * const current_wavefield,
+                    const DEEPWAVE_TYPE * const previous_wavefield,
+                    const DEEPWAVE_TYPE * const scatter,
                     const ptrdiff_t * const shape,
                     const ptrdiff_t num_shots) {
   const ptrdiff_t numel_shot = shape[0] * shape[1] * shape[2];
@@ -374,7 +374,7 @@ void add_scattering(TYPE * const next_scattered_wavefield,
         for (ptrdiff_t x = XPAD; x < shape[2] - XPAD; x++) {
           const ptrdiff_t i = z * size_xy + y * size_x + x;
           const ptrdiff_t si = shot * numel_shot + i;
-          const TYPE current_wavefield_tt =
+          const DEEPWAVE_TYPE current_wavefield_tt =
               (next_wavefield[si] - 2 * current_wavefield[si] +
                previous_wavefield[si]); /* no dt^2 because of cancellation */
           next_scattered_wavefield[si] += current_wavefield_tt * scatter[i];
@@ -384,8 +384,8 @@ void add_scattering(TYPE * const next_scattered_wavefield,
   }
 }
 
-void record_receivers(TYPE * const receiver_amplitudes,
-                      const TYPE * const current_wavefield,
+void record_receivers(DEEPWAVE_TYPE * const receiver_amplitudes,
+                      const DEEPWAVE_TYPE * const current_wavefield,
                       const ptrdiff_t * const receiver_locations,
                       const ptrdiff_t * const shape,
                       const ptrdiff_t num_shots,
@@ -403,14 +403,14 @@ void record_receivers(TYPE * const receiver_amplitudes,
   }
 }
 
-void save_wavefields(TYPE * const current_saved_wavefield,
-                     TYPE * const current_saved_wavefield_t,
-                     TYPE * const current_saved_wavefield_tt,
-                     const TYPE * const next_wavefield,
-                     const TYPE * const current_wavefield,
-                     const TYPE * const previous_wavefield,
+void save_wavefields(DEEPWAVE_TYPE * const current_saved_wavefield,
+                     DEEPWAVE_TYPE * const current_saved_wavefield_t,
+                     DEEPWAVE_TYPE * const current_saved_wavefield_tt,
+                     const DEEPWAVE_TYPE * const next_wavefield,
+                     const DEEPWAVE_TYPE * const current_wavefield,
+                     const DEEPWAVE_TYPE * const previous_wavefield,
                      const ptrdiff_t * const shape,
-                     const ptrdiff_t num_shots, const TYPE dt,
+                     const ptrdiff_t num_shots, const DEEPWAVE_TYPE dt,
                      const enum wavefield_save_strategy save_strategy) {
   if (save_strategy == STRATEGY_COPY) {
     const ptrdiff_t numel_shot = shape[0] * shape[1] * shape[2];
@@ -418,7 +418,7 @@ void save_wavefields(TYPE * const current_saved_wavefield,
     const ptrdiff_t size_xy = shape[1] * shape[2];
     memcpy(current_saved_wavefield, current_wavefield,
            static_cast<size_t>(num_shots * shape[0] * shape[1] * shape[2])
-           * sizeof(TYPE));
+           * sizeof(DEEPWAVE_TYPE));
 
     for (ptrdiff_t shot = 0; shot < num_shots; shot++) {
       for (ptrdiff_t z = ZPAD; z < shape[0] - ZPAD; z++) {
@@ -439,8 +439,8 @@ void save_wavefields(TYPE * const current_saved_wavefield,
   }
 }
 
-void model_grad_scaling(TYPE * const model_grad,
-                        const TYPE * const scaling,
+void model_grad_scaling(DEEPWAVE_TYPE * const model_grad,
+                        const DEEPWAVE_TYPE * const scaling,
                         const ptrdiff_t * const shape,
                         const ptrdiff_t * const pml_width) {
   if (model_grad == nullptr) return; /* Not doing model inversion */
@@ -452,18 +452,18 @@ void model_grad_scaling(TYPE * const model_grad,
   }
 }
 
-#if DIM == 1
-static inline TYPE laplacian_1d(const TYPE * const arr,
-                                const TYPE * const fd2,
+#if DEEPWAVE_DIM == 1
+static inline DEEPWAVE_TYPE laplacian_1d(const DEEPWAVE_TYPE * const arr,
+                                const DEEPWAVE_TYPE * const fd2,
                                 const ptrdiff_t si) {
   return fd2[0] * arr[si] + fd2[1] * (arr[si + 1] + arr[si - 1]) +
          fd2[2] * (arr[si + 2] + arr[si - 2]);
 }
 #endif
 
-#if DIM == 2
-static inline TYPE laplacian_2d(const TYPE * const arr,
-                                const TYPE * const fd2,
+#if DEEPWAVE_DIM == 2
+static inline DEEPWAVE_TYPE laplacian_2d(const DEEPWAVE_TYPE * const arr,
+                                const DEEPWAVE_TYPE * const fd2,
                                 const ptrdiff_t si, const ptrdiff_t size_x) {
   return fd2[0] * arr[si] + fd2[1] * (arr[si + size_x] + arr[si - size_x]) +
          fd2[2] * (arr[si + 2 * size_x] + arr[si - 2 * size_x]) +
@@ -472,9 +472,9 @@ static inline TYPE laplacian_2d(const TYPE * const arr,
 }
 #endif
 
-#if DIM == 3
-static inline TYPE laplacian_3d(const TYPE * const arr,
-                                const TYPE * const fd2,
+#if DEEPWAVE_DIM == 3
+static inline DEEPWAVE_TYPE laplacian_3d(const DEEPWAVE_TYPE * const arr,
+                                const DEEPWAVE_TYPE * const fd2,
                                 const ptrdiff_t si, const ptrdiff_t size_x,
                                 const ptrdiff_t size_xy) {
   return fd2[0] * arr[si] + fd2[1] * (arr[si + size_xy] + arr[si - size_xy]) +
@@ -486,22 +486,22 @@ static inline TYPE laplacian_3d(const TYPE * const arr,
 }
 #endif
 
-static inline TYPE z_deriv(const TYPE * const arr,
-                           const TYPE * const fd1,
+static inline DEEPWAVE_TYPE z_deriv(const DEEPWAVE_TYPE * const arr,
+                           const DEEPWAVE_TYPE * const fd1,
                            const ptrdiff_t si, const ptrdiff_t size_xy) {
   return fd1[0] * (arr[si + size_xy] - arr[si - size_xy]) +
          fd1[1] * (arr[si + 2 * size_xy] - arr[si - 2 * size_xy]);
 }
 
-static inline TYPE y_deriv(const TYPE * const arr,
-                           const TYPE * const fd1,
+static inline DEEPWAVE_TYPE y_deriv(const DEEPWAVE_TYPE * const arr,
+                           const DEEPWAVE_TYPE * const fd1,
                            const ptrdiff_t si, const ptrdiff_t size_x) {
   return fd1[0] * (arr[si + size_x] - arr[si - size_x]) +
          fd1[1] * (arr[si + 2 * size_x] - arr[si - 2 * size_x]);
 }
 
-static inline TYPE x_deriv(const TYPE * const arr,
-                           const TYPE * const fd1,
+static inline DEEPWAVE_TYPE x_deriv(const DEEPWAVE_TYPE * const arr,
+                           const DEEPWAVE_TYPE * const fd1,
                            const ptrdiff_t si) {
   return fd1[0] * (arr[si + 1] - arr[si - 1]) +
          fd1[1] * (arr[si + 2] - arr[si - 2]);

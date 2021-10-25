@@ -129,3 +129,18 @@ Please use a compiler that is ABI-compatible with GCC 5.0 and above.) and compil
 * Currently, the forward source wavefield is saved in memory for use during backpropagation. This means that realistic 3D surveys will probably require more memory than is available.
 * [@erellaz](https://github.com/erellaz) has created [a nice tool](https://github.com/erellaz/SEGY_Wrapper) to make loading and saving SEG-Y files easier, and a demonstration of using Deepwave for forward modeling with a realistic 2D model.
 * Your help to improve Deepwave would be greatly appreciated. If you encounter any difficulty using Deepwave, please report it as a Github Issue so that it can be fixed.
+
+## Citing
+If you would like to cite Deepwave, I suggest
+```
+@software{deepwave,
+  author       = {Richardson, Alan},
+  title        = {Deepwave},
+  month        = oct,
+  year         = 2021,
+  publisher    = {Zenodo},
+  version      = {v0.0.9},
+  doi          = {10.5281/zenodo.3829886},
+  url          = {https://doi.org/10.5281/zenodo.3829886}
+}
+```

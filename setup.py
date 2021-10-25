@@ -17,7 +17,7 @@ scalar_wrapper_file = os.path.join(scalar_dir, 'scalar_wrapper.cpp')
 def _make_cpp_extension(dim, dtype):
     return CppExtension('scalar{}d_cpu_iso_4_{}'.format(dim, dtype),
                         [scalar_cpu_file, scalar_cpp_file, scalar_wrapper_file],
-                        define_macros=[('DIM', dim), ('TYPE', dtype)],
+                        define_macros=[('DEEPWAVE_DIM', dim), ('DEEPWAVE_TYPE', dtype)],
                         include_dirs=[scalar_dir],
                         extra_compile_args=['-Ofast', '-march=native',
                                             '-fopenmp'],
@@ -27,7 +27,7 @@ def _make_cpp_extension(dim, dtype):
 def _make_cuda_extension(dim, dtype):
     return CUDAExtension('scalar{}d_gpu_iso_4_{}'.format(dim, dtype),
                          [scalar_gpu_file, scalar_cpp_file, scalar_wrapper_file],
-                         define_macros=[('DIM', dim), ('TYPE', dtype)],
+                         define_macros=[('DEEPWAVE_DIM', dim), ('DEEPWAVE_TYPE', dtype)],
                          include_dirs=[scalar_dir],
                          extra_compile_args={'nvcc': ['--restrict', '-O3',
                                                       '--use_fast_math'],
@@ -47,7 +47,7 @@ else:
 
 setuptools.setup(
     name="deepwave",
-    version="0.0.8",
+    version="0.0.9",
     author="Alan Richardson",
     author_email="alan@ausargeo.com",
     description="Wave propagation modules for PyTorch.",

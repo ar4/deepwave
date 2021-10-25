@@ -219,9 +219,9 @@ class PropagatorFunction(torch.autograd.Function):
         shape = torch.ones(3).long()
         shape[:ndim] = torch.tensor(vp2dt2.shape)
 
-        aux.fill_(0)
-        model_gradient.fill_(0)
-        source_gradient.fill_(0)
+        aux.data.fill_(0)
+        model_gradient.data.fill_(0)
+        source_gradient.data.fill_(0)
         wavefield = torch.zeros(3, *aux[0].shape, device=aux.device)
 
         grad_receiver_amplitudes_resampled = scipy.signal.resample(
