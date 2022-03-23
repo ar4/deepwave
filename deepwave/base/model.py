@@ -54,7 +54,7 @@ class Model(object):
         """Return a copy of the model moved to the specified device."""
         properties = {}
         for k, v in self.properties.items():
-            properties[k] = v[k].to(device)
+            properties[k] = v.to(device)
         return Model(
             properties,
             self.dx,
