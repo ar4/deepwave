@@ -1,5 +1,2 @@
-include LICENSE
-include deepwave/scalar/*.cpp
-include deepwave/scalar/*.cu
-include deepwave/scalar/*.h
-exclude test/*
+include src/deepwave/*.cpp
+include src/deepwave/*.cu
