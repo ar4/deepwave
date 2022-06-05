@@ -148,4 +148,4 @@ The resulting image is already quite good after just one iteration. Additional i
 
 .. image:: example_2.jpg
 
-`Full example code <https://github.com/ar4/deepwave/blob/docs/example_2.py>`_
+`Full example code <https://github.com/ar4/deepwave/blob/master/docs/example_2.py>`_

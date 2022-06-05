@@ -93,4 +93,4 @@ Finally, we will plot one common shot gather and one common receiver gather of t
 
 .. image:: example_1.jpg
 
-`Full example code <https://github.com/ar4/deepwave/blob/docs/example_1.py>`_
+`Full example code <https://github.com/ar4/deepwave/blob/master/docs/example_1.py>`_
