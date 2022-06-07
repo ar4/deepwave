@@ -582,10 +582,11 @@ def run_gradcheck(c, dc, freq, dx, dt, nx,
                                           wavefield_0, wavefield_m1,
                                           psix_m1, psiy_m1, zetax_m1,
                                           zetay_m1, nt, 1, True),
-                             nondet_tol=1e-3, check_grad_dtypes=True)
+                             nondet_tol=1e-3, check_grad_dtypes=True,
+                             atol=1e-8, rtol=1e-5)
 
 
-def run_gradcheck_2d(c=1500, dc=100, freq=25, dx=(5, 5), dt=0.004,
+def run_gradcheck_2d(c=1500, dc=100, freq=25, dx=(5, 5), dt=0.001,
                      nx=(4, 3),
                      num_shots=2, num_sources_per_shot=2,
                      num_receivers_per_shot=2,

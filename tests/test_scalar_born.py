@@ -570,7 +570,8 @@ def run_born_gradcheck(c, dc, freq, dx, dt, nx,
                                           zetax_sc_m1, zetay_sc_m1, nt, 1,
                                           True
                                           ),
-                             nondet_tol=1e-3, check_grad_dtypes=True
+                             nondet_tol=1e-3, check_grad_dtypes=True,
+                             atol=1e-8, rtol=1e-5
                              )
 
 
