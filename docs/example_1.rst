@@ -15,7 +15,7 @@ We then choose which device we wish to run on, specify the size of the model, an
     device = torch.device('cuda')
     nx = 2301
     ny = 751
-    dx = 4
+    dx = 4.0
     v = torch.from_file('marmousi_vp.bin',
                         size=nx*ny).reshape(nx, ny).to(device)
 

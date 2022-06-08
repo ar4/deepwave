@@ -7,7 +7,7 @@ from deepwave import scalar_born
 device = torch.device('cuda')
 nx = 2301
 ny = 751
-dx = 4
+dx = 4.0
 v = torch.from_file('marmousi_vp.bin',
                     size=nx*ny).reshape(nx, ny)
 

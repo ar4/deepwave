@@ -14,7 +14,7 @@ We continue with using the Marmousi model, but due to the computational cost of 
     device = torch.device('cuda')
     nx = 2301
     ny = 751
-    dx = 4
+    dx = 4.0
     v_true = torch.from_file('marmousi_vp.bin',
                              size=nx*ny).reshape(nx, ny)
 
