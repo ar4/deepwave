@@ -170,6 +170,30 @@ def test_direct_2d():
     assert diff.norm().item() < 1.48
 
 
+def test_direct_2d_2nd_order():
+    """Test propagation with a 2nd order accurate propagator."""
+    expected, actual = run_direct_2d(propagator=scalarprop,
+                                     prop_kwargs={'accuracy': 2})
+    diff = (expected - actual.cpu()).flatten()
+    assert diff.norm().item() < 16
+
+
+def test_direct_2d_6th_order():
+    """Test propagation with a 6th order accurate propagator."""
+    expected, actual = run_direct_2d(propagator=scalarprop,
+                                     prop_kwargs={'accuracy': 6})
+    diff = (expected - actual.cpu()).flatten()
+    assert diff.norm().item() < 0.21
+
+
+def test_direct_2d_8th_order():
+    """Test propagation with a 8th order accurate propagator."""
+    expected, actual = run_direct_2d(propagator=scalarprop,
+                                     prop_kwargs={'accuracy': 8})
+    diff = (expected - actual.cpu()).flatten()
+    assert diff.norm().item() < 0.045
+
+
 def test_direct_2d_module():
     """Test propagation with the Module interface."""
     expected, actual = run_direct_2d(propagator=scalarprop,
@@ -190,6 +214,24 @@ def test_scatter_2d():
 def test_gradcheck_2d():
     """Test gradcheck in a 2D model."""
     run_gradcheck_2d(propagator=scalarprop)
+
+
+def test_gradcheck_2d_2nd_order():
+    """Test gradcheck with a 2nd order accurate propagator."""
+    run_gradcheck_2d(propagator=scalarprop,
+                     prop_kwargs={'accuracy': 2})
+
+
+def test_gradcheck_2d_6th_order():
+    """Test gradcheck with a 6th order accurate propagator."""
+    run_gradcheck_2d(propagator=scalarprop,
+                     prop_kwargs={'accuracy': 6})
+
+
+def test_gradcheck_2d_8th_order():
+    """Test gradcheck with a 8th order accurate propagator."""
+    run_gradcheck_2d(propagator=scalarprop,
+                     prop_kwargs={'accuracy': 8})
 
 
 def test_gradcheck_2d_one_shot():

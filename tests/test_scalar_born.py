@@ -13,6 +13,36 @@ def test_born_scatter_2d():
     assert diff.norm() < 0.0025
 
 
+def test_born_scatter_2d_2nd_order():
+    """Test Born propagation with a 2nd order accurate propagator."""
+    expected, actual = run_born_scatter_2d(propagator=scalarbornprop,
+                                           dt=0.0001,
+                                           prop_kwargs={'pml_width': 30,
+                                                        'accuracy': 2})
+    diff = (expected - actual.cpu()).flatten()
+    assert diff.norm() < 0.14
+
+
+def test_born_scatter_2d_6th_order():
+    """Test Born propagation with a 6th order accurate propagator."""
+    expected, actual = run_born_scatter_2d(propagator=scalarbornprop,
+                                           dt=0.0001,
+                                           prop_kwargs={'pml_width': 30,
+                                                        'accuracy': 6})
+    diff = (expected - actual.cpu()).flatten()
+    assert diff.norm() < 0.003
+
+
+def test_born_scatter_2d_8th_order():
+    """Test Born propagation with a 8th order accurate propagator."""
+    expected, actual = run_born_scatter_2d(propagator=scalarbornprop,
+                                           dt=0.0001,
+                                           prop_kwargs={'pml_width': 30,
+                                                        'accuracy': 8})
+    diff = (expected - actual.cpu()).flatten()
+    assert diff.norm() < 0.00061
+
+
 def test_born_scatter_2d_module():
     """Test Born propagation using the Module interface."""
     expected, actual = run_born_scatter_2d(propagator=scalarbornprop,
@@ -264,6 +294,24 @@ def run_born_scatter_2d(c=1500, dc=150, freq=25, dx=(5, 5), dt=0.0001,
 def test_born_gradcheck_2d():
     """Test gradcheck in a 2D model with Born propagator."""
     run_born_gradcheck_2d(propagator=scalarbornprop)
+
+
+def test_born_gradcheck_2d_2nd_order():
+    """Test gradcheck with a 2nd order accurate propagator."""
+    run_born_gradcheck_2d(propagator=scalarbornprop,
+                          prop_kwargs={'accuracy': 2})
+
+
+def test_born_gradcheck_2d_6th_order():
+    """Test gradcheck with a 6th order accurate propagator."""
+    run_born_gradcheck_2d(propagator=scalarbornprop,
+                          prop_kwargs={'accuracy': 6})
+
+
+def test_born_gradcheck_2d_8th_order():
+    """Test gradcheck with a 8th order accurate propagator."""
+    run_born_gradcheck_2d(propagator=scalarbornprop,
+                          prop_kwargs={'accuracy': 8})
 
 
 def test_born_gradcheck_2d_one_shot():
