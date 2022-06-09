@@ -24,7 +24,7 @@ import matplotlib.pyplot as plt
 device = torch.device('cpu')
 nx = 100
 ny = 200
-dx = 4
+grid_spacing = 4
 n_shots = 3
 n_sources_per_shot = 1
 n_receivers_per_shot = ny
@@ -55,7 +55,8 @@ source_amplitudes = (
     .to(device)
 )
 
-out = deepwave.scalar(v, dx, dt, source_amplitudes=source_amplitudes,
+out = deepwave.scalar(v, grid_spacing, dt,
+                      source_amplitudes=source_amplitudes,
                       source_locations=source_locations,
                       receiver_locations=receiver_locations)
 
@@ -82,7 +83,7 @@ For example, this code from before v0.0.10:
 ```python
 # source_locations and receiver_locations in units of distance (e.g. meters)
 # source_amplitudes of dimensions [time, shot, source]
-prop = deepwave.scalar.Propagator({'vp': model}, dx)
+prop = deepwave.scalar.Propagator({'vp': model}, grid_spacing)
 receiver_amplitudes = prop(source_amplitudes, source_locations,
                            receiver_locations, dt)
 ```
@@ -90,14 +91,14 @@ should be replaced by:
 ```python
 # source_locations and receiver_locations in units of grid cells
 # source_amplitudes of dimensions [shot, source, time]
-prop = deepwave.Scalar(model, dx)
+prop = deepwave.Scalar(model, grid_spacing)
 receiver_amplitudes = prop(dt, source_amplitudes=source_amplitudes,
                            source_locations=source_locations,
                            receiver_locations=receiver_locations)[-1]
 ```
 or
 ```python
-receiver_amplitudes = deepwave.scalar(model, dx, dt,
+receiver_amplitudes = deepwave.scalar(model, grid_spacing, dt,
                                       source_amplitudes=source_amplitudes,
                                       source_locations=source_locations,
                                       receiver_locations=receiver_locations)[-1]
