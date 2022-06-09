@@ -168,12 +168,17 @@ def scalar(v: Tensor,
             index in the two spatial dimensions of the cell that each
             source is located in, relative to the origin of the model.
             Optional. Must be provided if `source_amplitudes` is. It should
-            have torch.long (int64) datatype.
+            have torch.long (int64) datatype. The location of each source
+            must be unique within the same shot (you cannot have two
+            sources in the same shot that both have location [1, 2], for
+            example).
         receiver_locations:
             A Tensor with dimensions [shot, receiver, 2], containing
             the coordinates of the cell containing each receiver. Optional.
             It should have torch.long (int64) datatype. If not provided,
-            the output `receiver_amplitudes` Tensor will be empty.
+            the output `receiver_amplitudes` Tensor will be empty. If
+            backpropagation will be performed, the location of each
+            receiver must be unique within the same shot.
         accuracy:
             An int specifying the finite difference order of accuracy. Possible
             values are 2, 4, 6, and 8, with larger numbers resulting in more
