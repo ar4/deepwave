@@ -320,6 +320,11 @@ def test_born_gradcheck_2d_cfl():
                           rtol=1e-8)
 
 
+def test_born_gradcheck_2d_odd_timesteps():
+    """Test gradcheck with one more timestep."""
+    run_born_gradcheck_2d(propagator=scalarbornprop, nt_add=1)
+
+
 def test_born_gradcheck_2d_one_shot():
     """Test gradcheck with one shot."""
     run_born_gradcheck_2d(propagator=scalarbornprop, num_shots=1)
@@ -535,7 +540,7 @@ def run_born_gradcheck(c, dc, freq, dx, dt, nx,
                        psiysc_m1_requires_grad=True,
                        zetaxsc_m1_requires_grad=True,
                        zetaysc_m1_requires_grad=True,
-                       atol=1e-8, rtol=1e-5):
+                       atol=1e-8, rtol=1e-5, nt_add=0):
     """Run PyTorch's gradcheck."""
     torch.manual_seed(1)
     if device is None:
@@ -553,6 +558,7 @@ def run_born_gradcheck(c, dc, freq, dx, dt, nx,
     else:
         nt = int((2 * torch.norm(nx.float() * dx) / 1500 + 0.1 + 2 / freq)
                  / dt)
+    nt += nt_add
     if num_sources_per_shot > 0:
         x_s = _set_coords(num_shots, num_sources_per_shot, nx)
         sources = _set_sources(x_s, freq, dt, nt, dtype, dpeak_time=0.05)

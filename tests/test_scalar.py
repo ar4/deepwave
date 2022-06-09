@@ -236,7 +236,12 @@ def test_gradcheck_2d_8th_order():
 
 def test_gradcheck_2d_cfl():
     """Test gradcheck with a timestep greater than the CFL limit."""
-    run_gradcheck_2d(propagator=scalarprop, dt=0.002, atol=3e-7)
+    run_gradcheck_2d(propagator=scalarprop, dt=0.002, atol=4e-7)
+
+
+def test_gradcheck_2d_odd_timesteps():
+    """Test gradcheck with one more timestep."""
+    run_gradcheck_2d(propagator=scalarprop, nt_add=1)
 
 
 def test_gradcheck_2d_one_shot():
@@ -569,7 +574,7 @@ def run_gradcheck(c, dc, freq, dx, dt, nx,
                   psiy_m1_requires_grad=True,
                   zetax_m1_requires_grad=True,
                   zetay_m1_requires_grad=True,
-                  atol=1e-8, rtol=1e-5):
+                  atol=1e-8, rtol=1e-5, nt_add=0):
     """Run PyTorch's gradcheck to test the gradient."""
     torch.manual_seed(1)
     if device is None:
@@ -586,6 +591,7 @@ def run_gradcheck(c, dc, freq, dx, dt, nx,
     else:
         nt = int((2 * torch.norm(nx.float() * dx) / 1500 + 0.1 + 2 / freq)
                  / dt)
+    nt += nt_add
     if num_sources_per_shot > 0:
         x_s = _set_coords(num_shots, num_sources_per_shot, nx)
         sources = _set_sources(x_s, freq, dt, nt, dtype, dpeak_time=0.05)
