@@ -13,6 +13,8 @@ If you encounter any problems, it might be because compilation failed due to you
 
 As Deepwave is a module for PyTorch, learning how to use PyTorch will help you a lot with using Deepwave. The `PyTorch website <https://pytorch.org>`_ has many tutorials.
 
+If you find any mistakes, anything that doesn't behave the way you expected it to, something that you think could be clearer, have a feature suggestion, or just want to say hello, please `write to me <mailto:alan@ausargeo.com>`_.
+
 .. toctree::
    :maxdepth: 2
    :caption: Contents:

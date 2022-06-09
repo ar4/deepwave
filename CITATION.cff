@@ -5,7 +5,7 @@ authors:
   given-names: "Alan"
   affiliation: "Ausar Geophysical"
 title: "Deepwave"
-version: 0.0.10
+version: 0.0.13
 doi: 10.5281/zenodo.3829886
-date-released: 2022-06-05
+date-released: 2022-07-02
 url: "https://github.com/ar4/deepwave"

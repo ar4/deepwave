@@ -291,6 +291,57 @@ def run_born_scatter_2d(c=1500, dc=150, freq=25, dx=(5, 5), dt=0.0001,
                             propagator, prop_kwargs, device, dtype, **kwargs)
 
 
+def run_born_forward(c, freq, dx, dt, nx,
+                     num_shots, num_sources_per_shot,
+                     num_receivers_per_shot,
+                     propagator, prop_kwargs, device=None,
+                     dtype=None, dc=100, **kwargs):
+    """Create a random model and forward propagate.
+    """
+    torch.manual_seed(1)
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = (torch.ones(*nx, device=device, dtype=dtype) * c +
+             torch.randn(*nx, dtype=dtype).to(device) * dc)
+    scatter = torch.randn(*nx, dtype=dtype).to(device) * dc
+
+    nx = torch.Tensor(nx).long()
+    dx = torch.Tensor(dx)
+
+    nt = int((2 * torch.norm(nx.float() * dx) / c + 0.35 + 2 / freq) / dt)
+    x_s = _set_coords(num_shots, num_sources_per_shot, nx)
+    x_r = _set_coords(num_shots, num_receivers_per_shot, nx, 'bottom')
+    sources = _set_sources(x_s, freq, dt, nt, dtype)
+
+    return propagator(model, scatter, dx, dt, sources['amplitude'],
+                      sources['locations'], x_r,
+                      prop_kwargs=prop_kwargs, **kwargs)
+
+
+def run_born_forward_2d(c=1500, freq=25, dx=(5, 5), dt=0.004, nx=(50, 50),
+                        num_shots=2, num_sources_per_shot=2,
+                        num_receivers_per_shot=2,
+                        propagator=None, prop_kwargs=None, device=None,
+                        dtype=None, **kwargs):
+    """Runs run_forward with default parameters for 2D."""
+
+    return run_born_forward(c, freq, dx, dt, nx,
+                            num_shots, num_sources_per_shot,
+                            num_receivers_per_shot,
+                            propagator, prop_kwargs, device, dtype, **kwargs)
+
+
+def test_forward_cpu_gpu_match():
+    """Test propagation on CPU and GPU produce the same result."""
+    if torch.cuda.is_available():
+        actual_cpu = run_born_forward_2d(propagator=scalarbornprop,
+                                         device=torch.device("cpu"))
+        actual_gpu = run_born_forward_2d(propagator=scalarbornprop,
+                                         device=torch.device("cuda"))
+        for cpui, gpui in zip(actual_cpu, actual_gpu):
+            assert torch.allclose(cpui, gpui.cpu(), atol=5e-6)
+
+
 def test_born_gradcheck_2d():
     """Test gradcheck in a 2D model with Born propagator."""
     run_born_gradcheck_2d(propagator=scalarbornprop)
@@ -317,7 +368,7 @@ def test_born_gradcheck_2d_8th_order():
 def test_born_gradcheck_2d_cfl():
     """Test gradcheck with a timestep greater than the CFL limit."""
     run_born_gradcheck_2d(propagator=scalarbornprop, dt=0.002, atol=2e-7,
-                          rtol=1e-8)
+                          rtol=1e-8, nt_add=100)
 
 
 def test_born_gradcheck_2d_odd_timesteps():
@@ -365,6 +416,35 @@ def test_born_gradcheck_2d_negative():
 def test_born_gradcheck_2d_zero():
     """Test gradcheck with zero velocity."""
     run_born_gradcheck_2d(c=0, dc=0, propagator=scalarbornprop)
+
+
+def test_born_gradcheck_2d_different_pml():
+    """Test gradcheck with different pml widths."""
+    run_born_gradcheck_2d(propagator=scalarbornprop, pml_width=[0, 1, 5, 10])
+
+
+def test_born_gradcheck_2d_no_pml():
+    """Test gradcheck with no pml."""
+    run_born_gradcheck_2d(propagator=scalarbornprop, pml_width=0, atol=2e-8)
+
+
+def test_born_gradcheck_2d_different_dx():
+    """Test gradcheck with different dx values."""
+    run_born_gradcheck_2d(propagator=scalarbornprop, dx=(4, 5), dt=0.0005)
+
+
+def test_born_gradcheck_2d_single_cell():
+    """Test gradcheck with a single model cell."""
+    run_born_gradcheck_2d(propagator=scalarbornprop, nx=(1, 1),
+                          num_shots=1,
+                          num_sources_per_shot=1,
+                          num_receivers_per_shot=1)
+
+
+def test_born_gradcheck_2d_big():
+    """Test gradcheck with a big model."""
+    run_born_gradcheck_2d(propagator=scalarbornprop,
+                          nx=(5+2*(3+3*2), 4+2*(3+3*2)))
 
 
 def test_negative_vel(c=1500, dc=100, freq=25, dx=(5, 5), dt=0.005,
@@ -570,9 +650,12 @@ def run_born_gradcheck(c, dc, freq, dx, dt, nx,
         x_r = _set_coords(num_shots, num_receivers_per_shot, nx)
     else:
         x_r = None
+    if isinstance(pml_width, int):
+        pml_width = [pml_width for _ in range(4)]
     if provide_wavefields:
         if wavefield_size is None:
-            wavefield_size = (nx[0] + pml_width*2, nx[1] + pml_width*2)
+            wavefield_size = (nx[0] + pml_width[0] + pml_width[1],
+                              nx[1] + pml_width[2] + pml_width[3])
         wavefield_0 = torch.zeros(num_shots, *wavefield_size, dtype=dtype,
                                   device=device)
         wavefield_m1 = torch.zeros_like(wavefield_0)
@@ -639,6 +722,7 @@ def run_born_gradcheck_2d(c=1500, dc=100, freq=25, dx=(5, 5), dt=0.001,
                           num_shots=2, num_sources_per_shot=2,
                           num_receivers_per_shot=2,
                           propagator=None, prop_kwargs=None,
+                          pml_width=3,
                           survey_pad=None,
                           device=None, dtype=torch.double, **kwargs):
     """Runs run_gradcheck with default parameters for 2D."""
@@ -646,5 +730,6 @@ def run_born_gradcheck_2d(c=1500, dc=100, freq=25, dx=(5, 5), dt=0.001,
     return run_born_gradcheck(c, dc, freq, dx, dt, nx,
                               num_shots, num_sources_per_shot,
                               num_receivers_per_shot,
-                              propagator, prop_kwargs, survey_pad=survey_pad,
+                              propagator, prop_kwargs, pml_width=pml_width,
+                              survey_pad=survey_pad,
                               device=device, dtype=dtype, **kwargs)

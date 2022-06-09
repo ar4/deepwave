@@ -1,20 +1,139 @@
 import math
+import warnings
 from typing import List, Optional, Union, Tuple
 import torch
 from torch import Tensor
 
 
-def set_dx(dx: Union[int, float, List[Union[int, float]],
-           Tensor]) -> Tuple[float, float]:
+def setup_propagator(v: Tensor,
+                     grid_spacing: Union[int, float,
+                                         List[float], Tensor],
+                     dt: float,
+                     other_models: List[Tensor],
+                     other_model_modes: List[str],
+                     wavefields: List[Optional[Tensor]],
+                     source_amplitudes: Optional[Tensor] = None,
+                     source_locations: Optional[Tensor] = None,
+                     receiver_locations: Optional[Tensor] = None,
+                     accuracy: int = 4,
+                     pml_width: Union[int, List[int]] = 20,
+                     pml_freq: Optional[float] = None,
+                     max_vel: Optional[float] = None,
+                     survey_pad:
+                       Optional[Union[int,
+                                      List[Optional[int]]]] = None,
+                     origin: Optional[List[int]] = None,
+                     nt: Optional[int] = None,
+                     model_gradient_sampling_interval: int = 1) -> Tuple[
+                        Tensor, List[Tensor], Tensor, List[Tensor],
+                        Tensor, Tensor, Tensor, Tensor, Tensor, Tensor,
+                        float, float, float, int, int, int, int, int,
+                        List[int]]:
+    # Check inputs
+    check_inputs(source_amplitudes, source_locations, receiver_locations,
+                 wavefields, accuracy, nt, v)
+
+    if nt is None:
+        nt = 0
+        if source_amplitudes is not None:
+            nt = source_amplitudes.shape[-1]
+    device = v.device
+    dtype = v.dtype
+    dy, dx = set_dx(grid_spacing)
+    if isinstance(pml_width, int):
+        pml_width = [pml_width for _ in range(4)]
+    fd_pad = accuracy // 2
+    pad = [fd_pad + width for width in pml_width]
+    models, locations = extract_survey(
+        [v] + list(other_models),
+        [source_locations, receiver_locations],
+        survey_pad, wavefields, origin, pml_width
+    )
+    v = models[0]
+    other_models = models[1:]
+    source_locations, receiver_locations = locations
+    if max_vel is None:
+        max_vel = v.abs().max().item()
+    else:
+        max_vel = abs(max_vel)
+        if max_vel < v.abs().max().item():
+            warnings.warn("max_vel is less than the actual maximum velocity")
+    check_points_per_wavelength(v, pml_freq, dy, dx, dt)
+    v = pad_model(v, pml_width)
+    v = pad_model(v, [fd_pad for _ in range(4)], mode='constant')
+    for i in range(len(other_models)):
+        other_models[i] = pad_model(other_models[i], pad,
+                                    mode=other_model_modes[i])
+    dt, step_ratio = cfl_condition(dy, dx, dt, max_vel)
+    if source_amplitudes is not None and source_locations is not None:
+        source_locations = pad_locations(source_locations, pad)
+        sources_i = location_to_index(source_locations, v.shape[1])
+        source_amplitudes = (
+            -source_amplitudes * v[source_locations[..., 0],
+                                   source_locations[..., 1],
+                                   None] ** 2 * dt**2
+        )
+        source_amplitudes = upsample(source_amplitudes, step_ratio)
+    else:
+        sources_i = None
+    if receiver_locations is not None:
+        receiver_locations = pad_locations(receiver_locations, pad)
+        receivers_i = location_to_index(receiver_locations, v.shape[1])
+    else:
+        receivers_i = None
+    n_batch = get_n_batch([source_locations, receiver_locations] +
+                          list(wavefields))
+    ay, ax, by, bx = \
+        setup_pml(pml_width, fd_pad, dt, v, max_vel, pml_freq)
+    nt *= step_ratio
+
+    if source_amplitudes is not None:
+        if source_amplitudes.device == torch.device('cpu'):
+            source_amplitudes = torch.movedim(source_amplitudes, -1, 1)
+        else:
+            source_amplitudes = torch.movedim(source_amplitudes, -1, 0)
+
+    v = convert_to_contiguous(v)
+    for i in range(len(other_models)):
+        other_models[i] = convert_to_contiguous(other_models[i])
+    source_amplitudes = (convert_to_contiguous(source_amplitudes)
+                         .to(dtype).to(device))
+    contiguous_wavefields = []
+    for wavefield in wavefields:
+        contiguous_wavefields.append(convert_to_contiguous(wavefield))
+    sources_i = convert_to_contiguous(sources_i)
+    receivers_i = convert_to_contiguous(receivers_i)
+    ay = convert_to_contiguous(ay)
+    ax = convert_to_contiguous(ax)
+    by = convert_to_contiguous(by)
+    bx = convert_to_contiguous(bx)
+    return (v, other_models, source_amplitudes, contiguous_wavefields,
+            ay, ax, by, bx, sources_i.long(), receivers_i.long(),
+            dy, dx, dt, nt, n_batch,
+            step_ratio, model_gradient_sampling_interval,
+            accuracy, pml_width)
+
+
+def downsample_and_movedim(receiver_amplitudes: Tensor,
+                           step_ratio: int) -> Tensor:
+    if receiver_amplitudes.numel() > 0:
+        if receiver_amplitudes.device == torch.device('cpu'):
+            receiver_amplitudes = torch.movedim(receiver_amplitudes, 1, -1)
+        else:
+            receiver_amplitudes = torch.movedim(receiver_amplitudes, 0, -1)
+        receiver_amplitudes = downsample(receiver_amplitudes, step_ratio)
+    return receiver_amplitudes
+
+
+def set_dx(dx: Union[int, float, List[float],
+                     Tensor]) -> Tuple[float, float]:
     if isinstance(dx, int):
         return float(dx), float(dx)
     if isinstance(dx, float):
         return dx, dx
-    if (isinstance(dx, list) and len(dx) == 2 and
-            isinstance(dx[0], (int, float)) and
-            isinstance(dx[1], (int, float))):
+    if (isinstance(dx, list) and len(dx) == 2):
         return float(dx[0]), float(dx[1])
-    if (isinstance(dx, torch.Tensor) and dx.shape == (2,)):
+    if isinstance(dx, torch.Tensor) and dx.shape == (2,):
         return float(dx[0].item()), float(dx[1].item())
     raise RuntimeError("Expected dx to be a real number or a list of "
                        "two real numbers")
@@ -24,7 +143,7 @@ def check_inputs(source_amplitudes: Optional[Tensor],
                  source_locations: Optional[Tensor],
                  receiver_locations: Optional[Tensor],
                  wavefields: List[Optional[Tensor]],
-                 accuracy: int, nt: Optional[int], model: Tensor):
+                 accuracy: int, nt: Optional[int], model: Tensor) -> None:
     if source_amplitudes is not None or source_locations is not None:
         if source_amplitudes is None or source_locations is None:
             raise RuntimeError("source_locations and source_amplitudes must "
@@ -105,6 +224,24 @@ def check_inputs(source_amplitudes: Optional[Tensor],
         raise RuntimeError("Specify source_amplitudes or nt")
 
 
+def check_points_per_wavelength(v: Tensor, pml_freq: Optional[float],
+                                dy: float, dx: float, dt: float) -> None:
+    if pml_freq is not None:
+        min_vel = v.abs().min()
+        min_wavelength = min_vel / pml_freq
+        max_spacing = max(dy, dx)
+        if min_wavelength / max_spacing < 6:
+            warnings.warn("At least six grid cells per wavelength is "
+                          "recommended, but at a frequency of {}, a "
+                          "minimum velocity of {}, and a grid cell "
+                          "spacing of {}, there are only {}."
+                          .format(pml_freq, min_vel, max_spacing,
+                                  min_wavelength / max_spacing))
+        if 1/2/dt < pml_freq:
+            warnings.warn("The provided pml_freq is greater than the "
+                          "Nyquist frequency of the data.")
+
+
 def get_n_batch(args: List[Optional[Tensor]]) -> int:
     "Get the size of the batch dimension."
     for arg in args:
@@ -113,23 +250,24 @@ def get_n_batch(args: List[Optional[Tensor]]) -> int:
     raise RuntimeError("One of the inputs to get_n_batch must be non-None")
 
 
-def pad_model(model: Tensor, pad: List[int], mode: str = "replicate"):
+def pad_model(model: Tensor, pad: List[int],
+              mode: str = "replicate") -> Tensor:
     return torch.nn.functional.pad(model[None],
                                    (pad[2], pad[3], pad[0], pad[1]),
                                    mode=mode)[0]
 
 
-def pad_locations(locations: Tensor, pad: List[int]):
+def pad_locations(locations: Tensor, pad: List[int]) -> Tensor:
     pad_starts = pad[::2]
-    pad_starts = torch.tensor(pad_starts).to(locations[0].device)
-    return locations + pad_starts
+    pad_starts_tensor = torch.tensor(pad_starts).to(locations[0].device)
+    return locations + pad_starts_tensor
 
 
-def location_to_index(locations: Tensor, ny: int):
-    return locations[..., 0] * ny + locations[..., 1]
+def location_to_index(locations: Tensor, nx: int) -> Tensor:
+    return locations[..., 0] * nx + locations[..., 1]
 
 
-def upsample(signal: Tensor, step_ratio: int):
+def upsample(signal: Tensor, step_ratio: int) -> Tensor:
     if step_ratio == 1:
         return signal
     nt = signal.shape[-1]
@@ -139,7 +277,7 @@ def upsample(signal: Tensor, step_ratio: int):
                            n=up_nt)
 
 
-def downsample(signal: Tensor, step_ratio: int):
+def downsample(signal: Tensor, step_ratio: int) -> Tensor:
     if step_ratio == 1:
         return signal
     nt = signal.shape[-1]
@@ -148,17 +286,20 @@ def downsample(signal: Tensor, step_ratio: int):
                            n=down_nt)
 
 
-def convert_to_contiguous(tensor: Optional[Tensor]):
+def convert_to_contiguous(tensor: Optional[Tensor]) -> Tensor:
     if tensor is None:
         return torch.empty(0)
     return tensor.contiguous()
 
 
-def extract_survey(models: List[Tensor], locations: List[Optional[Tensor]],
-                   survey_pad: Optional[Union[int, List[Optional[int]]]],
+def extract_survey(models: List[Tensor],
+                   locations: List[Optional[Tensor]],
+                   survey_pad: Optional[Union[int,
+                                              List[Optional[int]]]],
                    wavefields: List[Optional[Tensor]],
                    origin: Optional[List[int]],
-                   pad: List[int]) -> Tuple[List[Tensor], List[Optional[Tensor]]]:
+                   pad: List[int]) -> Tuple[List[Tensor],
+                                                List[Optional[Tensor]]]:
     check_locations_are_within_model(models[0].shape, locations)
     if any([wavefield is not None for wavefield in wavefields]):
         survey_extents = get_survey_extents_from_wavefields(
@@ -175,8 +316,10 @@ def extract_survey(models: List[Tensor], locations: List[Optional[Tensor]],
     )
 
 
-def check_locations_are_within_model(model_shape: List[int],
-                                     locations: List[Optional[Tensor]]):
+def check_locations_are_within_model(
+            model_shape: List[int],
+            locations: List[Optional[Tensor]]
+        ) -> None:
     for location in locations:
         if location is not None:
             if location.min() < 0:
@@ -190,6 +333,7 @@ def set_survey_pad(survey_pad: Optional[Union[int, List[Optional[int]]]],
                    ndim: int) -> List[int]:
     """Check survey_pad, and convert to a list if it is a scalar."""
     # Expand to list
+    survey_pad_list: List[int] = []
     if survey_pad is None:
         survey_pad_list = [-1] * 2 * ndim
     elif isinstance(survey_pad, int):
@@ -197,7 +341,6 @@ def set_survey_pad(survey_pad: Optional[Union[int, List[Optional[int]]]],
             raise RuntimeError("survey_pad must be non-negative")
         survey_pad_list = [survey_pad] * 2 * ndim
     elif isinstance(survey_pad, list):
-        survey_pad_list: List[int] = []
         for pad in survey_pad:
             if pad is None:
                 survey_pad_list.append(-1)
@@ -219,10 +362,10 @@ def set_survey_pad(survey_pad: Optional[Union[int, List[Optional[int]]]],
 
 
 def get_survey_extents_from_locations(
-        model_shape: List[int],
-        locations: List[Optional[Tensor]],
-        survey_pad: Optional[Union[int, List[Optional[int]]]]
-    ) -> List[int]:
+            model_shape: List[int],
+            locations: List[Optional[Tensor]],
+            survey_pad: Optional[Union[int, List[Optional[int]]]]
+        ) -> List[int]:
     """Calculate the extents of the model to use for the survey.
 
     Args:
@@ -243,14 +386,14 @@ def get_survey_extents_from_locations(
     """
     ndims = 2
     extents: List[int] = []
-    survey_pad = set_survey_pad(survey_pad, ndims)
+    survey_pad_list = set_survey_pad(survey_pad, ndims)
     for dim in range(ndims):
-        left_pad = survey_pad[dim * 2]
+        left_pad = survey_pad_list[dim * 2]
         left_extent = get_survey_extents_one_side(
             left_pad, "left", dim, locations, model_shape[dim]
         )
 
-        right_pad = survey_pad[dim * 2 + 1]
+        right_pad = survey_pad_list[dim * 2 + 1]
         right_extent = get_survey_extents_one_side(
             right_pad, "right", dim, locations, model_shape[dim]
         )
@@ -364,14 +507,17 @@ def get_survey_extents_from_wavefields(wavefields: List[Optional[Tensor]],
     raise RuntimeError("At least one wavefield must be non-None")
 
 
-def check_extents_within_model(extents: List[int], model_shape: List[int]):
+def check_extents_within_model(extents: List[int],
+                               model_shape: List[int]) -> None:
     for (extent, model_dim_shape) in zip(extents[::2], model_shape):
         if extent > model_dim_shape:
             raise RuntimeError("Wavefields must be within the model")
 
 
-def check_locations_within_extents(extents: List[int],
-                                   locations: List[Optional[Tensor]]):
+def check_locations_within_extents(
+            extents: List[int],
+            locations: List[Optional[Tensor]]
+        ) -> None:
     for location in locations:
         if location is not None:
             for dim in range(location.shape[-1]):
@@ -382,7 +528,8 @@ def check_locations_within_extents(extents: List[int],
                                        "wavefields")
 
 
-def extract_models(models: List[Tensor], extents: List[int]) -> List[Tensor]:
+def extract_models(models: List[Tensor],
+                   extents: List[int]) -> List[Tensor]:
     """Extract the specified portion of the model.
 
     Args:
@@ -414,9 +561,9 @@ def extract_locations(locations: List[Optional[Tensor]],
     return extracted_locations
 
 
-def cfl_condition(dx: float, dy: float, dt: float, max_vel: float,
+def cfl_condition(dy: float, dx: float, dt: float, max_vel: float,
                   eps: float = 1e-15) -> Tuple[float, int]:
-    max_dt = (0.6 / math.sqrt(1 / dx**2 + 1 / dy**2) /
+    max_dt = (0.6 / math.sqrt(1 / dy**2 + 1 / dx**2) /
               (max_vel**2 + eps)) * max_vel
     step_ratio = int(math.ceil((abs(dt) / (max_dt**2 + eps)) * max_dt))
     inner_dt = dt / step_ratio
@@ -424,7 +571,8 @@ def cfl_condition(dx: float, dy: float, dt: float, max_vel: float,
 
 
 def setup_pml(pml_width: List[int], fd_pad: int, dt: float, v: Tensor,
-              max_vel: float, pml_freq: Optional[float], eps: float = 1e-9):
+              max_vel: float, pml_freq: Optional[float],
+              eps: float = 1e-9) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
     R = 0.001
     if pml_freq is None:
         pml_freq = 25.0
@@ -453,20 +601,24 @@ def setup_pml(pml_width: List[int], fd_pad: int, dt: float, v: Tensor,
         a.append(torch.exp(-sigmaalpha * abs(dt)))
         b.append(sigma / (sigmaalpha**2 + eps) * sigmaalpha * (a[-1] - 1))
     a0 = math.exp(-2 * math.pi * pml_freq * abs(dt))
-    ax = a0 * torch.ones(v.shape[0], device=device, dtype=dtype)
-    ay = a0 * torch.ones(v.shape[1], device=device, dtype=dtype)
-    bx = torch.zeros(v.shape[0], device=device, dtype=dtype)
-    by = torch.zeros(v.shape[1], device=device, dtype=dtype)
-    ax[fd_pad:fd_pad + pml_width[0]] = a[0].flip(0)
-    ax[len(ax) - pml_width[1] - fd_pad:-fd_pad] = a[1]
-    ay[fd_pad:fd_pad + pml_width[2]] = a[2].flip(0)
-    ay[len(ay) - pml_width[3] - fd_pad:-fd_pad] = a[3]
-    bx[fd_pad:fd_pad + pml_width[0]] = b[0].flip(0)
-    bx[len(bx) - pml_width[1] - fd_pad:-fd_pad] = b[1]
-    by[fd_pad:fd_pad + pml_width[2]] = b[2].flip(0)
-    by[len(by) - pml_width[3] - fd_pad:-fd_pad] = b[3]
-    ax = ax[None, :, None]
-    ay = ay[None, None, :]
-    bx = bx[None, :, None]
-    by = by[None, None, :]
-    return ax, ay, bx, by
+    ay = a0 * torch.ones(v.shape[0], device=device, dtype=dtype)
+    ax = a0 * torch.ones(v.shape[1], device=device, dtype=dtype)
+    by = torch.zeros(v.shape[0], device=device, dtype=dtype)
+    bx = torch.zeros(v.shape[1], device=device, dtype=dtype)
+    ay[fd_pad:fd_pad + pml_width[0]] = a[0].flip(0)
+    ay[:fd_pad] = 0
+    ay[len(ay) - pml_width[1] - fd_pad:-fd_pad] = a[1]
+    ay[-fd_pad:] = 0
+    ax[fd_pad:fd_pad + pml_width[2]] = a[2].flip(0)
+    ax[:fd_pad] = 0
+    ax[len(ax) - pml_width[3] - fd_pad:-fd_pad] = a[3]
+    ax[-fd_pad:] = 0
+    by[fd_pad:fd_pad + pml_width[0]] = b[0].flip(0)
+    by[:fd_pad] = 0
+    by[len(by) - pml_width[1] - fd_pad:-fd_pad] = b[1]
+    by[-fd_pad:] = 0
+    bx[fd_pad:fd_pad + pml_width[2]] = b[2].flip(0)
+    bx[:fd_pad] = 0
+    bx[len(bx) - pml_width[3] - fd_pad:-fd_pad] = b[3]
+    bx[-fd_pad:] = 0
+    return ay, ax, by, bx
