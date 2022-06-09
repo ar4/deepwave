@@ -314,6 +314,12 @@ def test_born_gradcheck_2d_8th_order():
                           prop_kwargs={'accuracy': 8})
 
 
+def test_born_gradcheck_2d_cfl():
+    """Test gradcheck with a timestep greater than the CFL limit."""
+    run_born_gradcheck_2d(propagator=scalarbornprop, dt=0.002, atol=2e-7,
+                          rtol=1e-8)
+
+
 def test_born_gradcheck_2d_one_shot():
     """Test gradcheck with one shot."""
     run_born_gradcheck_2d(propagator=scalarbornprop, num_shots=1)
@@ -529,7 +535,7 @@ def run_born_gradcheck(c, dc, freq, dx, dt, nx,
                        psiysc_m1_requires_grad=True,
                        zetaxsc_m1_requires_grad=True,
                        zetaysc_m1_requires_grad=True,
-                       ):
+                       atol=1e-8, rtol=1e-5):
     """Run PyTorch's gradcheck."""
     torch.manual_seed(1)
     if device is None:
@@ -619,8 +625,7 @@ def run_born_gradcheck(c, dc, freq, dx, dt, nx,
                                           True
                                           ),
                              nondet_tol=1e-3, check_grad_dtypes=True,
-                             atol=1e-8, rtol=1e-5
-                             )
+                             atol=atol, rtol=rtol)
 
 
 def run_born_gradcheck_2d(c=1500, dc=100, freq=25, dx=(5, 5), dt=0.001,

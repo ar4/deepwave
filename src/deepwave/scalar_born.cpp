@@ -528,7 +528,7 @@ void forward_shot(T *wfc, T *wfp, T *psix, T *psiy, T *zetax, T *zetay,
           bx, by, nx, ny, one_over_dx, one_over_dy, one_over_dx2, one_over_dy2);
     }
     if (n_sources_per_shot > 0) {
-      if (v_requires_grad or scatter_requires_grad) {
+      if (t % step_ratio == 0 and (v_requires_grad or scatter_requires_grad)) {
         add_sources<T, true>(wfp, wfpsc, w_store + (t / step_ratio) * nx * ny,
                              f + t * n_sources_per_shot, v2dt2, two_vdt2,
                              scatter, sources_i, n_sources_per_shot);

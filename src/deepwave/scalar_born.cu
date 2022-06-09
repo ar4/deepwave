@@ -586,7 +586,7 @@ void forward_batch(T *wfc, T *wfp, T *psix, T *psiy, T *zetax, T *zetay,
     }
     gpuErrchk(cudaPeekAtLastError());
     if (n_sources_per_shot > 0) {
-      if (v_requires_grad or scatter_requires_grad) {
+      if (t % step_ratio == 0 and (v_requires_grad or scatter_requires_grad)) {
         add_sources<T, true><<<dimGrid_sources, dimBlock_sources>>>(
             wfp, wfpsc, w_store + (t / step_ratio) * n_batch * nx * ny,
             f + t * n_batch * n_sources_per_shot, v2dt2, two_vdt2, scatter,
