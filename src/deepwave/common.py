@@ -4,12 +4,15 @@ import torch
 from torch import Tensor
 
 
-def set_dx(dx: Union[float, List[float], Tensor]) -> Tuple[float, float]:
+def set_dx(dx: Union[int, float, List[Union[int, float]],
+           Tensor]) -> Tuple[float, float]:
+    if isinstance(dx, int):
+        return float(dx), float(dx)
     if isinstance(dx, float):
         return dx, dx
     if (isinstance(dx, list) and len(dx) == 2 and
-            isinstance(dx[0], float) and
-            isinstance(dx[1], float)):
+            isinstance(dx[0], (int, float)) and
+            isinstance(dx[1], (int, float))):
         return float(dx[0]), float(dx[1])
     if (isinstance(dx, torch.Tensor) and dx.shape == (2,)):
         return float(dx[0].item()), float(dx[1].item())

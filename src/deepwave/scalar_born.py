@@ -37,7 +37,7 @@ class ScalarBorn(torch.nn.Module):
             A 2D Tensor containing an initial guess of the scattering
             potential.
         grid_spacing:
-            The spatial grid cell size, specified with a single float
+            The spatial grid cell size, specified with a single real number
             (used for both dimensions) or a List or Tensor of length
             two (the length in each of the two dimensions).
         v_requires_grad:
@@ -114,7 +114,8 @@ class ScalarBorn(torch.nn.Module):
 
 
 def scalar_born(v: Tensor, scatter: Tensor,
-                grid_spacing: Union[float, List[float], Tensor],
+                grid_spacing: Union[int, float, List[Union[int, float]],
+                                    Tensor],
                 dt: float, source_amplitudes: Optional[Tensor] = None,
                 source_locations: Optional[Tensor] = None,
                 receiver_locations: Optional[Tensor] = None,

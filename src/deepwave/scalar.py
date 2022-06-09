@@ -62,7 +62,7 @@ class Scalar(torch.nn.Module):
         v:
             A 2D Tensor containing an initial guess of the wavespeed.
         grid_spacing:
-            The spatial grid cell size, specified with a single float
+            The spatial grid cell size, specified with a single real number
             (used for both dimensions) or a List or Tensor of length
             two (the length in each of the two dimensions).
         v_requires_grad:
@@ -115,7 +115,8 @@ class Scalar(torch.nn.Module):
                       model_gradient_sampling_interval)
 
 
-def scalar(v: Tensor, grid_spacing: Union[float, List[float], Tensor],
+def scalar(v: Tensor,
+           grid_spacing: Union[int, float, List[Union[int, float]], Tensor],
            dt: float,
            source_amplitudes: Optional[Tensor] = None,
            source_locations: Optional[Tensor] = None,
@@ -148,7 +149,7 @@ def scalar(v: Tensor, grid_spacing: Union[float, List[float], Tensor],
             not made of the model, so gradients will propagate back into
             the provided Tensor.
         grid_spacing:
-            The spatial grid cell size, specified with a single float
+            The spatial grid cell size, specified with a single real number
             (used for both dimensions) or a List or Tensor of length
             two (the length in each of the two dimensions).
         dt:
