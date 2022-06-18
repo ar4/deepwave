@@ -548,18 +548,7 @@ class ScalarCUDAFunction
           if (v.requires_grad()) {
             dwdv_a = dwdv.data_ptr<scalar_t>();
           }
-          constexpr void (*forward_batches[])(
-              scalar_t * wfc, scalar_t * wfp, scalar_t * psix, scalar_t * psiy,
-              scalar_t * zetax, scalar_t * zetay, int64_t const *sources_i,
-              int64_t const *receivers_i, scalar_t *dwdv, scalar_t const *v2dt2,
-              scalar_t const *two_vdt2, scalar_t const *f, scalar_t *r,
-              scalar_t const *ax, scalar_t const *ay, scalar_t const *bx,
-              scalar_t const *by, scalar_t one_over_dx, scalar_t one_over_dy,
-              scalar_t one_over_dx2, scalar_t one_over_dy2,
-              int64_t n_sources_per_shot, int64_t n_receivers_per_shot,
-              int64_t nx, int64_t ny, int64_t nt, int64_t step_ratio,
-              bool v_requires_grad, int64_t n_batch,
-              int64_t const pml_width[4]){
+          decltype(&forward_batch<scalar_t, 4>) forward_batches[] {
               forward_batch<scalar_t, 2>, forward_batch<scalar_t, 4>,
               forward_batch<scalar_t, 6>, forward_batch<scalar_t, 8>};
           forward_batches[accuracy / 2 - 1](
@@ -710,20 +699,7 @@ class ScalarCUDAFunction
           if (v.requires_grad()) {
             dwdv_a = dwdv.data_ptr<scalar_t>();
           }
-          constexpr void (*backward_batches[])(
-              scalar_t * wfc, scalar_t * wfp, scalar_t * psix, scalar_t * psiy,
-              scalar_t * zetax, scalar_t * zetay, int64_t const *sources_i,
-              int64_t const *receivers_i, scalar_t *dwdv, scalar_t const *v2dt2,
-              scalar_t *f, scalar_t const *r, scalar_t *grad_v,
-              scalar_t const *ax, scalar_t const *ay,
-              scalar_t const *bx_over_ax, scalar_t const *by_over_ay,
-              scalar_t *b_a_psix, scalar_t *b_a_psiy, scalar_t *b_a_zetax,
-              scalar_t *b_a_zetay, scalar_t *v2dt2_wfc, scalar_t one_over_dx,
-              scalar_t one_over_dy, scalar_t one_over_dx2,
-              scalar_t one_over_dy2, int64_t n_sources_per_shot,
-              int64_t n_receivers_per_shot, int64_t nx, int64_t ny, int64_t nt,
-              int64_t step_ratio, bool v_requires_grad, int64_t n_batch,
-              int64_t const pml_width[4]){
+          decltype(&backward_batch<scalar_t, 4>) backward_batches[] {
               backward_batch<scalar_t, 2>, backward_batch<scalar_t, 4>,
               backward_batch<scalar_t, 6>, backward_batch<scalar_t, 8>};
           backward_batches[accuracy / 2 - 1](
