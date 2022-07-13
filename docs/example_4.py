@@ -5,16 +5,16 @@ import deepwave
 from deepwave import scalar
 
 device = torch.device('cuda')
-nx = 2301
-ny = 751
+ny = 2301
+nx = 751
 dx = 4.0
 v_true = torch.from_file('marmousi_vp.bin',
-                         size=nx*ny).reshape(nx, ny)
+                         size=ny*nx).reshape(ny, nx)
 
 # Select portion of model for inversion
-nx = 600
-ny = 250
-v_true = v_true[:nx, :ny]
+ny = 600
+nx = 250
+v_true = v_true[:ny, :nx]
 
 # Smooth to use as starting model
 v_init = torch.tensor(1/gaussian_filter(1/v_true.numpy(), 40)).to(device)

@@ -14,17 +14,17 @@ We begin by loading the Marmousi 1 velocity model, as in :doc:`example_1`. We as
     from deepwave import scalar_born
 
     device = torch.device('cuda')
-    nx = 2301
-    ny = 751
+    ny = 2301
+    nx = 751
     dx = 4.0
     v = torch.from_file('marmousi_vp.bin',
-                        size=nx*ny).reshape(nx, ny)
+                        size=ny*nx).reshape(ny, nx)
 
     # Smooth to use as migration model
     v_mig = torch.tensor(1/gaussian_filter(1/v.numpy(), 40))
     v_mig = v_mig[::2, ::2].to(device)
-    nx = v_mig.shape[0]
-    ny = v_mig.shape[1]
+    ny = v_mig.shape[0]
+    nx = v_mig.shape[1]
     dx *= 2
 
 We also setup the sources and receivers in the same way, except that the coordinate values are halved as the cells are now twice as big::

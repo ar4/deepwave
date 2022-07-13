@@ -11,6 +11,8 @@ The first time you import Deepwave may take some time as the C++ and (if you hav
 
 If you encounter any problems, it might be because compilation failed due to your compiler not being compatible with PyTorch. If you are able to install one that is compatible, you might need to set the `CXX` environment variable to the path to the new compiler before launching Python. If you are using Windows, PyTorch's `Windows FAQ <https://pytorch.org/docs/stable/notes/windows.html#cpp-extension>`_ might help. On MacOS you might need to first install OpenMP. If you are still stuck, please `file an issue <https://github.com/ar4/deepwave/issues>`_ or `send me an email <mailto:alan@ausargeo.com>`_.
 
+If you update to a new version of PyTorch, you will probably need to reinstall Deepwave (`pip install -U deepwave`) or you will get errors such as complaints about undefined symbols.
+
 As Deepwave is a module for PyTorch, learning how to use PyTorch will help you a lot with using Deepwave. The `PyTorch website <https://pytorch.org>`_ has many tutorials.
 
 If you find any mistakes, anything that doesn't behave the way you expected it to, something that you think could be clearer, have a feature suggestion, or just want to say hello, please `write to me <mailto:alan@ausargeo.com>`_.

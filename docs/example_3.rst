@@ -12,16 +12,16 @@ We continue with using the Marmousi model, but due to the computational cost of 
     from deepwave import scalar
 
     device = torch.device('cuda')
-    nx = 2301
-    ny = 751
+    ny = 2301
+    nx = 751
     dx = 4.0
     v_true = torch.from_file('marmousi_vp.bin',
-                             size=nx*ny).reshape(nx, ny)
+                             size=ny*nx).reshape(ny, nx)
 
     # Select portion of model for inversion
-    nx = 600
-    ny = 250
-    v_true = v_true[:nx, :ny]
+    ny = 600
+    nx = 250
+    v_true = v_true[:ny, :nx]
 
 We smooth the true model to create our initial guess of the wavespeed, which we will attempt to improve with inversion. We also load the data that we generated in :doc:`example_1` to serve as our target observed data::
 

@@ -4,11 +4,11 @@ import deepwave
 from deepwave import scalar
 
 device = torch.device('cuda')
-nx = 2301
-ny = 751
+ny = 2301
+nx = 751
 dx = 4.0
 v = torch.from_file('marmousi_vp.bin',
-                    size=nx*ny).reshape(nx, ny).to(device)
+                    size=ny*nx).reshape(ny, nx).to(device)
 
 n_shots = 115
 
