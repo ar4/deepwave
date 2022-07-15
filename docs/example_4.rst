@@ -19,9 +19,9 @@ We could also calculate a scaling value for the predicted data outside the optim
     predicted = out[-1]
     predicted_norm = (predicted.detach()**2).mean().sqrt().item()
     if predicted_norm > 0:
-      normed_predicted = predicted / predicted_norm
+        normed_predicted = predicted / predicted_norm
     else:
-      normed_predicted = predicted
+        normed_predicted = predicted
 
 I `detached <https://pytorch.org/docs/stable/generated/torch.Tensor.detach.html>`_ the predicted tensor when calculating the scaling value because we only want the scaled values in the loss function to be used when calculating the gradient.
 
