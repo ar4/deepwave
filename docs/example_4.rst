@@ -44,6 +44,8 @@ These changes, combined with changing our optimiser to LBFGS applied for five ep
 
 .. image:: example_4.jpg
 
+The cost function that we used in this example encourages the optimiser to keep the velocities within the desired range, but does not force it to be the case. It is thus likely that the velocities will sometimes exceed the limits (if you run this example, you will get warnings about too few samples per wavelength for some iterations). The method for containing velocity within a range that is used in :doc:`example_5` is thus superior, and the one used in this example is mainly included as a demonstration of a cost function with multiple terms.
+
 Because of the normalisation we used this time, the result should also be the same even if we had scaled the observed data by a large number before running our code.
 
 `Full example code <https://github.com/ar4/deepwave/blob/master/docs/example_4.py>`_
