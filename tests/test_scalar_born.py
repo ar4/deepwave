@@ -420,7 +420,8 @@ def test_born_gradcheck_2d_zero():
 
 def test_born_gradcheck_2d_different_pml():
     """Test gradcheck with different pml widths."""
-    run_born_gradcheck_2d(propagator=scalarbornprop, pml_width=[0, 1, 5, 10])
+    run_born_gradcheck_2d(propagator=scalarbornprop, pml_width=[0, 1, 5, 10],
+                          atol=5e-8)
 
 
 def test_born_gradcheck_2d_no_pml():
