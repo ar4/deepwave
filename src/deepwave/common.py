@@ -19,9 +19,8 @@ def setup_propagator(v: Tensor,
                      pml_width: Union[int, List[int]] = 20,
                      pml_freq: Optional[float] = None,
                      max_vel: Optional[float] = None,
-                     survey_pad:
-                       Optional[Union[int,
-                                      List[Optional[int]]]] = None,
+                     survey_pad: Optional[Union[int,
+                                          List[Optional[int]]]] = None,
                      origin: Optional[List[int]] = None,
                      nt: Optional[int] = None,
                      model_gradient_sampling_interval: int = 1) -> Tuple[
@@ -299,7 +298,7 @@ def extract_survey(models: List[Tensor],
                    wavefields: List[Optional[Tensor]],
                    origin: Optional[List[int]],
                    pad: List[int]) -> Tuple[List[Tensor],
-                                                List[Optional[Tensor]]]:
+                                            List[Optional[Tensor]]]:
     check_locations_are_within_model(models[0].shape, locations)
     if any([wavefield is not None for wavefield in wavefields]):
         survey_extents = get_survey_extents_from_wavefields(

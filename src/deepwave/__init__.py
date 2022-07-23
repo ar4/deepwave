@@ -17,6 +17,7 @@ import torch.cuda
 from deepwave.scalar import Scalar, scalar
 from deepwave.scalar_born import ScalarBorn, scalar_born
 import deepwave.wavelets
+import deepwave.location_interpolation
 source_dir = pathlib.Path(__file__).parent.resolve()
 sources = [source_dir / 'scalar.cpp',
            source_dir / 'scalar_born.cpp']

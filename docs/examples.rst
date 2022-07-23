@@ -11,3 +11,4 @@ These examples demonstrate how to use Deepwave. Each is designed to show differe
     example_increasing_freq_fwi
     example_checkpointing
     example_target_wavefield
+    example_location_interpolation
