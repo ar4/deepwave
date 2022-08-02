@@ -12,7 +12,7 @@ def _get_hicks_for_one_location_dim(
         monopole: bool = True,
         eps: float = DEFAULT_EPS) -> Tuple[Tensor, Tensor]:
     if monopole and abs(location - round(location)) < eps:
-        locations = torch.tensor([location]).round().long()
+        locations = torch.tensor([location]).round().long().to(beta.device)
         weights = torch.ones(1, dtype=beta.dtype, device=beta.device)
     else:
         key = torch.tensor([int((location - int(location)) / eps),
@@ -141,6 +141,47 @@ class Hicks:
     not centred on a grid point. This class implements this
     approach. It can also be used to create dipole sources
     and receivers.
+
+    Args:
+        locations:
+            A three dimensional Tensor [shot, per_shot, 2] specifying
+            the locations to interpolate, provided as float values in
+            units of cells relative to the origin of the grid, so
+            [[[0.5, 0.5]]] corresponds to the point half a cell from
+            the origin in both dimensions.
+        halfwidth:
+            An integer specifying the halfwidth of the window that
+            will be used to interpolate each point onto the grid. A
+            halfwidth of 4 (the default) means that an 8x8 window will
+            be used. Possible values are in [1, 10].
+        free_surfaces:
+            A list of four booleans specifying whether the corresponding
+            edge of the grid is a free surface, in the order [beginning
+            of first dimension, end of first dimension, beginning of
+            second dimension, end of second dimension].
+            [True, False, False, True] therefore means that the beginning
+            of the first dimension and end of the second dimension are
+            free surfaces, while the other two edges are not, for example.
+            The default is for no edges to be free surfaces.
+        model_shape:
+            A list of two integers specifying the size of the grid. This
+            is only used when the model contains free surfaces.
+        monopole:
+            A boolean or Tensor of booleans (of shape [shot, per_shot])
+            specifying whether the source/receiver is a monopole. If
+            False, the point will be a dipole. Default True.
+        dipole_dim:
+            An integer or Tensor of integers (of shape [shot, per_shot])
+            of value 0 or 1 specifying the dimension in which the
+            dipole is oriented. This is only used for points that are
+            dipoles (not monopoles). Default 0.
+        dtype:
+            The datatype to use. Default torch.float.
+        eps:
+            A small value to prevent division by zero. Points closer to
+            a grid cell centre than this will be rounded to the grid cell.
+            Default 1e-5.
+        
     """
     def __init__(self, locations: Tensor,
                  halfwidth: int = 4,
@@ -150,46 +191,7 @@ class Hicks:
                  dipole_dim: Union[Tensor, int] = 0,
                  dtype: torch.dtype = torch.float,
                  eps: float = DEFAULT_EPS):
-        """Args:
-            locations:
-                A three dimensional Tensor [shot, per_shot, 2] specifying
-                the locations to interpolate, provided as float values in
-                units of cells relative to the origin of the grid, so
-                [[[0.5, 0.5]]] corresponds to the point half a cell from
-                the origin in both dimensions.
-            halfwidth:
-                An integer specifying the halfwidth of the window that
-                will be used to interpolate each point onto the grid. A
-                halfwidth of 4 (the default) means that an 8x8 window will
-                be used.
-            free_surfaces:
-                A list of four booleans specifying whether the corresponding
-                edge of the grid is a free surface, in the order [beginning
-                of first dimension, end of first dimension, beginning of
-                second dimension, end of second dimension].
-                [True, False, False, True] therefore means that the beginning
-                of the first dimension and end of the second dimension are
-                free surfaces, while the other two edges are not, for example.
-                The default is for no edges to be free surfaces.
-            model_shape:
-                A list of two integers specifying the size of the grid. This
-                is only used when the model contains free surfaces.
-            monopole:
-                A boolean or Tensor of booleans (of shape [shot, per_shot])
-                specifying whether the source/receiver is a monopole. If
-                False, the point will be a dipole. Default True.
-            dipole_dim:
-                An integer or Tensor of integers (of shape [shot, per_shot])
-                of value 0 or 1 specifying the dimension in which the
-                dipole is oriented. This is only used for points that are
-                dipoles (not monopoles). Default 0.
-            dtype:
-                The datatype to use. Default torch.float.
-            eps:
-                A small value to prevent division by zero. Points closer to
-                a grid cell centre than this will be rounded to the grid cell.
-                Default 1e-5.
-        """
+
         if locations.ndim != 3:
             raise RuntimeError("Locations should have three dimensions")
         if not isinstance(halfwidth, int):

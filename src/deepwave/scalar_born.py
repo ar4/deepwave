@@ -142,7 +142,9 @@ def scalar_born(v: Tensor, scatter: Tensor,
                 zetax_sc_m1: Optional[Tensor] = None,
                 origin: Optional[List[int]] = None,
                 nt: Optional[int] = None,
-                model_gradient_sampling_interval: int = 1) -> Tuple[
+                model_gradient_sampling_interval: int = 1,
+                freq_taper_frac: float = 0.0,
+                time_pad_frac: float = 0.0) -> Tuple[
                     Tensor, Tensor, Tensor, Tensor, Tensor, Tensor,
                     Tensor, Tensor, Tensor, Tensor, Tensor, Tensor,
                     Tensor]:
@@ -211,7 +213,8 @@ def scalar_born(v: Tensor, scatter: Tensor,
                          source_locations, receiver_locations,
                          accuracy, pml_width, pml_freq, max_vel,
                          survey_pad,
-                         origin, nt, model_gradient_sampling_interval)
+                         origin, nt, model_gradient_sampling_interval,
+                         freq_taper_frac, time_pad_frac)
 
     (wfc, wfp, psiy, psix, zetay, zetax, wfcsc, wfpsc, psiysc, psixsc,
      zetaysc, zetaxsc, receiver_amplitudes) = \
@@ -233,7 +236,8 @@ def scalar_born(v: Tensor, scatter: Tensor,
                                        pml_width_list[3])
 
     receiver_amplitudes = downsample_and_movedim(receiver_amplitudes,
-                                                 step_ratio)
+                                                 step_ratio, freq_taper_frac,
+                                                 time_pad_frac)
 
     return (wfc, wfp, psiy, psix, zetay, zetax, wfcsc, wfpsc, psiysc,
             psixsc, zetaysc, zetaxsc, receiver_amplitudes)

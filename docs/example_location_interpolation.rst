@@ -51,7 +51,7 @@ We can then simply pass these arrays of sources and receivers to the Deepwave pr
 
 In the wavefield of the final time step of this propagation, we can see the three types of source.
 
-.. image:: example_location_interpolation_wavefield.png
+.. image:: example_location_interpolation_wavefield.jpg
 
 Just as we used the `source` function of the `Hicks` object to convert the source amplitudes of our original point sources into the amplitudes for the array of grid-centred sources, we can use the `receiver` function to convert the receiver amplitudes recorded at the locations of the array of grid-centred receivers into the amplitudes that we would have recorded if we could have receivers at our desired non-grid-centred receiver locations::
 
@@ -60,7 +60,7 @@ Just as we used the `source` function of the `Hicks` object to convert the sourc
 
 Plotting these, we see how the three different types of receivers respond differently to the arrivals from the monopole source, even though all three receivers are located in the same place:
 
-.. image:: example_location_interpolation_receiver_data.rst
+.. image:: example_location_interpolation_receiver_data.jpg
 
 To verify the accuracy of the Hicks method, we can perform the same propagation but with the source and receiver locations rounded to a grid point, and also perform it on a grid with half the grid cell spacing so that our desired locations are on grid points. When we halve the grid spacing in both dimensions, we also need to multiply the source amplitudes by four to produce a similar effect on the wavefield::
 
@@ -79,7 +79,7 @@ To verify the accuracy of the Hicks method, we can perform the same propagation 
 
 We see that simply rounding to grid points does change the result noticeably in this case, while the Hicks method has very well approximated the result that we get with a denser grid:
 
-.. image:: example_location_interpolation_comparison.rst
+.. image:: example_location_interpolation_comparison.jpg
 
 The approximation may not be as good close to the point (such as within the array), so, if you are performing optimisation, you may wish to apply a mute to receivers that are close to sources when using the Hicks method.
 

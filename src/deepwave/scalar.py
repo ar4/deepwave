@@ -140,10 +140,12 @@ def scalar(v: Tensor,
            zetay_m1: Optional[Tensor] = None,
            zetax_m1: Optional[Tensor] = None,
            origin: Optional[List[int]] = None, nt: Optional[int] = None,
-           model_gradient_sampling_interval: int = 1) -> Tuple[Tensor, Tensor,
-                                                               Tensor, Tensor,
-                                                               Tensor, Tensor,
-                                                               Tensor]:
+           model_gradient_sampling_interval: int = 1,
+           freq_taper_frac: float = 0.0,
+           time_pad_frac: float = 0.0) -> Tuple[Tensor, Tensor,
+                                                Tensor, Tensor,
+                                                Tensor, Tensor,
+                                                Tensor]:
     """Scalar wave propagation (functional interface).
 
     This function performs forward modelling with the scalar wave equation.
@@ -311,6 +313,21 @@ def scalar(v: Tensor,
             than 1/dt, you may wish to reduce the sampling frequency of
             the integral to reduce computational (especially memory) costs.
             Optional, default 1 (integral is sampled every timestep `dt`).
+        freq_taper_frac:
+            A float specifying the fraction of the end of the source and
+            receiver amplitudes (if present) in the frequency domain to
+            cosine taper if they are resampled due to the CFL condition.
+            This might be useful to reduce ringing. A value of 0.1 means
+            that the top 10% of frequencies will be tapered.
+            Default 0.0 (no tapering).
+        time_pad_frac:
+            A float specifying the amount of zero padding that will
+            be added to the source and receiver amplitudes (if present) before
+            resampling and removed afterwards, if they are resampled due to
+            the CFL condition, as a fraction of their length. This might be
+            useful to reduce wraparound artifacts. A value of 0.1 means that
+            zero padding of 10% of the number of time samples will be used.
+            Default 0.0.
 
     Returns:
         Tuple[Tensor]:
@@ -342,7 +359,8 @@ def scalar(v: Tensor,
                          source_locations, receiver_locations,
                          accuracy, pml_width, pml_freq, max_vel,
                          survey_pad,
-                         origin, nt, model_gradient_sampling_interval)
+                         origin, nt, model_gradient_sampling_interval,
+                         freq_taper_frac, time_pad_frac)
 
     wfc, wfp, psiy, psix, zetay, zetax, receiver_amplitudes = \
         torch.ops.deepwave.scalar(
@@ -355,6 +373,7 @@ def scalar(v: Tensor,
         )
 
     receiver_amplitudes = downsample_and_movedim(receiver_amplitudes,
-                                                 step_ratio)
+                                                 step_ratio, freq_taper_frac,
+                                                 time_pad_frac)
 
     return (wfc, wfp, psiy, psix, zetay, zetax, receiver_amplitudes)

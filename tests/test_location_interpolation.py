@@ -37,11 +37,12 @@ def test_monopole(c=1500, freq=25, dx=(5, 5), dt=0.001,
     receiver_amplitudes = hicks_receiver.receiver(o[-1])
     for i, source_location in enumerate(source_locations):
         for j, receiver_location in enumerate(receiver_locations[i]):
-            e = direct_2d_approx(receiver_location.float(),
-                                 source_location[0].float(),
+            e = direct_2d_approx(receiver_location.float().cpu(),
+                                 source_location[0].float().cpu(),
                                  dx, dt, c,
-                                 -source_amplitudes[i].flatten())
-            assert torch.allclose(receiver_amplitudes[i, j], e, atol=0.025)
+                                 -source_amplitudes[i].flatten().cpu())
+            assert torch.allclose(receiver_amplitudes[i, j].cpu(), e,
+                                  atol=0.025)
 
 
 def test_shot_idxs(n_shots=10, n_per_shot=3, nt=5, device=None,

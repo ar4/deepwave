@@ -23,7 +23,9 @@ def setup_propagator(v: Tensor,
                                           List[Optional[int]]]] = None,
                      origin: Optional[List[int]] = None,
                      nt: Optional[int] = None,
-                     model_gradient_sampling_interval: int = 1) -> Tuple[
+                     model_gradient_sampling_interval: int = 1,
+                     freq_taper_frac: float = 0.0,
+                     time_pad_frac: float = 0.0) -> Tuple[
                         Tensor, List[Tensor], Tensor, List[Tensor],
                         Tensor, Tensor, Tensor, Tensor, Tensor, Tensor,
                         float, float, float, int, int, int, int, int,
@@ -72,7 +74,9 @@ def setup_propagator(v: Tensor,
                                    source_locations[..., 1],
                                    None] ** 2 * dt**2
         )
-        source_amplitudes = upsample(source_amplitudes, step_ratio)
+        source_amplitudes = upsample(source_amplitudes, step_ratio,
+                                     freq_taper_frac=freq_taper_frac,
+                                     time_pad_frac=time_pad_frac)
     else:
         sources_i = None
     if receiver_locations is not None:
@@ -114,13 +118,16 @@ def setup_propagator(v: Tensor,
 
 
 def downsample_and_movedim(receiver_amplitudes: Tensor,
-                           step_ratio: int) -> Tensor:
+                           step_ratio: int, freq_taper_frac: float = 0.0,
+             time_pad_frac: float = 0.0) -> Tensor:
     if receiver_amplitudes.numel() > 0:
         if receiver_amplitudes.device == torch.device('cpu'):
             receiver_amplitudes = torch.movedim(receiver_amplitudes, 1, -1)
         else:
             receiver_amplitudes = torch.movedim(receiver_amplitudes, 0, -1)
-        receiver_amplitudes = downsample(receiver_amplitudes, step_ratio)
+        receiver_amplitudes = downsample(receiver_amplitudes, step_ratio,
+                                         freq_taper_frac=freq_taper_frac,
+                                         time_pad_frac=time_pad_frac)
     return receiver_amplitudes
 
 
@@ -266,23 +273,141 @@ def location_to_index(locations: Tensor, nx: int) -> Tensor:
     return locations[..., 0] * nx + locations[..., 1]
 
 
-def upsample(signal: Tensor, step_ratio: int) -> Tensor:
+def cosine_taper_end(signal: Tensor, n_taper: int) -> Tensor:
+    """Tapers the end of the final dimension of a Tensor using a cosine.
+
+    A half period, shifted and scaled to taper from 1 to 0, is used.
+
+    Args:
+        signal:
+            The Tensor that will have its final dimension tapered.
+        n_taper:
+            The length of the cosine taper, in number of samples.
+
+    Returns:
+        The tapered signal.
+    """
+    taper = torch.ones(signal.shape[-1], dtype=signal.real.dtype,
+                       device=signal.device)
+    taper[len(taper)-n_taper:] = (
+        torch.cos(torch.arange(n_taper, dtype=signal.real.dtype,
+                               device=signal.device) /
+        (n_taper - 1) * torch.pi) + 1
+    ) / 2
+    return signal * taper
+
+
+def zero_last_element_of_final_dimension(signal: Tensor) -> Tensor:
+    zeroer = torch.ones(signal.shape[-1], dtype=signal.real.dtype,
+                        device=signal.device)
+    zeroer[-1] = 0
+    return signal * zeroer
+
+
+def upsample(signal: Tensor, step_ratio: int, freq_taper_frac: float = 0.0,
+             time_pad_frac: float = 0.0) -> Tensor:
+    """Upsamples the final dimension of a Tensor by a factor.
+
+    Low-pass upsampling is used to produce an upsampled signal without
+    introducing higher frequencies than were present in the input. The
+    Nyquist frequency of the input will be zeroed.
+
+    Args:
+        signal:
+            The Tensor that will have its final dimension upsampled.
+        step_ratio:
+            The integer factor by which the signal will be upsampled.
+            The input signal is returned if this is 1 (freq_taper_frac
+            and time_pad_frac will be ignored).
+        freq_taper_frac:
+            A float specifying the fraction of the end of the signal
+            amplitude in the frequency domain to cosine taper. This
+            might be useful to reduce ringing. A value of 0.1 means
+            that the top 10% of frequencies will be tapered before
+            upsampling. Default 0.0 (no tapering).
+        time_pad_frac:
+            A float specifying the amount of zero padding that will
+            be added to the signal before upsampling and removed
+            afterwards, as a fraction of the length of the final
+            dimension of the input signal. This might be useful to reduce
+            wraparound artifacts. A value of 0.1 means that zero padding
+            of 10% of the length of the signal will be used. Default 0.0.
+
+    Returns:
+        The signal after upsampling.
+    """
     if step_ratio == 1:
         return signal
+    if time_pad_frac > 0.0:
+        n_time_pad = int(time_pad_frac * signal.shape[-1])
+        signal = torch.nn.functional.pad(signal, (0, n_time_pad))
     nt = signal.shape[-1]
     up_nt = nt * step_ratio
-    return torch.fft.irfft(torch.nn.functional.pad(torch.fft.rfft(signal),
-                                                   (0, up_nt//2+1 - nt//2+1)),
-                           n=up_nt)
+    signal_f = torch.fft.rfft(signal)
+    if freq_taper_frac > 0.0:
+        freq_taper_len = int(freq_taper_frac * signal_f.shape[-1])
+        signal_f = cosine_taper_end(signal_f, freq_taper_len)
+    else:
+        # Set Nyquist frequency to zero
+        signal_f = zero_last_element_of_final_dimension(signal_f)
+    signal_f = torch.nn.functional.pad(signal_f,
+                                       (0, up_nt//2+1 - nt//2+1))
+    signal = torch.fft.irfft(signal_f, n=up_nt)
+    if time_pad_frac > 0.0:
+        signal = signal[..., :signal.shape[-1] - n_time_pad * step_ratio]
+    return signal
 
 
-def downsample(signal: Tensor, step_ratio: int) -> Tensor:
+def downsample(signal: Tensor, step_ratio: int, freq_taper_frac: float = 0.0,
+             time_pad_frac: float = 0.0) -> Tensor:
+    """Downsamples the final dimension of a Tensor by a factor.
+
+    Frequencies higher than or equal to the Nyquist frequency of the
+    downsampled signal will be zeroed before downsampling.
+
+    Args:
+        signal:
+            The Tensor that will have its final dimension downsampled.
+        step_ratio:
+            The integer factor by which the signal will be downsampled.
+            The input signal is returned if this is 1 (freq_taper_frac
+            and time_pad_frac will be ignored).
+        freq_taper_frac:
+            A float specifying the fraction of the end of the signal
+            amplitude in the frequency domain to cosine taper. This
+            might be useful to reduce ringing. A value of 0.1 means
+            that the top 10% of frequencies will be tapered after
+            downsampling. Default 0.0 (no tapering).
+        time_pad_frac:
+            A float specifying the amount of zero padding that will
+            be added to the signal before downsampling and removed
+            afterwards, as a fraction of the length of the final
+            dimension of the output signal. This might be useful to reduce
+            wraparound artifacts. A value of 0.1 means that zero padding
+            of 10% of the length of the output signal will be used.
+            Default 0.0.
+
+    Returns:
+        The signal after downsampling.
+    """
     if step_ratio == 1:
         return signal
+    if time_pad_frac > 0.0:
+        n_time_pad = int(time_pad_frac * (signal.shape[-1] // step_ratio))
+        signal = torch.nn.functional.pad(signal, (0, n_time_pad * step_ratio))
     nt = signal.shape[-1]
     down_nt = nt // step_ratio
-    return torch.fft.irfft(torch.fft.rfft(signal)[..., :down_nt//2+1],
-                           n=down_nt)
+    signal_f = torch.fft.rfft(signal)[..., :down_nt//2+1]
+    if freq_taper_frac > 0.0:
+        freq_taper_len = int(freq_taper_frac * signal_f.shape[-1])
+        signal_f = cosine_taper_end(signal_f, freq_taper_len)
+    else:
+        # Set Nyquist frequency to zero
+        signal_f = zero_last_element_of_final_dimension(signal_f)
+    signal = torch.fft.irfft(signal_f, n=down_nt)
+    if time_pad_frac > 0.0:
+        signal = signal[..., :signal.shape[-1] - n_time_pad]
+    return signal
 
 
 def convert_to_contiguous(tensor: Optional[Tensor]) -> Tensor:
@@ -562,6 +687,30 @@ def extract_locations(locations: List[Optional[Tensor]],
 
 def cfl_condition(dy: float, dx: float, dt: float, max_vel: float,
                   eps: float = 1e-15) -> Tuple[float, int]:
+    """Calculates the time step interval to obey the CFL condition.
+
+    The output time step will be a factor of the input time step.
+
+    Args:
+        dy:
+            The grid spacing in the first dimension.
+        dx:
+            The grid spacing in the second dimension.
+        dt:
+            The time step interval.
+        max_vel:
+            The maximum wave speed in the model.
+        eps:
+            A small quantity to prevent division by zero. Default 1e-15.
+
+    Returns:
+        Tuple[float, int]:
+
+            inner_dt:
+                A time step interval that obeys the CFL condition.
+            step_ratio:
+                The integer dt / inner_dt.
+    """
     max_dt = (0.6 / math.sqrt(1 / dy**2 + 1 / dx**2) /
               (max_vel**2 + eps)) * max_vel
     step_ratio = int(math.ceil((abs(dt) / (max_dt**2 + eps)) * max_dt))

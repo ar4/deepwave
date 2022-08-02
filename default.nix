@@ -18,7 +18,7 @@ let
 in
 python3Packages.buildPythonPackage rec {
   pname = "deepwave";
-  version = "0.0.13";
+  version = "0.0.14";
   format = "pyproject";
 
   src = ./.;
