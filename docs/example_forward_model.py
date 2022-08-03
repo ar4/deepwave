@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import deepwave
 from deepwave import scalar
 
-device = torch.device('cuda')
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 ny = 2301
 nx = 751
 dx = 4.0
@@ -69,5 +69,6 @@ ax[0].set_xlabel("Channel")
 ax[0].set_ylabel("Time Sample")
 ax[1].set_xlabel("Shot")
 plt.tight_layout()
+plt.savefig('example_forward_model.jpg')
 
 receiver_amplitudes.cpu().numpy().tofile('marmousi_data.bin')

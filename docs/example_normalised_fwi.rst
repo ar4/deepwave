@@ -1,7 +1,7 @@
-Example 4
-=========
+FWI with amplitude normalisation
+================================
 
-In :doc:`example_3` we used Deepwave to perform Full-Waveform Inversion. One of the simplifications that we used was that we didn't need to normalise the data. This is because we knew the source amplitudes exactly, and we used a similar propagator to generate the target and predicted recordings, so the receiver amplitudes should have matched if we got the velocity model right. That is not generally the case in more realistic situations. This example is thus a small modification to include normalisation so that only relative amplitudes are used when calculating the loss. To perform this normalisation we will divide the predicted and target datasets by their RMS amplitude.
+In :doc:`the previous example <example_simple_fwi>` we used Deepwave to perform Full-Waveform Inversion. One of the simplifications that we used was that we didn't need to normalise the data. This is because we knew the source amplitudes exactly, and we used a similar propagator to generate the target and predicted recordings, so the receiver amplitudes should have matched if we got the velocity model right. That is not generally the case in more realistic situations. This example is thus a small modification to include normalisation so that only relative amplitudes are used when calculating the loss. To perform this normalisation we will divide the predicted and target datasets by their RMS amplitude.
 
 The first change that we need to make is to scale the observed data. This only needs to be done once, so we can do it outside the optimisation iteration loop::
 
@@ -27,7 +27,7 @@ I `detached <https://pytorch.org/docs/stable/generated/torch.Tensor.detach.html>
 
 This is an example (albeit a very simple one) of incorporating wave propagation into a chain of differentiable operations and letting PyTorch backpropagate through all of them. The normalisation operation we created is now applied to the output of the wave propagator before the loss function. We could just as easily apply more operations before and after wave propagation, potentially with new tensors that we can invert for.
 
-We could now use `normed_predicted` in the loss function, with the target `observed_data` that we have already scaled, and not make any other changes compared to :doc:`example_3`. I will, however, use this opportunity to demonstrate another change. In :doc:`example_3` we clipped the gradients to reduce the difference between the gradients around the sources and receivers and the rest of the model. Without such clipping, the inversion can become unstable as the large gradients cause the range of velocities to become large, with velocities in some grid cells so small that the number of wavelengths per grid cell is too small for accurate wave propagation. Another approach to avoiding this is to add new terms to the loss function that penalise velocity values outside the desired range. This could take multiple forms, with one simple one being::
+We could now use `normed_predicted` in the loss function, with the target `observed_data` that we have already scaled, and not make any other changes compared to :doc:`the previous example <example_simple_fwi>`. I will, however, use this opportunity to demonstrate another change. In :doc:`the previous example <example_simple_fwi>` we clipped the gradients to reduce the difference between the gradients around the sources and receivers and the rest of the model. Without such clipping, the inversion can become unstable as the large gradients cause the range of velocities to become large, with velocities in some grid cells so small that the number of wavelengths per grid cell is too small for accurate wave propagation. Another approach to avoiding this is to add new terms to the loss function that penalise velocity values outside the desired range. This could take multiple forms, with one simple one being::
 
     lower_mask = torch.nn.functional.relu(-(v.detach()-1200))
     upper_mask = torch.nn.functional.relu(v.detach()-6000)
@@ -42,10 +42,10 @@ Notice that our new loss function terms do not depend on the output of our wave 
 
 These changes, combined with changing our optimiser to LBFGS applied for five epochs, result in a similar inversion to the previous example:
 
-.. image:: example_4.jpg
+.. image:: example_normalised_fwi.jpg
 
-The cost function that we used in this example encourages the optimiser to keep the velocities within the desired range, but does not force it to be the case. It is thus likely that the velocities will sometimes exceed the limits (if you run this example, you will get warnings about too few samples per wavelength for some iterations). The method for containing velocity within a range that is used in :doc:`example_5` is thus superior, and the one used in this example is mainly included as a demonstration of a cost function with multiple terms.
+The cost function that we used in this example encourages the optimiser to keep the velocities within the desired range, but does not force it to be the case. It is thus likely that the velocities will sometimes exceed the limits (if you run this example, you will get warnings about too few samples per wavelength for some iterations). The method for containing velocity within a range that is used in :doc:`the next example <example_increasing_freq_fwi>` is thus superior, and the one used in this example is mainly included as a demonstration of a cost function with multiple terms.
 
 Because of the normalisation we used this time, the result should also be the same even if we had scaled the observed data by a large number before running our code.
 
-`Full example code <https://github.com/ar4/deepwave/blob/master/docs/example_4.py>`_
+`Full example code <https://github.com/ar4/deepwave/blob/master/docs/example_normalised_fwi.py>`_

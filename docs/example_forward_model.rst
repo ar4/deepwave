@@ -1,5 +1,5 @@
-Example 1
-=========
+Forward modelling with Marmousi velocity model
+==============================================
 
 In this example we will load the Marmousi 1 Vp model, specify source and receiver locations, and then use Deepwave to perform forward modelling, propagating the sources through the model to generate synthetic receiver data.
 
@@ -12,7 +12,7 @@ First, we need to import the necessary packages::
 
 We then choose which device we wish to run on, specify the size of the model, and load it::
 
-    device = torch.device('cuda')
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     ny = 2301
     nx = 751
     dx = 4.0
@@ -91,6 +91,6 @@ Finally, we will plot one common shot gather and one common receiver gather of t
 
     receiver_amplitudes.cpu().numpy().tofile('marmousi_data.bin')
 
-.. image:: example_1.jpg
+.. image:: example_forward_model.jpg
 
-`Full example code <https://github.com/ar4/deepwave/blob/master/docs/example_1.py>`_
+`Full example code <https://github.com/ar4/deepwave/blob/master/docs/example_forward_model.py>`_

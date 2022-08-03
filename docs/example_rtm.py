@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import deepwave
 from deepwave import scalar_born
 
-device = torch.device('cuda')
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 ny = 2301
 nx = 751
 dx = 4.0
@@ -135,5 +135,6 @@ vmin, vmax = torch.quantile(scatter.detach(),
 plt.figure(figsize=(10.5, 3.5))
 plt.imshow(scatter.detach().cpu().T, aspect='auto', cmap='gray',
            vmin=vmin, vmax=vmax)
+plt.savefig('example_rtm.jpg')
 
 scatter.detach().cpu().numpy().tofile('marmousi_scatter.bin')

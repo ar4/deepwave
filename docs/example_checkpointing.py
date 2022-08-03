@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import deepwave
 from deepwave import scalar
 
-device = torch.device('cuda')
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 ny = 2301
 nx = 751
 dx = 4.0
@@ -182,5 +182,6 @@ ax[2].imshow(v_true.cpu().T, aspect='auto', cmap='gray',
              vmin=vmin, vmax=vmax)
 ax[2].set_title("True")
 plt.tight_layout()
+plt.savefig('example_checkpointing.jpg')
 
 v.detach().cpu().numpy().tofile('marmousi_v_inv.bin')

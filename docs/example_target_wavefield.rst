@@ -1,5 +1,5 @@
-Example 7
-=========
+Matching a target final wavefield and saving snapshots
+======================================================
 
 In addition to calculating the gradient with respect to the velocity model of a loss function involving the receiver amplitudes, Deepwave can also calculate gradients involving any of the propagation outputs with respect to any of the float tensor inputs. So the Born scalar propagator, for example, supports calculating gradients not only with respect to the scattering potential, but also with respect to the velocity model and source. This can involve multiple inputs and outputs of a propagation simultaneously, so you can calculate the gradient with respect to multiple inputs (say velocity and source amplitudes) of a loss function that involves multiples outputs (such as receiver amplitudes and final wavefield amplitudes).
 
@@ -53,7 +53,7 @@ The optimisation loop is then not very dissimilar to earlier examples. We'll set
     for i in range(50):
         optimiser.step(closure)
 
-Lastly, we will save the wave propagation time steps so that we can make them into an animated GIF. We want to save every time step, so we will create a loop over time steps. When we call the wave propagator, we only want it to advance by one time step. We can achieve this by calling the propagator with each time sample of the source amplitudes. As we discussed in :doc:`example_6`, however, that might not give us exactly the result that we want due to upscaling within Deepwave to obey the CFL condition. We therefore perform the upscaling ourselves and then call the propagator with chunks of the upscaled source amplitudes that correspond to one time step before upscaling::
+Lastly, we will save the wave propagation time steps so that we can make them into an animated GIF. We want to save every time step, so we will create a loop over time steps. When we call the wave propagator, we only want it to advance by one time step. We can achieve this by calling the propagator with each time sample of the source amplitudes. As we discussed in :doc:`the checkpointing example <example_checkpointing>`, however, that might not give us exactly the result that we want due to upscaling within Deepwave to obey the CFL condition. We therefore perform the upscaling ourselves and then call the propagator with chunks of the upscaled source amplitudes that correspond to one time step before upscaling::
 
     dt, step_ratio = deepwave.common.cfl_condition(dx, dx, dt, 2000)
     source_amplitudes = deepwave.common.upsample(source_amplitudes, step_ratio)
@@ -82,10 +82,10 @@ Lastly, we will save the wave propagation time steps so that we can make them in
 
 Using `FFmpeg <https://ffmpeg.org>`_ to join these individual time steps into an animated GIF::
 
-    ffmpeg -i wavefield_%03d.jpg -framerate 30 example_7.gif
+    ffmpeg -i wavefield_%03d.jpg -framerate 30 example_target_wavefield.gif
 
 we obtain the result:
 
-.. image:: example_7.gif
+.. image:: example_target_wavefield.gif
 
-`Full example code <https://github.com/ar4/deepwave/blob/master/docs/example_7.py>`_
+`Full example code <https://github.com/ar4/deepwave/blob/master/docs/example_target_wavefield.py>`_

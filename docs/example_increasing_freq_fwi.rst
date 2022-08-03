@@ -1,5 +1,5 @@
-Example 5
-=========
+FWI from low to high frequency
+==============================
 
 One of the difficulties with FWI is that it is susceptible to "cycle skipping". A common remedy is to initially use only the low frequencies in the data, and to gradually increase the maximum frequency that is used. This example is a simple demonstration of this using Deepwave.
 
@@ -48,6 +48,6 @@ We will progress from an initial cutoff frequency in our filter of 4 Hz in the e
 
             optimiser.step(closure)
 
-.. image:: example_5.jpg
+.. image:: example_increasing_freq_fwi.jpg
 
-`Full example code <https://github.com/ar4/deepwave/blob/master/docs/example_5.py>`_
+`Full example code <https://github.com/ar4/deepwave/blob/master/docs/example_increasing_freq_fwi.py>`_

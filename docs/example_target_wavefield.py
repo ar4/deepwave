@@ -2,7 +2,7 @@ import torch
 import torchvision
 import deepwave
 
-device = torch.device('cuda')
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 ny = 200
 nx = 200
 dx = 5

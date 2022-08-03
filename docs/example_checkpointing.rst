@@ -1,5 +1,5 @@
-Example 6
-=========
+Reducing memory consumption with checkpointing
+==============================================
 
 Calculating gradients with respect to the velocity model requires access to the forward wavefield, sampled at at least the Nyquist frequency, during backpropagation. Deepwave achieves this by storing snapshots of the forward wavefield in memory. This works well for most cases, but if you have a large model and a small amount of memory, it might require more memory than you have available. For these situations, it is possible to reduce the memory requirement by doing extra computation using checkpoints.
 
@@ -32,7 +32,7 @@ We will create a wrapper around the call to Deepwave's propagator so that we onl
                       model_gradient_sampling_interval=step_ratio
                   )
 
-The optimisation iteration loop looks a bit complicated, but it's actually just a few simple parts. In order to propagate one time segment, we need to provide the propagator with the initial wavefields (including the PML-related psi and zeta wavefields), which will be the wavefields from the end of the previous segment. These wavefields are zero at the start of the first segment, so we create and zero-initialise them at the beginning of each step. We also create a tensor to hold the receiver amplitudes, into which we will copy the receiver amplitudes that are produced from each time segment. We then loop over the time segments, using PyTorch's `chunk <https://pytorch.org/docs/stable/generated/torch.chunk.html>`_ utility to chop the source amplitudes into our desired number of segments. We then call the propagator on each segment. As a small optimisation, we do not checkpoint the final segment, as doing so would not save any memory. As in :doc:`example_5`, we use a function to constrain the velocity model to a desired range and lowpass filter the amplitudes, but to keep this example simple we will only use one cutoff frequency::
+The optimisation iteration loop looks a bit complicated, but it's actually just a few simple parts. In order to propagate one time segment, we need to provide the propagator with the initial wavefields (including the PML-related psi and zeta wavefields), which will be the wavefields from the end of the previous segment. These wavefields are zero at the start of the first segment, so we create and zero-initialise them at the beginning of each step. We also create a tensor to hold the receiver amplitudes, into which we will copy the receiver amplitudes that are produced from each time segment. We then loop over the time segments, using PyTorch's `chunk <https://pytorch.org/docs/stable/generated/torch.chunk.html>`_ utility to chop the source amplitudes into our desired number of segments. We then call the propagator on each segment. As a small optimisation, we do not checkpoint the final segment, as doing so would not save any memory. As in :doc:`the increasing frequency FWI example <example_increasing_freq_fwi>`, we use a function to constrain the velocity model to a desired range and lowpass filter the amplitudes, but to keep this example simple we will only use one cutoff frequency::
 
     for epoch in range(n_epochs):
         def closure():
@@ -78,6 +78,6 @@ The optimisation iteration loop looks a bit complicated, but it's actually just 
 
 The output is different to the previous example, but this is not because we used checkpointing (which should not affect the result), but rather because we only used the data up to 4 Hz.
 
-.. image:: example_6.jpg
+.. image:: example_checkpointing.jpg
 
-`Full example code <https://github.com/ar4/deepwave/blob/master/docs/example_6.py>`_
+`Full example code <https://github.com/ar4/deepwave/blob/master/docs/example_checkpointing.py>`_

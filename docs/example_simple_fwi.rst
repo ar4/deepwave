@@ -1,5 +1,5 @@
-Example 3
-=========
+Full-Waveform Inversion of a portion of Marmousi
+================================================
 
 Full-Waveform Inversion provides the potential to invert for a model that matches the whole wavefield, including refracted arrivals. It performs inversion using the regular propagator rather than the Born propagator.
 
@@ -11,7 +11,7 @@ We continue with using the Marmousi model, but due to the computational cost of 
     import deepwave
     from deepwave import scalar
 
-    device = torch.device('cuda')
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     ny = 2301
     nx = 751
     dx = 4.0
@@ -23,7 +23,7 @@ We continue with using the Marmousi model, but due to the computational cost of 
     nx = 250
     v_true = v_true[:ny, :nx]
 
-We smooth the true model to create our initial guess of the wavespeed, which we will attempt to improve with inversion. We also load the data that we generated in :doc:`example_1` to serve as our target observed data::
+We smooth the true model to create our initial guess of the wavespeed, which we will attempt to improve with inversion. We also load the data that we generated in :doc:`the forward modelling example <example_forward_model>` to serve as our target observed data::
 
     v_init = torch.tensor(1/gaussian_filter(1/v_true.numpy(), 40)).to(device)
     v = v_init.clone()
@@ -114,8 +114,8 @@ We are now ready to run the optimiser to perform iterative inversion of the wave
 
 The result is quite a good improvement in the accuracy of our estimate of the wavespeed model.
 
-.. image:: example_3.jpg
+.. image:: example_simple_fwi.jpg
 
 This is a simple implementation of FWI. Faster convergence and greater robustness in more realistic situations can be achieved with modifications such as a more sophisticated loss function. As PyTorch will automatically backpropagate through any differentiable operations that you apply to the output of Deepwave, you only have to specify the forward action of such loss functions and can then let PyTorch automatically handle the backpropagation.
 
-`Full example code <https://github.com/ar4/deepwave/blob/master/docs/example_3.py>`_
+`Full example code <https://github.com/ar4/deepwave/blob/master/docs/example_simple_fwi.py>`_

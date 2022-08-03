@@ -1,11 +1,10 @@
 import torch
-from torchaudio.functional import lowpass_biquad
 from scipy.ndimage import gaussian_filter
 import matplotlib.pyplot as plt
 import deepwave
 from deepwave import scalar
 
-device = torch.device('cuda')
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 ny = 2301
 nx = 751
 dx = 4.0
@@ -18,7 +17,9 @@ nx = 250
 v_true = v_true[:ny, :nx]
 
 # Smooth to use as starting model
-v_init = torch.tensor(1/gaussian_filter(1/v_true.numpy(), 40))
+v_init = torch.tensor(1/gaussian_filter(1/v_true.numpy(), 40)).to(device)
+v = v_init.clone()
+v.requires_grad_()
 
 n_shots = 115
 
@@ -49,6 +50,9 @@ n_receivers_per_shot = 100
 nt = 300
 observed_data = observed_data[:n_shots, :n_receivers_per_shot, :nt].to(device)
 
+# Scale observed data to have unit RMS amplitude
+observed_data /= (observed_data**2).mean().sqrt().item()
+
 # source_locations
 source_locations = torch.zeros(n_shots, n_sources_per_shot, 2,
                                dtype=torch.long, device=device)
@@ -70,53 +74,41 @@ source_amplitudes = (
     .repeat(n_shots, n_sources_per_shot, 1).to(device)
 )
 
-
-# Generate a velocity model constrained to be within a desired range
-class Model(torch.nn.Module):
-    def __init__(self, initial, min_vel, max_vel):
-        super().__init__()
-        self.min_vel = min_vel
-        self.max_vel = max_vel
-        self.model = torch.nn.Parameter(torch.logit((initial - min_vel) /
-                                                    (max_vel - min_vel)))
-
-    def forward(self):
-        return (torch.sigmoid(self.model) * (self.max_vel - self.min_vel) +
-                self.min_vel)
-
-
-model = Model(v_init, 1000, 2500).to(device)
-
 # Setup optimiser to perform inversion
+optimiser = torch.optim.LBFGS([v])
 loss_fn = torch.nn.MSELoss()
 
 # Run optimisation/inversion
-n_epochs = 2
+n_epochs = 5
+v_true = v_true.to(device)
 
-for cutoff_freq in [4, 8, 16, 32]:
-    observed_data_filt = lowpass_biquad(observed_data, 1/dt, cutoff_freq)
-    optimiser = torch.optim.LBFGS(model.parameters())
-    for epoch in range(n_epochs):
-        def closure():
-            optimiser.zero_grad()
-            v = model()
-            out = scalar(
-                v, dx, dt,
-                source_amplitudes=source_amplitudes,
-                source_locations=source_locations,
-                receiver_locations=receiver_locations,
-                max_vel=2500,
-                pml_freq=freq,
-            )
-            out_filt = lowpass_biquad(out[-1], 1/dt, cutoff_freq)
-            loss = 1e6*loss_fn(out_filt, observed_data_filt)
-            loss.backward()
-            return loss
+for epoch in range(n_epochs):
+    def closure():
+        optimiser.zero_grad()
+        out = scalar(
+            v, dx, dt,
+            source_amplitudes=source_amplitudes,
+            source_locations=source_locations,
+            receiver_locations=receiver_locations,
+            pml_freq=freq,
+        )
+        predicted = out[-1]
+        predicted_norm = (predicted.detach()**2).mean().sqrt().item()
+        if predicted_norm > 0:
+            normed_predicted = predicted / predicted_norm
+        else:
+            normed_predicted = predicted
+        lower_mask = torch.nn.functional.relu(-(v.detach()-1200))
+        upper_mask = torch.nn.functional.relu(v.detach()-6000)
+        loss = (1e6*loss_fn(normed_predicted, observed_data) +
+                (((v-1200)**2)*lower_mask).mean() +
+                (((v-6000)**2)*upper_mask).mean())
+        loss.backward()
+        return loss
 
-        optimiser.step(closure)
+    optimiser.step(closure)
 
 # Plot
-v = model()
 vmin = v_true.min()
 vmax = v_true.max()
 _, ax = plt.subplots(3, figsize=(10.5, 10.5), sharex=True, sharey=True)
@@ -130,5 +122,6 @@ ax[2].imshow(v_true.cpu().T, aspect='auto', cmap='gray',
              vmin=vmin, vmax=vmax)
 ax[2].set_title("True")
 plt.tight_layout()
+plt.savefig('example_normalised_fwi.jpg')
 
 v.detach().cpu().numpy().tofile('marmousi_v_inv.bin')
