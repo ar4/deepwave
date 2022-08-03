@@ -252,9 +252,9 @@ def get_n_batch(args: List[Optional[Tensor]]) -> int:
 
 def pad_model(model: Tensor, pad: List[int],
               mode: str = "replicate") -> Tensor:
-    return torch.nn.functional.pad(model[None],
+    return torch.nn.functional.pad(model[None, None],
                                    (pad[2], pad[3], pad[0], pad[1]),
-                                   mode=mode)[0]
+                                   mode=mode)[0, 0]
 
 
 def pad_locations(locations: Tensor, pad: List[int]) -> Tensor:
