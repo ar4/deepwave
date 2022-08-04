@@ -80,4 +80,6 @@ The output is different to the previous example, but this is not because we used
 
 .. image:: example_checkpointing.jpg
 
+Checkpointing should probably only be considered if you do not have enough memory to run even one shot at a time, as otherwise it is likely to be more efficient to divide your input into batches that you run one at a time and accumulate the gradient over them, as we did in :doc:`the RTM example <example_rtm>`.
+
 `Full example code <https://github.com/ar4/deepwave/blob/master/docs/example_checkpointing.py>`_
