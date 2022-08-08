@@ -194,6 +194,13 @@ def test_direct_2d_8th_order():
     assert diff.norm().item() < 0.048
 
 
+def test_wavefield_decays():
+    """Test that the PML causes the wavefield amplitude to decay."""
+    out = run_forward_2d(propagator=scalarprop, nt=2000)
+    for outi in out[:-1]:
+        assert outi.norm() < 1
+
+
 def test_forward_cpu_gpu_match():
     """Test propagation on CPU and GPU produce the same result."""
     if torch.cuda.is_available():
@@ -544,7 +551,7 @@ def run_forward(c, freq, dx, dt, nx,
                 num_shots, num_sources_per_shot,
                 num_receivers_per_shot,
                 propagator, prop_kwargs, device=None,
-                dtype=None, dc=100, **kwargs):
+                dtype=None, dc=100, nt=None, **kwargs):
     """Create a random model and forward propagate.
     """
     torch.manual_seed(1)
@@ -556,7 +563,8 @@ def run_forward(c, freq, dx, dt, nx,
     nx = torch.Tensor(nx).long()
     dx = torch.Tensor(dx)
 
-    nt = int((2 * torch.norm(nx.float() * dx) / c + 0.35 + 2 / freq) / dt)
+    if nt is None:
+        nt = int((2 * torch.norm(nx.float() * dx) / c + 0.35 + 2 / freq) / dt)
     x_s = _set_coords(num_shots, num_sources_per_shot, nx)
     x_r = _set_coords(num_shots, num_receivers_per_shot, nx, 'bottom')
     sources = _set_sources(x_s, freq, dt, nt, dtype)
@@ -576,7 +584,8 @@ def run_forward_2d(c=1500, freq=25, dx=(5, 5), dt=0.004, nx=(50, 50),
     return run_forward(c, freq, dx, dt, nx,
                        num_shots, num_sources_per_shot,
                        num_receivers_per_shot,
-                       propagator, prop_kwargs, device, dtype, **kwargs)
+                       propagator, prop_kwargs, device=device,
+                       dtype=dtype, **kwargs)
 
 
 def run_scatter(c, dc, freq, dx, dt, nx,

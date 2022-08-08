@@ -60,8 +60,7 @@ def setup_propagator(v: Tensor,
         if max_vel < v.abs().max().item():
             warnings.warn("max_vel is less than the actual maximum velocity")
     check_points_per_wavelength(v, pml_freq, dy, dx, dt)
-    v = pad_model(v, pml_width)
-    v = pad_model(v, [fd_pad for _ in range(4)], mode='constant')
+    v = pad_model(v, pad)
     for i in range(len(other_models)):
         other_models[i] = pad_model(other_models[i], pad,
                                     mode=other_model_modes[i])
@@ -754,19 +753,19 @@ def setup_pml(pml_width: List[int], fd_pad: int, dt: float, v: Tensor,
     by = torch.zeros(v.shape[0], device=device, dtype=dtype)
     bx = torch.zeros(v.shape[1], device=device, dtype=dtype)
     ay[fd_pad:fd_pad + pml_width[0]] = a[0].flip(0)
-    ay[:fd_pad] = 0
+    ay[:fd_pad] = ay[fd_pad]
     ay[len(ay) - pml_width[1] - fd_pad:-fd_pad] = a[1]
-    ay[-fd_pad:] = 0
+    ay[-fd_pad:] = ay[-fd_pad-1]
     ax[fd_pad:fd_pad + pml_width[2]] = a[2].flip(0)
-    ax[:fd_pad] = 0
+    ax[:fd_pad] = ax[fd_pad]
     ax[len(ax) - pml_width[3] - fd_pad:-fd_pad] = a[3]
-    ax[-fd_pad:] = 0
+    ax[-fd_pad:] = ax[-fd_pad-1]
     by[fd_pad:fd_pad + pml_width[0]] = b[0].flip(0)
-    by[:fd_pad] = 0
+    by[:fd_pad] = by[fd_pad]
     by[len(by) - pml_width[1] - fd_pad:-fd_pad] = b[1]
-    by[-fd_pad:] = 0
+    by[-fd_pad:] = by[-fd_pad-1]
     bx[fd_pad:fd_pad + pml_width[2]] = b[2].flip(0)
-    bx[:fd_pad] = 0
+    bx[:fd_pad] = bx[fd_pad]
     bx[len(bx) - pml_width[3] - fd_pad:-fd_pad] = b[3]
-    bx[-fd_pad:] = 0
+    bx[-fd_pad:] = bx[-fd_pad-1]
     return ay, ax, by, bx
