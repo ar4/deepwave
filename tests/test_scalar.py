@@ -333,7 +333,8 @@ def test_gradcheck_2d_single_cell():
 
 def test_gradcheck_2d_big():
     """Test gradcheck with a big model."""
-    run_gradcheck_2d(propagator=scalarprop, nx=(5+2*(3+3*2), 4+2*(3+3*2)))
+    run_gradcheck_2d(propagator=scalarprop, nx=(5+2*(3+3*2), 4+2*(3+3*2)),
+                     atol=2e-8)
 
 
 def test_negative_vel(c=1500, dc=100, freq=25, dx=(5, 5), dt=0.005,
