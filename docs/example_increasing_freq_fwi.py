@@ -1,6 +1,7 @@
 import torch
-from torchaudio.functional import lowpass_biquad
+from torchaudio.functional import biquad
 from scipy.ndimage import gaussian_filter
+from scipy.signal import butter
 import matplotlib.pyplot as plt
 import deepwave
 from deepwave import scalar
@@ -43,11 +44,19 @@ observed_data = (
     .reshape(n_shots, n_receivers_per_shot, nt)
 )
 
+
+# Define a function to taper the ends of traces
+def taper(x):
+    return deepwave.common.cosine_taper_end(x, 100)
+
+
 # Select portion of data for inversion
 n_shots = 20
 n_receivers_per_shot = 100
 nt = 300
-observed_data = observed_data[:n_shots, :n_receivers_per_shot, :nt].to(device)
+observed_data = (
+    taper(observed_data[:n_shots, :n_receivers_per_shot, :nt]).to(device)
+)
 
 # source_locations
 source_locations = torch.zeros(n_shots, n_sources_per_shot, 2,
@@ -93,9 +102,16 @@ loss_fn = torch.nn.MSELoss()
 # Run optimisation/inversion
 n_epochs = 2
 
-for cutoff_freq in [4, 8, 16, 32]:
-    observed_data_filt = lowpass_biquad(observed_data, 1/dt, cutoff_freq)
-    optimiser = torch.optim.LBFGS(model.parameters())
+for cutoff_freq in [10, 15, 20, 25, 30]:
+    sos = butter(6, cutoff_freq, fs=1/dt, output='sos')
+    sos = [torch.tensor(sosi).to(observed_data.dtype).to(device)
+           for sosi in sos]
+
+    def filt(x):
+        return biquad(biquad(biquad(x, *sos[0]), *sos[1]), *sos[2])
+    observed_data_filt = filt(observed_data)
+    optimiser = torch.optim.LBFGS(model.parameters(),
+                                  line_search_fn='strong_wolfe')
     for epoch in range(n_epochs):
         def closure():
             optimiser.zero_grad()
@@ -107,8 +123,9 @@ for cutoff_freq in [4, 8, 16, 32]:
                 receiver_locations=receiver_locations,
                 max_vel=2500,
                 pml_freq=freq,
+                time_pad_frac=0.2,
             )
-            out_filt = lowpass_biquad(out[-1], 1/dt, cutoff_freq)
+            out_filt = filt(taper(out[-1]))
             loss = 1e6*loss_fn(out_filt, observed_data_filt)
             loss.backward()
             return loss
@@ -130,6 +147,6 @@ ax[2].imshow(v_true.cpu().T, aspect='auto', cmap='gray',
              vmin=vmin, vmax=vmax)
 ax[2].set_title("True")
 plt.tight_layout()
-plt.savefig('example_freq_fwi.jpg')
+plt.savefig('example_increasing_freq_fwi.jpg')
 
 v.detach().cpu().numpy().tofile('marmousi_v_inv.bin')

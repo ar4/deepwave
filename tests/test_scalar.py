@@ -9,8 +9,8 @@ def scalarprop(model, dx, dt, source_amplitudes, source_locations,
                receiver_locations, prop_kwargs=None, pml_width=None,
                survey_pad=None, origin=None, wavefield_0=None,
                wavefield_m1=None,
-               psix_m1=None, psiy_m1=None,
-               zetax_m1=None, zetay_m1=None, nt=None,
+               psiy_m1=None, psix_m1=None,
+               zetay_m1=None, zetax_m1=None, nt=None,
                model_gradient_sampling_interval=1,
                functional=True):
     """Wraps the scalar propagator."""
@@ -39,8 +39,8 @@ def scalarprop(model, dx, dt, source_amplitudes, source_locations,
                       source_locations=source_locations,
                       receiver_locations=receiver_locations,
                       wavefield_0=wavefield_0, wavefield_m1=wavefield_m1,
-                      psix_m1=psix_m1, psiy_m1=psiy_m1,
-                      zetax_m1=zetax_m1, zetay_m1=zetay_m1, nt=nt,
+                      psiy_m1=psiy_m1, psix_m1=psix_m1,
+                      zetay_m1=zetay_m1, zetax_m1=zetax_m1, nt=nt,
                       model_gradient_sampling_interval=
                       model_gradient_sampling_interval,
                       **prop_kwargs)
@@ -50,8 +50,8 @@ def scalarprop(model, dx, dt, source_amplitudes, source_locations,
                 source_locations=source_locations,
                 receiver_locations=receiver_locations,
                 wavefield_0=wavefield_0, wavefield_m1=wavefield_m1,
-                psix_m1=psix_m1, psiy_m1=psiy_m1,
-                zetax_m1=zetax_m1, zetay_m1=zetay_m1, nt=nt,
+                psiy_m1=psiy_m1, psix_m1=psix_m1,
+                zetay_m1=zetay_m1, zetax_m1=zetax_m1, nt=nt,
                 model_gradient_sampling_interval=
                 model_gradient_sampling_interval,
                 **prop_kwargs)
@@ -61,8 +61,8 @@ def scalarpropchained(model, dx, dt, source_amplitudes, source_locations,
                       receiver_locations, prop_kwargs=None, pml_width=None,
                       survey_pad=None, origin=None, wavefield_0=None,
                       wavefield_m1=None,
-                      psix_m1=None, psiy_m1=None,
-                      zetax_m1=None, zetay_m1=None, nt=None,
+                      psiy_m1=None, psix_m1=None,
+                      zetay_m1=None, zetax_m1=None, nt=None,
                       model_gradient_sampling_interval=1,
                       functional=True, n_chained=2):
     """Wraps multiple scalar propagators chained sequentially."""
@@ -98,10 +98,10 @@ def scalarpropchained(model, dx, dt, source_amplitudes, source_locations,
 
     wfc = wavefield_0
     wfp = wavefield_m1
-    psix = psix_m1
     psiy = psiy_m1
-    zetax = zetax_m1
+    psix = psix_m1
     zetay = zetay_m1
+    zetax = zetax_m1
 
     if receiver_locations is not None:
         if source_amplitudes is not None:
@@ -129,14 +129,14 @@ def scalarpropchained(model, dx, dt, source_amplitudes, source_locations,
             segment_nt = (min(nt_per_segment * (segment_idx+1),
                               source_amplitudes.shape[-1]) -
                           nt_per_segment * segment_idx)
-        wfc, wfp, psix, psiy, zetax, zetay, segment_receiver_amplitudes = \
+        wfc, wfp, psiy, psix, zetay, zetax, segment_receiver_amplitudes = \
             scalar(model, dx, dt,
                    source_amplitudes=segment_source_amplitudes,
                    source_locations=source_locations,
                    receiver_locations=receiver_locations,
                    wavefield_0=wfc, wavefield_m1=wfp,
-                   psix_m1=psix, psiy_m1=psiy,
-                   zetax_m1=zetax, zetay_m1=zetay,
+                   psiy_m1=psiy, psix_m1=psix,
+                   zetay_m1=zetay, zetax_m1=zetax,
                    nt=segment_nt,
                    model_gradient_sampling_interval=step_ratio,
                    **prop_kwargs)
@@ -150,7 +150,7 @@ def scalarpropchained(model, dx, dt, source_amplitudes, source_locations,
     if receiver_locations is not None:
         receiver_amplitudes = downsample(receiver_amplitudes, step_ratio)
 
-    return wfc, wfp, psix, psiy, zetax, zetay, receiver_amplitudes
+    return wfc, wfp, psiy, psix, zetay, zetax, receiver_amplitudes
 
 
 def test_pml_width_list():
@@ -388,10 +388,10 @@ def test_gradcheck_only_v_2d():
                      source_requires_grad=False,
                      wavefield_0_requires_grad=False,
                      wavefield_m1_requires_grad=False,
-                     psix_m1_requires_grad=False,
                      psiy_m1_requires_grad=False,
-                     zetax_m1_requires_grad=False,
+                     psix_m1_requires_grad=False,
                      zetay_m1_requires_grad=False,
+                     zetax_m1_requires_grad=False,
                      )
 
 
@@ -401,10 +401,10 @@ def test_gradcheck_only_source_2d():
                      v_requires_grad=False,
                      wavefield_0_requires_grad=False,
                      wavefield_m1_requires_grad=False,
-                     psix_m1_requires_grad=False,
                      psiy_m1_requires_grad=False,
-                     zetax_m1_requires_grad=False,
+                     psix_m1_requires_grad=False,
                      zetay_m1_requires_grad=False,
+                     zetax_m1_requires_grad=False,
                      )
 
 
@@ -414,10 +414,10 @@ def test_gradcheck_only_wavefield_0_2d():
                      v_requires_grad=False,
                      source_requires_grad=False,
                      wavefield_m1_requires_grad=False,
-                     psix_m1_requires_grad=False,
                      psiy_m1_requires_grad=False,
-                     zetax_m1_requires_grad=False,
+                     psix_m1_requires_grad=False,
                      zetay_m1_requires_grad=False,
+                     zetax_m1_requires_grad=False,
                      )
 
 
@@ -661,10 +661,10 @@ def run_gradcheck(c, dc, freq, dx, dt, nx,
                   provide_wavefields=True,
                   wavefield_0_requires_grad=True,
                   wavefield_m1_requires_grad=True,
-                  psix_m1_requires_grad=True,
                   psiy_m1_requires_grad=True,
-                  zetax_m1_requires_grad=True,
+                  psix_m1_requires_grad=True,
                   zetay_m1_requires_grad=True,
+                  zetax_m1_requires_grad=True,
                   atol=1e-8, rtol=1e-5, nt_add=0):
     """Run PyTorch's gradcheck to test the gradient."""
     torch.manual_seed(1)
@@ -703,23 +703,23 @@ def run_gradcheck(c, dc, freq, dx, dt, nx,
         wavefield_0 = torch.zeros(num_shots, *wavefield_size, dtype=dtype,
                                   device=device)
         wavefield_m1 = torch.zeros_like(wavefield_0)
-        psix_m1 = torch.zeros_like(wavefield_0)
         psiy_m1 = torch.zeros_like(wavefield_0)
-        zetax_m1 = torch.zeros_like(wavefield_0)
+        psix_m1 = torch.zeros_like(wavefield_0)
         zetay_m1 = torch.zeros_like(wavefield_0)
+        zetax_m1 = torch.zeros_like(wavefield_0)
         wavefield_0.requires_grad_(wavefield_0_requires_grad)
         wavefield_m1.requires_grad_(wavefield_m1_requires_grad)
-        psix_m1.requires_grad_(psix_m1_requires_grad)
         psiy_m1.requires_grad_(psiy_m1_requires_grad)
-        zetax_m1.requires_grad_(zetax_m1_requires_grad)
+        psix_m1.requires_grad_(psix_m1_requires_grad)
         zetay_m1.requires_grad_(zetay_m1_requires_grad)
+        zetax_m1.requires_grad_(zetax_m1_requires_grad)
     else:
         wavefield_0 = None
         wavefield_m1 = None
-        psix_m1 = None
         psiy_m1 = None
-        zetax_m1 = None
+        psix_m1 = None
         zetay_m1 = None
+        zetax_m1 = None
 
     model.requires_grad_(v_requires_grad)
 
@@ -728,8 +728,8 @@ def run_gradcheck(c, dc, freq, dx, dt, nx,
                                           prop_kwargs, pml_width, survey_pad,
                                           origin,
                                           wavefield_0, wavefield_m1,
-                                          psix_m1, psiy_m1, zetax_m1,
-                                          zetay_m1, nt, 1, True),
+                                          psiy_m1, psix_m1, zetay_m1,
+                                          zetax_m1, nt, 1, True),
                              nondet_tol=1e-3, check_grad_dtypes=True,
                              atol=atol, rtol=rtol)
 

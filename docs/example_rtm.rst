@@ -3,7 +3,7 @@ Reverse-Time Migration of Marmousi
 
 This example demonstrates inversion for the scattering potential with Born modelling, commonly known as imaging. We just run one iteration of optimisation, so this is essentially Reverse-Time Migration (RTM), but we could run more iteration to perform Least-Squares RTM (LSRTM).
 
-Born modelling propagates a wavefield in a "background" velocity model. This wavefield interacts with a provided scattering potential at each timestep to produce a source term for a second wavefield. This second wavefield, the scattered wavefield, is also propagated using the background velocity model, and it is from this scattered wavefield that receivers record their data. The recorded data should therefore only contain singly-scattered waves.
+Born modelling propagates a wavefield in a "background" velocity model. This wavefield interacts with a provided scattering potential at each time step to produce a source term for a second wavefield. This second wavefield, the scattered wavefield, is also propagated using the background velocity model, and it is from this scattered wavefield that receivers record their data. The recorded data should therefore only contain singly-scattered waves.
 
 We begin by loading the Marmousi 1 velocity model, as in :doc:`the forward modelling example <example_forward_model>`. We assume, however, that we don't know the true velocity and only have a smooth approximation of it. We thus smooth the velocity using a Gaussian filter. Because this smooth model doesn't need to be stored at as high a resolution as the true model, and to reduce computational costs, we downsample the model by a factor of two in each dimension::
 

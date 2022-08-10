@@ -181,7 +181,6 @@ class Hicks:
             A small value to prevent division by zero. Points closer to
             a grid cell centre than this will be rounded to the grid cell.
             Default 1e-5.
-        
     """
     def __init__(self, locations: Tensor,
                  halfwidth: int = 4,

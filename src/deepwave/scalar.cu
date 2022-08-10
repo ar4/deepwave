@@ -738,10 +738,14 @@ class ScalarCUDAFunction
               diffx<scalar_t, 2>, diffx<scalar_t, 4>, diffx<scalar_t, 6>,
               diffx<scalar_t, 8>};
           auto diffxi{diffxs[accuracy / 2 - 1]};
-          diffyi<<<32, ceil_div(ny - 2 * fd_pad, static_cast<int64_t>(32))>>>(ay_a, daydy_a);
-          diffxi<<<32, ceil_div(nx - 2 * fd_pad, static_cast<int64_t>(32))>>>(ax_a, daxdx_a);
-          diffyi<<<32, ceil_div(ny - 2 * fd_pad, static_cast<int64_t>(32))>>>(by_a, dbydy_a);
-          diffxi<<<32, ceil_div(nx - 2 * fd_pad, static_cast<int64_t>(32))>>>(bx_a, dbxdx_a);
+          diffyi<<<32, ceil_div(ny - 2 * fd_pad, static_cast<int64_t>(32))>>>(
+              ay_a, daydy_a);
+          diffxi<<<32, ceil_div(nx - 2 * fd_pad, static_cast<int64_t>(32))>>>(
+              ax_a, daxdx_a);
+          diffyi<<<32, ceil_div(ny - 2 * fd_pad, static_cast<int64_t>(32))>>>(
+              by_a, dbydy_a);
+          diffxi<<<32, ceil_div(nx - 2 * fd_pad, static_cast<int64_t>(32))>>>(
+              bx_a, dbxdx_a);
           decltype(&forward_batch<scalar_t, 4>) forward_batches[]{
               forward_batch<scalar_t, 2>, forward_batch<scalar_t, 4>,
               forward_batch<scalar_t, 6>, forward_batch<scalar_t, 8>};
@@ -934,10 +938,14 @@ class ScalarCUDAFunction
               diffx<scalar_t, 2>, diffx<scalar_t, 4>, diffx<scalar_t, 6>,
               diffx<scalar_t, 8>};
           auto diffxi{diffxs[accuracy / 2 - 1]};
-          diffyi<<<32, ceil_div(ny - 2 * fd_pad, static_cast<int64_t>(32))>>>(ay_a, daydy_a);
-          diffxi<<<32, ceil_div(nx - 2 * fd_pad, static_cast<int64_t>(32))>>>(ax_a, daxdx_a);
-          diffyi<<<32, ceil_div(ny - 2 * fd_pad, static_cast<int64_t>(32))>>>(by_a, dbydy_a);
-          diffxi<<<32, ceil_div(nx - 2 * fd_pad, static_cast<int64_t>(32))>>>(bx_a, dbxdx_a);
+          diffyi<<<32, ceil_div(ny - 2 * fd_pad, static_cast<int64_t>(32))>>>(
+              ay_a, daydy_a);
+          diffxi<<<32, ceil_div(nx - 2 * fd_pad, static_cast<int64_t>(32))>>>(
+              ax_a, daxdx_a);
+          diffyi<<<32, ceil_div(ny - 2 * fd_pad, static_cast<int64_t>(32))>>>(
+              by_a, dbydy_a);
+          diffxi<<<32, ceil_div(nx - 2 * fd_pad, static_cast<int64_t>(32))>>>(
+              bx_a, dbxdx_a);
           decltype(&backward_batch<scalar_t, 4>) backward_batches[]{
               backward_batch<scalar_t, 2>, backward_batch<scalar_t, 4>,
               backward_batch<scalar_t, 6>, backward_batch<scalar_t, 8>};

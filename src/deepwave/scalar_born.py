@@ -178,14 +178,14 @@ def scalar_born(v: Tensor, scatter: Tensor,
         Tuple[Tensor]:
 
             wavefield_nt:
-                A Tensor containing the non-scattered wavefield at timestep
-                `nt`.
+                A Tensor containing the non-scattered wavefield at the final
+                time step.
             wavefield_ntm1:
-                A Tensor containing the non-scattered wavefield at timestep
-                `nt-1`.
+                A Tensor containing the non-scattered wavefield at the
+                second-to-last time step.
             psiy_ntm1, psix_ntm1, zetay_ntm1, zetax_ntm1:
-                Tensor containing the wavefield related to the PML at timestep
-                `nt-1` for the non-scattered wavefield.
+                Tensor containing the wavefield related to the PML at the
+                second-to-last time step for the non-scattered wavefield.
             wavefield_sc_nt, wavefield_sc_ntm1:
                 Tensor containing the scattered wavefield.
             psiy_sc_ntm1, psix_sc_ntm1, zetay_sc_ntm1, zetax_sc_ntm1:

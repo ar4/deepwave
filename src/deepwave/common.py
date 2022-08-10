@@ -118,7 +118,7 @@ def setup_propagator(v: Tensor,
 
 def downsample_and_movedim(receiver_amplitudes: Tensor,
                            step_ratio: int, freq_taper_frac: float = 0.0,
-             time_pad_frac: float = 0.0) -> Tensor:
+                           time_pad_frac: float = 0.0) -> Tensor:
     if receiver_amplitudes.numel() > 0:
         if receiver_amplitudes.device == torch.device('cpu'):
             receiver_amplitudes = torch.movedim(receiver_amplitudes, 1, -1)
@@ -291,7 +291,7 @@ def cosine_taper_end(signal: Tensor, n_taper: int) -> Tensor:
     taper[len(taper)-n_taper:] = (
         torch.cos(torch.arange(n_taper, dtype=signal.real.dtype,
                                device=signal.device) /
-        (n_taper - 1) * torch.pi) + 1
+                  (n_taper - 1) * torch.pi) + 1
     ) / 2
     return signal * taper
 
@@ -358,7 +358,7 @@ def upsample(signal: Tensor, step_ratio: int, freq_taper_frac: float = 0.0,
 
 
 def downsample(signal: Tensor, step_ratio: int, freq_taper_frac: float = 0.0,
-             time_pad_frac: float = 0.0) -> Tensor:
+               time_pad_frac: float = 0.0) -> Tensor:
     """Downsamples the final dimension of a Tensor by a factor.
 
     Frequencies higher than or equal to the Nyquist frequency of the

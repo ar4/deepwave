@@ -72,7 +72,7 @@ That's all the setup that we need for forward modelling, so we are now ready to 
 
 The `pml_freq` parameter is optional, but is recommended as it allows you to specify the dominant frequency to the PML, which helps to minimise edge reflections. You can see that the source and receiver Tensors that we provided were also optional. You can instead (or in addition) provide initial wavefields for Deepwave to propagate.
 
-The number of timesteps to propagate for (and thus the length of the output receiver data) is specified by the length of the source amplitude. If you are propagating without a source term, then you can instead specify it using the `nt` keyword parameter.
+The number of time steps to propagate for (and thus the length of the output receiver data) is specified by the length of the source amplitude. If you are propagating without a source term, then you can instead specify it using the `nt` keyword parameter.
 
 Finally, we will plot one common shot gather and one common receiver gather of the generated data, and then save the data to disk for use in later examples::
 
@@ -92,5 +92,7 @@ Finally, we will plot one common shot gather and one common receiver gather of t
     receiver_amplitudes.cpu().numpy().tofile('marmousi_data.bin')
 
 .. image:: example_forward_model.jpg
+
+We did not need to use them in this case, but if the output receiver amplitudes contain undesirable wraparound artifacts (where high amplitudes at the end of a trace cause artifacts at the beginning of the trace) then the Deepwave propagator options `freq_taper_frac` and `time_pad_frac` should be helpful. You can read more about them in the :doc:`usage` section.
 
 `Full example code <https://github.com/ar4/deepwave/blob/master/docs/example_forward_model.py>`_

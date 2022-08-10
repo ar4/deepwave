@@ -274,7 +274,7 @@ def scalar(v: Tensor,
             wavefields are provided, as those will instead be used to
             determine the simulation domain. Optional, default None.
         wavefield_0:
-            A Tensor specifying the initial wavefield at timestep 0. It
+            A Tensor specifying the initial wavefield at time step 0. It
             should have three dimensions, with the first dimension being shot
             and the subsequent two corresponding to the two spatial
             dimensions. The spatial shape should be equal to the simulation
@@ -284,11 +284,13 @@ def scalar(v: Tensor,
             `pml_width=[1, 2, 3, 4]`, then `wavefield_0` should be of shape
             [2, 23, 37]. Optional, default all zeros.
         wavefield_m1:
-            A Tensor specifying the initial wavefield at timestep -1. See
-            the entry for `wavefield_0` for more details.
+            A Tensor specifying the initial wavefield at time step -1 (using
+            Deepwave's internal time step interval, which may be smaller than
+            the user provided one to obey the CFL condition). See the entry for
+            `wavefield_0` for more details.
         psiy_m1, psix_m1, zetay_m1, zetax_m1:
             Tensor specifying the initial value for this PML-related
-            wavefield at timestep -1. See the entry for `wavefield_0`
+            wavefield at time step -1. See the entry for `wavefield_0`
             for more details.
         origin:
             A list of ints specifying the origin of the provided initial
@@ -300,7 +302,7 @@ def scalar(v: Tensor,
             is [10, 15]. Optional, default [0, 0].
         nt:
             If the source amplitudes are not provided then you must instead
-            specify the number of timesteps to run the simulation for by
+            specify the number of time steps to run the simulation for by
             providing an integer for `nt`. You cannot specify both the
             source amplitudes and `nt`.
         model_gradient_sampling_interval:
@@ -312,7 +314,8 @@ def scalar(v: Tensor,
             is greater). If this Nyquist frequency is substantially less
             than 1/dt, you may wish to reduce the sampling frequency of
             the integral to reduce computational (especially memory) costs.
-            Optional, default 1 (integral is sampled every timestep `dt`).
+            Optional, default 1 (integral is sampled every time step
+            interval `dt`).
         freq_taper_frac:
             A float specifying the fraction of the end of the source and
             receiver amplitudes (if present) in the frequency domain to
@@ -333,12 +336,15 @@ def scalar(v: Tensor,
         Tuple[Tensor]:
 
             wavefield_nt:
-                A Tensor containing the wavefield at timestep `nt`.
+                A Tensor containing the wavefield at the final time step.
             wavefield_ntm1:
-                A Tensor containing the wavefield at timestep `nt-1`.
+                A Tensor containing the wavefield at the second-to-last
+                time step (using Deepwave's internal time interval, which may
+                be smaller than the user provided one to obey the CFL
+                condition).
             psiy_ntm1, psix_ntm1, zetay_ntm1, zetax_ntm1:
-                Tensor containing the wavefield related to the PML at timestep
-                `nt-1`.
+                Tensor containing the wavefield related to the PML at the
+                second-to-last time step.
             receiver_amplitudes:
                 A Tensor of dimensions [shot, receiver, time] containing
                 the receiver amplitudes recorded at the provided receiver

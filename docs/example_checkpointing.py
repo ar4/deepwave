@@ -1,7 +1,8 @@
 import torch
-from torchaudio.functional import lowpass_biquad
 import torch.utils.checkpoint
+from torchaudio.functional import biquad
 from scipy.ndimage import gaussian_filter
+from scipy.signal import butter
 import matplotlib.pyplot as plt
 import deepwave
 from deepwave import scalar
@@ -44,11 +45,14 @@ observed_data = (
     .reshape(n_shots, n_receivers_per_shot, nt)
 )
 
+
 # Select portion of data for inversion
 n_shots = 20
 n_receivers_per_shot = 100
 nt = 300
-observed_data = observed_data[:n_shots, :n_receivers_per_shot, :nt].to(device)
+observed_data = (
+    observed_data[:n_shots, :n_receivers_per_shot, :nt].to(device)
+)
 
 # source_locations
 source_locations = torch.zeros(n_shots, n_sources_per_shot, 2,
@@ -77,8 +81,6 @@ dt, step_ratio = deepwave.common.cfl_condition(dx, dx, dt, max_vel)
 source_amplitudes = deepwave.common.upsample(source_amplitudes, step_ratio)
 observed_data = deepwave.common.upsample(observed_data, step_ratio)
 nt = source_amplitudes.shape[-1]
-cutoff_freq = 8
-observed_data = lowpass_biquad(observed_data, 1/dt, cutoff_freq)
 
 
 # Generate a velocity model constrained to be within a desired range
@@ -98,12 +100,26 @@ class Model(torch.nn.Module):
 model = Model(v_init, 1000, 2500).to(device)
 
 # Setup optimiser to perform inversion
-optimiser = torch.optim.LBFGS(model.parameters())
+optimiser = torch.optim.LBFGS(model.parameters(),
+                              line_search_fn='strong_wolfe')
 loss_fn = torch.nn.MSELoss()
 
 # Run optimisation/inversion
 n_epochs = 2
 n_segments = 5
+cutoff_freq = 10
+
+sos = butter(6, cutoff_freq, fs=1/dt, output='sos')
+sos = [torch.tensor(sosi).to(observed_data.dtype).to(device)
+       for sosi in sos]
+
+
+def taper(x):
+    return deepwave.common.cosine_taper_end(x, 600)
+
+
+def filt(x):
+    return biquad(biquad(biquad(x, *sos[0]), *sos[1]), *sos[2])
 
 
 def wrap(v, chunk, wavefield_0, wavefield_m1, psiy_m1, psix_m1,
@@ -124,6 +140,8 @@ def wrap(v, chunk, wavefield_0, wavefield_m1, psiy_m1, psix_m1,
                   model_gradient_sampling_interval=step_ratio
               )
 
+
+observed_data = filt(taper(observed_data))
 
 for epoch in range(n_epochs):
     def closure():
@@ -159,8 +177,7 @@ for epoch in range(n_epochs):
             receiver_amplitudes[..., k:k+chunk.shape[-1]] = \
                 receiver_amplitudes_chunk
             k += chunk.shape[-1]
-        receiver_amplitudes = lowpass_biquad(receiver_amplitudes, 1/dt,
-                                             cutoff_freq)
+        receiver_amplitudes = filt(taper(receiver_amplitudes))
         loss = 1e6 * loss_fn(receiver_amplitudes, observed_data)
         loss.backward()
         return loss

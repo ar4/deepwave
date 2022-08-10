@@ -1,6 +1,7 @@
 import torch
 from deepwave.common import upsample, downsample
 
+
 def test_spike_upsample(n=128, step_ratio=2, dtype=torch.double,
                         device=None):
     """Test that padding mitigates wraparound."""

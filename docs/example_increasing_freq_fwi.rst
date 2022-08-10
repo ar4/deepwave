@@ -24,11 +24,18 @@ Because PyTorch enables us to chain operators together, and will automatically b
 
 Now, when we create the optimiser, the tensor that we will ask it to optimise is the tensor inside this object. During backpropagation, the gradient of the loss function with respect to the velocity model will be further backpropagated to calculate the gradient with respect to this tensor. We therefore won't be directly updating the velocity model, but will instead be updating this tensor that is used to generate the velocity model.
 
-We will progress from an initial cutoff frequency in our filter of 4 Hz in the early iterations, to 32 Hz in the final iterations. To keep this example simple we will apply the frequency filter to the output of wave propagation. If you were working with very large models, you would instead probably filter the source amplitudes. A lower frequency source would allow you to use a larger grid cell spacing, reducing computational cost. To apply the frequency filter, we use the `lowpass_biquad` function from `torchaudio`::
+We will progress from an initial cutoff frequency in our filter of 10 Hz in the early iterations, to 30 Hz in the final iterations. To keep this example simple we will apply the frequency filter to the output of wave propagation. If you were working with very large models, you would instead probably filter the source amplitudes. A lower frequency source would allow you to use a larger grid cell spacing, reducing computational cost. To apply the frequency filter, we use a chain of second-order sections to implement a 6th order Butterworth filter with the `biquad` function from `torchaudio` and `butter` from `scipy`::
 
-    for cutoff_freq in [4, 8, 16, 32]:
-        observed_data_filt = lowpass_biquad(observed_data, 1/dt, cutoff_freq)
-        optimiser = torch.optim.LBFGS(model.parameters())
+    for cutoff_freq in [10, 15, 20, 25, 30]:
+        sos = butter(6, cutoff_freq, fs=1/dt, output='sos')
+        sos = [torch.tensor(sosi).to(observed_data.dtype).to(device)
+               for sosi in sos]
+
+        def filt(x):
+            return biquad(biquad(biquad(x, *sos[0]), *sos[1]), *sos[2])
+        observed_data_filt = filt(observed_data)
+        optimiser = torch.optim.LBFGS(model.parameters(),
+                                      line_search_fn='strong_wolfe')
         for epoch in range(n_epochs):
             def closure():
                 optimiser.zero_grad()
@@ -40,13 +47,15 @@ We will progress from an initial cutoff frequency in our filter of 4 Hz in the e
                     receiver_locations=receiver_locations,
                     max_vel=2500,
                     pml_freq=freq,
+                    time_pad_frac=0.2,
                 )
-                out_filt = lowpass_biquad(out[-1], 1/dt, cutoff_freq)
+                out_filt = filt(taper(out[-1]))
                 loss = 1e6*loss_fn(out_filt, observed_data_filt)
                 loss.backward()
                 return loss
 
             optimiser.step(closure)
+
 
 .. image:: example_increasing_freq_fwi.jpg
 
