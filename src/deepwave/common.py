@@ -85,8 +85,12 @@ def setup_propagator(v: Tensor,
         receivers_i = None
     n_batch = get_n_batch([source_locations, receiver_locations] +
                           list(wavefields))
-    ay, ax, by, bx = \
-        setup_pml(pml_width, fd_pad, dt, v, max_vel, pml_freq)
+    ay, by = \
+        setup_pml(pml_width[:2], fd_pad, dt, dy, v.shape[0], max_vel,
+                  v.dtype, v.device, pml_freq)
+    ax, bx = \
+        setup_pml(pml_width[2:], fd_pad, dt, dx, v.shape[1], max_vel,
+                  v.dtype, v.device, pml_freq)
     nt *= step_ratio
 
     if source_amplitudes is not None:
@@ -340,6 +344,8 @@ def upsample(signal: Tensor, step_ratio: int, freq_taper_frac: float = 0.0,
     if time_pad_frac > 0.0:
         n_time_pad = int(time_pad_frac * signal.shape[-1])
         signal = torch.nn.functional.pad(signal, (0, n_time_pad))
+    else:
+        n_time_pad = 0
     nt = signal.shape[-1]
     up_nt = nt * step_ratio
     signal_f = torch.fft.rfft(signal)
@@ -394,6 +400,8 @@ def downsample(signal: Tensor, step_ratio: int, freq_taper_frac: float = 0.0,
     if time_pad_frac > 0.0:
         n_time_pad = int(time_pad_frac * (signal.shape[-1] // step_ratio))
         signal = torch.nn.functional.pad(signal, (0, n_time_pad * step_ratio))
+    else:
+        n_time_pad = 0
     nt = signal.shape[-1]
     down_nt = nt // step_ratio
     signal_f = torch.fft.rfft(signal)[..., :down_nt//2+1]
@@ -717,55 +725,32 @@ def cfl_condition(dy: float, dx: float, dt: float, max_vel: float,
     return inner_dt, step_ratio
 
 
-def setup_pml(pml_width: List[int], fd_pad: int, dt: float, v: Tensor,
-              max_vel: float, pml_freq: Optional[float],
-              eps: float = 1e-9) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
+def setup_pml(pml_width: List[int], fd_pad: int, dt: float, dx: float, n: int,
+              max_vel: float, dtype: torch.dtype, device: torch.device,
+              pml_freq: Optional[float], 
+              eps: float = 1e-9) -> Tuple[Tensor, Tensor]:
     R = 0.001
     if pml_freq is None:
         pml_freq = 25.0
-    device = v.device
-    dtype = v.dtype
-    a = []
-    b = []
-    for width in pml_width:
+    alpha0 = math.pi * pml_freq
+    a = math.exp(-alpha0 * abs(dt)) * torch.ones(n, device=device, dtype=dtype)
+    b = torch.zeros(n, device=device, dtype=dtype)
+    for side, width in enumerate(pml_width):
         if width == 0:
-            a.append(torch.zeros(0, device=device, dtype=dtype))
-            b.append(torch.zeros(0, device=device, dtype=dtype))
             continue
-        sigma = (
-            3
-            * max_vel
-            * math.log((1 + R) / 2 * width)
-            * (torch.arange(width, device=device, dtype=dtype)
-               / width) ** 2
+        pml_frac = (
+            torch.arange(width + fd_pad + 1, device=device, dtype=dtype)
+            / width
         )
-        alpha = (
-            2 * math.pi * pml_freq
-            * (1 - torch.arange(width, device=device, dtype=dtype)
-               / width)
-        )
+        sigma = -3 * max_vel * math.log(R) / (2 * width * dx) * pml_frac**2
+        alpha = alpha0 * (1 - pml_frac)
         sigmaalpha = sigma + alpha
-        a.append(torch.exp(-sigmaalpha * abs(dt)))
-        b.append(sigma / (sigmaalpha**2 + eps) * sigmaalpha * (a[-1] - 1))
-    a0 = math.exp(-2 * math.pi * pml_freq * abs(dt))
-    ay = a0 * torch.ones(v.shape[0], device=device, dtype=dtype)
-    ax = a0 * torch.ones(v.shape[1], device=device, dtype=dtype)
-    by = torch.zeros(v.shape[0], device=device, dtype=dtype)
-    bx = torch.zeros(v.shape[1], device=device, dtype=dtype)
-    ay[fd_pad:fd_pad + pml_width[0]] = a[0].flip(0)
-    ay[:fd_pad] = ay[fd_pad]
-    ay[len(ay) - pml_width[1] - fd_pad:-fd_pad] = a[1]
-    ay[-fd_pad:] = ay[-fd_pad-1]
-    ax[fd_pad:fd_pad + pml_width[2]] = a[2].flip(0)
-    ax[:fd_pad] = ax[fd_pad]
-    ax[len(ax) - pml_width[3] - fd_pad:-fd_pad] = a[3]
-    ax[-fd_pad:] = ax[-fd_pad-1]
-    by[fd_pad:fd_pad + pml_width[0]] = b[0].flip(0)
-    by[:fd_pad] = by[fd_pad]
-    by[len(by) - pml_width[1] - fd_pad:-fd_pad] = b[1]
-    by[-fd_pad:] = by[-fd_pad-1]
-    bx[fd_pad:fd_pad + pml_width[2]] = b[2].flip(0)
-    bx[:fd_pad] = bx[fd_pad]
-    bx[len(bx) - pml_width[3] - fd_pad:-fd_pad] = b[3]
-    bx[-fd_pad:] = bx[-fd_pad-1]
-    return ay, ax, by, bx
+        a_side = torch.exp(-sigmaalpha * abs(dt))
+        b_side = sigma / (sigmaalpha**2 + eps) * sigmaalpha * (a_side - 1)
+        if side == 0:
+            a[:fd_pad + pml_width[0] + 1] = a_side.flip(0)
+            b[:fd_pad + pml_width[0] + 1] = b_side.flip(0)
+        else:
+            a[-(fd_pad + pml_width[1] + 1):] = a_side
+            b[-(fd_pad + pml_width[1] + 1):] = b_side
+    return a, b
