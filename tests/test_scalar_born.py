@@ -599,6 +599,12 @@ def test_born_gradcheck_only_wavefieldsc_0_2d():
                           )
 
 
+def test_jit():
+    """Test that the propagator can be JIT compiled"""
+    torch.jit.script(ScalarBorn(torch.ones(1, 1), torch.ones(1, 1), 5.0))
+    torch.jit.script(scalar_born)
+
+
 def run_born_gradcheck(c, dc, freq, dx, dt, nx,
                        num_shots, num_sources_per_shot,
                        num_receivers_per_shot,
