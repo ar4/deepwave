@@ -1,8 +1,6 @@
 #include <c10/cuda/CUDAGuard.h>
 #include <torch/script.h>
 
-#include <iostream>
-
 #define gpuErrchk(ans) \
   { gpuAssert((ans), __FILE__, __LINE__); }
 static inline void gpuAssert(cudaError_t code, const char *file, int line,

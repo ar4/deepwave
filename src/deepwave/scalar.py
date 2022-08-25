@@ -210,7 +210,7 @@ def scalar(v: Tensor,
             Larger values result in smaller reflections, with values of 10
             to 20 being typical. For a reflective or "free" surface, set the
             value for that edge to be zero. For example, if your model is
-            oriented so that surface that you want to be reflective is the
+            oriented so that the surface that you want to be reflective is the
             beginning of the second dimension, then you could specify
             `pml_width=[20, 20, 0, 20]`. The wavespeed in the PML region
             is obtained by replicating the values on the edge of the
@@ -352,26 +352,30 @@ def scalar(v: Tensor,
                 this Tensor will be empty.
 
     """
-    empty_string_list: List[str] = []
-    (v, other_models, source_amplitudes, wavefields,
-     ay, ax, by, bx, sources_i, receivers_i,
+    (models, source_amplitudes_l, wavefields,
+     pml_profiles, sources_i_l, receivers_i_l,
      dy, dx, dt, nt, n_batch,
      step_ratio, model_gradient_sampling_interval,
      accuracy, pml_width_list) = \
-        setup_propagator(v, grid_spacing, dt, [], empty_string_list,
+        setup_propagator([v], 'scalar', grid_spacing, dt,
                          [wavefield_0, wavefield_m1, psiy_m1, psix_m1,
                           zetay_m1, zetax_m1],
-                         source_amplitudes,
-                         source_locations, receiver_locations,
+                         [source_amplitudes],
+                         [source_locations], [receiver_locations],
                          accuracy, pml_width, pml_freq, max_vel,
                          survey_pad,
                          origin, nt, model_gradient_sampling_interval,
                          freq_taper_frac, time_pad_frac)
+    v = models[0]
+    wfc, wfp, psiy, psix, zetay, zetax = wavefields
+    source_amplitudes = source_amplitudes_l[0]
+    sources_i = sources_i_l[0]
+    receivers_i = receivers_i_l[0]
+    ay, ax, by, bx = pml_profiles
 
     wfc, wfp, psiy, psix, zetay, zetax, receiver_amplitudes = \
         torch.ops.deepwave.scalar(
-            v, source_amplitudes, wavefields[0], wavefields[1],
-            wavefields[2], wavefields[3], wavefields[4], wavefields[5],
+            v, source_amplitudes, wfc, wfp, psiy, psix, zetay, zetax,
             ay, ax, by, bx, sources_i, receivers_i, dy, dx, dt, nt,
             n_batch, step_ratio * model_gradient_sampling_interval,
             accuracy, pml_width_list[0], pml_width_list[1], pml_width_list[2],

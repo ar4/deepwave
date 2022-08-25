@@ -198,7 +198,7 @@ def test_wavefield_decays():
     """Test that the PML causes the wavefield amplitude to decay."""
     out = run_forward_2d(propagator=scalarprop, nt=2000)
     for outi in out[:-1]:
-        assert outi.norm() < 1
+        assert outi.norm() < 1e-5
 
 
 def test_forward_cpu_gpu_match():
@@ -424,8 +424,13 @@ def test_gradcheck_only_wavefield_0_2d():
 
 def test_jit():
     """Test that the propagator can be JIT compiled"""
-    torch.jit.script(Scalar(torch.ones(1, 1), 5.0))
-    torch.jit.script(scalar)
+    torch.jit.script(Scalar(torch.ones(1, 1), 5.0))(
+        0.001, source_amplitudes=torch.ones(1, 1, 1),
+        source_locations=torch.zeros(1, 1, 2)
+    )
+    torch.jit.script(scalar)(torch.ones(1, 1), 5.0, 0.001,
+                             source_amplitudes=torch.ones(1, 1, 1),
+                             source_locations=torch.zeros(1, 1, 2).long())
 
 
 def direct_2d_approx(x, x_s, dx, dt, c, f):

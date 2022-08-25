@@ -5,16 +5,15 @@ import torch
 from torch import Tensor
 
 
-def setup_propagator(v: Tensor,
+def setup_propagator(models: List[Tensor],
+                     prop_type: str,
                      grid_spacing: Union[int, float,
                                          List[float], Tensor],
                      dt: float,
-                     other_models: List[Tensor],
-                     other_model_modes: List[str],
                      wavefields: List[Optional[Tensor]],
-                     source_amplitudes: Optional[Tensor] = None,
-                     source_locations: Optional[Tensor] = None,
-                     receiver_locations: Optional[Tensor] = None,
+                     source_amplitudes: List[Optional[Tensor]],
+                     source_locations: List[Optional[Tensor]],
+                     receiver_locations: List[Optional[Tensor]],
                      accuracy: int = 4,
                      pml_width: Union[int, List[int]] = 20,
                      pml_freq: Optional[float] = None,
@@ -26,95 +25,179 @@ def setup_propagator(v: Tensor,
                      model_gradient_sampling_interval: int = 1,
                      freq_taper_frac: float = 0.0,
                      time_pad_frac: float = 0.0) -> Tuple[
-                        Tensor, List[Tensor], Tensor, List[Tensor],
-                        Tensor, Tensor, Tensor, Tensor, Tensor, Tensor,
+                        List[Tensor], List[Tensor], List[Tensor],
+                        List[Tensor], List[Tensor], List[Tensor],
                         float, float, float, int, int, int, int, int,
                         List[int]]:
+    # scalar, models = [v]
+    # scalar_born, models = [v, scatter]
+    # elastic, models = [lamb, mu, buoyancy]
+    if prop_type == 'scalar':
+        max_model_vel = models[0].abs().max().item()
+        min_model_vel = models[0].abs().min().item()
+        pad_modes = ['replicate']
+        fd_pad = accuracy // 2
+    elif prop_type == 'scalar_born':
+        max_model_vel = models[0].abs().max().item()
+        min_model_vel = models[0].abs().min().item()
+        pad_modes = ['replicate', 'constant']
+        fd_pad = accuracy // 2
+    elif prop_type == 'elastic':
+        vp, vs, _ = lambmubuoyancy_to_vpvsrho(models[0].abs(), models[1].abs(),
+                                              models[2].abs())
+        max_model_vel = max(vp.abs().max().item(), vs.abs().max().item())
+        min_model_vel = min(vp.abs().min().item(), vs.abs().min().item())
+        pad_modes = ['replicate', 'replicate', 'replicate']
+        fd_pad = 0
+    else:
+        raise RuntimeError("Unknown prop_type.")
+
+    if isinstance(pml_width, int):
+        pml_width = [pml_width for _ in range(4)]
+
     # Check inputs
     check_inputs(source_amplitudes, source_locations, receiver_locations,
-                 wavefields, accuracy, nt, v)
+                 wavefields, accuracy, nt, models, pml_width, fd_pad)
 
     if nt is None:
         nt = 0
-        if source_amplitudes is not None:
-            nt = source_amplitudes.shape[-1]
-    device = v.device
-    dtype = v.dtype
+        for source_amplitude in source_amplitudes:
+            if source_amplitude is not None:
+                nt = source_amplitude.shape[-1]
+                break
+    device = models[0].device
+    dtype = models[0].dtype
     dy, dx = set_dx(grid_spacing)
-    if isinstance(pml_width, int):
-        pml_width = [pml_width for _ in range(4)]
-    fd_pad = accuracy // 2
     pad = [fd_pad + width for width in pml_width]
     models, locations = extract_survey(
-        [v] + list(other_models),
-        [source_locations, receiver_locations],
+        models,
+        source_locations + receiver_locations,
         survey_pad, wavefields, origin, pml_width
     )
-    v = models[0]
-    other_models = models[1:]
-    source_locations, receiver_locations = locations
+    source_locations = locations[:len(source_locations)]
+    receiver_locations = locations[len(source_locations):]
     if max_vel is None:
-        max_vel = v.abs().max().item()
+        max_vel = max_model_vel
     else:
         max_vel = abs(max_vel)
-        if max_vel < v.abs().max().item():
-            warnings.warn("max_vel is less than the actual maximum velocity")
-    check_points_per_wavelength(v, pml_freq, dy, dx, dt)
-    v = pad_model(v, pad)
-    for i in range(len(other_models)):
-        other_models[i] = pad_model(other_models[i], pad,
-                                    mode=other_model_modes[i])
+        if max_vel < max_model_vel:
+            warnings.warn("max_vel is less than the actual maximum velocity.")
+    check_points_per_wavelength(min_model_vel, pml_freq, dy, dx, dt)
+    for i in range(len(models)):
+        models[i] = pad_model(models[i], pad,
+                              mode=pad_modes[i])
+    ny, nx = models[0].shape
     dt, step_ratio = cfl_condition(dy, dx, dt, max_vel)
-    if source_amplitudes is not None and source_locations is not None:
-        source_locations = pad_locations(source_locations, pad)
-        sources_i = location_to_index(source_locations, v.shape[1])
-        source_amplitudes = (
-            -source_amplitudes * v[source_locations[..., 0],
-                                   source_locations[..., 1],
-                                   None] ** 2 * dt**2
-        )
-        source_amplitudes = upsample(source_amplitudes, step_ratio,
-                                     freq_taper_frac=freq_taper_frac,
-                                     time_pad_frac=time_pad_frac)
-    else:
-        sources_i = None
-    if receiver_locations is not None:
-        receiver_locations = pad_locations(receiver_locations, pad)
-        receivers_i = location_to_index(receiver_locations, v.shape[1])
-    else:
-        receivers_i = None
-    n_batch = get_n_batch([source_locations, receiver_locations] +
+    sources_i: List[Optional[Tensor]] = []
+    for i in range(len(source_amplitudes)):
+        sa = source_amplitudes[i]
+        sl = source_locations[i]
+        if sa is not None and sl is not None:
+            sl = pad_locations(sl, pad)
+            sources_i.append(location_to_index(sl, nx))
+            if prop_type in ['scalar', 'scalar_born']:
+                sa = (
+                    -sa * models[0][sl[..., 0],
+                                    sl[..., 1],
+                                    None] ** 2 * dt**2
+                )
+            elif prop_type == 'elastic':
+                if i == 0:  # source_amplitudes_y
+                    # Need to interpolate buoyancy to vy
+                    sa = (
+                        sa *
+                        (
+                            models[2][sl[..., 0],
+                                      sl[..., 1],
+                                      None] +
+                            models[2][sl[..., 0] + 1,
+                                      sl[..., 1],
+                                      None] +
+                            models[2][sl[..., 0],
+                                      sl[..., 1] + 1,
+                                      None] +
+                            models[2][sl[..., 0] + 1,
+                                      sl[..., 1] + 1,
+                                      None]
+                        ) / 4 * dt
+                    )
+                else:  # source_amplitudes_x
+                    sa = (
+                        sa * models[2][sl[..., 0],
+                                       sl[..., 1],
+                                       None] * dt
+                    )
+            sa = upsample(sa, step_ratio,
+                          freq_taper_frac=freq_taper_frac,
+                          time_pad_frac=time_pad_frac)
+            if sa.device == torch.device('cpu'):
+                sa = torch.movedim(sa, -1, 1)
+            else:
+                sa = torch.movedim(sa, -1, 0)
+            source_amplitudes[i] = sa
+        else:
+            sources_i.append(None)
+    receivers_i: List[Optional[Tensor]] = []
+    for i, rl in enumerate(receiver_locations):
+        if rl is not None:
+            rl = pad_locations(rl, pad)
+            receivers_i.append(location_to_index(rl, nx))
+        else:
+            receivers_i.append(None)
+    n_batch = get_n_batch(source_locations + receiver_locations +
                           list(wavefields))
-    ay, by = \
-        setup_pml(pml_width[:2], fd_pad, dt, dy, v.shape[0], max_vel,
-                  v.dtype, v.device, pml_freq)
-    ax, bx = \
-        setup_pml(pml_width[2:], fd_pad, dt, dx, v.shape[1], max_vel,
-                  v.dtype, v.device, pml_freq)
+    if prop_type == 'elastic':
+        ay, by = \
+            setup_pml(pml_width[:2], [1, 0], dt, dy, ny, max_vel,
+                      dtype, device, pml_freq, left_start=0.5,
+                      right_start=0.5)
+        ax, bx = \
+            setup_pml(pml_width[2:], [1, 1], dt, dx, nx, max_vel,
+                      dtype, device, pml_freq, left_start=0.0,
+                      right_start=0.0)
+        ayh, byh = \
+            setup_pml(pml_width[:2], [1, 1], dt, dy, ny, max_vel,
+                      dtype, device, pml_freq, left_start=0.0,
+                      right_start=0.0)
+        axh, bxh = \
+            setup_pml(pml_width[2:], [0, 1], dt, dx, nx, max_vel,
+                      dtype, device, pml_freq, left_start=0.5,
+                      right_start=0.5)
+        pml_profiles = [ay, ayh, ax, axh, by, byh, bx, bxh]
+    else:
+        ay, by = \
+            setup_pml(pml_width[:2], [fd_pad+1, fd_pad+1], dt, dy, ny, max_vel,
+                      dtype, device, pml_freq)
+        ax, bx = \
+            setup_pml(pml_width[2:], [fd_pad+1, fd_pad+1], dt, dx, nx, max_vel,
+                      dtype, device, pml_freq)
+        pml_profiles = [ay, ax, by, bx]
     nt *= step_ratio
 
-    if source_amplitudes is not None:
-        if source_amplitudes.device == torch.device('cpu'):
-            source_amplitudes = torch.movedim(source_amplitudes, -1, 1)
-        else:
-            source_amplitudes = torch.movedim(source_amplitudes, -1, 0)
-
-    v = convert_to_contiguous(v)
-    for i in range(len(other_models)):
-        other_models[i] = convert_to_contiguous(other_models[i])
-    source_amplitudes = (convert_to_contiguous(source_amplitudes)
-                         .to(dtype).to(device))
+    for i in range(len(models)):
+        models[i] = convert_to_contiguous(models[i])
+    contiguous_source_amplitudes: List[Tensor] = []
+    for i in range(len(source_amplitudes)):
+        contiguous_source_amplitudes.append(
+            convert_to_contiguous(source_amplitudes[i]).to(dtype).to(device)
+        )
     contiguous_wavefields = []
     for wavefield in wavefields:
         contiguous_wavefields.append(convert_to_contiguous(wavefield))
-    sources_i = convert_to_contiguous(sources_i)
-    receivers_i = convert_to_contiguous(receivers_i)
-    ay = convert_to_contiguous(ay)
-    ax = convert_to_contiguous(ax)
-    by = convert_to_contiguous(by)
-    bx = convert_to_contiguous(bx)
-    return (v, other_models, source_amplitudes, contiguous_wavefields,
-            ay, ax, by, bx, sources_i.long(), receivers_i.long(),
+    contiguous_sources_i: List[Tensor] = []
+    for i in range(len(sources_i)):
+        contiguous_sources_i.append(
+            convert_to_contiguous(sources_i[i]).long()
+        )
+    contiguous_receivers_i: List[Tensor] = []
+    for i in range(len(receivers_i)):
+        contiguous_receivers_i.append(
+            convert_to_contiguous(receivers_i[i]).long()
+        )
+    for i in range(len(pml_profiles)):
+        pml_profiles[i] = convert_to_contiguous(pml_profiles[i])
+    return (models, contiguous_source_amplitudes, contiguous_wavefields,
+            pml_profiles, contiguous_sources_i, contiguous_receivers_i,
             dy, dx, dt, nt, n_batch,
             step_ratio, model_gradient_sampling_interval,
             accuracy, pml_width)
@@ -145,69 +228,114 @@ def set_dx(dx: Union[int, float, List[float],
     if isinstance(dx, torch.Tensor) and dx.shape == (2,):
         return float(dx[0].item()), float(dx[1].item())
     raise RuntimeError("Expected dx to be a real number or a list of "
-                       "two real numbers")
+                       "two real numbers.")
 
 
-def check_inputs(source_amplitudes: Optional[Tensor],
-                 source_locations: Optional[Tensor],
-                 receiver_locations: Optional[Tensor],
+def check_inputs(source_amplitudes: List[Optional[Tensor]],
+                 source_locations: List[Optional[Tensor]],
+                 receiver_locations: List[Optional[Tensor]],
                  wavefields: List[Optional[Tensor]],
-                 accuracy: int, nt: Optional[int], model: Tensor) -> None:
-    if source_amplitudes is not None or source_locations is not None:
-        if source_amplitudes is None or source_locations is None:
-            raise RuntimeError("source_locations and source_amplitudes must "
-                               "both be None or non-None")
-    if source_amplitudes is not None and source_locations is not None:
-        if source_amplitudes.ndim != 3:
-            raise RuntimeError("source_amplitudes should have dimensions "
-                               "[shot, source, time]")
-        if source_locations.ndim != 3:
-            raise RuntimeError("source_locations should have dimensions "
-                               "[shot, source, dimension]")
-        if source_amplitudes.shape[0] != source_locations.shape[0]:
-            raise RuntimeError("Expected source_amplitudes.shape[0] == "
-                               "source_locations.shape[0]")
-        if source_amplitudes.shape[1] != source_locations.shape[1]:
-            raise RuntimeError("Expected source_amplitudes.shape[1] == "
-                               "source_locations.shape[1]")
-        if source_locations.shape[2] != 2:
-            raise RuntimeError("Expected source_locations.shape[2] == 2")
-        if source_amplitudes.device != model.device:
-            raise RuntimeError("Expected source_amplitudes and the model "
-                               "to be on the same device")
-        if source_locations.device != model.device:
-            raise RuntimeError("Expected source_locations and the model "
-                               "to be on the same device")
-        if source_amplitudes.dtype != model.dtype:
-            raise RuntimeError("Expected source_amplitudes and the model "
-                               "to have the same dtype")
-        if source_amplitudes.numel() == 0:
-            raise RuntimeError("source_amplitudes has zero elements. Please "
-                               "instead set it to None if you do not wish to "
-                               "use a source.")
-    if receiver_locations is not None:
-        if receiver_locations.ndim != 3:
-            raise RuntimeError("receiver_locations should have dimensions "
-                               "[shot, receiver, dimension]")
-        if receiver_locations.shape[2] != 2:
-            raise RuntimeError("Expected receiver_locations.shape[2] == 2")
-        if receiver_locations.device != model.device:
-            raise RuntimeError("Expected receiver_locations and the model "
-                               "to be on the same device")
-        if receiver_locations.numel() == 0:
-            raise RuntimeError("receiver_locations has zero elements. Please "
-                               "instead set it to None if you do not wish to "
-                               "have receivers.")
-    if source_locations is not None and receiver_locations is not None:
-        if source_locations.shape[0] != receiver_locations.shape[0]:
-            raise RuntimeError("Expected source_locations.shape[0] == "
-                               "receiver_locations.shape[0]")
+                 accuracy: int, nt: Optional[int],
+                 models: List[Tensor], pml_width: List[int],
+                 fd_pad: int) -> None:
+    device = models[0].device
+    dtype = models[0].dtype
+    if len(source_amplitudes) != len(source_locations):
+        raise RuntimeError("The same number of source_amplitudes and "
+                           "source_locations must be provided.")
+    for i in range(len(source_amplitudes)):
+        if source_amplitudes[i] is not None or source_locations[i] is not None:
+            if source_amplitudes[i] is None or source_locations[i] is None:
+                raise RuntimeError("source_locations and source_amplitudes "
+                                   "must both be None or non-None.")
+        source_amplitudesi = source_amplitudes[i]
+        source_locationsi = source_locations[i]
+        if (source_amplitudesi is not None and source_locationsi is not None):
+            if source_amplitudesi.ndim != 3:
+                raise RuntimeError("source_amplitudes should have dimensions "
+                                   "[shot, source, time].")
+            if source_locationsi.ndim != 3:
+                raise RuntimeError("source_locations should have dimensions "
+                                   "[shot, source, dimension].")
+            if source_amplitudesi.shape[0] != source_locationsi.shape[0]:
+                raise RuntimeError("Expected source_amplitudes.shape[0] == "
+                                   "source_locations.shape[0].")
+            if source_amplitudesi.shape[1] != source_locationsi.shape[1]:
+                raise RuntimeError("Expected source_amplitudes.shape[1] == "
+                                   "source_locations.shape[1].")
+            if source_locationsi.shape[2] != 2:
+                raise RuntimeError("Expected source_locations.shape[2] == 2.")
+            if source_amplitudesi.device != device:
+                raise RuntimeError("Expected source_amplitudes and the model "
+                                   "to be on the same device.")
+            if source_locationsi.device != device:
+                raise RuntimeError("Expected source_locations and the model "
+                                   "to be on the same device.")
+            if source_amplitudesi.dtype != dtype:
+                raise RuntimeError("Expected source_amplitudes and the model "
+                                   "to have the same dtype.")
+            if source_amplitudesi.numel() == 0:
+                raise RuntimeError("source_amplitudes has zero elements. "
+                                   "Please instead set it to None if you do "
+                                   "not wish to use a source.")
+    sa_nt = -1
+    for sa in source_amplitudes:
+        if sa is not None:
+            if sa_nt < 0:
+                sa_nt = sa.shape[-1]
+            else:
+                if sa.shape[-1] != sa_nt:
+                    raise RuntimeError("All source_amplitudes must have "
+                                       "the same length in the time "
+                                       "dimension.")
+            if nt is not None:
+                raise RuntimeError("Specify source_amplitudes or nt, "
+                                   "not both.")
+    if sa_nt < 0 and nt is None:
+        raise RuntimeError("Specify source_amplitudes or nt.")
+
+    for receiver_location in receiver_locations:
+        if receiver_location is not None:
+            if receiver_location.ndim != 3:
+                raise RuntimeError("receiver_locations should have dimensions "
+                                   "[shot, receiver, dimension].")
+            if receiver_location.shape[2] != 2:
+                raise RuntimeError("Expected receiver_locations.shape[2] == "
+                                   "2.")
+            if receiver_location.device != device:
+                raise RuntimeError("Expected receiver_locations and the model "
+                                   "to be on the same device.")
+            if receiver_location.numel() == 0:
+                raise RuntimeError("receiver_locations has zero elements. "
+                                   "Please instead set it to None if you do "
+                                   "not wish to have receivers.")
+
+    n_shots = -1
+    for source_location in source_locations:
+        if source_location is not None:
+            if n_shots < 0:
+                n_shots = source_location.shape[0]
+            else:
+                if source_location.shape[0] != n_shots:
+                    raise RuntimeError("Expected source_locations and "
+                                       "receiver_locations to all have the "
+                                       "same number of shots.")
+    for receiver_location in receiver_locations:
+        if receiver_location is not None:
+            if n_shots < 0:
+                n_shots = receiver_location.shape[0]
+            else:
+                if receiver_location.shape[0] != n_shots:
+                    raise RuntimeError("Expected source_locations and "
+                                       "receiver_locations to all have the "
+                                       "same number of shots.")
+
     wavefield_shape = [0, 0, 0]
     for wavefield in wavefields:
         if wavefield is not None:
             if wavefield.ndim != 3:
                 raise RuntimeError("All wavefields must have three "
-                                   "dimensions")
+                                   "dimensions.")
             if wavefield_shape == [0, 0, 0]:
                 wavefield_shape = [wavefield.shape[0], wavefield.shape[1],
                                    wavefield.shape[2]]
@@ -216,27 +344,49 @@ def check_inputs(source_amplitudes: Optional[Tensor],
                         wavefield_shape[1] != wavefield.shape[1] or
                         wavefield_shape[2] != wavefield.shape[2]):
                     raise RuntimeError("All wavefields must have the same "
-                                       "shape")
-            if wavefield.device != model.device:
+                                       "shape.")
+            if wavefield.device != device:
                 raise RuntimeError("All wavefields must be on the same "
-                                   "device as the model")
-            if wavefield.dtype != model.dtype:
+                                   "device as the model.")
+            if wavefield.dtype != dtype:
                 raise RuntimeError("All wavefields must have the same "
-                                   "dtype as the model")
+                                   "dtype as the model.")
+    if (n_shots > 0 and wavefield_shape[0] > 0 and
+            n_shots != wavefield_shape[0]):
+        raise RuntimeError("The wavefield batch dimension does not match the "
+                           "source/receiver batch dimension.")
 
     if accuracy not in [2, 4, 6, 8]:
         raise RuntimeError("Only accuracy values of 2, 4, 6, and 8 are "
-                           "implemented")
-    if source_amplitudes is not None and nt is not None:
-        raise RuntimeError("Specify source_amplitudes or nt, not both")
-    if source_amplitudes is None and nt is None:
-        raise RuntimeError("Specify source_amplitudes or nt")
+                           "implemented.")
+
+    if models[0].ndim != 2:
+        raise RuntimeError("Models must have two dimensions.")
+    ny, nx = models[0].shape
+    for model in models[1:]:
+        if model.device != device:
+            raise RuntimeError("All models must be on the same device.")
+        if model.dtype != dtype:
+            raise RuntimeError("All models must have the same dtype.")
+        if model.ndim != 2:
+            raise RuntimeError("Models must have two dimensions.")
+        if model.shape[0] != ny or model.shape[1] != nx:
+            raise RuntimeError("All models must have the same shape.")
+
+    if wavefield_shape[1] > ny + pml_width[0] + pml_width[1] + 2 * fd_pad:
+        raise RuntimeError("Provided wavefields must not be larger than " +
+                           str(ny + pml_width[0] + pml_width[1]) + "in the " +
+                           "first spatial dimension.")
+
+    if wavefield_shape[2] > nx + pml_width[2] + pml_width[3] + 2 * fd_pad:
+        raise RuntimeError("Provided wavefields must not be larger than " +
+                           str(nx + pml_width[2] + pml_width[3]) + " in the " +
+                           "second spatial dimension.")
 
 
-def check_points_per_wavelength(v: Tensor, pml_freq: Optional[float],
+def check_points_per_wavelength(min_vel: float, pml_freq: Optional[float],
                                 dy: float, dx: float, dt: float) -> None:
     if pml_freq is not None:
-        min_vel = v.abs().min()
         min_wavelength = min_vel / pml_freq
         max_spacing = max(dy, dx)
         if min_wavelength / max_spacing < 6:
@@ -256,7 +406,7 @@ def get_n_batch(args: List[Optional[Tensor]]) -> int:
     for arg in args:
         if arg is not None:
             return arg.shape[0]
-    raise RuntimeError("One of the inputs to get_n_batch must be non-None")
+    raise RuntimeError("One of the inputs to get_n_batch must be non-None.")
 
 
 def pad_model(model: Tensor, pad: List[int],
@@ -269,7 +419,7 @@ def pad_model(model: Tensor, pad: List[int],
 def pad_locations(locations: Tensor, pad: List[int]) -> Tensor:
     pad_starts = pad[::2]
     pad_starts_tensor = torch.tensor(pad_starts).to(locations[0].device)
-    return locations + pad_starts_tensor
+    return (locations + pad_starts_tensor).long()
 
 
 def location_to_index(locations: Tensor, nx: int) -> Tensor:
@@ -348,16 +498,16 @@ def upsample(signal: Tensor, step_ratio: int, freq_taper_frac: float = 0.0,
         n_time_pad = 0
     nt = signal.shape[-1]
     up_nt = nt * step_ratio
-    signal_f = torch.fft.rfft(signal)
+    signal_f = torch.fft.rfft(signal, norm='ortho')
     if freq_taper_frac > 0.0:
         freq_taper_len = int(freq_taper_frac * signal_f.shape[-1])
         signal_f = cosine_taper_end(signal_f, freq_taper_len)
-    else:
+    elif signal_f.shape[-1] > 1:
         # Set Nyquist frequency to zero
         signal_f = zero_last_element_of_final_dimension(signal_f)
     signal_f = torch.nn.functional.pad(signal_f,
                                        (0, up_nt//2+1 - nt//2+1))
-    signal = torch.fft.irfft(signal_f, n=up_nt)
+    signal = torch.fft.irfft(signal_f, n=up_nt, norm='ortho')
     if time_pad_frac > 0.0:
         signal = signal[..., :signal.shape[-1] - n_time_pad * step_ratio]
     return signal
@@ -404,14 +554,14 @@ def downsample(signal: Tensor, step_ratio: int, freq_taper_frac: float = 0.0,
         n_time_pad = 0
     nt = signal.shape[-1]
     down_nt = nt // step_ratio
-    signal_f = torch.fft.rfft(signal)[..., :down_nt//2+1]
+    signal_f = torch.fft.rfft(signal, norm='ortho')[..., :down_nt//2+1]
     if freq_taper_frac > 0.0:
         freq_taper_len = int(freq_taper_frac * signal_f.shape[-1])
         signal_f = cosine_taper_end(signal_f, freq_taper_len)
-    else:
+    elif signal_f.shape[-1] > 1:
         # Set Nyquist frequency to zero
         signal_f = zero_last_element_of_final_dimension(signal_f)
-    signal = torch.fft.irfft(signal_f, n=down_nt)
+    signal = torch.fft.irfft(signal_f, n=down_nt, norm='ortho')
     if time_pad_frac > 0.0:
         signal = signal[..., :signal.shape[-1] - n_time_pad]
     return signal
@@ -454,10 +604,10 @@ def check_locations_are_within_model(
     for location in locations:
         if location is not None:
             if location.min() < 0:
-                raise RuntimeError("Locations must be >= 0")
+                raise RuntimeError("Locations must be >= 0.")
             for dim, model_dim_shape in enumerate(model_shape):
                 if location[..., dim].max() >= model_dim_shape:
-                    raise RuntimeError("Locations must be within model")
+                    raise RuntimeError("Locations must be within model.")
 
 
 def set_survey_pad(survey_pad: Optional[Union[int, List[Optional[int]]]],
@@ -469,7 +619,7 @@ def set_survey_pad(survey_pad: Optional[Union[int, List[Optional[int]]]],
         survey_pad_list = [-1] * 2 * ndim
     elif isinstance(survey_pad, int):
         if survey_pad < 0:
-            raise RuntimeError("survey_pad must be non-negative")
+            raise RuntimeError("survey_pad must be non-negative.")
         survey_pad_list = [survey_pad] * 2 * ndim
     elif isinstance(survey_pad, list):
         for pad in survey_pad:
@@ -478,15 +628,15 @@ def set_survey_pad(survey_pad: Optional[Union[int, List[Optional[int]]]],
             elif pad >= 0:
                 survey_pad_list.append(pad)
             else:
-                raise RuntimeError("survey_pad must be non-negative")
+                raise RuntimeError("survey_pad must be non-negative.")
     else:
-        raise RuntimeError("survey_pad must be None, an int, or a list")
+        raise RuntimeError("survey_pad must be None, an int, or a list.")
 
     # Check has correct size
     if len(survey_pad_list) != 2 * ndim:
         raise RuntimeError(
             "survey_pad must have length 2 * dims in model, "
-            "but got {}".format(len(survey_pad_list))
+            "but got {}.".format(len(survey_pad_list))
         )
 
     return survey_pad_list
@@ -605,27 +755,27 @@ def get_survey_extents_from_wavefields(wavefields: List[Optional[Tensor]],
 
     if origin is not None:
         if any([not isinstance(dim_origin, int) for dim_origin in origin]):
-            raise RuntimeError("origin must be list of ints")
+            raise RuntimeError("origin must be list of ints.")
         if any([dim_origin < 0 for dim_origin in origin]):
-            raise RuntimeError("origin coordinates must be non-negative")
+            raise RuntimeError("origin coordinates must be non-negative.")
     if not isinstance(pad, list):
-        raise RuntimeError("pad must be a list of ints")
+        raise RuntimeError("pad must be a list of ints.")
     if any([not isinstance(dim_pad, int) for dim_pad in pad]):
-        raise RuntimeError("pad must be a list of ints")
+        raise RuntimeError("pad must be a list of ints.")
     if any([dim_pad < 0 for dim_pad in pad]):
-        raise RuntimeError("pad must be positive")
+        raise RuntimeError("pad must be positive.")
     ndims = len(pad) // 2
     extents: List[int] = []
     for wavefield in wavefields:
         if wavefield is not None:
             if wavefield.ndim != ndims + 1:
                 raise RuntimeError("wavefields must have one more dimension "
-                                   "(batch) than pad")
+                                   "(batch) than pad.")
             for dim in range(ndims):
                 if origin is not None:
                     if len(origin) != ndims:
                         raise RuntimeError("origin has incorrect number of "
-                                           "dimensions")
+                                           "dimensions.")
                     extents.append(origin[dim])
                     extents.append(origin[dim]
                                    + wavefield.shape[1+dim]
@@ -635,14 +785,14 @@ def get_survey_extents_from_wavefields(wavefields: List[Optional[Tensor]],
                     extents.append(wavefield.shape[1+dim]
                                    - (pad[dim*2] + pad[dim*2+1]))
             return extents
-    raise RuntimeError("At least one wavefield must be non-None")
+    raise RuntimeError("At least one wavefield must be non-None.")
 
 
 def check_extents_within_model(extents: List[int],
                                model_shape: List[int]) -> None:
     for (extent, model_dim_shape) in zip(extents[::2], model_shape):
         if extent > model_dim_shape:
-            raise RuntimeError("Wavefields must be within the model")
+            raise RuntimeError("Wavefields must be within the model.")
 
 
 def check_locations_within_extents(
@@ -656,7 +806,7 @@ def check_locations_within_extents(
                     (location[..., dim].min() < extents[dim * 2] or
                      location[..., dim].max() >= extents[dim * 2 + 1])):
                     raise RuntimeError("Locations must be within "
-                                       "wavefields")
+                                       "wavefields.")
 
 
 def extract_models(models: List[Tensor],
@@ -706,7 +856,7 @@ def cfl_condition(dy: float, dx: float, dt: float, max_vel: float,
         dt:
             The time step interval.
         max_vel:
-            The maximum wave speed in the model.
+            The maximum wavespeed in the model.
         eps:
             A small quantity to prevent division by zero. Default 1e-15.
 
@@ -725,9 +875,79 @@ def cfl_condition(dy: float, dx: float, dt: float, max_vel: float,
     return inner_dt, step_ratio
 
 
-def setup_pml(pml_width: List[int], fd_pad: int, dt: float, dx: float, n: int,
-              max_vel: float, dtype: torch.dtype, device: torch.device,
-              pml_freq: Optional[float], 
+def vpvsrho_to_lambmubuoyancy(vp: Tensor, vs: Tensor, rho: Tensor,
+                              eps: float = 1e-15) -> Tuple[Tensor,
+                                                           Tensor,
+                                                           Tensor]:
+    """Converts vp, vs, rho to lambda, mu, buoyancy.
+
+    All input Tensors must have the same shape.
+
+    Args:
+        vp:
+            A Tensor containing the p wavespeed.
+        vs:
+            A Tensor containing the s wavespeed.
+        rho:
+            A Tensor containing the density.
+        eps:
+            An optional float to avoid division by zero. Default 1e-15.
+
+    Returns:
+        Tuple[Tensor, Tensor, Tensor]:
+
+            lambda:
+                A Tensor containing the first Lamé parameter.
+            mu:
+                A Tensor containing the second Lamé parameter.
+            buoyancy:
+                A Tensor containing the reciprocal of density.
+    """
+
+    lamb = (vp**2 - 2 * vs**2) * rho
+    mu = vs**2 * rho
+    buoyancy = 1 / (rho**2 + eps) * rho
+    return lamb, mu, buoyancy
+
+
+def lambmubuoyancy_to_vpvsrho(lamb: Tensor, mu: Tensor, buoyancy: Tensor,
+                              eps: float = 1e-15) -> Tuple[Tensor,
+                                                           Tensor,
+                                                           Tensor]:
+    """Converts lambda, mu, buoyancy to vp, vs, rho.
+
+    All input Tensors must have the same shape.
+
+    Args:
+        lambda:
+            A Tensor containing the first Lamé parameter.
+        mu:
+            A Tensor containing the second Lamé parameter.
+        buoyancy:
+            A Tensor containing the reciprocal of density.
+        eps:
+            An optional float to avoid division by zero. Default 1e-15.
+
+    Returns:
+        Tuple[Tensor, Tensor, Tensor]:
+
+            vp:
+                A Tensor containing the p wavespeed.
+            vs:
+                A Tensor containing the s wavespeed.
+            rho:
+                A Tensor containing the density.
+    """
+    vs = (mu * buoyancy).sqrt()
+    vp = (lamb * buoyancy + 2 * vs**2).sqrt()
+    rho = 1 / (buoyancy**2 + eps) * buoyancy
+    return vp, vs, rho
+
+
+def setup_pml(pml_width: List[int], fd_pads: List[int], dt: float, dx: float,
+              n: int, max_vel: float, dtype: torch.dtype, device: torch.device,
+              pml_freq: Optional[float], left_start: float = 0.0,
+              right_start: float = 0.0,
               eps: float = 1e-9) -> Tuple[Tensor, Tensor]:
     R = 0.001
     if pml_freq is None:
@@ -735,22 +955,24 @@ def setup_pml(pml_width: List[int], fd_pad: int, dt: float, dx: float, n: int,
     alpha0 = math.pi * pml_freq
     a = math.exp(-alpha0 * abs(dt)) * torch.ones(n, device=device, dtype=dtype)
     b = torch.zeros(n, device=device, dtype=dtype)
-    for side, width in enumerate(pml_width):
+    for side, (width, fd_pad) in enumerate(zip(pml_width, fd_pads)):
         if width == 0:
             continue
-        pml_frac = (
-            torch.arange(width + fd_pad + 1, device=device, dtype=dtype)
-            / width
-        )
+        if side == 0:
+            start = left_start
+        else:
+            start = right_start
+        pml_frac = (start + torch.arange(width + fd_pad,
+                                         device=device, dtype=dtype)) / width
         sigma = -3 * max_vel * math.log(R) / (2 * width * dx) * pml_frac**2
         alpha = alpha0 * (1 - pml_frac)
         sigmaalpha = sigma + alpha
         a_side = torch.exp(-sigmaalpha * abs(dt))
         b_side = sigma / (sigmaalpha**2 + eps) * sigmaalpha * (a_side - 1)
         if side == 0:
-            a[:fd_pad + pml_width[0] + 1] = a_side.flip(0)
-            b[:fd_pad + pml_width[0] + 1] = b_side.flip(0)
+            a[:len(pml_frac)] = a_side.flip(0)
+            b[:len(pml_frac)] = b_side.flip(0)
         else:
-            a[-(fd_pad + pml_width[1] + 1):] = a_side
-            b[-(fd_pad + pml_width[1] + 1):] = b_side
+            a[-len(pml_frac):] = a_side
+            b[-len(pml_frac):] = b_side
     return a, b

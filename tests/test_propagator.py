@@ -94,3 +94,62 @@ def test_receiver_outside_model(prop):
     dt = 0.004
     with pytest.raises(RuntimeError):
         prop(dt, source_amplitudes, source_locations, receiver_locations)
+
+
+def test_passes_wavefield(prop):
+    """Check passes when wavefields have the right size."""
+    source_amplitudes = torch.zeros(2, 1, 2)
+    source_locations = torch.zeros(2, 1, 2, dtype=torch.long)
+    receiver_locations = torch.zeros(2, 1, 2, dtype=torch.long)
+    dt = 0.004
+    wavefield_0 = torch.zeros(2, NZ + 2 * 22, NY + 2 * 22)
+    prop(dt, source_amplitudes, source_locations, receiver_locations,
+         wavefield_0=wavefield_0)
+
+
+def test_wrong_wavefield_batch_size1(prop):
+    """Check error when wavefield batch size too big."""
+    source_amplitudes = torch.zeros(2, 1, 2)
+    source_locations = torch.zeros(2, 1, 2, dtype=torch.long)
+    receiver_locations = torch.zeros(2, 1, 2, dtype=torch.long)
+    dt = 0.004
+    wavefield_0 = torch.zeros(3, NZ + 2 * 22, NY + 2 * 22)
+    with pytest.raises(RuntimeError):
+        prop(dt, source_amplitudes, source_locations, receiver_locations,
+             wavefield_0=wavefield_0)
+
+
+def test_wrong_wavefield_batch_size2(prop):
+    """Check error when wavefield batch size too small."""
+    source_amplitudes = torch.zeros(2, 1, 2)
+    source_locations = torch.zeros(2, 1, 2, dtype=torch.long)
+    receiver_locations = torch.zeros(2, 1, 2, dtype=torch.long)
+    dt = 0.004
+    wavefield_0 = torch.zeros(1, NZ + 2 * 22, NY + 2 * 22)
+    with pytest.raises(RuntimeError):
+        prop(dt, source_amplitudes, source_locations, receiver_locations,
+             wavefield_0=wavefield_0)
+
+
+def test_wavefield_too_big1(prop):
+    """Check error when wavefield is bigger than model."""
+    source_amplitudes = torch.zeros(2, 1, 2)
+    source_locations = torch.zeros(2, 1, 2, dtype=torch.long)
+    receiver_locations = torch.zeros(2, 1, 2, dtype=torch.long)
+    dt = 0.004
+    wavefield_0 = torch.zeros(2, NZ + 2 * 22 + 1, NY + 2 * 22)
+    with pytest.raises(RuntimeError):
+        prop(dt, source_amplitudes, source_locations, receiver_locations,
+             wavefield_0=wavefield_0)
+
+
+def test_wavefield_too_big2(prop):
+    """Check error when wavefield is bigger than model."""
+    source_amplitudes = torch.zeros(2, 1, 2)
+    source_locations = torch.zeros(2, 1, 2, dtype=torch.long)
+    receiver_locations = torch.zeros(2, 1, 2, dtype=torch.long)
+    dt = 0.004
+    wavefield_0 = torch.zeros(2, NZ + 2 * 22, NY + 2 * 22 + 1)
+    with pytest.raises(RuntimeError):
+        prop(dt, source_amplitudes, source_locations, receiver_locations,
+             wavefield_0=wavefield_0)

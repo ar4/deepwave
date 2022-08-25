@@ -200,32 +200,36 @@ def scalar_born(v: Tensor, scatter: Tensor,
 
     """
 
-    (v, other_models, source_amplitudes, wavefields,
-     ay, ax, by, bx, sources_i, receivers_i,
+    (models, source_amplitudes_l, wavefields,
+     pml_profiles, sources_i_l, receivers_i_l,
      dy, dx, dt, nt, n_batch,
      step_ratio, model_gradient_sampling_interval,
      accuracy, pml_width_list) = \
-        setup_propagator(v, grid_spacing, dt, [scatter], ["constant"],
+        setup_propagator([v, scatter], 'scalar_born', grid_spacing, dt,
                          [wavefield_0, wavefield_m1, psiy_m1, psix_m1,
                           zetay_m1, zetax_m1, wavefield_sc_0, wavefield_sc_m1,
                           psiy_sc_m1, psix_sc_m1, zetay_sc_m1, zetax_sc_m1],
-                         source_amplitudes,
-                         source_locations, receiver_locations,
+                         [source_amplitudes],
+                         [source_locations], [receiver_locations],
                          accuracy, pml_width, pml_freq, max_vel,
                          survey_pad,
                          origin, nt, model_gradient_sampling_interval,
                          freq_taper_frac, time_pad_frac)
+    v, scatter = models
+    (wfc, wfp, psiy, psix, zetay, zetax, wfcsc, wfpsc, psiysc, psixsc,
+     zetaysc, zetaxsc) = wavefields
+    source_amplitudes = source_amplitudes_l[0]
+    sources_i = sources_i_l[0]
+    receivers_i = receivers_i_l[0]
+    ay, ax, by, bx = pml_profiles
 
     (wfc, wfp, psiy, psix, zetay, zetax, wfcsc, wfpsc, psiysc, psixsc,
      zetaysc, zetaxsc, receiver_amplitudes) = \
-        torch.ops.deepwave.scalar_born(v, other_models[0],
-                                       source_amplitudes, wavefields[0],
-                                       wavefields[1], wavefields[2],
-                                       wavefields[3], wavefields[4],
-                                       wavefields[5], wavefields[6],
-                                       wavefields[7], wavefields[8],
-                                       wavefields[9], wavefields[10],
-                                       wavefields[11], ay, ax, by, bx,
+        torch.ops.deepwave.scalar_born(v, scatter,
+                                       source_amplitudes, wfc, wfp,
+                                       psiy, psix, zetay, zetax,
+                                       wfcsc, wfpsc, psiysc, psixsc,
+                                       zetaysc, zetaxsc, ay, ax, by, bx,
                                        sources_i,
                                        receivers_i,
                                        dy, dx, dt, nt, n_batch,

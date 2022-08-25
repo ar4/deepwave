@@ -25,33 +25,55 @@ Usage
 
 .. autofunction:: deepwave.scalar_born
 
-``common.cosine_taper_end``
+``Elastic``
+-----------
+
+.. autoclass:: deepwave.Elastic
+    :members:
+
+``elastic``
+-----------
+
+.. autofunction:: deepwave.elastic
+
+
+``cosine_taper_end``
 ---------------------------
 
 .. autofunction:: deepwave.common.cosine_taper_end
 
-``common.upsample``
+``upsample``
 -------------------
 
 .. autofunction:: deepwave.common.upsample
 
-``common.downsample``
+``downsample``
 ---------------------
 
 .. autofunction:: deepwave.common.downsample
 
-``common.cfl_condition``
+``cfl_condition``
 ------------------------
 
 .. autofunction:: deepwave.common.cfl_condition
 
-``location_interpolation.Hicks``
+``vpvsrho_to_lambmubuoyancy``
+------------------------------------
+
+.. autofunction:: deepwave.common.vpvsrho_to_lambmubuoyancy
+
+``lambmubuoyancy_to_vpvsrho``
+------------------------------------
+
+.. autofunction:: deepwave.common.lambmubuoyancy_to_vpvsrho
+
+``Hicks``
 --------------------------------
 
 .. autoclass:: deepwave.location_interpolation.Hicks
     :members:
 
-``wavelets.ricker``
+``ricker``
 -------------------
 
 .. autofunction:: deepwave.wavelets.ricker

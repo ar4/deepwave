@@ -1,8 +1,6 @@
 #include <torch/script.h>
 #include <torch/torch.h>
 
-#include <iostream>
-
 TORCH_LIBRARY_FRAGMENT(deepwave, m) {
   m.def(
       "scalar_born(Tensor v, Tensor scatter, Tensor f, Tensor wfc0, Tensor "

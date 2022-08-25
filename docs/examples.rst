@@ -14,3 +14,4 @@ These examples demonstrate how to use Deepwave. Each is designed to show differe
     example_location_interpolation
     example_taper_and_pad
     example_distributed
+    example_elastic
