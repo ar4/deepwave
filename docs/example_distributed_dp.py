@@ -51,7 +51,7 @@ def taper(x):
 
 
 # Select portion of data for inversion
-n_shots = 20
+n_shots = 16
 n_receivers_per_shot = 100
 nt = 300
 observed_data = (
@@ -103,10 +103,9 @@ class Prop(torch.nn.Module):
         self.freq = freq
 
     def forward(self, source_amplitudes, source_locations, receiver_locations):
-        v = model()
         out = scalar(
-            v, self.dx, self.dt,
-            source_amplitudes=source_amplitudes,
+            model().to(device), self.dx, self.dt,
+            source_amplitudes=source_amplitudes.to(device),
             source_locations=source_locations,
             receiver_locations=receiver_locations,
             max_vel=2500,
@@ -135,7 +134,7 @@ for cutoff_freq in [10, 15, 20, 25, 30]:
         return biquad(biquad(biquad(x, *sosd[0]), *sosd[1]), *sosd[2])
 
     observed_data_filt = filt(observed_data)
-    optimiser = torch.optim.LBFGS(model.parameters(),
+    optimiser = torch.optim.LBFGS(prop.parameters(),
                                   line_search_fn='strong_wolfe')
     for epoch in range(n_epochs):
         def closure():
