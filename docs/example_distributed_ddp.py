@@ -103,7 +103,7 @@ def run_rank(rank, world_size):
         return deepwave.common.cosine_taper_end(x, 100)
 
     # Select portion of data for inversion
-    n_shots = 20
+    n_shots = 16
     n_receivers_per_shot = 100
     nt = 300
     observed_data = (
@@ -158,8 +158,7 @@ def run_rank(rank, world_size):
         def filt(x):
             return biquad(biquad(biquad(x, *sos[0]), *sos[1]), *sos[2])
         observed_data_filt = filt(observed_data)
-        optimiser = torch.optim.LBFGS(prop.parameters(),
-                                      line_search_fn='strong_wolfe')
+        optimiser = torch.optim.LBFGS(prop.parameters())
         for epoch in range(n_epochs):
             def closure():
                 optimiser.zero_grad()
@@ -191,7 +190,7 @@ def run_rank(rank, world_size):
         plt.savefig('example_distributed_ddp.jpg')
 
         v.detach().cpu().numpy().tofile('marmousi_v_inv.bin')
-
+    cleanup()
 
 def run(world_size):
 
