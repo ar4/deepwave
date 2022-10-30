@@ -1,8 +1,9 @@
 """Wave propagation modules for PyTorch.
 
-Provides forward modelling and Born forward modelling of the scalar wave
-equation, and backpropagation for both. It can thus be used to generate
-synthetic data, and to perform FWI and LSRTM.
+Provides forward modelling and backpropagation of the scalar wave
+equation (regular and Born), and elastic wave equation.
+It can thus be used to generate synthetic data, and to perform
+FWI and LSRTM.
 
 Module and functional interfaces are provided, and allow the propagators
 to be easily integrated into a larger computational graph, if desired.
