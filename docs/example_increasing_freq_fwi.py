@@ -6,7 +6,8 @@ import matplotlib.pyplot as plt
 import deepwave
 from deepwave import scalar
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cuda' if torch.cuda.is_available()
+                      else 'cpu')
 ny = 2301
 nx = 751
 dx = 4.0
@@ -55,21 +56,24 @@ n_shots = 20
 n_receivers_per_shot = 100
 nt = 300
 observed_data = (
-    taper(observed_data[:n_shots, :n_receivers_per_shot, :nt]).to(device)
+    taper(observed_data[:n_shots, :n_receivers_per_shot, :nt])
+    .to(device)
 )
 
 # source_locations
 source_locations = torch.zeros(n_shots, n_sources_per_shot, 2,
                                dtype=torch.long, device=device)
 source_locations[..., 1] = source_depth
-source_locations[:, 0, 0] = torch.arange(n_shots) * d_source + first_source
+source_locations[:, 0, 0] = (torch.arange(n_shots) * d_source +
+                             first_source)
 
 # receiver_locations
 receiver_locations = torch.zeros(n_shots, n_receivers_per_shot, 2,
                                  dtype=torch.long, device=device)
 receiver_locations[..., 1] = receiver_depth
 receiver_locations[:, :, 0] = (
-    (torch.arange(n_receivers_per_shot) * d_receiver + first_receiver)
+    (torch.arange(n_receivers_per_shot) * d_receiver +
+     first_receiver)
     .repeat(n_shots, 1)
 )
 
@@ -86,11 +90,14 @@ class Model(torch.nn.Module):
         super().__init__()
         self.min_vel = min_vel
         self.max_vel = max_vel
-        self.model = torch.nn.Parameter(torch.logit((initial - min_vel) /
-                                                    (max_vel - min_vel)))
+        self.model = torch.nn.Parameter(
+            torch.logit((initial - min_vel) /
+                        (max_vel - min_vel))
+        )
 
     def forward(self):
-        return (torch.sigmoid(self.model) * (self.max_vel - self.min_vel) +
+        return (torch.sigmoid(self.model) *
+                (self.max_vel - self.min_vel) +
                 self.min_vel)
 
 
@@ -136,7 +143,8 @@ for cutoff_freq in [10, 15, 20, 25, 30]:
 v = model()
 vmin = v_true.min()
 vmax = v_true.max()
-_, ax = plt.subplots(3, figsize=(10.5, 10.5), sharex=True, sharey=True)
+_, ax = plt.subplots(3, figsize=(10.5, 10.5), sharex=True,
+                     sharey=True)
 ax[0].imshow(v_init.cpu().T, aspect='auto', cmap='gray',
              vmin=vmin, vmax=vmax)
 ax[0].set_title("Initial")

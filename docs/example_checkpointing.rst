@@ -8,7 +8,8 @@ PyTorch's `checkpoint <https://pytorch.org/docs/stable/checkpoint.html>`_ utilit
 A complication is that Deepwave may need to use a smaller time step interval than the one that you specify, in order to obey the `CFL condition <https://en.wikipedia.org/wiki/Courant%E2%80%93Friedrichs%E2%80%93Lewy_condition>`_. When this occurs, Deepwave will upsample the source amplitudes (and then downsample the receiver amplitudes). This causes a slight problem when we use checkpointing, as upsampling a segment of the source amplitudes may not produce the same result as when all of the time samples of the source amplitudes are upsampled together, causing the output of propagation to be a bit different when checkpointing is used. To avoid this, we can upsample the source amplitudes ourselves before dividing them into segments and passing them to Deepwave. To do this, we will first find out what time step interval (`dt`) is needed to obey the CFL condition, and what factor of upsampling is needed to achieve this (`step_ratio`). We will then upsample the source amplitudes by this factor. As the output receiver amplitudes will now also have this same time step interval, we will also upsample the observed data so that we can compare the two in the cost function::
 
     dt, step_ratio = deepwave.common.cfl_condition(dx, dx, dt, max_vel)
-    source_amplitudes = deepwave.common.upsample(source_amplitudes, step_ratio)
+    source_amplitudes = deepwave.common.upsample(source_amplitudes,
+                                                 step_ratio)
     observed_data = deepwave.common.upsample(observed_data, step_ratio)
     nt = source_amplitudes.shape[-1]
 
@@ -37,7 +38,8 @@ The optimisation iteration loop looks a bit complicated, but it's actually just 
     for epoch in range(n_epochs):
         def closure():
             pml_width = 20
-            wavefield_size = [n_shots, ny + 2 * pml_width, nx + 2 * pml_width]
+            wavefield_size = [n_shots, ny + 2 * pml_width,
+                              nx + 2 * pml_width]
             wavefield_0 = torch.zeros(*wavefield_size, device=device)
             wavefield_m1 = torch.zeros(*wavefield_size, device=device)
             psiy_m1 = torch.zeros(*wavefield_size, device=device)
@@ -45,11 +47,13 @@ The optimisation iteration loop looks a bit complicated, but it's actually just 
             zetay_m1 = torch.zeros(*wavefield_size, device=device)
             zetax_m1 = torch.zeros(*wavefield_size, device=device)
             optimiser.zero_grad()
-            receiver_amplitudes = torch.zeros(n_shots, n_receivers_per_shot, nt,
+            receiver_amplitudes = torch.zeros(n_shots,
+                                              n_receivers_per_shot, nt,
                                               device=device)
             v = model()
             k = 0
-            for i, chunk in enumerate(torch.chunk(source_amplitudes, n_segments,
+            for i, chunk in enumerate(torch.chunk(source_amplitudes,
+                                                  n_segments,
                                                   dim=-1)):
                 if i == n_segments - 1:
                     (wavefield_0, wavefield_m1, psiy_m1, psix_m1,
@@ -61,10 +65,12 @@ The optimisation iteration loop looks a bit complicated, but it's actually just 
                 else:
                     (wavefield_0, wavefield_m1, psiy_m1, psix_m1,
                      zetay_m1, zetax_m1, receiver_amplitudes_chunk) = \
-                     torch.utils.checkpoint.checkpoint(wrap, v, chunk, wavefield_0,
+                     torch.utils.checkpoint.checkpoint(wrap, v, chunk,
+                                                       wavefield_0,
                                                        wavefield_m1,
                                                        psiy_m1, psix_m1,
-                                                       zetay_m1, zetax_m1)
+                                                       zetay_m1,
+                                                       zetax_m1)
                 receiver_amplitudes[..., k:k+chunk.shape[-1]] = \
                     receiver_amplitudes_chunk
                 k += chunk.shape[-1]

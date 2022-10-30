@@ -22,10 +22,15 @@ Let's create `n_sources_per_shot` sources located at random cells, without more 
     source_locations = torch.zeros(n_shots, n_sources_per_shot, 2,
                                    dtype=torch.long, device=device)
     torch.manual_seed(1)
-    grid_cells = torch.cartesian_prod(torch.arange(ny), torch.arange(nx))
-    source_cell_idxs = torch.randperm(len(grid_cells))[:n_sources_per_shot]
-    source_locations = (grid_cells[source_cell_idxs]
-                        .reshape(1, n_sources_per_shot, 2)).long().to(device)
+    grid_cells = torch.cartesian_prod(torch.arange(ny),
+                                      torch.arange(nx))
+    source_cell_idxs = (
+        torch.randperm(len(grid_cells))[:n_sources_per_shot]
+    )
+    source_locations = (
+        grid_cells[source_cell_idxs]
+        .reshape(1, n_sources_per_shot, 2).long().to(device)
+    )
 
 The next step is to then create the initial source amplitudes and specify that we want to calculate gradients with respect to them::
 
@@ -56,7 +61,8 @@ The optimisation loop is then not very dissimilar to earlier examples. We'll set
 Lastly, we will save the wave propagation time steps so that we can make them into an animated GIF. We want to save every time step, so we will create a loop over time steps. When we call the wave propagator, we only want it to advance by one time step. We can achieve this by calling the propagator with each time sample of the source amplitudes. As we discussed in :doc:`the checkpointing example <example_checkpointing>`, however, that might not give us exactly the result that we want due to upscaling within Deepwave to obey the CFL condition. We therefore perform the upscaling ourselves and then call the propagator with chunks of the upscaled source amplitudes that correspond to one time step before upscaling::
 
     dt, step_ratio = deepwave.common.cfl_condition(dx, dx, dt, 2000)
-    source_amplitudes = deepwave.common.upsample(source_amplitudes, step_ratio)
+    source_amplitudes = deepwave.common.upsample(source_amplitudes,
+                                                 step_ratio)
 
     target_abs_max = target.abs().max()
     for i in range(nt):

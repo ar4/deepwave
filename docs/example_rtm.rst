@@ -13,7 +13,8 @@ We begin by loading the Marmousi 1 velocity model, as in :doc:`the forward model
     import deepwave
     from deepwave import scalar_born
 
-    device = torch.device('cuda')
+    device = torch.device('cuda' if torch.cuda.is_available()
+                          else 'cpu')
     ny = 2301
     nx = 751
     dx = 4.0
@@ -50,14 +51,16 @@ We also setup the sources and receivers in the same way, except that the coordin
     source_locations = torch.zeros(n_shots, n_sources_per_shot, 2,
                                    dtype=torch.long, device=device)
     source_locations[..., 1] = source_depth
-    source_locations[:, 0, 0] = torch.arange(n_shots) * d_source + first_source
+    source_locations[:, 0, 0] = (torch.arange(n_shots) * d_source +
+                                 first_source)
 
     # receiver_locations
     receiver_locations = torch.zeros(n_shots, n_receivers_per_shot, 2,
                                      dtype=torch.long, device=device)
     receiver_locations[..., 1] = receiver_depth
     receiver_locations[:, :, 0] = (
-        (torch.arange(n_receivers_per_shot) * d_receiver + first_receiver)
+        (torch.arange(n_receivers_per_shot) * d_receiver +
+         first_receiver)
         .repeat(n_shots, 1)
     )
 
@@ -100,8 +103,10 @@ Born modelling only produces singly-scattered waves, however, while the observed
                 continue
             actual_mute_start = max(mute_start, 0)
             actual_mute_end = min(mute_end, nt)
-            mask[shot_idx, receiver_idx, actual_mute_start:actual_mute_end] = \
-                mute[actual_mute_start-mute_start:actual_mute_end-mute_start]
+            mask[shot_idx, receiver_idx,
+                 actual_mute_start:actual_mute_end] = \
+                mute[actual_mute_start-mute_start:
+                     actual_mute_end-mute_start]
     observed_scatter_masked = observed_data * mask
 
 We now run the optimisation to invert for the scattering potential. To do this we create an initial scattering model (which is all zeros), and we specify that gradients will need to be calculated with respect to it. We use Stochastic Gradient Descent as the optimiser and the mean-squared error as the loss/objective function. We then forward propagate batches of shots with the Born propagator, apply the mask to the output before comparing with the target (the masked observed data) using the loss function, and backpropagate to add to the gradient with respect to the scattering potential. We could have used a `PyTorch data loader <https://pytorch.org/docs/stable/data.html>`_ to split the data into batches instead of doing it ourselves. We apply a scaling (`1e9`) to the loss function to boost the amplitude of the update, but this could also be achieved by increasing the learning rate of the optimiser::
@@ -124,19 +129,21 @@ We now run the optimisation to invert for the scattering potential. To do this w
             optimiser.zero_grad()
             for batch in range(n_batch):
                 batch_start = batch * n_shots_per_batch
-                batch_end = min(batch_start + n_shots_per_batch, n_shots)
+                batch_end = min(batch_start + n_shots_per_batch,
+                                n_shots)
                 if batch_end <= batch_start:
                     continue
+                s = slice(batch_start, batch_end)
                 out = scalar_born(
                     v_mig, scatter, dx, dt,
-                    source_amplitudes=source_amplitudes[batch_start:batch_end],
-                    source_locations=source_locations[batch_start:batch_end],
-                    receiver_locations=receiver_locations[batch_start:batch_end],
+                    source_amplitudes=source_amplitudes[s],
+                    source_locations=source_locations[s],
+                    receiver_locations=receiver_locations[s],
                     pml_freq=freq
                 )
                 loss = (
-                    1e9 * loss_fn(out[-1] * mask[batch_start:batch_end],
-                                  observed_scatter_masked[batch_start:batch_end])
+                    1e9 * loss_fn(out[-1] * mask[s],
+                                  observed_scatter_masked[s])
                 )
                 epoch_loss += loss.item()
                 loss.backward()

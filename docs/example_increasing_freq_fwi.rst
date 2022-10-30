@@ -12,11 +12,14 @@ Because PyTorch enables us to chain operators together, and will automatically b
             super().__init__()
             self.min_vel = min_vel
             self.max_vel = max_vel
-            self.model = torch.nn.Parameter(torch.logit((initial - min_vel) /
-                                                        (max_vel - min_vel)))
+            self.model = torch.nn.Parameter(
+                torch.logit((initial - min_vel) /
+                            (max_vel - min_vel))
+            )
 
         def forward(self):
-            return (torch.sigmoid(self.model) * (self.max_vel - self.min_vel) +
+            return (torch.sigmoid(self.model) *
+                    (self.max_vel - self.min_vel) +
                     self.min_vel)
 
 

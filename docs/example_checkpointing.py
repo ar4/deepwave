@@ -7,7 +7,8 @@ import matplotlib.pyplot as plt
 import deepwave
 from deepwave import scalar
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cuda' if torch.cuda.is_available()
+                      else 'cpu')
 ny = 2301
 nx = 751
 dx = 4.0
@@ -58,14 +59,16 @@ observed_data = (
 source_locations = torch.zeros(n_shots, n_sources_per_shot, 2,
                                dtype=torch.long, device=device)
 source_locations[..., 1] = source_depth
-source_locations[:, 0, 0] = torch.arange(n_shots) * d_source + first_source
+source_locations[:, 0, 0] = (torch.arange(n_shots) * d_source +
+                             first_source)
 
 # receiver_locations
 receiver_locations = torch.zeros(n_shots, n_receivers_per_shot, 2,
                                  dtype=torch.long, device=device)
 receiver_locations[..., 1] = receiver_depth
 receiver_locations[:, :, 0] = (
-    (torch.arange(n_receivers_per_shot) * d_receiver + first_receiver)
+    (torch.arange(n_receivers_per_shot) * d_receiver +
+     first_receiver)
     .repeat(n_shots, 1)
 )
 
@@ -78,7 +81,8 @@ source_amplitudes = (
 # Upsample source_amplitudes
 max_vel = 2500
 dt, step_ratio = deepwave.common.cfl_condition(dx, dx, dt, max_vel)
-source_amplitudes = deepwave.common.upsample(source_amplitudes, step_ratio)
+source_amplitudes = deepwave.common.upsample(source_amplitudes,
+                                             step_ratio)
 observed_data = deepwave.common.upsample(observed_data, step_ratio)
 nt = source_amplitudes.shape[-1]
 
@@ -89,12 +93,14 @@ class Model(torch.nn.Module):
         super().__init__()
         self.min_vel = min_vel
         self.max_vel = max_vel
-        self.model = torch.nn.Parameter(torch.logit((initial - min_vel) /
-                                                    (max_vel - min_vel)))
+        self.model = torch.nn.Parameter(
+            torch.logit((initial - min_vel) /
+                        (max_vel - min_vel))
+        )
 
     def forward(self):
-        return (torch.sigmoid(self.model) * (self.max_vel - self.min_vel) +
-                self.min_vel)
+        return (torch.sigmoid(self.model) *
+                (self.max_vel - self.min_vel) + self.min_vel)
 
 
 model = Model(v_init, 1000, 2500).to(device)
@@ -146,7 +152,8 @@ observed_data = filt(taper(observed_data))
 for epoch in range(n_epochs):
     def closure():
         pml_width = 20
-        wavefield_size = [n_shots, ny + 2 * pml_width, nx + 2 * pml_width]
+        wavefield_size = [n_shots, ny + 2 * pml_width,
+                          nx + 2 * pml_width]
         wavefield_0 = torch.zeros(*wavefield_size, device=device)
         wavefield_m1 = torch.zeros(*wavefield_size, device=device)
         psiy_m1 = torch.zeros(*wavefield_size, device=device)
@@ -154,11 +161,13 @@ for epoch in range(n_epochs):
         zetay_m1 = torch.zeros(*wavefield_size, device=device)
         zetax_m1 = torch.zeros(*wavefield_size, device=device)
         optimiser.zero_grad()
-        receiver_amplitudes = torch.zeros(n_shots, n_receivers_per_shot, nt,
+        receiver_amplitudes = torch.zeros(n_shots,
+                                          n_receivers_per_shot, nt,
                                           device=device)
         v = model()
         k = 0
-        for i, chunk in enumerate(torch.chunk(source_amplitudes, n_segments,
+        for i, chunk in enumerate(torch.chunk(source_amplitudes,
+                                              n_segments,
                                               dim=-1)):
             if i == n_segments - 1:
                 (wavefield_0, wavefield_m1, psiy_m1, psix_m1,
@@ -170,10 +179,12 @@ for epoch in range(n_epochs):
             else:
                 (wavefield_0, wavefield_m1, psiy_m1, psix_m1,
                  zetay_m1, zetax_m1, receiver_amplitudes_chunk) = \
-                 torch.utils.checkpoint.checkpoint(wrap, v, chunk, wavefield_0,
+                 torch.utils.checkpoint.checkpoint(wrap, v, chunk,
+                                                   wavefield_0,
                                                    wavefield_m1,
                                                    psiy_m1, psix_m1,
-                                                   zetay_m1, zetax_m1)
+                                                   zetay_m1,
+                                                   zetax_m1)
             receiver_amplitudes[..., k:k+chunk.shape[-1]] = \
                 receiver_amplitudes_chunk
             k += chunk.shape[-1]
@@ -188,7 +199,8 @@ for epoch in range(n_epochs):
 v = model()
 vmin = v_true.min()
 vmax = v_true.max()
-_, ax = plt.subplots(3, figsize=(10.5, 10.5), sharex=True, sharey=True)
+_, ax = plt.subplots(3, figsize=(10.5, 10.5), sharex=True,
+                     sharey=True)
 ax[0].imshow(v_init.cpu().T, aspect='auto', cmap='gray',
              vmin=vmin, vmax=vmax)
 ax[0].set_title("Initial")

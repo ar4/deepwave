@@ -11,7 +11,8 @@ We continue with using the Marmousi model, but due to the computational cost of 
     import deepwave
     from deepwave import scalar
 
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    device = torch.device('cuda' if torch.cuda.is_available()
+                          else 'cpu')
     ny = 2301
     nx = 751
     dx = 4.0
@@ -25,7 +26,8 @@ We continue with using the Marmousi model, but due to the computational cost of 
 
 We smooth the true model to create our initial guess of the wavespeed, which we will attempt to improve with inversion. We also load the data that we generated in :doc:`the forward modelling example <example_forward_model>` to serve as our target observed data::
 
-    v_init = torch.tensor(1/gaussian_filter(1/v_true.numpy(), 40)).to(device)
+    v_init = (torch.tensor(1/gaussian_filter(1/v_true.numpy(), 40))
+              .to(device))
     v = v_init.clone()
     v.requires_grad_()
 
@@ -57,7 +59,9 @@ As our model is now smaller, we also need to extract only the portion of the obs
     n_shots = 20
     n_receivers_per_shot = 100
     nt = 300
-    observed_data = observed_data[:n_shots, :n_receivers_per_shot, :nt].to(device)
+    observed_data = (
+        observed_data[:n_shots, :n_receivers_per_shot, :nt].to(device)
+    )
 
 We set-up the sources and receivers as before::
 
@@ -65,14 +69,16 @@ We set-up the sources and receivers as before::
     source_locations = torch.zeros(n_shots, n_sources_per_shot, 2,
                                    dtype=torch.long, device=device)
     source_locations[..., 1] = source_depth
-    source_locations[:, 0, 0] = torch.arange(n_shots) * d_source + first_source
+    source_locations[:, 0, 0] = (torch.arange(n_shots) * d_source +
+                                 first_source)
 
     # receiver_locations
     receiver_locations = torch.zeros(n_shots, n_receivers_per_shot, 2,
                                      dtype=torch.long, device=device)
     receiver_locations[..., 1] = receiver_depth
     receiver_locations[:, :, 0] = (
-        (torch.arange(n_receivers_per_shot) * d_receiver + first_receiver)
+        (torch.arange(n_receivers_per_shot) * d_receiver +
+         first_receiver)
         .repeat(n_shots, 1)
     )
 

@@ -14,7 +14,8 @@ After setting up our model in a typical way, the interesting part in this exampl
     source_monopole[0, 0] = True
     source_monopole[0, 1] = False
     source_monopole[0, 2] = False
-    source_dipole_dim = torch.zeros(1, 3, dtype=torch.int, device=device)
+    source_dipole_dim = torch.zeros(1, 3, dtype=torch.int,
+                                    device=device)
     source_dipole_dim[0, 2] = 1
     hicks_source = deepwave.location_interpolation.Hicks(
         source_locations,
@@ -29,11 +30,13 @@ Similarly, we create three receivers, again a monopole and dipoles oriented in e
     receiver_locations = torch.zeros(1, 3, 2, device=device)
     receiver_locations[..., 0] = source_locations[0, 0, 0] - ny / 8
     receiver_locations[..., 1] = source_locations[0, 0, 1]
-    receiver_monopole = torch.zeros(1, 3, dtype=torch.bool, device=device)
+    receiver_monopole = torch.zeros(1, 3, dtype=torch.bool,
+                                    device=device)
     receiver_monopole[0, 0] = True
     receiver_monopole[0, 1] = False
     receiver_monopole[0, 2] = False
-    receiver_dipole_dim = torch.zeros(1, 3, dtype=torch.int, device=device)
+    receiver_dipole_dim = torch.zeros(1, 3, dtype=torch.int,
+                                      device=device)
     receiver_dipole_dim[0, 2] = 1
     hicks_receiver = deepwave.location_interpolation.Hicks(
         receiver_locations,
@@ -56,7 +59,9 @@ In the wavefield of the final time step of this propagation, we can see the thre
 Just as we used the `source` function of the `Hicks` object to convert the source amplitudes of our original point sources into the amplitudes for the array of grid-centred sources, we can use the `receiver` function to convert the receiver amplitudes recorded at the locations of the array of grid-centred receivers into the amplitudes that we would have recorded if we could have receivers at our desired non-grid-centred receiver locations::
 
     receiver_hicks_amplitudes = out[-1]
-    receiver_amplitudes = hicks_receiver.receiver(receiver_hicks_amplitudes)
+    receiver_amplitudes = hicks_receiver.receiver(
+        receiver_hicks_amplitudes
+    )
 
 Plotting these, we see how the three different types of receivers respond differently to the arrivals from the monopole source, even though all three receivers are located in the same place:
 
@@ -90,7 +95,8 @@ Finally, it is important to note that if your desired non-grid-point locations a
     hicks_source_locations = hicks.get_locations()
     hicks_source_locations[..., 0] += 3
     hicks_source_locations[..., 1] += 2
-    model = torch.nn.functional.pad(model[None], (3, 2), mode='replicate')[0]
+    model = torch.nn.functional.pad(model[None], (3, 2),
+                                    mode='replicate')[0]
 
 If you specify an edge as being a free surface, however, then the array of points will not extend beyond that edge.
 

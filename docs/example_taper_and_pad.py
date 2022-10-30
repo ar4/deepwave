@@ -4,7 +4,8 @@ import matplotlib.pyplot as plt
 import deepwave
 from deepwave import scalar
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cuda' if torch.cuda.is_available()
+                      else 'cpu')
 ny = 20
 nx = 100
 dx = 4.0
@@ -21,7 +22,9 @@ receiver_locations = torch.zeros(1, nx, 2,
 receiver_locations[:, :, 1] = torch.arange(nx)
 
 # source_locations
-source_locations = torch.tensor([0, nx//2]).long().to(device).reshape(1, 1, 2)
+source_locations = (
+    torch.tensor([0, nx//2]).long().to(device).reshape(1, 1, 2)
+)
 
 # source_amplitudes
 source_amplitudes = (
@@ -49,14 +52,15 @@ receiver_amplitudes_2 = out[-1][0].detach().clone()
 # Plot receiver amplitudes
 vmin, vmax = torch.quantile(receiver_amplitudes_1,
                             torch.tensor([0.05, 0.95]).to(device))
-_, ax = plt.subplots(1, 2, figsize=(10.5, 7), sharex=True, sharey=True)
-ax[0].imshow(receiver_amplitudes_1.cpu().T, aspect='auto', cmap='gray',
-             vmin=vmin, vmax=vmax)
+_, ax = plt.subplots(1, 2, figsize=(10.5, 7), sharex=True,
+                     sharey=True)
+ax[0].imshow(receiver_amplitudes_1.cpu().T, aspect='auto',
+             cmap='gray', vmin=vmin, vmax=vmax)
 ax[0].set_xlabel('Channel')
 ax[0].set_ylabel('Time Sample')
 ax[0].set_title('No taper or pad')
-ax[1].imshow(receiver_amplitudes_2.cpu().T, aspect='auto', cmap='gray',
-             vmin=vmin, vmax=vmax)
+ax[1].imshow(receiver_amplitudes_2.cpu().T, aspect='auto',
+             cmap='gray', vmin=vmin, vmax=vmax)
 ax[1].set_title('0.2 taper and pad')
 plt.tight_layout()
 plt.savefig('example_taper_and_pad.jpg')

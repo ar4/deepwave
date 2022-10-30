@@ -12,7 +12,8 @@ First, we need to import the necessary packages::
 
 We then choose which device we wish to run on, specify the size of the model, and load it::
 
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    device = torch.device('cuda' if torch.cuda.is_available()
+                          else 'cpu')
     ny = 2301
     nx = 751
     dx = 4.0
@@ -44,14 +45,16 @@ Next we will specify where we wish to place the sources and receivers, and what 
     source_locations = torch.zeros(n_shots, n_sources_per_shot, 2,
                                    dtype=torch.long, device=device)
     source_locations[..., 1] = source_depth
-    source_locations[:, 0, 0] = torch.arange(n_shots) * d_source + first_source
+    source_locations[:, 0, 0] = (torch.arange(n_shots) * d_source +
+                                 first_source)
 
     # receiver_locations
     receiver_locations = torch.zeros(n_shots, n_receivers_per_shot, 2,
                                      dtype=torch.long, device=device)
     receiver_locations[..., 1] = receiver_depth
     receiver_locations[:, :, 0] = (
-        (torch.arange(n_receivers_per_shot) * d_receiver + first_receiver)
+        (torch.arange(n_receivers_per_shot) * d_receiver +
+         first_receiver)
         .repeat(n_shots, 1)
     )
 
@@ -80,10 +83,10 @@ Finally, we will plot one common shot gather and one common receiver gather of t
     vmin, vmax = torch.quantile(receiver_amplitudes[0],
                                 torch.tensor([0.05, 0.95]).to(device))
     _, ax = plt.subplots(1, 2, figsize=(10.5, 7), sharey=True)
-    ax[0].imshow(receiver_amplitudes[57].cpu().T, aspect='auto', cmap='gray',
-                 vmin=vmin, vmax=vmax)
-    ax[1].imshow(receiver_amplitudes[:, 192].cpu().T, aspect='auto', cmap='gray',
-                 vmin=vmin, vmax=vmax)
+    ax[0].imshow(receiver_amplitudes[57].cpu().T, aspect='auto',
+                 cmap='gray', vmin=vmin, vmax=vmax)
+    ax[1].imshow(receiver_amplitudes[:, 192].cpu().T, aspect='auto',
+                 cmap='gray', vmin=vmin, vmax=vmax)
     ax[0].set_xlabel("Channel")
     ax[0].set_ylabel("Time Sample")
     ax[1].set_xlabel("Shot")

@@ -3,7 +3,8 @@ import matplotlib.pyplot as plt
 import deepwave
 from deepwave import scalar
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cuda' if torch.cuda.is_available()
+                      else 'cpu')
 ny = 100
 nx = 300
 dx = 4.0
@@ -29,7 +30,8 @@ source_monopole = torch.zeros(1, 3, dtype=torch.bool, device=device)
 source_monopole[0, 0] = True
 source_monopole[0, 1] = False
 source_monopole[0, 2] = False
-source_dipole_dim = torch.zeros(1, 3, dtype=torch.int, device=device)
+source_dipole_dim = torch.zeros(1, 3, dtype=torch.int,
+                                device=device)
 source_dipole_dim[0, 2] = 1
 hicks_source = deepwave.location_interpolation.Hicks(
     source_locations,
@@ -42,11 +44,13 @@ hicks_source_amplitudes = hicks_source.source(source_amplitudes)
 receiver_locations = torch.zeros(1, 3, 2, device=device)
 receiver_locations[..., 0] = source_locations[0, 0, 0] - ny / 8
 receiver_locations[..., 1] = source_locations[0, 0, 1]
-receiver_monopole = torch.zeros(1, 3, dtype=torch.bool, device=device)
+receiver_monopole = torch.zeros(1, 3, dtype=torch.bool,
+                                device=device)
 receiver_monopole[0, 0] = True
 receiver_monopole[0, 1] = False
 receiver_monopole[0, 2] = False
-receiver_dipole_dim = torch.zeros(1, 3, dtype=torch.int, device=device)
+receiver_dipole_dim = torch.zeros(1, 3, dtype=torch.int,
+                                  device=device)
 receiver_dipole_dim[0, 2] = 1
 hicks_receiver = deepwave.location_interpolation.Hicks(
     receiver_locations,
@@ -69,7 +73,9 @@ plt.savefig('example_location_interpolation_wavefield.jpg')
 
 # Plot receiver amplitudes
 receiver_hicks_amplitudes = out[-1]
-receiver_amplitudes = hicks_receiver.receiver(receiver_hicks_amplitudes)
+receiver_amplitudes = hicks_receiver.receiver(
+    receiver_hicks_amplitudes
+)
 plt.figure(figsize=(10.5, 7))
 plt.plot(receiver_amplitudes[0, 0].cpu(), label='Monopole')
 plt.plot(receiver_amplitudes[0, 1].cpu(), label='Dipole 0')
@@ -96,8 +102,10 @@ out3 = scalar(v, dx / 2, dt,
 receiver_amplitudes2 = out2[-1]
 receiver_amplitudes3 = out3[-1]
 plt.figure(figsize=(10.5, 7))
-plt.plot(receiver_amplitudes[0, 0].cpu(), label='Hicks', linewidth=6)
-plt.plot(receiver_amplitudes2[0, 0].cpu(), 'g', label='Without Hicks')
+plt.plot(receiver_amplitudes[0, 0].cpu(), label='Hicks',
+         linewidth=6)
+plt.plot(receiver_amplitudes2[0, 0].cpu(), 'g',
+         label='Without Hicks')
 plt.plot(receiver_amplitudes3[0, 0].cpu(), 'r', label='Denser grid')
 plt.legend()
 plt.xlabel('Time sample')

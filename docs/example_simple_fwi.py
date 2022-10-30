@@ -4,7 +4,8 @@ import matplotlib.pyplot as plt
 import deepwave
 from deepwave import scalar
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cuda' if torch.cuda.is_available()
+                      else 'cpu')
 ny = 2301
 nx = 751
 dx = 4.0
@@ -17,7 +18,8 @@ nx = 250
 v_true = v_true[:ny, :nx]
 
 # Smooth to use as starting model
-v_init = torch.tensor(1/gaussian_filter(1/v_true.numpy(), 40)).to(device)
+v_init = (torch.tensor(1/gaussian_filter(1/v_true.numpy(), 40))
+          .to(device))
 v = v_init.clone()
 v.requires_grad_()
 
@@ -48,20 +50,24 @@ observed_data = (
 n_shots = 20
 n_receivers_per_shot = 100
 nt = 300
-observed_data = observed_data[:n_shots, :n_receivers_per_shot, :nt].to(device)
+observed_data = (
+    observed_data[:n_shots, :n_receivers_per_shot, :nt].to(device)
+)
 
 # source_locations
 source_locations = torch.zeros(n_shots, n_sources_per_shot, 2,
                                dtype=torch.long, device=device)
 source_locations[..., 1] = source_depth
-source_locations[:, 0, 0] = torch.arange(n_shots) * d_source + first_source
+source_locations[:, 0, 0] = (torch.arange(n_shots) * d_source +
+                             first_source)
 
 # receiver_locations
 receiver_locations = torch.zeros(n_shots, n_receivers_per_shot, 2,
                                  dtype=torch.long, device=device)
 receiver_locations[..., 1] = receiver_depth
 receiver_locations[:, :, 0] = (
-    (torch.arange(n_receivers_per_shot) * d_receiver + first_receiver)
+    (torch.arange(n_receivers_per_shot) * d_receiver +
+     first_receiver)
     .repeat(n_shots, 1)
 )
 
@@ -102,7 +108,8 @@ for epoch in range(n_epochs):
 # Plot
 vmin = v_true.min()
 vmax = v_true.max()
-_, ax = plt.subplots(3, figsize=(10.5, 10.5), sharex=True, sharey=True)
+_, ax = plt.subplots(3, figsize=(10.5, 10.5), sharex=True,
+                     sharey=True)
 ax[0].imshow(v_init.cpu().T, aspect='auto', cmap='gray',
              vmin=vmin, vmax=vmax)
 ax[0].set_title("Initial")

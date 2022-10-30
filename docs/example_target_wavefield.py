@@ -2,7 +2,8 @@ import torch
 import torchvision
 import deepwave
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cuda' if torch.cuda.is_available()
+                      else 'cpu')
 ny = 200
 nx = 200
 dx = 5
@@ -24,10 +25,15 @@ v = 2000*torch.ones(ny, nx, device=device)
 source_locations = torch.zeros(n_shots, n_sources_per_shot, 2,
                                dtype=torch.long, device=device)
 torch.manual_seed(1)
-grid_cells = torch.cartesian_prod(torch.arange(ny), torch.arange(nx))
-source_cell_idxs = torch.randperm(len(grid_cells))[:n_sources_per_shot]
-source_locations = (grid_cells[source_cell_idxs]
-                    .reshape(1, n_sources_per_shot, 2)).long().to(device)
+grid_cells = torch.cartesian_prod(torch.arange(ny),
+                                  torch.arange(nx))
+source_cell_idxs = (
+    torch.randperm(len(grid_cells))[:n_sources_per_shot]
+)
+source_locations = (
+    grid_cells[source_cell_idxs]
+    .reshape(1, n_sources_per_shot, 2).long().to(device)
+)
 
 # source_amplitudes
 source_amplitudes = (
@@ -55,10 +61,12 @@ def closure():
 for i in range(50):
     optimiser.step(closure)
 
-source_amplitudes.detach().cpu().numpy().tofile('source_amplitudes.bin')
+(source_amplitudes.detach().cpu().numpy()
+ .tofile('source_amplitudes.bin'))
 
 dt, step_ratio = deepwave.common.cfl_condition(dx, dx, dt, 2000)
-source_amplitudes = deepwave.common.upsample(source_amplitudes, step_ratio)
+source_amplitudes = deepwave.common.upsample(source_amplitudes,
+                                             step_ratio)
 
 target_abs_max = target.abs().max()
 for i in range(nt):
