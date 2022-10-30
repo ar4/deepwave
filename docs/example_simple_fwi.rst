@@ -122,6 +122,6 @@ The result is quite a good improvement in the accuracy of our estimate of the wa
 
 .. image:: example_simple_fwi.jpg
 
-This is a simple implementation of FWI. Faster convergence and greater robustness in more realistic situations can be achieved with modifications such as a more sophisticated loss function. As PyTorch will automatically backpropagate through any differentiable operations that you apply to the output of Deepwave, you only have to specify the forward action of such loss functions and can then let PyTorch automatically handle the backpropagation.
+This is a simple implementation of FWI. Faster convergence and greater robustness in more realistic situations can be achieved with modifications such as a more sophisticated loss function. You can find some slightly more sophisticated setups in some of the other examples, and Deepwave makes it easy for you to come-up with your own. As PyTorch will automatically backpropagate through any differentiable operations that you apply to the output of Deepwave, you only have to specify the forward action of such loss functions and can then let PyTorch automatically handle the backpropagation.
 
 `Full example code <https://github.com/ar4/deepwave/blob/master/docs/example_simple_fwi.py>`_
