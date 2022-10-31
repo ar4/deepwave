@@ -9,7 +9,7 @@ Deepwave provides wave propagation modules for PyTorch, for applications such as
 ## Features
 - Supports the 2D constant density acoustic / scalar wave equation (regular and Born modelling) and 2D elastic wave equation (P-SV)
 - Runs on CPUs and appropriate GPUs
-- The gradient of all outputs (final wavefields and receiver data) can be calculated with respect to the wavespeed, scattering potential, initial wavefields, and source amplitudes
+- The gradient of all outputs (final wavefields and receiver data) can be calculated with respect to the model parameters (wavespeed, scattering potential, etc.), initial wavefields, and source amplitudes
 - Uses the [Pasalic and McGarry](https://doi.org/10.1190/1.3513453) PML for accurate absorbing boundaries in the scalar wave propagator
 - Uses [C-PML](https://doi.org/10.3970/cmes.2008.037.274) with the [W-AFDA](https://doi.org/10.1023/A:1019866422821) free-surface method for the elastic wave propagator
 - The PML width for each edge can be set independently, allowing a free surface (no PML) on any side
