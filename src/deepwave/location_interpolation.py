@@ -39,14 +39,14 @@ def _get_hicks_for_one_location_dim(
                     torch.i0(beta)
                 )
             hicks_weight_cache[key] = weights
-        if free_surface[0] and locations[0] < 0:
-            idx0 = -locations[0]
+        if free_surface[0] and locations[0].item() < 0:
+            idx0 = int(-locations[0].item())
             locations = locations[idx0:]
             flipped_weights = weights[:idx0-1].flip(0)
             weights[idx0:idx0 + len(flipped_weights)] -= flipped_weights
             weights = weights[idx0:]
-        if free_surface[1] and locations[-1] >= size:
-            idxe = size - locations[-1] - 1
+        if free_surface[1] and locations[-1].item() >= size:
+            idxe = size - int(locations[-1].item()) - 1
             locations = locations[:idxe]
             flipped_weights = weights[idxe+1:].flip(0)
             weights[idxe - len(flipped_weights):idxe] -= flipped_weights
@@ -74,11 +74,11 @@ def _get_hicks_locations_and_weights(
         locations_dict: Dict[Tensor, int] = {}
         for i in range(n_per_shot):
             if isinstance(monopole, Tensor):
-                monopole_i = monopole[shotidx, i]
+                monopole_i = bool(monopole[shotidx, i].item())
             else:
                 monopole_i = monopole
             if isinstance(dipole_dim, Tensor):
-                dipole_dim_i = dipole_dim[shotidx, i]
+                dipole_dim_i = int(dipole_dim[shotidx, i].item())
             else:
                 dipole_dim_i = dipole_dim
             locations0, weights0 = \
@@ -126,7 +126,8 @@ def _get_hicks_locations_and_weights(
     return hicks_locations, hicks_idxs, weights
 
 
-def _check_shot_idxs(amplitudes: Tensor, shot_idxs: Optional[Tensor] = None):
+def _check_shot_idxs(amplitudes: Tensor,
+                     shot_idxs: Optional[Tensor] = None) -> None:
     if (shot_idxs is not None and shot_idxs.shape != (len(amplitudes),)):
         raise RuntimeError("shot_idxs must have the same length "
                            "as amplitudes")

@@ -28,7 +28,7 @@ def test_monopole(c=1500, freq=25, dx=(5, 5), dt=0.001,
     hicks_source = Hicks(source_locations, dtype=dtype)
     hicks_source_locations = hicks_source.hicks_locations
     hicks_amplitudes = hicks_source.source(source_amplitudes)
-    hicks_receiver = Hicks(receiver_locations, dtype=dtype)
+    hicks_receiver = torch.jit.script(Hicks(receiver_locations, dtype=dtype))
     hicks_receiver_locations = hicks_receiver.hicks_locations
     o = deepwave.scalar(model, dx, dt,
                         source_amplitudes=hicks_amplitudes,
@@ -54,7 +54,7 @@ def test_shot_idxs(n_shots=10, n_per_shot=3, nt=5, device=None,
                            device=device)*10
     amplitudes = torch.randn(n_shots, n_per_shot, nt, dtype=dtype,
                              device=device)
-    hicks = Hicks(locations, dtype=dtype)
+    hicks = torch.jit.script(Hicks(locations, dtype=dtype))
     hicks_amplitudes_fwd = hicks.source(amplitudes)
     shot_idxs = torch.tensor([n_shots//2])
     hicks_amplitudes_half = hicks.source(amplitudes[shot_idxs], shot_idxs)
