@@ -2,7 +2,7 @@
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.3829886.svg)](https://doi.org/10.5281/zenodo.3829886)
 
-Deepwave provides wave propagation modules for PyTorch, for applications such as seismic imaging/inversion. You can use it to perform forward modelling and backpropagation, so it can simulate wave propagation to generate synthetic data, invert for the scattering potential (RTM/LSRTM) or wavespeed (FWI), or you can use it to integrate wave propagation into a larger chain of operations with end-to-end forward and backpropagation. You can easily experiment with your own objective functions or functions that generate the inputs to the propagator, and let PyTorch's automatic differentiation do the hard work of calculating how to backpropagate through them.
+Deepwave provides wave propagation modules for PyTorch, for applications such as seismic imaging/inversion. You can use it to perform forward modelling and backpropagation, so it can simulate wave propagation to generate synthetic data, invert for the scattering potential (RTM/LSRTM), other model parameters (FWI), initial wavefields, or source wavelets. You can use it to integrate wave propagation into a larger chain of operations with end-to-end forward and backpropagation. Deepwave enables you to easily experiment with your own objective functions or functions that generate the inputs to the propagator, letting PyTorch's automatic differentiation do the hard work of calculating how to backpropagate through them.
 
 [The documentation](https://ausargeo.com/deepwave) contains examples and instructions on how to install and use Deepwave.
 
@@ -52,14 +52,14 @@ There are more examples in [the documentation](https://ausargeo.com/deepwave).
 
 If you would like to cite Deepwave, I suggest:
 ```bibtex
-@software{richardson_alan_2022_6790957,
+@software{richardson_alan_2022,
   author       = {Richardson, Alan},
   title        = {Deepwave},
-  month        = jul,
+  month        = oct,
   year         = 2022,
   publisher    = {Zenodo},
-  version      = {v0.0.13},
-  doi          = {10.5281/zenodo.6790957},
-  url          = {https://doi.org/10.5281/zenodo.6790957}
+  version      = {v0.0.16},
+  doi          = {10.5281/zenodo.7267404},
+  url          = {https://doi.org/10.5281/zenodo.7267404}
 }
 ```
