@@ -209,7 +209,7 @@ def test_forward_cpu_gpu_match():
         actual_gpu = run_forward_2d(propagator=scalarprop,
                                     device=torch.device("cuda"))
         for cpui, gpui in zip(actual_cpu[:-1], actual_gpu[:-1]):
-            assert torch.allclose(cpui, gpui.cpu(), atol=1e-6)
+            assert torch.allclose(cpui, gpui.cpu(), atol=2e-6)
         cpui = actual_cpu[-1]
         gpui = actual_cpu[-1]
         assert torch.allclose(cpui, gpui.cpu(), atol=5e-5)

@@ -339,7 +339,7 @@ def test_forward_cpu_gpu_match():
         actual_gpu = run_born_forward_2d(propagator=scalarbornprop,
                                          device=torch.device("cuda"))
         for cpui, gpui in zip(actual_cpu, actual_gpu):
-            assert torch.allclose(cpui, gpui.cpu(), atol=5e-6)
+            assert torch.allclose(cpui, gpui.cpu(), atol=1e-5)
 
 
 def test_born_gradcheck_2d():
