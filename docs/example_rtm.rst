@@ -85,7 +85,7 @@ Born modelling only produces singly-scattered waves, however, while the observed
     mask = torch.ones_like(observed_data)
     flat_len = 100
     taper_len = 200
-    taper = torch.cos(torch.arange(taper_len)/taper_len * torch.pi/2)
+    taper = torch.cos(torch.arange(taper_len)/taper_len * math.pi/2)
     mute_len = flat_len + 2*taper_len
     mute = torch.zeros(mute_len, device=device)
     mute[:taper_len] = taper

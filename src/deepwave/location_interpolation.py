@@ -1,5 +1,6 @@
 "Interpolation of points at arbitrary locations onto a grid."
 from typing import List, Optional, Union, Dict, Tuple
+import math
 import torch
 from torch import Tensor
 DEFAULT_EPS = 1e-5
@@ -33,7 +34,7 @@ def _get_hicks_for_one_location_dim(
                 )
             else:
                 weights = (
-                    (torch.cos(torch.pi * x) - torch.sinc(x)) /
+                    (torch.cos(math.pi * x) - torch.sinc(x)) /
                     (x**2 + eps) * x *
                     torch.i0(beta * (1 - (x / halfwidth)**2).sqrt()) /
                     torch.i0(beta)

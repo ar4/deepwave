@@ -440,18 +440,18 @@ def cosine_taper_end(signal: Tensor, n_taper: int) -> Tensor:
     Returns:
         The tapered signal.
     """
-    taper = torch.ones(signal.shape[-1], dtype=signal.real.dtype,
+    taper = torch.ones(signal.shape[-1], dtype=signal.dtype,
                        device=signal.device)
     taper[len(taper)-n_taper:] = (
-        torch.cos(torch.arange(n_taper, dtype=signal.real.dtype,
+        torch.cos(torch.arange(n_taper,
                                device=signal.device) /
-                  (n_taper - 1) * torch.pi) + 1
-    ) / 2
+                  (n_taper - 1) * math.pi) + 1
+    ).to(signal.dtype) / 2
     return signal * taper
 
 
 def zero_last_element_of_final_dimension(signal: Tensor) -> Tensor:
-    zeroer = torch.ones(signal.shape[-1], dtype=signal.real.dtype,
+    zeroer = torch.ones(signal.shape[-1], dtype=signal.dtype,
                         device=signal.device)
     zeroer[-1] = 0
     return signal * zeroer

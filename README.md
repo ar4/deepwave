@@ -55,11 +55,11 @@ If you would like to cite Deepwave, I suggest:
 @software{richardson_alan_2022,
   author       = {Richardson, Alan},
   title        = {Deepwave},
-  month        = oct,
+  month        = nov,
   year         = 2022,
   publisher    = {Zenodo},
-  version      = {v0.0.16},
-  doi          = {10.5281/zenodo.7267404},
-  url          = {https://doi.org/10.5281/zenodo.7267404}
+  version      = {v0.0.17},
+  doi          = {10.5281/zenodo.7278382},
+  url          = {https://doi.org/10.5281/zenodo.7278382}
 }
 ```
