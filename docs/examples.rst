@@ -16,3 +16,4 @@ These examples demonstrate how to use Deepwave. Each is designed to show differe
     example_distributed
     example_elastic
     example_generated_model
+    example_large_edge_gradient
