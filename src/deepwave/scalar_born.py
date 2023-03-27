@@ -66,6 +66,7 @@ class ScalarBorn(torch.nn.Module):
     def forward(self, dt: float, source_amplitudes: Optional[Tensor] = None,
                 source_locations: Optional[Tensor] = None,
                 receiver_locations: Optional[Tensor] = None,
+                bg_receiver_locations: Optional[Tensor] = None,
                 accuracy: int = 4, pml_width: Union[int, List[int]] = 20,
                 pml_freq: Optional[float] = None,
                 max_vel: Optional[float] = None,
@@ -88,7 +89,7 @@ class ScalarBorn(torch.nn.Module):
                 model_gradient_sampling_interval: int = 1) -> Tuple[
                     Tensor, Tensor, Tensor, Tensor, Tensor, Tensor,
                     Tensor, Tensor, Tensor, Tensor, Tensor, Tensor,
-                    Tensor]:
+                    Tensor, Tensor]:
         """Perform forward propagation/modelling.
 
         The inputs are the same as for :func:`scalar_born` except that `v`,
@@ -100,6 +101,7 @@ class ScalarBorn(torch.nn.Module):
                            source_amplitudes=source_amplitudes,
                            source_locations=source_locations,
                            receiver_locations=receiver_locations,
+                           bg_receiver_locations=bg_receiver_locations,
                            accuracy=accuracy, pml_width=pml_width,
                            pml_freq=pml_freq, max_vel=max_vel,
                            survey_pad=survey_pad,
@@ -123,6 +125,7 @@ def scalar_born(v: Tensor, scatter: Tensor,
                 dt: float, source_amplitudes: Optional[Tensor] = None,
                 source_locations: Optional[Tensor] = None,
                 receiver_locations: Optional[Tensor] = None,
+                bg_receiver_locations: Optional[Tensor] = None,
                 accuracy: int = 4, pml_width: Union[int, List[int]] = 20,
                 pml_freq: Optional[float] = None,
                 max_vel: Optional[float] = None,
@@ -147,7 +150,7 @@ def scalar_born(v: Tensor, scatter: Tensor,
                 time_pad_frac: float = 0.0) -> Tuple[
                     Tensor, Tensor, Tensor, Tensor, Tensor, Tensor,
                     Tensor, Tensor, Tensor, Tensor, Tensor, Tensor,
-                    Tensor]:
+                    Tensor, Tensor]:
     """Scalar Born wave propagation (functional interface).
 
     This function performs Born forward modelling with the scalar wave
@@ -167,6 +170,14 @@ def scalar_born(v: Tensor, scatter: Tensor,
             potential. Unlike the module interface (:class:`ScalarBorn`),
             in this functional interface a copy is not made of the model,
             so gradients will propagate back into the provided Tensor.
+        bg_receiver_locations:
+            A Tensor with dimensions [shot, receiver, 2], containing
+            the coordinates of the cell containing each receiver of the
+            background wavefield. Optional.
+            It should have torch.long (int64) datatype. If not provided,
+            the output `bg_receiver_amplitudes` Tensor will be empty. If
+            backpropagation will be performed, the location of each
+            background receiver must be unique within the same shot.
         wavefield_sc_0, wavefield_sc_m1:
             The equivalent of `wavefield_0`, etc., for the scattered
             wavefield.
@@ -191,6 +202,12 @@ def scalar_born(v: Tensor, scatter: Tensor,
             psiy_sc_ntm1, psix_sc_ntm1, zetay_sc_ntm1, zetax_sc_ntm1:
                 Tensor containing the wavefield related to the scattered
                 wavefield PML.
+            bg_receiver_amplitudes:
+                A Tensor of dimensions [shot, receiver, time] containing
+                the receiver amplitudes recorded at the provided receiver
+                locations, extracted from the background wavefield. If no
+                receiver locations were specified then this Tensor will be
+                empty.
             receiver_amplitudes:
                 A Tensor of dimensions [shot, receiver, time] containing
                 the receiver amplitudes recorded at the provided receiver
@@ -210,7 +227,8 @@ def scalar_born(v: Tensor, scatter: Tensor,
                           zetay_m1, zetax_m1, wavefield_sc_0, wavefield_sc_m1,
                           psiy_sc_m1, psix_sc_m1, zetay_sc_m1, zetax_sc_m1],
                          [source_amplitudes],
-                         [source_locations], [receiver_locations],
+                         [source_locations],
+                         [receiver_locations, bg_receiver_locations],
                          accuracy, pml_width, pml_freq, max_vel,
                          survey_pad,
                          origin, nt, model_gradient_sampling_interval,
@@ -221,10 +239,11 @@ def scalar_born(v: Tensor, scatter: Tensor,
     source_amplitudes = source_amplitudes_l[0]
     sources_i = sources_i_l[0]
     receivers_i = receivers_i_l[0]
+    bg_receivers_i = receivers_i_l[1]
     ay, ax, by, bx = pml_profiles
 
     (wfc, wfp, psiy, psix, zetay, zetax, wfcsc, wfpsc, psiysc, psixsc,
-     zetaysc, zetaxsc, receiver_amplitudes) = \
+     zetaysc, zetaxsc, bg_receiver_amplitudes, receiver_amplitudes) = \
         torch.ops.deepwave.scalar_born(v, scatter,
                                        source_amplitudes, wfc, wfp,
                                        psiy, psix, zetay, zetax,
@@ -232,6 +251,7 @@ def scalar_born(v: Tensor, scatter: Tensor,
                                        zetaysc, zetaxsc, ay, ax, by, bx,
                                        sources_i,
                                        receivers_i,
+                                       bg_receivers_i,
                                        dy, dx, dt, nt, n_batch,
                                        step_ratio *
                                        model_gradient_sampling_interval,
@@ -242,6 +262,11 @@ def scalar_born(v: Tensor, scatter: Tensor,
     receiver_amplitudes = downsample_and_movedim(receiver_amplitudes,
                                                  step_ratio, freq_taper_frac,
                                                  time_pad_frac)
+    bg_receiver_amplitudes = downsample_and_movedim(bg_receiver_amplitudes,
+                                                    step_ratio,
+                                                    freq_taper_frac,
+                                                    time_pad_frac)
 
     return (wfc, wfp, psiy, psix, zetay, zetax, wfcsc, wfpsc, psiysc,
-            psixsc, zetaysc, zetaxsc, receiver_amplitudes)
+            psixsc, zetaysc, zetaxsc, bg_receiver_amplitudes,
+            receiver_amplitudes)

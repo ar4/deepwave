@@ -871,13 +871,15 @@ void forward_batch(
     T *__restrict wfpsc, T *__restrict psiysc, T *__restrict psixsc,
     T *__restrict psiynsc, T *__restrict psixnsc, T *__restrict zetaysc,
     T *__restrict zetaxsc, int64_t const *__restrict sources_i,
-    int64_t const *__restrict receivers_i, T *__restrict w_store,
+    int64_t const *__restrict receivers_i,
+    int64_t const *__restrict bg_receivers_i, T *__restrict w_store,
     T *__restrict wsc_store, T const *__restrict v, T const *scatter,
-    T const *__restrict f, T *__restrict r, T const *__restrict ay,
-    T const *__restrict ax, T const *__restrict by, T const *__restrict bx,
-    T const *__restrict daydy, T const *__restrict daxdx,
-    T const *__restrict dbydy, T const *__restrict dbxdx,
-    int64_t n_sources_per_shot, int64_t n_receivers_per_shot, int64_t ny,
+    T const *__restrict f, T *__restrict r, T *__restrict bg_r,
+    T const *__restrict ay, T const *__restrict ax, T const *__restrict by,
+    T const *__restrict bx, T const *__restrict daydy,
+    T const *__restrict daxdx, T const *__restrict dbydy,
+    T const *__restrict dbxdx, int64_t n_sources_per_shot,
+    int64_t n_receivers_per_shot, int64_t n_bg_receivers_per_shot, int64_t ny,
     int64_t nx, int64_t nt, int64_t step_ratio, bool v_requires_grad,
     bool scatter_requires_grad, int64_t n_batch) {
   constexpr int fd_pad{A / 2};
@@ -900,6 +902,11 @@ void forward_batch(
       ceil_div(n_batch, static_cast<int64_t>(dimBlock_receivers.y))};
   auto gridz_receivers{1};
   dim3 dimGrid_receivers(gridx_receivers, gridy_receivers, gridz_receivers);
+  auto gridx_bg_receivers{ceil_div(n_bg_receivers_per_shot,
+                                   static_cast<int64_t>(dimBlock_receivers.x))};
+  dim3 dimGrid_bg_receivers(gridx_bg_receivers, gridy_receivers,
+                            gridz_receivers);
+
   for (int64_t t{}; t < nt; ++t) {
     if (t % step_ratio == 0 and (v_requires_grad or scatter_requires_grad)) {
       if (v_requires_grad and scatter_requires_grad) {
@@ -942,6 +949,12 @@ void forward_batch(
           n_receivers_per_shot, n_batch);
       gpuErrchk(cudaPeekAtLastError());
     }
+    if (n_bg_receivers_per_shot > 0) {
+      record_receivers<<<dimGrid_bg_receivers, dimBlock_receivers>>>(
+          bg_r + t * n_batch * n_bg_receivers_per_shot, wfc, bg_receivers_i,
+          n_bg_receivers_per_shot, n_batch);
+      gpuErrchk(cudaPeekAtLastError());
+    }
     std::swap(wfp, wfc);
     std::swap(psiyn, psiy);
     std::swap(psixn, psix);
@@ -976,14 +989,16 @@ void backward_batch(
     T *__restrict psixsc, T *__restrict psiynsc, T *__restrict psixnsc,
     T *__restrict zetaysc, T *__restrict zetaxsc, T *__restrict zetaynsc,
     T *__restrict zetaxnsc, int64_t const *__restrict sources_i,
-    int64_t const *__restrict receivers_i, T const *__restrict w_store,
+    int64_t const *__restrict receivers_i,
+    int64_t const *__restrict bg_receivers_i, T const *__restrict w_store,
     T const *__restrict wsc_store, T const *__restrict v,
     T const *__restrict scatter, T *__restrict f, T const *__restrict r,
-    T *__restrict grad_v, T *__restrict grad_scatter, T const *__restrict ay,
-    T const *__restrict ax, T const *__restrict by, T const *__restrict bx,
-    T const *__restrict daydy, T const *__restrict daxdx,
-    T const *__restrict dbydy, T const *__restrict dbxdx,
-    int64_t n_sources_per_shot, int64_t n_receivers_per_shot, int64_t ny,
+    T const *__restrict bg_r, T *__restrict grad_v, T *__restrict grad_scatter,
+    T const *__restrict ay, T const *__restrict ax, T const *__restrict by,
+    T const *__restrict bx, T const *__restrict daydy,
+    T const *__restrict daxdx, T const *__restrict dbydy,
+    T const *__restrict dbxdx, int64_t n_sources_per_shot,
+    int64_t n_receivers_per_shot, int64_t n_bg_receivers_per_shot, int64_t ny,
     int64_t nx, int64_t nt, int64_t step_ratio, bool v_requires_grad,
     bool scatter_requires_grad, int64_t n_batch) {
   constexpr int fd_pad{A / 2};
@@ -1006,11 +1021,21 @@ void backward_batch(
       ceil_div(n_batch, static_cast<int64_t>(dimBlock_receivers.y))};
   auto gridz_receivers{1};
   dim3 dimGrid_receivers(gridx_receivers, gridy_receivers, gridz_receivers);
+  auto gridx_bg_receivers{ceil_div(n_bg_receivers_per_shot,
+                                   static_cast<int64_t>(dimBlock_receivers.x))};
+  dim3 dimGrid_bg_receivers(gridx_bg_receivers, gridy_receivers,
+                            gridz_receivers);
   for (int64_t t{nt - 1}; t >= 0; --t) {
     if (n_receivers_per_shot > 0) {
       add_sources<<<dimGrid_receivers, dimBlock_receivers>>>(
           wfpsc, r + t * n_batch * n_receivers_per_shot, receivers_i,
           n_receivers_per_shot, n_batch);
+      gpuErrchk(cudaPeekAtLastError());
+    }
+    if (n_bg_receivers_per_shot > 0) {
+      add_sources<<<dimGrid_bg_receivers, dimBlock_receivers>>>(
+          wfp, bg_r + t * n_batch * n_bg_receivers_per_shot, bg_receivers_i,
+          n_bg_receivers_per_shot, n_batch);
       gpuErrchk(cudaPeekAtLastError());
     }
     if (n_sources_per_shot > 0) {
@@ -1176,10 +1201,10 @@ class ScalarBornCUDAFunction
       torch::Tensor const &zetaysc0, torch::Tensor const &zetaxsc0,
       torch::Tensor const &ay, torch::Tensor const &ax, torch::Tensor const &by,
       torch::Tensor const &bx, torch::Tensor const &sources_i,
-      torch::Tensor const &receivers_i, double dy, double dx, double dt,
-      int64_t nt, int64_t n_batch, int64_t step_ratio, int64_t accuracy,
-      int64_t pml_width0, int64_t pml_width1, int64_t pml_width2,
-      int64_t pml_width3) {
+      torch::Tensor const &receivers_i, torch::Tensor const &bg_receivers_i,
+      double dy, double dx, double dt, int64_t nt, int64_t n_batch,
+      int64_t step_ratio, int64_t accuracy, int64_t pml_width0,
+      int64_t pml_width1, int64_t pml_width2, int64_t pml_width3) {
     TORCH_CHECK(v.is_cuda(), "v must be a CUDA tensor");
     at::cuda::CUDAGuard device_guard(v.device());
     at::AutoDispatchBelowADInplaceOrView g;
@@ -1219,6 +1244,10 @@ class ScalarBornCUDAFunction
     if (receivers_i.numel() > 0) {
       n_receivers_per_shot = receivers_i.size(1);
     }
+    int64_t n_bg_receivers_per_shot{};
+    if (bg_receivers_i.numel() > 0) {
+      n_bg_receivers_per_shot = bg_receivers_i.size(1);
+    }
     auto wfc{create_or_pad(wfc0, fd_pad, options, size_with_batch)};
     auto wfp{create_or_pad(wfp0, fd_pad, options, size_with_batch)};
     auto psiy{create_or_pad(psiy0, fd_pad, options, size_with_batch)};
@@ -1236,6 +1265,7 @@ class ScalarBornCUDAFunction
     auto psiynsc{at::zeros_like(psiysc)};
     auto psixnsc{at::zeros_like(psixsc)};
     auto r{at::empty({nt, n_batch, n_receivers_per_shot}, options)};
+    auto bg_r{at::empty({nt, n_batch, n_bg_receivers_per_shot}, options)};
     auto daydy{at::zeros_like(ay)};
     auto daxdx{at::zeros_like(ax)};
     auto dbydy{at::zeros_like(by)};
@@ -1273,6 +1303,7 @@ class ScalarBornCUDAFunction
           scalar_t const *__restrict scatter_a{scatter.data_ptr<scalar_t>()};
           scalar_t const *__restrict f_a{f.data_ptr<scalar_t>()};
           scalar_t *__restrict r_a{r.data_ptr<scalar_t>()};
+          scalar_t *__restrict bg_r_a{bg_r.data_ptr<scalar_t>()};
           scalar_t *__restrict wfc_a{wfc.data_ptr<scalar_t>()};
           scalar_t *__restrict wfp_a{wfp.data_ptr<scalar_t>()};
           scalar_t *__restrict psiy_a{psiy.data_ptr<scalar_t>()};
@@ -1300,6 +1331,8 @@ class ScalarBornCUDAFunction
           int64_t const *__restrict sources_i_a{sources_i.data_ptr<int64_t>()};
           int64_t const *__restrict receivers_i_a{
               receivers_i.data_ptr<int64_t>()};
+          int64_t const *__restrict bg_receivers_i_a{
+              bg_receivers_i.data_ptr<int64_t>()};
           scalar_t *__restrict w_store_a{};
           scalar_t *__restrict wsc_store_a{};
           if (v.requires_grad() or scatter.requires_grad()) {
@@ -1341,11 +1374,12 @@ class ScalarBornCUDAFunction
           forward_batches[accuracy / 2 - 1](
               wfc_a, wfp_a, psiy_a, psix_a, psiyn_a, psixn_a, zetay_a, zetax_a,
               wfcsc_a, wfpsc_a, psiysc_a, psixsc_a, psiynsc_a, psixnsc_a,
-              zetaysc_a, zetaxsc_a, sources_i_a, receivers_i_a, w_store_a,
-              wsc_store_a, v_a, scatter_a, f_a, r_a, ay_a, ax_a, by_a, bx_a,
-              daydy_a, daxdx_a, dbydy_a, dbxdx_a, n_sources_per_shot,
-              n_receivers_per_shot, ny, nx, nt, step_ratio, v.requires_grad(),
-              scatter.requires_grad(), n_batch);
+              zetaysc_a, zetaxsc_a, sources_i_a, receivers_i_a,
+              bg_receivers_i_a, w_store_a, wsc_store_a, v_a, scatter_a, f_a,
+              r_a, bg_r_a, ay_a, ax_a, by_a, bx_a, daydy_a, daxdx_a, dbydy_a,
+              dbxdx_a, n_sources_per_shot, n_receivers_per_shot,
+              n_bg_receivers_per_shot, ny, nx, nt, step_ratio,
+              v.requires_grad(), scatter.requires_grad(), n_batch);
         }));
     if (v.requires_grad() or scatter.requires_grad() or f.requires_grad() or
         wfc0.requires_grad() or wfp0.requires_grad() or psiy0.requires_grad() or
@@ -1355,7 +1389,7 @@ class ScalarBornCUDAFunction
         psixsc0.requires_grad() or zetaysc0.requires_grad() or
         zetaxsc0.requires_grad()) {
       ctx->save_for_backward(
-          {v, scatter, ay, ax, by, bx, sources_i, receivers_i});
+          {v, scatter, ay, ax, by, bx, sources_i, receivers_i, bg_receivers_i});
       ctx->saved_data["w_store"] = w_store;
       ctx->saved_data["wsc_store"] = wsc_store;
       ctx->saved_data["dy"] = dy;
@@ -1389,6 +1423,7 @@ class ScalarBornCUDAFunction
               psixnsc.index({all_slice, slicey, slicex}),
               zetaysc.index({all_slice, slicey, slicex}),
               zetaxsc.index({all_slice, slicey, slicex}),
+              bg_r,
               r};
     }
     return {wfc.index({all_slice, slicey, slicex}),
@@ -1403,6 +1438,7 @@ class ScalarBornCUDAFunction
             psixsc.index({all_slice, slicey, slicex}),
             zetaysc.index({all_slice, slicey, slicex}),
             zetaxsc.index({all_slice, slicey, slicex}),
+            bg_r,
             r};
   }
 
@@ -1419,6 +1455,7 @@ class ScalarBornCUDAFunction
     auto const &bx{saved[5]};
     auto const &sources_i{saved[6]};
     auto const &receivers_i{saved[7]};
+    auto const &bg_receivers_i{saved[8]};
     auto const &w_store{ctx->saved_data["w_store"].toTensor()};
     auto const &wsc_store{ctx->saved_data["wsc_store"].toTensor()};
     auto dy{ctx->saved_data["dy"].toDouble()};
@@ -1499,7 +1536,8 @@ class ScalarBornCUDAFunction
     auto psixnsc{at::zeros_like(psixsc)};
     auto zetaynsc{at::zeros_like(zetaysc)};
     auto zetaxnsc{at::zeros_like(zetaxsc)};
-    auto grad_r{grad_outputs[12].contiguous()};
+    auto grad_bg_r{grad_outputs[12].contiguous()};
+    auto grad_r{grad_outputs[13].contiguous()};
     auto daydy{at::zeros_like(ay)};
     auto daxdx{at::zeros_like(ax)};
     auto dbydy{at::zeros_like(by)};
@@ -1511,6 +1549,10 @@ class ScalarBornCUDAFunction
     int64_t n_receivers_per_shot{};
     if (receivers_i.numel() > 0) {
       n_receivers_per_shot = receivers_i.size(1);
+    }
+    int64_t n_bg_receivers_per_shot{};
+    if (bg_receivers_i.numel() > 0) {
+      n_bg_receivers_per_shot = bg_receivers_i.size(1);
     }
 
     auto grad_v{non_sc ? at::zeros_like(v) : at::empty(0, options)};
@@ -1538,6 +1580,7 @@ class ScalarBornCUDAFunction
               n_batch > 1 ? grad_scatter_batch.data_ptr<scalar_t>()
                           : grad_scatter_a};
           scalar_t *__restrict grad_r_a{grad_r.data_ptr<scalar_t>()};
+          scalar_t *__restrict grad_bg_r_a{grad_bg_r.data_ptr<scalar_t>()};
           scalar_t *__restrict grad_f_a{grad_f.data_ptr<scalar_t>()};
           scalar_t *__restrict wfc_a{wfc.data_ptr<scalar_t>()};
           scalar_t *__restrict wfp_a{wfp.data_ptr<scalar_t>()};
@@ -1571,6 +1614,8 @@ class ScalarBornCUDAFunction
           scalar_t *__restrict dbxdx_a{dbxdx.data_ptr<scalar_t>()};
           int64_t *__restrict sources_i_a{sources_i.data_ptr<int64_t>()};
           int64_t *__restrict receivers_i_a{receivers_i.data_ptr<int64_t>()};
+          int64_t *__restrict bg_receivers_i_a{
+              bg_receivers_i.data_ptr<int64_t>()};
           scalar_t const *__restrict w_store_a{};
           scalar_t const *__restrict wsc_store_a{};
           if (v.requires_grad() or scatter.requires_grad()) {
@@ -1617,12 +1662,13 @@ class ScalarBornCUDAFunction
                 wfc_a, wfp_a, wfcn_a, psiy_a, psix_a, psiyn_a, psixn_a, zetay_a,
                 zetax_a, zetayn_a, zetaxn_a, wfcsc_a, wfpsc_a, wfcnsc_a,
                 psiysc_a, psixsc_a, psiynsc_a, psixnsc_a, zetaysc_a, zetaxsc_a,
-                zetaynsc_a, zetaxnsc_a, sources_i_a, receivers_i_a, w_store_a,
-                wsc_store_a, v_a, scatter_a, grad_f_a, grad_r_a, grad_v_batch_a,
+                zetaynsc_a, zetaxnsc_a, sources_i_a, receivers_i_a,
+                bg_receivers_i_a, w_store_a, wsc_store_a, v_a, scatter_a,
+                grad_f_a, grad_r_a, grad_bg_r_a, grad_v_batch_a,
                 grad_scatter_batch_a, ay_a, ax_a, by_a, bx_a, daydy_a, daxdx_a,
-                dbydy_a, dbxdx_a, n_sources_per_shot, n_receivers_per_shot, ny,
-                nx, nt, step_ratio, v.requires_grad(), scatter.requires_grad(),
-                n_batch);
+                dbydy_a, dbxdx_a, n_sources_per_shot, n_receivers_per_shot,
+                n_bg_receivers_per_shot, ny, nx, nt, step_ratio,
+                v.requires_grad(), scatter.requires_grad(), n_batch);
           } else {
             backward_batch_scs[accuracy / 2 - 1](
                 wfcsc_a, wfpsc_a, wfcnsc_a, psiysc_a, psixsc_a, psiynsc_a,
@@ -1739,6 +1785,7 @@ class ScalarBornCUDAFunction
         torch::Tensor(),
         torch::Tensor(),
         torch::Tensor(),
+        torch::Tensor(),
         torch::Tensor()};
   }
 };
@@ -1753,15 +1800,16 @@ std::vector<torch::Tensor> scalar_born_cuda_autograd(
     torch::Tensor const &psixsc0, torch::Tensor const &zetaysc0,
     torch::Tensor const &zetaxsc0, torch::Tensor const &ay,
     torch::Tensor const &ax, torch::Tensor const &by, torch::Tensor const &bx,
-    torch::Tensor const &sources_i, torch::Tensor const &receivers_i, double dy,
-    double dx, double dt, int64_t nt, int64_t n_batch, int64_t step_ratio,
-    int64_t accuracy, int64_t pml_width0, int64_t pml_width1,
-    int64_t pml_width2, int64_t pml_width3) {
+    torch::Tensor const &sources_i, torch::Tensor const &receivers_i,
+    torch::Tensor const &bg_receivers_i, double dy, double dx, double dt,
+    int64_t nt, int64_t n_batch, int64_t step_ratio, int64_t accuracy,
+    int64_t pml_width0, int64_t pml_width1, int64_t pml_width2,
+    int64_t pml_width3) {
   return ScalarBornCUDAFunction::apply(
       v, scatter, f, wfc0, wfp0, psiy0, psix0, zetay0, zetax0, wfcsc0, wfpsc0,
       psiysc0, psixsc0, zetaysc0, zetaxsc0, ay, ax, by, bx, sources_i,
-      receivers_i, dy, dx, dt, nt, n_batch, step_ratio, accuracy, pml_width0,
-      pml_width1, pml_width2, pml_width3);
+      receivers_i, bg_receivers_i, dy, dx, dt, nt, n_batch, step_ratio,
+      accuracy, pml_width0, pml_width1, pml_width2, pml_width3);
 }
 
 TORCH_LIBRARY_IMPL(deepwave, AutogradCUDA, m) {

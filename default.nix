@@ -31,6 +31,7 @@ python3Packages.buildPythonPackage rec {
     mv src/deepwave/__init__.py tmp
     echo "${linePatch}" > src/deepwave/__init__.py
     cat tmp >> src/deepwave/__init__.py
+    rm tmp
   '';
 
   # The source files are compiled at runtime and cached at the
@@ -42,9 +43,9 @@ python3Packages.buildPythonPackage rec {
     export HOME=$(mktemp -d)
   '';
 
-  propagatedBuildInputs = with python3Packages; [ pytorch pybind11 ];
+  propagatedBuildInputs = with python3Packages; [ torch pybind11 ];
 
-  checkInputs = [
+  nativeCheckInputs = [
     which
     python3Packages.scipy
     python3Packages.pytest-xdist

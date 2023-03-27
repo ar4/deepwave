@@ -7,10 +7,10 @@ TORCH_LIBRARY_FRAGMENT(deepwave, m) {
       "wfp0, Tensor psiy0, Tensor psix0, Tensor zetay0, Tensor zetax0, Tensor "
       "wfcsc0, Tensor wfpsc0, Tensor psiysc0, Tensor psixsc0, Tensor zetaysc0, "
       "Tensor zetaxsc0, Tensor ay, Tensor ax, Tensor by, Tensor bx, Tensor "
-      "sources_i, Tensor receivers_i, float dy, float dx, float dt, int nt, "
-      "int n_batch, int step_ratio, int accuracy, "
-      "int pml_width0, int pml_width1, int pml_width2, int pml_width3) "
-      "-> Tensor[]");
+      "sources_i, Tensor receivers_i, Tensor bg_receivers_i, "
+      "float dy, float dx, float dt, int nt, int n_batch, int step_ratio, "
+      "int accuracy, int pml_width0, int pml_width1, int pml_width2, "
+      "int pml_width3) -> Tensor[]");
 }
 
 std::vector<torch::Tensor> scalar_born(
@@ -23,18 +23,19 @@ std::vector<torch::Tensor> scalar_born(
     torch::Tensor const &psixsc0, torch::Tensor const &zetaysc0,
     torch::Tensor const &zetaxsc0, torch::Tensor const &ay,
     torch::Tensor const &ax, torch::Tensor const &by, torch::Tensor const &bx,
-    torch::Tensor const &sources_i, torch::Tensor const &receivers_i, double dy,
-    double dx, double dt, int64_t nt, int64_t n_batch, int64_t step_ratio,
-    int64_t accuracy, int64_t pml_width0, int64_t pml_width1,
-    int64_t pml_width2, int64_t pml_width3) {
+    torch::Tensor const &sources_i, torch::Tensor const &receivers_i,
+    torch::Tensor const &bg_receivers_i, double dy, double dx, double dt,
+    int64_t nt, int64_t n_batch, int64_t step_ratio, int64_t accuracy,
+    int64_t pml_width0, int64_t pml_width1, int64_t pml_width2,
+    int64_t pml_width3) {
   static auto op = torch::Dispatcher::singleton()
                        .findSchemaOrThrow("deepwave::scalar_born", "")
                        .typed<decltype(scalar_born)>();
   return op.call(v, scatter, f, wfc0, wfp0, psiy0, psix0, zetay0, zetax0,
                  wfcsc0, wfpsc0, psiysc0, psixsc0, zetaysc0, zetaxsc0, ay, ax,
-                 by, bx, sources_i, receivers_i, dy, dx, dt, nt, n_batch,
-                 step_ratio, accuracy, pml_width0, pml_width1, pml_width2,
-                 pml_width3);
+                 by, bx, sources_i, receivers_i, bg_receivers_i, dy, dx, dt, nt,
+                 n_batch, step_ratio, accuracy, pml_width0, pml_width1,
+                 pml_width2, pml_width3);
 }
 
 namespace {
@@ -884,15 +885,17 @@ void forward_shot(
     T *__restrict wfpsc, T *__restrict psiysc, T *__restrict psixsc,
     T *__restrict psiynsc, T *__restrict psixnsc, T *__restrict zetaysc,
     T *__restrict zetaxsc, int64_t const *__restrict sources_i,
-    int64_t const *__restrict receivers_i, T *__restrict w_store,
+    int64_t const *__restrict receivers_i,
+    int64_t const *__restrict bg_receivers_i, T *__restrict w_store,
     T *__restrict wsc_store, T const *__restrict v, T const *scatter,
-    T const *__restrict f, T *__restrict r, T const *__restrict ay,
-    T const *__restrict ax, T const *__restrict by, T const *__restrict bx,
-    T const *__restrict daydy, T const *__restrict daxdx,
-    T const *__restrict dbydy, T const *__restrict dbxdx, T dt2,
-    T const *__restrict fd_coeffs1y, T const *__restrict fd_coeffs1x,
-    T const *__restrict fd_coeffs2y, T const *__restrict fd_coeffs2x,
-    int64_t n_sources_per_shot, int64_t n_receivers_per_shot, int64_t ny,
+    T const *__restrict f, T *__restrict r, T *__restrict bg_r,
+    T const *__restrict ay, T const *__restrict ax, T const *__restrict by,
+    T const *__restrict bx, T const *__restrict daydy,
+    T const *__restrict daxdx, T const *__restrict dbydy,
+    T const *__restrict dbxdx, T dt2, T const *__restrict fd_coeffs1y,
+    T const *__restrict fd_coeffs1x, T const *__restrict fd_coeffs2y,
+    T const *__restrict fd_coeffs2x, int64_t n_sources_per_shot,
+    int64_t n_receivers_per_shot, int64_t n_bg_receivers_per_shot, int64_t ny,
     int64_t nx, int64_t nt, int64_t step_ratio, bool v_requires_grad,
     bool scatter_requires_grad, int64_t const *__restrict pml_regionsy,
     int64_t const *__restrict pml_regionsx) {
@@ -979,6 +982,10 @@ void forward_shot(
       record_receivers(r + t * n_receivers_per_shot, wfcsc, receivers_i,
                        n_receivers_per_shot);
     }
+    if (n_bg_receivers_per_shot > 0) {
+      record_receivers(bg_r + t * n_bg_receivers_per_shot, wfc, bg_receivers_i,
+                       n_bg_receivers_per_shot);
+    }
     std::swap(wfp, wfc);
     std::swap(psiyn, psiy);
     std::swap(psixn, psix);
@@ -1014,16 +1021,18 @@ void backward_shot(
     T *__restrict psixsc, T *__restrict psiynsc, T *__restrict psixnsc,
     T *__restrict zetaysc, T *__restrict zetaxsc, T *__restrict zetaynsc,
     T *__restrict zetaxnsc, int64_t const *__restrict sources_i,
-    int64_t const *__restrict receivers_i, T const *__restrict w_store,
+    int64_t const *__restrict receivers_i,
+    int64_t const *__restrict bg_receivers_i, T const *__restrict w_store,
     T const *__restrict wsc_store, T const *__restrict v,
     T const *__restrict scatter, T *__restrict f, T const *__restrict r,
-    T *__restrict grad_v, T *__restrict grad_scatter, T const *__restrict ay,
-    T const *__restrict ax, T const *__restrict by, T const *__restrict bx,
-    T const *__restrict daydy, T const *__restrict daxdx,
-    T const *__restrict dbydy, T const *__restrict dbxdx, T dt2,
-    T const *__restrict fd_coeffs1y, T const *__restrict fd_coeffs1x,
-    T const *__restrict fd_coeffs2y, T const *__restrict fd_coeffs2x,
-    int64_t n_sources_per_shot, int64_t n_receivers_per_shot, int64_t ny,
+    T const *__restrict bg_r, T *__restrict grad_v, T *__restrict grad_scatter,
+    T const *__restrict ay, T const *__restrict ax, T const *__restrict by,
+    T const *__restrict bx, T const *__restrict daydy,
+    T const *__restrict daxdx, T const *__restrict dbydy,
+    T const *__restrict dbxdx, T dt2, T const *__restrict fd_coeffs1y,
+    T const *__restrict fd_coeffs1x, T const *__restrict fd_coeffs2y,
+    T const *__restrict fd_coeffs2x, int64_t n_sources_per_shot,
+    int64_t n_receivers_per_shot, int64_t n_bg_receivers_per_shot, int64_t ny,
     int64_t nx, int64_t nt, int64_t step_ratio, bool v_requires_grad,
     bool scatter_requires_grad, int64_t const *__restrict pml_regionsy,
     int64_t const *__restrict pml_regionsx) {
@@ -1038,6 +1047,10 @@ void backward_shot(
     if (n_receivers_per_shot > 0) {
       add_sources(wfpsc, r + t * n_receivers_per_shot, receivers_i,
                   n_receivers_per_shot);
+    }
+    if (n_bg_receivers_per_shot > 0) {
+      add_sources(wfp, bg_r + t * n_bg_receivers_per_shot, bg_receivers_i,
+                  n_bg_receivers_per_shot);
     }
     if (n_sources_per_shot > 0) {
       record_receivers(f + t * n_sources_per_shot, wfc, sources_i,
@@ -1199,10 +1212,10 @@ class ScalarBornCPUFunction
       torch::Tensor const &zetaysc0, torch::Tensor const &zetaxsc0,
       torch::Tensor const &ay, torch::Tensor const &ax, torch::Tensor const &by,
       torch::Tensor const &bx, torch::Tensor const &sources_i,
-      torch::Tensor const &receivers_i, double dy, double dx, double dt,
-      int64_t nt, int64_t n_batch, int64_t step_ratio, int64_t accuracy,
-      int64_t pml_width0, int64_t pml_width1, int64_t pml_width2,
-      int64_t pml_width3) {
+      torch::Tensor const &receivers_i, torch::Tensor const &bg_receivers_i,
+      double dy, double dx, double dt, int64_t nt, int64_t n_batch,
+      int64_t step_ratio, int64_t accuracy, int64_t pml_width0,
+      int64_t pml_width1, int64_t pml_width2, int64_t pml_width3) {
     at::AutoDispatchBelowADInplaceOrView g;
     auto options{at::device(v.device()).dtype(v.scalar_type())};
     auto ny{v.size(0)};
@@ -1234,6 +1247,10 @@ class ScalarBornCPUFunction
     if (receivers_i.numel() > 0) {
       n_receivers_per_shot = receivers_i.size(1);
     }
+    int64_t n_bg_receivers_per_shot{};
+    if (bg_receivers_i.numel() > 0) {
+      n_bg_receivers_per_shot = bg_receivers_i.size(1);
+    }
     auto wfc{create_or_pad(wfc0, fd_pad, options, size_with_batch)};
     auto wfp{create_or_pad(wfp0, fd_pad, options, size_with_batch)};
     auto psiy{create_or_pad(psiy0, fd_pad, options, size_with_batch)};
@@ -1252,6 +1269,7 @@ class ScalarBornCPUFunction
     auto psiynsc{at::zeros_like(psiysc)};
     auto psixnsc{at::zeros_like(psixsc)};
     auto r{at::empty({n_batch, nt, n_receivers_per_shot}, options)};
+    auto bg_r{at::empty({n_batch, nt, n_bg_receivers_per_shot}, options)};
     auto daydy{at::zeros_like(ay)};
     auto daxdx{at::zeros_like(ax)};
     auto dbydy{at::zeros_like(by)};
@@ -1292,6 +1310,7 @@ class ScalarBornCPUFunction
           scalar_t const *__restrict scatter_a{scatter.data_ptr<scalar_t>()};
           scalar_t const *__restrict f_a{f.data_ptr<scalar_t>()};
           scalar_t *__restrict r_a{r.data_ptr<scalar_t>()};
+          scalar_t *__restrict bg_r_a{bg_r.data_ptr<scalar_t>()};
           scalar_t *__restrict wfc_a{wfc.data_ptr<scalar_t>()};
           scalar_t *__restrict wfp_a{wfp.data_ptr<scalar_t>()};
           scalar_t *__restrict psiy_a{psiy.data_ptr<scalar_t>()};
@@ -1319,6 +1338,8 @@ class ScalarBornCPUFunction
           int64_t const *__restrict sources_i_a{sources_i.data_ptr<int64_t>()};
           int64_t const *__restrict receivers_i_a{
               receivers_i.data_ptr<int64_t>()};
+          int64_t const *__restrict bg_receivers_i_a{
+              bg_receivers_i.data_ptr<int64_t>()};
           scalar_t *__restrict w_store_a{};
           scalar_t *__restrict wsc_store_a{};
           if (v.requires_grad() or scatter.requires_grad()) {
@@ -1355,17 +1376,20 @@ class ScalarBornCPUFunction
               auto i{shot * nx * ny};
               auto si{shot * n_sources_per_shot};
               auto ri{shot * n_receivers_per_shot};
+              auto bg_ri{shot * n_bg_receivers_per_shot};
               forward_shots[accuracy / 2 - 1](
                   wfc_a + i, wfp_a + i, psiy_a + i, psix_a + i, psiyn_a + i,
                   psixn_a + i, zetay_a + i, zetax_a + i, wfcsc_a + i,
                   wfpsc_a + i, psiysc_a + i, psixsc_a + i, psiynsc_a + i,
                   psixnsc_a + i, zetaysc_a + i, zetaxsc_a + i, sources_i_a + si,
-                  receivers_i_a + ri, w_store_a + i * (nt / step_ratio),
+                  receivers_i_a + ri, bg_receivers_i_a + bg_ri,
+                  w_store_a + i * (nt / step_ratio),
                   wsc_store_a + i * (nt / step_ratio), v_a, scatter_a,
-                  f_a + si * nt, r_a + ri * nt, ay_a, ax_a, by_a, bx_a, daydy_a,
-                  daxdx_a, dbydy_a, dbxdx_a, dt2_a, fd_coeffs1y, fd_coeffs1x,
-                  fd_coeffs2y, fd_coeffs2x, n_sources_per_shot,
-                  n_receivers_per_shot, ny, nx, nt, step_ratio,
+                  f_a + si * nt, r_a + ri * nt, bg_r_a + bg_ri * nt, ay_a, ax_a,
+                  by_a, bx_a, daydy_a, daxdx_a, dbydy_a, dbxdx_a, dt2_a,
+                  fd_coeffs1y, fd_coeffs1x, fd_coeffs2y, fd_coeffs2x,
+                  n_sources_per_shot, n_receivers_per_shot,
+                  n_bg_receivers_per_shot, ny, nx, nt, step_ratio,
                   v.requires_grad(), scatter.requires_grad(), pml_regionsy,
                   pml_regionsx);
             }
@@ -1379,7 +1403,7 @@ class ScalarBornCPUFunction
         psixsc0.requires_grad() or zetaysc0.requires_grad() or
         zetaxsc0.requires_grad()) {
       ctx->save_for_backward(
-          {v, scatter, ay, ax, by, bx, sources_i, receivers_i});
+          {v, scatter, ay, ax, by, bx, sources_i, receivers_i, bg_receivers_i});
       ctx->saved_data["w_store"] = w_store;
       ctx->saved_data["wsc_store"] = wsc_store;
       ctx->saved_data["dy"] = dy;
@@ -1413,6 +1437,7 @@ class ScalarBornCPUFunction
               psixnsc.index({all_slice, slicey, slicex}),
               zetaysc.index({all_slice, slicey, slicex}),
               zetaxsc.index({all_slice, slicey, slicex}),
+              bg_r,
               r};
     }
     return {wfc.index({all_slice, slicey, slicex}),
@@ -1427,6 +1452,7 @@ class ScalarBornCPUFunction
             psixsc.index({all_slice, slicey, slicex}),
             zetaysc.index({all_slice, slicey, slicex}),
             zetaxsc.index({all_slice, slicey, slicex}),
+            bg_r,
             r};
   }
 
@@ -1443,6 +1469,7 @@ class ScalarBornCPUFunction
     auto const &bx{saved[5]};
     auto const &sources_i{saved[6]};
     auto const &receivers_i{saved[7]};
+    auto const &bg_receivers_i{saved[8]};
     auto const &w_store{ctx->saved_data["w_store"].toTensor()};
     auto const &wsc_store{ctx->saved_data["wsc_store"].toTensor()};
     auto dy{ctx->saved_data["dy"].toDouble()};
@@ -1517,7 +1544,8 @@ class ScalarBornCPUFunction
     auto psixnsc{at::zeros_like(psixsc)};
     auto zetaynsc{at::zeros_like(zetaysc)};
     auto zetaxnsc{at::zeros_like(zetaxsc)};
-    auto grad_r{grad_outputs[12].contiguous()};
+    auto bg_grad_r{grad_outputs[12].contiguous()};
+    auto grad_r{grad_outputs[13].contiguous()};
     auto daydy{at::zeros_like(ay)};
     auto daxdx{at::zeros_like(ax)};
     auto dbydy{at::zeros_like(by)};
@@ -1529,6 +1557,10 @@ class ScalarBornCPUFunction
     int64_t n_receivers_per_shot{};
     if (receivers_i.numel() > 0) {
       n_receivers_per_shot = receivers_i.size(1);
+    }
+    int64_t n_bg_receivers_per_shot{};
+    if (bg_receivers_i.numel() > 0) {
+      n_bg_receivers_per_shot = bg_receivers_i.size(1);
     }
 
     int64_t n_parallel{
@@ -1561,6 +1593,7 @@ class ScalarBornCPUFunction
           scalar_t *__restrict grad_scatter_batch_a{
               n_parallel > 1 ? grad_scatter_batch.data_ptr<scalar_t>()
                              : grad_scatter_a};
+          scalar_t *__restrict bg_grad_r_a{bg_grad_r.data_ptr<scalar_t>()};
           scalar_t *__restrict grad_r_a{grad_r.data_ptr<scalar_t>()};
           scalar_t *__restrict grad_f_a{grad_f.data_ptr<scalar_t>()};
           scalar_t *__restrict wfc_a{wfc.data_ptr<scalar_t>()};
@@ -1595,6 +1628,8 @@ class ScalarBornCPUFunction
           scalar_t *__restrict dbxdx_a{dbxdx.data_ptr<scalar_t>()};
           int64_t *__restrict sources_i_a{sources_i.data_ptr<int64_t>()};
           int64_t *__restrict receivers_i_a{receivers_i.data_ptr<int64_t>()};
+          int64_t *__restrict bg_receivers_i_a{
+              bg_receivers_i.data_ptr<int64_t>()};
           scalar_t const *__restrict w_store_a{};
           scalar_t const *__restrict wsc_store_a{};
           if (v.requires_grad() or scatter.requires_grad()) {
@@ -1636,6 +1671,7 @@ class ScalarBornCPUFunction
                 auto i{shot * ny * nx};
                 auto si{shot * n_sources_per_shot};
                 auto ri{shot * n_receivers_per_shot};
+                auto bg_ri{shot * n_bg_receivers_per_shot};
                 backward_shots[accuracy / 2 - 1](
                     wfc_a + i, wfp_a + i, wfcn_a + i, psiy_a + i, psix_a + i,
                     psiyn_a + i, psixn_a + i, zetay_a + i, zetax_a + i,
@@ -1643,21 +1679,24 @@ class ScalarBornCPUFunction
                     wfcnsc_a + i, psiysc_a + i, psixsc_a + i, psiynsc_a + i,
                     psixnsc_a + i, zetaysc_a + i, zetaxsc_a + i, zetaynsc_a + i,
                     zetaxnsc_a + i, sources_i_a + si, receivers_i_a + ri,
-                    w_store_a + i * (nt / step_ratio),
+                    bg_receivers_i_a + bg_ri, w_store_a + i * (nt / step_ratio),
                     wsc_store_a + i * (nt / step_ratio), v_a, scatter_a,
                     grad_f_a + si * nt, grad_r_a + ri * nt,
+                    bg_grad_r_a + ri * nt,
                     grad_v_batch_a + at::get_thread_num() * ny * nx,
                     grad_scatter_batch_a + at::get_thread_num() * ny * nx, ay_a,
                     ax_a, by_a, bx_a, daydy_a, daxdx_a, dbydy_a, dbxdx_a, dt2_a,
                     fd_coeffs1y, fd_coeffs1x, fd_coeffs2y, fd_coeffs2x,
-                    n_sources_per_shot, n_receivers_per_shot, ny, nx, nt,
-                    step_ratio, v.requires_grad(), scatter.requires_grad(),
-                    pml_regionsy, pml_regionsx);
+                    n_sources_per_shot, n_receivers_per_shot,
+                    n_bg_receivers_per_shot, ny, nx, nt, step_ratio,
+                    v.requires_grad(), scatter.requires_grad(), pml_regionsy,
+                    pml_regionsx);
               }
             } else {
               for (int64_t shot = bstart; shot < bend; ++shot) {
                 auto i{shot * ny * nx};
                 auto ri{shot * n_receivers_per_shot};
+                auto bg_ri{shot * n_bg_receivers_per_shot};
                 backward_shot_scs[accuracy / 2 - 1](
                     wfcsc_a + i, wfpsc_a + i, wfcnsc_a + i, psiysc_a + i,
                     psixsc_a + i, psiynsc_a + i, psixnsc_a + i, zetaysc_a + i,
@@ -1768,6 +1807,7 @@ class ScalarBornCPUFunction
         torch::Tensor(),
         torch::Tensor(),
         torch::Tensor(),
+        torch::Tensor(),
         torch::Tensor()};
   }
 };
@@ -1782,15 +1822,16 @@ std::vector<torch::Tensor> scalar_born_cpu_autograd(
     torch::Tensor const &psixsc0, torch::Tensor const &zetaysc0,
     torch::Tensor const &zetaxsc0, torch::Tensor const &ay,
     torch::Tensor const &ax, torch::Tensor const &by, torch::Tensor const &bx,
-    torch::Tensor const &sources_i, torch::Tensor const &receivers_i, double dy,
-    double dx, double dt, int64_t nt, int64_t n_batch, int64_t step_ratio,
-    int64_t accuracy, int64_t pml_width0, int64_t pml_width1,
-    int64_t pml_width2, int64_t pml_width3) {
+    torch::Tensor const &sources_i, torch::Tensor const &receivers_i,
+    torch::Tensor const &bg_receivers_i, double dy, double dx, double dt,
+    int64_t nt, int64_t n_batch, int64_t step_ratio, int64_t accuracy,
+    int64_t pml_width0, int64_t pml_width1, int64_t pml_width2,
+    int64_t pml_width3) {
   return ScalarBornCPUFunction::apply(
       v, scatter, f, wfc0, wfp0, psiy0, psix0, zetay0, zetax0, wfcsc0, wfpsc0,
       psiysc0, psixsc0, zetaysc0, zetaxsc0, ay, ax, by, bx, sources_i,
-      receivers_i, dy, dx, dt, nt, n_batch, step_ratio, accuracy, pml_width0,
-      pml_width1, pml_width2, pml_width3);
+      receivers_i, bg_receivers_i, dy, dx, dt, nt, n_batch, step_ratio,
+      accuracy, pml_width0, pml_width1, pml_width2, pml_width3);
 }
 
 TORCH_LIBRARY_IMPL(deepwave, AutogradCPU, m) {

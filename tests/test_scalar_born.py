@@ -55,7 +55,8 @@ def test_born_scatter_2d_module():
 
 def scalarbornprop(model, scatter, dx, dt, source_amplitudes,
                    source_locations,
-                   receiver_locations, prop_kwargs=None, pml_width=None,
+                   receiver_locations, bg_receiver_locations=None,
+                   prop_kwargs=None, pml_width=None,
                    survey_pad=None, origin=None, wavefield_0=None,
                    wavefield_m1=None,
                    psiy_m1=None, psix_m1=None,
@@ -84,12 +85,15 @@ def scalarbornprop(model, scatter, dx, dt, source_amplitudes,
         source_locations = source_locations.to(device)
     if receiver_locations is not None:
         receiver_locations = receiver_locations.to(device)
+    if bg_receiver_locations is not None:
+        bg_receiver_locations = bg_receiver_locations.to(device)
 
     if functional:
         return scalar_born(model, scatter, dx, dt,
                            source_amplitudes=source_amplitudes,
                            source_locations=source_locations,
                            receiver_locations=receiver_locations,
+                           bg_receiver_locations=bg_receiver_locations,
                            wavefield_0=wavefield_0,
                            wavefield_m1=wavefield_m1,
                            psiy_m1=psiy_m1, psix_m1=psix_m1,
@@ -106,6 +110,7 @@ def scalarbornprop(model, scatter, dx, dt, source_amplitudes,
     return prop(dt, source_amplitudes=source_amplitudes,
                 source_locations=source_locations,
                 receiver_locations=receiver_locations,
+                bg_receiver_locations=bg_receiver_locations,
                 wavefield_0=wavefield_0,
                 wavefield_m1=wavefield_m1,
                 psiy_m1=psiy_m1, psix_m1=psix_m1,
@@ -121,7 +126,8 @@ def scalarbornprop(model, scatter, dx, dt, source_amplitudes,
 
 def scalarbornpropchained(model, scatter, dx, dt, source_amplitudes,
                           source_locations,
-                          receiver_locations, prop_kwargs=None,
+                          receiver_locations, bg_receiver_locations=None,
+                          prop_kwargs=None,
                           pml_width=None,
                           survey_pad=None, origin=None, wavefield_0=None,
                           wavefield_m1=None,
@@ -151,6 +157,8 @@ def scalarbornpropchained(model, scatter, dx, dt, source_amplitudes,
         source_locations = source_locations.to(device)
     if receiver_locations is not None:
         receiver_locations = receiver_locations.to(device)
+    if bg_receiver_locations is not None:
+        bg_receiver_locations = bg_receiver_locations.to(device)
 
     max_vel = 2000
     dt, step_ratio = cfl_condition(dx[0], dx[1], dt, max_vel)
@@ -190,6 +198,23 @@ def scalarbornpropchained(model, scatter, dx, dt, source_amplitudes,
                                               nt, dtype=model.dtype,
                                               device=model.device)
 
+    if bg_receiver_locations is not None:
+        if source_amplitudes is not None:
+            bg_receiver_amplitudes = (
+                torch.zeros(bg_receiver_locations.shape[0],
+                            bg_receiver_locations.shape[1],
+                            source_amplitudes.shape[-1],
+                            dtype=model.dtype,
+                            device=model.device)
+            )
+        else:
+            bg_receiver_amplitudes = (
+                torch.zeros(bg_receiver_locations.shape[0],
+                            bg_receiver_locations.shape[1],
+                            nt, dtype=model.dtype,
+                            device=model.device)
+            )
+
     for segment_idx in range(n_chained):
         if source_amplitudes is not None:
             segment_source_amplitudes = \
@@ -204,11 +229,13 @@ def scalarbornpropchained(model, scatter, dx, dt, source_amplitudes,
                               source_amplitudes.shape[-1]) -
                           nt_per_segment * segment_idx)
         (wfc, wfp, psiy, psix, zetay, zetax, wfcsc, wfpsc, psiysc, psixsc,
-         zetaysc, zetaxsc, segment_receiver_amplitudes) = \
+         zetaysc, zetaxsc, segment_bg_receiver_amplitudes,
+         segment_receiver_amplitudes) = \
             scalar_born(model, scatter, dx, dt,
                         source_amplitudes=segment_source_amplitudes,
                         source_locations=source_locations,
                         receiver_locations=receiver_locations,
+                        bg_receiver_locations=bg_receiver_locations,
                         wavefield_0=wfc, wavefield_m1=wfp,
                         psiy_m1=psiy, psix_m1=psix,
                         zetay_m1=zetay, zetax_m1=zetax,
@@ -224,12 +251,20 @@ def scalarbornpropchained(model, scatter, dx, dt, source_amplitudes,
                                 min(nt_per_segment * (segment_idx+1),
                                     receiver_amplitudes.shape[-1])] = \
                                     segment_receiver_amplitudes
+        if bg_receiver_locations is not None:
+            bg_receiver_amplitudes[...,
+                                   nt_per_segment * segment_idx:
+                                   min(nt_per_segment * (segment_idx+1),
+                                       bg_receiver_amplitudes.shape[-1])] = \
+                                       segment_bg_receiver_amplitudes
 
     if receiver_locations is not None:
         receiver_amplitudes = downsample(receiver_amplitudes, step_ratio)
+    if bg_receiver_locations is not None:
+        bg_receiver_amplitudes = downsample(bg_receiver_amplitudes, step_ratio)
 
     return (wfc, wfp, psiy, psix, zetay, zetax, wfcsc, wfpsc, psiysc, psixsc,
-            zetaysc, zetaxsc, receiver_amplitudes)
+            zetaysc, zetaxsc, bg_receiver_amplitudes, receiver_amplitudes)
 
 
 def run_born_scatter(c, dc, freq, dx, dt, nx,
@@ -271,7 +306,7 @@ def run_born_scatter(c, dc, freq, dx, dt, nx,
                               -sources['amplitude'][shot, source, :]).to(dtype)
 
     actual = propagator(model, scatter, dx, dt, sources['amplitude'],
-                        sources['locations'], x_r, prop_kwargs=prop_kwargs,
+                        sources['locations'], x_r, x_r, prop_kwargs=prop_kwargs,
                         **kwargs)[-1]
 
     return expected, actual
@@ -314,7 +349,7 @@ def run_born_forward(c, freq, dx, dt, nx,
     sources = _set_sources(x_s, freq, dt, nt, dtype)
 
     return propagator(model, scatter, dx, dt, sources['amplitude'],
-                      sources['locations'], x_r,
+                      sources['locations'], x_r, x_r,
                       prop_kwargs=prop_kwargs, **kwargs)
 
 
@@ -431,7 +466,8 @@ def test_born_gradcheck_2d_no_pml():
 
 def test_born_gradcheck_2d_different_dx():
     """Test gradcheck with different dx values."""
-    run_born_gradcheck_2d(propagator=scalarbornprop, dx=(4, 5), dt=0.0005)
+    run_born_gradcheck_2d(propagator=scalarbornprop, dx=(4, 5), dt=0.0005,
+                          atol=2e-8)
 
 
 def test_born_gradcheck_2d_single_cell():
@@ -471,12 +507,12 @@ def test_negative_vel(c=1500, dc=100, freq=25, dx=(5, 5), dt=0.005,
              torch.randn(*nx, device=device, dtype=dtype) * dc)
     scatter = torch.randn(*nx, device=device, dtype=dtype)
     out_positive = propagator(model, scatter, dx, dt, sources['amplitude'],
-                              sources['locations'], x_r,
+                              sources['locations'], x_r, x_r,
                               prop_kwargs=prop_kwargs)
 
     # Negative velocity
     out = propagator(-model, scatter, dx, dt, sources['amplitude'],
-                     sources['locations'], x_r,
+                     sources['locations'], x_r, x_r,
                      prop_kwargs=prop_kwargs)
     assert torch.allclose(out_positive[0], out[0])
     assert torch.allclose(out_positive[6], -out[6])
@@ -484,7 +520,7 @@ def test_negative_vel(c=1500, dc=100, freq=25, dx=(5, 5), dt=0.005,
 
     # Negative dt
     out = propagator(model, scatter, dx, -dt, sources['amplitude'],
-                     sources['locations'], x_r,
+                     sources['locations'], x_r, x_r,
                      prop_kwargs=prop_kwargs)
     assert torch.allclose(out_positive[0], out[0])
     assert torch.allclose(out_positive[6], out[6])
@@ -493,7 +529,7 @@ def test_negative_vel(c=1500, dc=100, freq=25, dx=(5, 5), dt=0.005,
     # Zero velocity
     out = propagator(torch.zeros_like(model), scatter, dx, -dt,
                      sources['amplitude'],
-                     sources['locations'], x_r,
+                     sources['locations'], x_r, x_r,
                      prop_kwargs=prop_kwargs)
     assert torch.allclose(out[0], torch.zeros_like(out[0]))
     assert torch.allclose(out[6], torch.zeros_like(out[6]))
@@ -714,7 +750,7 @@ def run_born_gradcheck(c, dc, freq, dx, dt, nx,
 
     torch.autograd.gradcheck(propagator, (model, scatter, dx, dt,
                                           sources['amplitude'],
-                                          sources['locations'], x_r,
+                                          sources['locations'], x_r, x_r,
                                           prop_kwargs, pml_width, survey_pad,
                                           origin,
                                           wavefield_0,
