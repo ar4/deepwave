@@ -475,6 +475,21 @@ __global__ void record_receivers(T *__restrict r, T const *__restrict wf,
 }
 
 template <typename T>
+__global__ void record_pressure_receivers(T *__restrict r,
+                                          T const *__restrict sigmayy,
+                                          T const *__restrict sigmaxx,
+                                          int64_t const *__restrict receivers_i,
+                                          int64_t n_receivers_per_shot,
+                                          int64_t n_shots) {
+  auto receiver_idx{blockIdx.x * blockDim.x + threadIdx.x};
+  auto shot_idx{blockIdx.y * blockDim.y + threadIdx.y};
+  if (receiver_idx >= n_receivers_per_shot or shot_idx >= n_shots) return;
+  auto k{shot_idx * n_receivers_per_shot + receiver_idx};
+  r[k] = sigmayy[shot_idx * nynxc + receivers_i[k]] +
+         sigmaxx[shot_idx * nynxc + receivers_i[k]];
+}
+
+template <typename T>
 __global__ void add_to_grad_lamb(T *__restrict grad_lamb,
                                  T const *__restrict sigmayy,
                                  T const *__restrict sigmaxx,
@@ -1356,19 +1371,21 @@ void forward_batch(
     int64_t const *__restrict sources_y_i,
     int64_t const *__restrict sources_x_i,
     int64_t const *__restrict receivers_y_i,
-    int64_t const *__restrict receivers_x_i, T *__restrict dvydbuoyancy,
+    int64_t const *__restrict receivers_x_i,
+    int64_t const *__restrict receivers_p_i, T *__restrict dvydbuoyancy,
     T *__restrict dvxdbuoyancy, T *__restrict dvydy_store,
     T *__restrict dvxdx_store, T *__restrict dvydxdvxdy_store,
     T const *__restrict lamb, T const *__restrict mu,
     T const *__restrict buoyancy, T const *__restrict f_y,
     T const *__restrict f_x, T *__restrict r_y, T *__restrict r_x,
-    T const *__restrict ay, T const *__restrict ayh, T const *__restrict ax,
-    T const *__restrict axh, T const *__restrict by, T const *__restrict byh,
-    T const *__restrict bx, T const *__restrict bxh,
+    T *__restrict r_p, T const *__restrict ay, T const *__restrict ayh,
+    T const *__restrict ax, T const *__restrict axh, T const *__restrict by,
+    T const *__restrict byh, T const *__restrict bx, T const *__restrict bxh,
     int64_t n_sources_per_shot_y, int64_t n_sources_per_shot_x,
-    int64_t n_receivers_per_shot_y, int64_t n_receivers_per_shot_x, int64_t ny,
-    int64_t nx, int64_t nt, int64_t step_ratio, bool lamb_requires_grad,
-    bool mu_requires_grad, bool buoyancy_requires_grad, int64_t n_batch) {
+    int64_t n_receivers_per_shot_y, int64_t n_receivers_per_shot_x,
+    int64_t n_receivers_per_shot_p, int64_t ny, int64_t nx, int64_t nt,
+    int64_t step_ratio, bool lamb_requires_grad, bool mu_requires_grad,
+    bool buoyancy_requires_grad, int64_t n_batch) {
   dim3 dimBlock(32, 32, 1);
   auto gridx{ceil_div(nx, static_cast<int64_t>(dimBlock.x))};
   auto gridy{ceil_div(ny, static_cast<int64_t>(dimBlock.y))};
@@ -1389,11 +1406,14 @@ void forward_batch(
                                   static_cast<int64_t>(dimBlock_receivers.x))};
   auto gridx_receivers_x{ceil_div(n_receivers_per_shot_x,
                                   static_cast<int64_t>(dimBlock_receivers.x))};
+  auto gridx_receivers_p{ceil_div(n_receivers_per_shot_p,
+                                  static_cast<int64_t>(dimBlock_receivers.x))};
   auto gridy_receivers{
       ceil_div(n_batch, static_cast<int64_t>(dimBlock_receivers.y))};
   auto gridz_receivers{1};
   dim3 dimGrid_receivers_y(gridx_receivers_y, gridy_receivers, gridz_receivers);
   dim3 dimGrid_receivers_x(gridx_receivers_x, gridy_receivers, gridz_receivers);
+  dim3 dimGrid_receivers_p(gridx_receivers_p, gridy_receivers, gridz_receivers);
 
   for (int64_t t{}; t < nt; ++t) {
     if (t % step_ratio == 0 and buoyancy_requires_grad) {
@@ -1462,6 +1482,12 @@ void forward_batch(
           bxh);
     }
     gpuErrchk(cudaPeekAtLastError());
+    if (n_receivers_per_shot_p > 0) {
+      record_pressure_receivers<<<dimGrid_receivers_p, dimBlock_receivers>>>(
+          r_p + t * n_batch * n_receivers_per_shot_p, sigmayy, sigmaxx,
+          receivers_p_i, n_receivers_per_shot_p, n_batch);
+      gpuErrchk(cudaPeekAtLastError());
+    }
   }
 }
 
@@ -1491,18 +1517,20 @@ void backward_batch(
     int64_t const *__restrict sources_y_i,
     int64_t const *__restrict sources_x_i,
     int64_t const *__restrict receivers_y_i,
-    int64_t const *__restrict receivers_x_i, T const *__restrict dvydbuoyancy,
+    int64_t const *__restrict receivers_x_i,
+    int64_t const *__restrict receivers_p_i, T const *__restrict dvydbuoyancy,
     T const *__restrict dvxdbuoyancy, T const *__restrict dvydy_store,
     T const *__restrict dvxdx_store, T const *__restrict dvydxdvxdy_store,
     T const *__restrict lamb, T const *__restrict mu,
     T const *__restrict buoyancy, T *__restrict f_y, T *__restrict f_x,
-    T const *__restrict r_y, T const *__restrict r_x, T *__restrict grad_lamb,
-    T *__restrict grad_mu, T *__restrict grad_buoyancy, T const *__restrict ay,
-    T const *__restrict ayh, T const *__restrict ax, T const *__restrict axh,
-    T const *__restrict by, T const *__restrict byh, T const *__restrict bx,
-    T const *__restrict bxh, int64_t n_sources_per_shot_y,
-    int64_t n_sources_per_shot_x, int64_t n_receivers_per_shot_y,
-    int64_t n_receivers_per_shot_x, int64_t ny, int64_t nx, int64_t nt,
+    T const *__restrict r_y, T const *__restrict r_x, T const *__restrict r_p,
+    T *__restrict grad_lamb, T *__restrict grad_mu, T *__restrict grad_buoyancy,
+    T const *__restrict ay, T const *__restrict ayh, T const *__restrict ax,
+    T const *__restrict axh, T const *__restrict by, T const *__restrict byh,
+    T const *__restrict bx, T const *__restrict bxh,
+    int64_t n_sources_per_shot_y, int64_t n_sources_per_shot_x,
+    int64_t n_receivers_per_shot_y, int64_t n_receivers_per_shot_x,
+    int64_t n_receivers_per_shot_p, int64_t ny, int64_t nx, int64_t nt,
     int64_t step_ratio, bool lamb_requires_grad, bool mu_requires_grad,
     bool buoyancy_requires_grad, int64_t n_batch) {
   dim3 dimBlock(32, 16, 1);
@@ -1525,12 +1553,25 @@ void backward_batch(
                                   static_cast<int64_t>(dimBlock_receivers.x))};
   auto gridx_receivers_x{ceil_div(n_receivers_per_shot_x,
                                   static_cast<int64_t>(dimBlock_receivers.x))};
+  auto gridx_receivers_p{ceil_div(n_receivers_per_shot_p,
+                                  static_cast<int64_t>(dimBlock_receivers.x))};
   auto gridy_receivers{
       ceil_div(n_batch, static_cast<int64_t>(dimBlock_receivers.y))};
   auto gridz_receivers{1};
   dim3 dimGrid_receivers_y(gridx_receivers_y, gridy_receivers, gridz_receivers);
   dim3 dimGrid_receivers_x(gridx_receivers_x, gridy_receivers, gridz_receivers);
+  dim3 dimGrid_receivers_p(gridx_receivers_p, gridy_receivers, gridz_receivers);
   for (int64_t t{nt - 1}; t >= 0; --t) {
+    if (n_receivers_per_shot_p > 0) {
+      add_sources<<<dimGrid_receivers_p, dimBlock_receivers>>>(
+          sigmayy, r_p + t * n_batch * n_receivers_per_shot_p, receivers_p_i,
+          n_receivers_per_shot_p, n_batch);
+      gpuErrchk(cudaPeekAtLastError());
+      add_sources<<<dimGrid_receivers_p, dimBlock_receivers>>>(
+          sigmaxx, r_p + t * n_batch * n_receivers_per_shot_p, receivers_p_i,
+          n_receivers_per_shot_p, n_batch);
+      gpuErrchk(cudaPeekAtLastError());
+    }
     if (t % step_ratio == 0 and lamb_requires_grad) {
       add_to_grad_lamb<T><<<dimGrid, dimBlock>>>(
           grad_lamb, sigmayy, sigmaxx,
@@ -1689,10 +1730,10 @@ class ElasticCUDAFunction
       torch::Tensor const &byh, torch::Tensor const &bx,
       torch::Tensor const &bxh, torch::Tensor const &sources_y_i,
       torch::Tensor const &sources_x_i, torch::Tensor const &receivers_y_i,
-      torch::Tensor const &receivers_x_i, double dy, double dx, double dt,
-      int64_t nt, int64_t n_batch, int64_t step_ratio, int64_t accuracy,
-      int64_t pml_width0, int64_t pml_width1, int64_t pml_width2,
-      int64_t pml_width3) {
+      torch::Tensor const &receivers_x_i, torch::Tensor const &receivers_p_i,
+      double dy, double dx, double dt, int64_t nt, int64_t n_batch,
+      int64_t step_ratio, int64_t accuracy, int64_t pml_width0,
+      int64_t pml_width1, int64_t pml_width2, int64_t pml_width3) {
     TORCH_CHECK(lamb.is_cuda(), "lamb must be a CUDA tensor");
     c10::cuda::CUDAGuard device_guard(lamb.device());
     at::AutoDispatchBelowADInplaceOrView g;
@@ -1727,11 +1768,15 @@ class ElasticCUDAFunction
     }
     int64_t n_receivers_per_shot_y{};
     int64_t n_receivers_per_shot_x{};
+    int64_t n_receivers_per_shot_p{};
     if (receivers_y_i.numel() > 0) {
       n_receivers_per_shot_y = receivers_y_i.size(1);
     }
     if (receivers_x_i.numel() > 0) {
       n_receivers_per_shot_x = receivers_x_i.size(1);
+    }
+    if (receivers_p_i.numel() > 0) {
+      n_receivers_per_shot_p = receivers_p_i.size(1);
     }
     auto vy{create_or_clone(vy0, options, size_with_batch)};
     auto vx{create_or_clone(vx0, options, size_with_batch)};
@@ -1748,6 +1793,7 @@ class ElasticCUDAFunction
     auto m_sigmaxxx{create_or_clone(m_sigmaxxx0, options, size_with_batch)};
     auto r_y{at::empty({nt, n_batch, n_receivers_per_shot_y}, options)};
     auto r_x{at::empty({nt, n_batch, n_receivers_per_shot_x}, options)};
+    auto r_p{at::empty({nt, n_batch, n_receivers_per_shot_p}, options)};
     torch::Tensor dvydbuoyancy;
     torch::Tensor dvxdbuoyancy;
     torch::Tensor dvydy_store;
@@ -1816,6 +1862,7 @@ class ElasticCUDAFunction
           scalar_t const *__restrict f_x_a{f_x.data_ptr<scalar_t>()};
           scalar_t *__restrict r_y_a{r_y.data_ptr<scalar_t>()};
           scalar_t *__restrict r_x_a{r_x.data_ptr<scalar_t>()};
+          scalar_t *__restrict r_p_a{r_p.data_ptr<scalar_t>()};
           scalar_t *__restrict vy_a{vy.data_ptr<scalar_t>()};
           scalar_t *__restrict vx_a{vx.data_ptr<scalar_t>()};
           scalar_t *__restrict sigmayy_a{sigmayy.data_ptr<scalar_t>()};
@@ -1845,6 +1892,8 @@ class ElasticCUDAFunction
               receivers_y_i.data_ptr<int64_t>()};
           int64_t const *__restrict receivers_x_i_a{
               receivers_x_i.data_ptr<int64_t>()};
+          int64_t const *__restrict receivers_p_i_a{
+              receivers_p_i.data_ptr<int64_t>()};
           scalar_t *__restrict dvydbuoyancy_a{};
           scalar_t *__restrict dvxdbuoyancy_a{};
           scalar_t *__restrict dvydy_store_a{};
@@ -1885,11 +1934,12 @@ class ElasticCUDAFunction
               vy_a, vx_a, sigmayy_a, sigmaxy_a, sigmaxx_a, m_vyy_a, m_vyx_a,
               m_vxy_a, m_vxx_a, m_sigmayyy_a, m_sigmaxyy_a, m_sigmaxyx_a,
               m_sigmaxxx_a, sources_y_i_a, sources_x_i_a, receivers_y_i_a,
-              receivers_x_i_a, dvydbuoyancy_a, dvxdbuoyancy_a, dvydy_store_a,
-              dvxdx_store_a, dvydxdvxdy_store_a, lamb_a, mu_a, buoyancy_a,
-              f_y_a, f_x_a, r_y_a, r_x_a, ay_a, ayh_a, ax_a, axh_a, by_a, byh_a,
-              bx_a, bxh_a, n_sources_per_shot_y, n_sources_per_shot_x,
-              n_receivers_per_shot_y, n_receivers_per_shot_x, ny, nx, nt,
+              receivers_x_i_a, receivers_p_i_a, dvydbuoyancy_a, dvxdbuoyancy_a,
+              dvydy_store_a, dvxdx_store_a, dvydxdvxdy_store_a, lamb_a, mu_a,
+              buoyancy_a, f_y_a, f_x_a, r_y_a, r_x_a, r_p_a, ay_a, ayh_a, ax_a,
+              axh_a, by_a, byh_a, bx_a, bxh_a, n_sources_per_shot_y,
+              n_sources_per_shot_x, n_receivers_per_shot_y,
+              n_receivers_per_shot_x, n_receivers_per_shot_p, ny, nx, nt,
               step_ratio, lamb.requires_grad(), mu.requires_grad(),
               buoyancy.requires_grad(), n_batch);
         }));
@@ -1905,7 +1955,7 @@ class ElasticCUDAFunction
         m_sigmaxxx0.requires_grad()) {
       ctx->save_for_backward({lamb, mu, buoyancy, ay, ayh, ax, axh, by, byh, bx,
                               bxh, sources_y_i, sources_x_i, receivers_y_i,
-                              receivers_x_i});
+                              receivers_x_i, receivers_p_i});
       ctx->saved_data["dvydbuoyancy"] = dvydbuoyancy;
       ctx->saved_data["dvxdbuoyancy"] = dvxdbuoyancy;
       ctx->saved_data["dvydy_store"] = dvydy_store;
@@ -1923,9 +1973,9 @@ class ElasticCUDAFunction
       ctx->saved_data["pml_width2"] = pml_width[2];
       ctx->saved_data["pml_width3"] = pml_width[3];
     }
-    return {vy,         vx,         sigmayy,    sigmaxy, sigmaxx,
-            m_vyy,      m_vyx,      m_vxy,      m_vxx,   m_sigmayyy,
-            m_sigmaxyy, m_sigmaxyx, m_sigmaxxx, r_y,     r_x};
+    return {vy,         vx,    sigmayy, sigmaxy,    sigmaxx,    m_vyy,
+            m_vyx,      m_vxy, m_vxx,   m_sigmayyy, m_sigmaxyy, m_sigmaxyx,
+            m_sigmaxxx, r_p,   r_y,     r_x};
   }
 
   static torch::autograd::tensor_list backward(
@@ -1948,6 +1998,7 @@ class ElasticCUDAFunction
     auto const &sources_x_i{saved[12]};
     auto const &receivers_y_i{saved[13]};
     auto const &receivers_x_i{saved[14]};
+    auto const &receivers_p_i{saved[15]};
     auto const &dvydbuoyancy{ctx->saved_data["dvydbuoyancy"].toTensor()};
     auto const &dvxdbuoyancy{ctx->saved_data["dvxdbuoyancy"].toTensor()};
     auto const &dvydy_store{ctx->saved_data["dvydy_store"].toTensor()};
@@ -2013,8 +2064,9 @@ class ElasticCUDAFunction
     auto m_sigmaxyyn{at::zeros_like(m_sigmaxyy)};
     auto m_sigmaxyxn{at::zeros_like(m_sigmaxyx)};
     auto m_sigmaxxxn{at::zeros_like(m_sigmaxxx)};
-    auto grad_r_y{grad_outputs[13].contiguous()};
-    auto grad_r_x{grad_outputs[14].contiguous()};
+    auto grad_r_p{grad_outputs[13].contiguous()};
+    auto grad_r_y{grad_outputs[14].contiguous()};
+    auto grad_r_x{grad_outputs[15].contiguous()};
     auto options{at::device(vy.device()).dtype(vy.scalar_type())};
     int64_t n_sources_per_shot_y{};
     int64_t n_sources_per_shot_x{};
@@ -2026,11 +2078,15 @@ class ElasticCUDAFunction
     }
     int64_t n_receivers_per_shot_y{};
     int64_t n_receivers_per_shot_x{};
+    int64_t n_receivers_per_shot_p{};
     if (receivers_y_i.numel() > 0) {
       n_receivers_per_shot_y = receivers_y_i.size(1);
     }
     if (receivers_x_i.numel() > 0) {
       n_receivers_per_shot_x = receivers_x_i.size(1);
+    }
+    if (receivers_p_i.numel() > 0) {
+      n_receivers_per_shot_p = receivers_p_i.size(1);
     }
 
     auto grad_lamb{at::zeros({ny, nx}, options)};
@@ -2099,6 +2155,7 @@ class ElasticCUDAFunction
                           : grad_buoyancy_a};
           scalar_t const *__restrict grad_r_y_a{grad_r_y.data_ptr<scalar_t>()};
           scalar_t const *__restrict grad_r_x_a{grad_r_x.data_ptr<scalar_t>()};
+          scalar_t const *__restrict grad_r_p_a{grad_r_p.data_ptr<scalar_t>()};
           scalar_t *__restrict grad_f_y_a{grad_f_y.data_ptr<scalar_t>()};
           scalar_t *__restrict grad_f_x_a{grad_f_x.data_ptr<scalar_t>()};
           scalar_t *__restrict vy_a{vy.data_ptr<scalar_t>()};
@@ -2134,6 +2191,8 @@ class ElasticCUDAFunction
               receivers_y_i.data_ptr<int64_t>()};
           int64_t const *__restrict receivers_x_i_a{
               receivers_x_i.data_ptr<int64_t>()};
+          int64_t const *__restrict receivers_p_i_a{
+              receivers_p_i.data_ptr<int64_t>()};
           scalar_t const *__restrict dvydbuoyancy_a{};
           scalar_t const *__restrict dvxdbuoyancy_a{};
           scalar_t const *__restrict dvydy_store_a{};
@@ -2175,13 +2234,14 @@ class ElasticCUDAFunction
               m_vxy_a, m_vxx_a, m_sigmayyy_a, m_sigmaxyy_a, m_sigmaxyx_a,
               m_sigmaxxx_a, m_sigmayyyn_a, m_sigmaxyyn_a, m_sigmaxyxn_a,
               m_sigmaxxxn_a, sources_y_i_a, sources_x_i_a, receivers_y_i_a,
-              receivers_x_i_a, dvydbuoyancy_a, dvxdbuoyancy_a, dvydy_store_a,
-              dvxdx_store_a, dvydxdvxdy_store_a, lamb_a, mu_a, buoyancy_a,
-              grad_f_y_a, grad_f_x_a, grad_r_y_a, grad_r_x_a, grad_lamb_batch_a,
-              grad_mu_batch_a, grad_buoyancy_batch_a, ay_a, ayh_a, ax_a, axh_a,
-              by_a, byh_a, bx_a, bxh_a, n_sources_per_shot_y,
-              n_sources_per_shot_x, n_receivers_per_shot_y,
-              n_receivers_per_shot_x, ny, nx, nt, step_ratio,
+              receivers_x_i_a, receivers_p_i_a, dvydbuoyancy_a, dvxdbuoyancy_a,
+              dvydy_store_a, dvxdx_store_a, dvydxdvxdy_store_a, lamb_a, mu_a,
+              buoyancy_a, grad_f_y_a, grad_f_x_a, grad_r_y_a, grad_r_x_a,
+              grad_r_p_a, grad_lamb_batch_a, grad_mu_batch_a,
+              grad_buoyancy_batch_a, ay_a, ayh_a, ax_a, axh_a, by_a, byh_a,
+              bx_a, bxh_a, n_sources_per_shot_y, n_sources_per_shot_x,
+              n_receivers_per_shot_y, n_receivers_per_shot_x,
+              n_receivers_per_shot_p, ny, nx, nt, step_ratio,
               lamb.requires_grad(), mu.requires_grad(),
               buoyancy.requires_grad(), n_batch);
           decltype(&combine_grad_model<scalar_t, 4>) combine_grad_models[]{
@@ -2264,6 +2324,7 @@ class ElasticCUDAFunction
             torch::Tensor(),
             torch::Tensor(),
             torch::Tensor(),
+            torch::Tensor(),
             torch::Tensor()};
   }
 };
@@ -2283,15 +2344,16 @@ std::vector<torch::Tensor> elastic_cuda_autograd(
     torch::Tensor const &bx, torch::Tensor const &bxh,
     torch::Tensor const &sources_y_i, torch::Tensor const &sources_x_i,
     torch::Tensor const &receivers_y_i, torch::Tensor const &receivers_x_i,
-    double dy, double dx, double dt, int64_t nt, int64_t n_batch,
-    int64_t step_ratio, int64_t accuracy, int64_t pml_width0,
-    int64_t pml_width1, int64_t pml_width2, int64_t pml_width3) {
+    torch::Tensor const &receivers_p_i, double dy, double dx, double dt,
+    int64_t nt, int64_t n_batch, int64_t step_ratio, int64_t accuracy,
+    int64_t pml_width0, int64_t pml_width1, int64_t pml_width2,
+    int64_t pml_width3) {
   return ElasticCUDAFunction::apply(
       lamb, mu, buoyancy, f_y, f_x, vy0, vx0, sigmayy0, sigmaxy0, sigmaxx0,
       m_vyy0, m_vyx0, m_vxy0, m_vxx0, m_sigmayyy0, m_sigmaxyy0, m_sigmaxyx0,
       m_sigmaxxx0, ay, ayh, ax, axh, by, byh, bx, bxh, sources_y_i, sources_x_i,
-      receivers_y_i, receivers_x_i, dy, dx, dt, nt, n_batch, step_ratio,
-      accuracy, pml_width0, pml_width1, pml_width2, pml_width3);
+      receivers_y_i, receivers_x_i, receivers_p_i, dy, dx, dt, nt, n_batch,
+      step_ratio, accuracy, pml_width0, pml_width1, pml_width2, pml_width3);
 }
 
 TORCH_LIBRARY_IMPL(deepwave, AutogradCUDA, m) {

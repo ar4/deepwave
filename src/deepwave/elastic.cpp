@@ -11,9 +11,9 @@ TORCH_LIBRARY_FRAGMENT(deepwave, m) {
       "m_sigmaxyx0, Tensor m_sigmaxxx0, Tensor ay, Tensor ayh, Tensor ax, "
       "Tensor axh, "
       "Tensor by, Tensor byh, Tensor bx, Tensor bxh, Tensor sources_y_i, "
-      "Tensor sources_x_i, Tensor receivers_y_i, Tensor receivers_x_i, float "
-      "dy, "
-      "float dx, float dt, int nt, int n_batch, int step_ratio, int accuracy, "
+      "Tensor sources_x_i, Tensor receivers_y_i, Tensor receivers_x_i, "
+      "Tensor receivers_p_i, float dy, float dx, float dt, int nt, "
+      "int n_batch, int step_ratio, int accuracy, "
       "int pml_width0, int pml_width1, int pml_width2, int pml_width3) "
       "-> Tensor[]");
 }
@@ -33,18 +33,19 @@ std::vector<torch::Tensor> elastic(
     torch::Tensor const &bx, torch::Tensor const &bxh,
     torch::Tensor const &sources_y_i, torch::Tensor const &sources_x_i,
     torch::Tensor const &receivers_y_i, torch::Tensor const &receivers_x_i,
-    double dy, double dx, double dt, int64_t nt, int64_t n_batch,
-    int64_t step_ratio, int64_t accuracy, int64_t pml_width0,
-    int64_t pml_width1, int64_t pml_width2, int64_t pml_width3) {
+    torch::Tensor const &receivers_p_i, double dy, double dx, double dt,
+    int64_t nt, int64_t n_batch, int64_t step_ratio, int64_t accuracy,
+    int64_t pml_width0, int64_t pml_width1, int64_t pml_width2,
+    int64_t pml_width3) {
   static auto op = torch::Dispatcher::singleton()
                        .findSchemaOrThrow("deepwave::elastic", "")
                        .typed<decltype(elastic)>();
-  return op.call(lamb, mu, buoyancy, f_y, f_x, vy0, vx0, sigmayy0, sigmaxy0,
-                 sigmaxx0, m_vyy0, m_vyx0, m_vxy0, m_vxx0, m_sigmayyy0,
-                 m_sigmaxyy0, m_sigmaxyx0, m_sigmaxxx0, ay, ayh, ax, axh, by,
-                 byh, bx, bxh, sources_y_i, sources_x_i, receivers_y_i,
-                 receivers_x_i, dy, dx, dt, nt, n_batch, step_ratio, accuracy,
-                 pml_width0, pml_width1, pml_width2, pml_width3);
+  return op.call(
+      lamb, mu, buoyancy, f_y, f_x, vy0, vx0, sigmayy0, sigmaxy0, sigmaxx0,
+      m_vyy0, m_vyx0, m_vxy0, m_vxx0, m_sigmayyy0, m_sigmaxyy0, m_sigmaxyx0,
+      m_sigmaxxx0, ay, ayh, ax, axh, by, byh, bx, bxh, sources_y_i, sources_x_i,
+      receivers_y_i, receivers_x_i, receivers_p_i, dy, dx, dt, nt, n_batch,
+      step_ratio, accuracy, pml_width0, pml_width1, pml_width2, pml_width3);
 }
 
 namespace {
@@ -517,6 +518,18 @@ void record_receivers(T *__restrict r, T const *__restrict wf,
   for (int64_t receiver_idx{}; receiver_idx < n_receivers_per_shot;
        ++receiver_idx) {
     r[receiver_idx] = wf[receivers_i[receiver_idx]];
+  }
+}
+
+template <typename T>
+void record_pressure_receivers(T *__restrict r, T const *__restrict sigmayy,
+                               T const *__restrict sigmaxx,
+                               int64_t const *__restrict receivers_i,
+                               int64_t n_receivers_per_shot) {
+  for (int64_t receiver_idx{}; receiver_idx < n_receivers_per_shot;
+       ++receiver_idx) {
+    r[receiver_idx] = (sigmayy[receivers_i[receiver_idx]] +
+                       sigmaxx[receivers_i[receiver_idx]]);
   }
 }
 
@@ -1484,24 +1497,25 @@ void forward_shot(
     int64_t const *__restrict sources_y_i,
     int64_t const *__restrict sources_x_i,
     int64_t const *__restrict receivers_y_i,
-    int64_t const *__restrict receivers_x_i, T *__restrict dvydbuoyancy,
+    int64_t const *__restrict receivers_x_i,
+    int64_t const *__restrict receivers_p_i, T *__restrict dvydbuoyancy,
     T *__restrict dvxdbuoyancy, T *__restrict dvydy_store,
     T *__restrict dvxdx_store, T *__restrict dvydxdvxdy_store,
     T const *__restrict lamb, T const *__restrict mu,
     T const *__restrict buoyancy, T const *__restrict f_y,
     T const *__restrict f_x, T *__restrict r_y, T *__restrict r_x,
-    T const *__restrict ay, T const *__restrict ayh, T const *__restrict ax,
-    T const *__restrict axh, T const *__restrict by, T const *__restrict byh,
-    T const *__restrict bx, T const *__restrict bxh, T dt,
-    T const *__restrict fd_coeffsy, T const fd_coeffs1y[][5],
+    T *__restrict r_p, T const *__restrict ay, T const *__restrict ayh,
+    T const *__restrict ax, T const *__restrict axh, T const *__restrict by,
+    T const *__restrict byh, T const *__restrict bx, T const *__restrict bxh,
+    T dt, T const *__restrict fd_coeffsy, T const fd_coeffs1y[][5],
     T const *__restrict fd_coeffs2y, T const *__restrict fd_coeffs3y,
     T const *__restrict fd_coeffsx, T const fd_coeffs1x[][5],
     T const *__restrict fd_coeffs2x, T const *__restrict fd_coeffs3x,
     int64_t n_sources_per_shot_y, int64_t n_sources_per_shot_x,
-    int64_t n_receivers_per_shot_y, int64_t n_receivers_per_shot_x, int64_t ny,
-    int64_t nx, int64_t nt, int64_t step_ratio, bool lamb_requires_grad,
-    bool mu_requires_grad, bool buoyancy_requires_grad,
-    int64_t const *__restrict pml_regionsy,
+    int64_t n_receivers_per_shot_y, int64_t n_receivers_per_shot_x,
+    int64_t n_receivers_per_shot_p, int64_t ny, int64_t nx, int64_t nt,
+    int64_t step_ratio, bool lamb_requires_grad, bool mu_requires_grad,
+    bool buoyancy_requires_grad, int64_t const *__restrict pml_regionsy,
     int64_t const *__restrict pml_regionsx) {
 #define FORWARD_KERNEL_VGRAD(pml_y, pml_x)                                   \
   forward_kernel_v<T, A, true, pml_y, pml_x>(                                \
@@ -1627,6 +1641,10 @@ void forward_shot(
       FORWARD_KERNEL_SIGMANOGRAD(2, 1);
       FORWARD_KERNEL_SIGMANOGRAD(2, 2);
     }
+    if (n_receivers_per_shot_p > 0) {
+      record_pressure_receivers(r_p + t * n_receivers_per_shot_p, sigmayy,
+                                sigmaxx, receivers_p_i, n_receivers_per_shot_p);
+    }
   }
 }
 
@@ -1653,22 +1671,24 @@ void backward_shot(
     int64_t const *__restrict sources_y_i,
     int64_t const *__restrict sources_x_i,
     int64_t const *__restrict receivers_y_i,
-    int64_t const *__restrict receivers_x_i, T const *__restrict dvydbuoyancy,
+    int64_t const *__restrict receivers_x_i,
+    int64_t const *__restrict receivers_p_i, T const *__restrict dvydbuoyancy,
     T const *__restrict dvxdbuoyancy, T const *__restrict dvydy_store,
     T const *__restrict dvxdx_store, T const *__restrict dvydxdvxdy_store,
     T const *__restrict lamb, T const *__restrict mu,
     T const *__restrict buoyancy, T *__restrict f_y, T *__restrict f_x,
-    T const *__restrict r_y, T const *__restrict r_x, T *__restrict grad_lamb,
-    T *__restrict grad_mu, T *__restrict grad_buoyancy, T const *__restrict ay,
-    T const *__restrict ayh, T const *__restrict ax, T const *__restrict axh,
-    T const *__restrict by, T const *__restrict byh, T const *__restrict bx,
-    T const *__restrict bxh, T dt, T const *__restrict fd_coeffsy,
-    T const fd_coeffs1y[][5], T const *__restrict fd_coeffs2y,
-    T const *__restrict fd_coeffs3y, T const *__restrict fd_coeffsx,
-    T const fd_coeffs1x[][5], T const *__restrict fd_coeffs2x,
-    T const *__restrict fd_coeffs3x, int64_t n_sources_per_shot_y,
-    int64_t n_sources_per_shot_x, int64_t n_receivers_per_shot_y,
-    int64_t n_receivers_per_shot_x, int64_t ny, int64_t nx, int64_t nt,
+    T const *__restrict r_y, T const *__restrict r_x, T const *__restrict r_p,
+    T *__restrict grad_lamb, T *__restrict grad_mu, T *__restrict grad_buoyancy,
+    T const *__restrict ay, T const *__restrict ayh, T const *__restrict ax,
+    T const *__restrict axh, T const *__restrict by, T const *__restrict byh,
+    T const *__restrict bx, T const *__restrict bxh, T dt,
+    T const *__restrict fd_coeffsy, T const fd_coeffs1y[][5],
+    T const *__restrict fd_coeffs2y, T const *__restrict fd_coeffs3y,
+    T const *__restrict fd_coeffsx, T const fd_coeffs1x[][5],
+    T const *__restrict fd_coeffs2x, T const *__restrict fd_coeffs3x,
+    int64_t n_sources_per_shot_y, int64_t n_sources_per_shot_x,
+    int64_t n_receivers_per_shot_y, int64_t n_receivers_per_shot_x,
+    int64_t n_receivers_per_shot_p, int64_t ny, int64_t nx, int64_t nt,
     int64_t step_ratio, bool lamb_requires_grad, bool mu_requires_grad,
     bool buoyancy_requires_grad, int64_t const *__restrict spml_regionsy,
     int64_t const *__restrict spml_regionsx,
@@ -1690,6 +1710,12 @@ void backward_shot(
       vpml_regionsx)
 
   for (int64_t t{nt - 1}; t >= 0; --t) {
+    if (n_receivers_per_shot_p > 0) {
+      add_sources(sigmayy, r_p + t * n_receivers_per_shot_p, receivers_p_i,
+                  n_receivers_per_shot_p);
+      add_sources(sigmaxx, r_p + t * n_receivers_per_shot_p, receivers_p_i,
+                  n_receivers_per_shot_p);
+    }
     if (t % step_ratio == 0 and lamb_requires_grad) {
       add_to_grad_lamb<T>(
           grad_lamb, sigmayy, sigmaxx, dvydy_store + (t / step_ratio) * ny * nx,
@@ -1702,7 +1728,6 @@ void backward_shot(
                         dvydxdvxdy_store + (t / step_ratio) * ny * nx,
                         step_ratio, ny, nx);
     }
-
     if (n_receivers_per_shot_y > 0) {
       add_sources(vy, r_y + t * n_receivers_per_shot_y, receivers_y_i,
                   n_receivers_per_shot_y);
@@ -1733,7 +1758,6 @@ void backward_shot(
           grad_buoyancy, vy, vx, dvydbuoyancy + (t / step_ratio) * ny * nx,
           dvxdbuoyancy + (t / step_ratio) * ny * nx, step_ratio, ny, nx);
     }
-
     BACKWARD_KERNEL_V(0, 0);
     BACKWARD_KERNEL_V(0, 1);
     BACKWARD_KERNEL_V(0, 2);
@@ -1842,10 +1866,10 @@ class ElasticCPUFunction
       torch::Tensor const &byh, torch::Tensor const &bx,
       torch::Tensor const &bxh, torch::Tensor const &sources_y_i,
       torch::Tensor const &sources_x_i, torch::Tensor const &receivers_y_i,
-      torch::Tensor const &receivers_x_i, double dy, double dx, double dt,
-      int64_t nt, int64_t n_batch, int64_t step_ratio, int64_t accuracy,
-      int64_t pml_width0, int64_t pml_width1, int64_t pml_width2,
-      int64_t pml_width3) {
+      torch::Tensor const &receivers_x_i, torch::Tensor const &receivers_p_i,
+      double dy, double dx, double dt, int64_t nt, int64_t n_batch,
+      int64_t step_ratio, int64_t accuracy, int64_t pml_width0,
+      int64_t pml_width1, int64_t pml_width2, int64_t pml_width3) {
     at::AutoDispatchBelowADInplaceOrView g;
     auto options{at::device(lamb.device()).dtype(lamb.scalar_type())};
     auto ny{lamb.size(0)};
@@ -1870,11 +1894,15 @@ class ElasticCPUFunction
     }
     int64_t n_receivers_per_shot_y{};
     int64_t n_receivers_per_shot_x{};
+    int64_t n_receivers_per_shot_p{};
     if (receivers_y_i.numel() > 0) {
       n_receivers_per_shot_y = receivers_y_i.size(1);
     }
     if (receivers_x_i.numel() > 0) {
       n_receivers_per_shot_x = receivers_x_i.size(1);
+    }
+    if (receivers_p_i.numel() > 0) {
+      n_receivers_per_shot_p = receivers_p_i.size(1);
     }
     auto vy{create_or_clone(vy0, options, size_with_batch)};
     auto vx{create_or_clone(vx0, options, size_with_batch)};
@@ -1891,6 +1919,7 @@ class ElasticCPUFunction
     auto m_sigmaxxx{create_or_clone(m_sigmaxxx0, options, size_with_batch)};
     auto r_y{at::empty({n_batch, nt, n_receivers_per_shot_y}, options)};
     auto r_x{at::empty({n_batch, nt, n_receivers_per_shot_x}, options)};
+    auto r_p{at::empty({n_batch, nt, n_receivers_per_shot_p}, options)};
     torch::Tensor dvydbuoyancy;
     torch::Tensor dvxdbuoyancy;
     torch::Tensor dvydy_store;
@@ -1958,6 +1987,7 @@ class ElasticCPUFunction
           scalar_t const *__restrict f_x_a{f_x.data_ptr<scalar_t>()};
           scalar_t *__restrict r_y_a{r_y.data_ptr<scalar_t>()};
           scalar_t *__restrict r_x_a{r_x.data_ptr<scalar_t>()};
+          scalar_t *__restrict r_p_a{r_p.data_ptr<scalar_t>()};
           scalar_t *__restrict vy_a{vy.data_ptr<scalar_t>()};
           scalar_t *__restrict vx_a{vx.data_ptr<scalar_t>()};
           scalar_t *__restrict sigmayy_a{sigmayy.data_ptr<scalar_t>()};
@@ -1987,6 +2017,8 @@ class ElasticCPUFunction
               receivers_y_i.data_ptr<int64_t>()};
           int64_t const *__restrict receivers_x_i_a{
               receivers_x_i.data_ptr<int64_t>()};
+          int64_t const *__restrict receivers_p_i_a{
+              receivers_p_i.data_ptr<int64_t>()};
           scalar_t *__restrict dvydbuoyancy_a{};
           scalar_t *__restrict dvxdbuoyancy_a{};
           scalar_t *__restrict dvydy_store_a{};
@@ -2016,25 +2048,27 @@ class ElasticCPUFunction
               auto six{shot * n_sources_per_shot_x};
               auto riy{shot * n_receivers_per_shot_y};
               auto rix{shot * n_receivers_per_shot_x};
+              auto rip{shot * n_receivers_per_shot_p};
               forward_shots[accuracy / 2 - 1](
                   vy_a + i, vx_a + i, sigmayy_a + i, sigmaxy_a + i,
                   sigmaxx_a + i, m_vyy_a + i, m_vyx_a + i, m_vxy_a + i,
                   m_vxx_a + i, m_sigmayyy_a + i, m_sigmaxyy_a + i,
                   m_sigmaxyx_a + i, m_sigmaxxx_a + i, sources_y_i_a + siy,
                   sources_x_i_a + six, receivers_y_i_a + riy,
-                  receivers_x_i_a + rix, dvydbuoyancy_a + i * (nt / step_ratio),
+                  receivers_x_i_a + rix, receivers_p_i_a + rip,
+                  dvydbuoyancy_a + i * (nt / step_ratio),
                   dvxdbuoyancy_a + i * (nt / step_ratio),
                   dvydy_store_a + i * (nt / step_ratio),
                   dvxdx_store_a + i * (nt / step_ratio),
                   dvydxdvxdy_store_a + i * (nt / step_ratio), lamb_a, mu_a,
                   buoyancy_a, f_y_a + siy * nt, f_x_a + six * nt,
-                  r_y_a + riy * nt, r_x_a + rix * nt, ay_a, ayh_a, ax_a, axh_a,
-                  by_a, byh_a, bx_a, bxh_a, dt_a, fd_coeffsy, fd_coeffs1y,
-                  fd_coeffs2y, fd_coeffs3y, fd_coeffsx, fd_coeffs1x,
-                  fd_coeffs2x, fd_coeffs3x, n_sources_per_shot_y,
+                  r_y_a + riy * nt, r_x_a + rix * nt, r_p_a + rip * nt, ay_a,
+                  ayh_a, ax_a, axh_a, by_a, byh_a, bx_a, bxh_a, dt_a,
+                  fd_coeffsy, fd_coeffs1y, fd_coeffs2y, fd_coeffs3y, fd_coeffsx,
+                  fd_coeffs1x, fd_coeffs2x, fd_coeffs3x, n_sources_per_shot_y,
                   n_sources_per_shot_x, n_receivers_per_shot_y,
-                  n_receivers_per_shot_x, ny, nx, nt, step_ratio,
-                  lamb.requires_grad(), mu.requires_grad(),
+                  n_receivers_per_shot_x, n_receivers_per_shot_p, ny, nx, nt,
+                  step_ratio, lamb.requires_grad(), mu.requires_grad(),
                   buoyancy.requires_grad(), pml_regionsy, pml_regionsx);
             }
           });
@@ -2051,7 +2085,7 @@ class ElasticCPUFunction
         m_sigmaxxx0.requires_grad()) {
       ctx->save_for_backward({lamb, mu, buoyancy, ay, ayh, ax, axh, by, byh, bx,
                               bxh, sources_y_i, sources_x_i, receivers_y_i,
-                              receivers_x_i});
+                              receivers_x_i, receivers_p_i});
       ctx->saved_data["dvydbuoyancy"] = dvydbuoyancy;
       ctx->saved_data["dvxdbuoyancy"] = dvxdbuoyancy;
       ctx->saved_data["dvydy_store"] = dvydy_store;
@@ -2069,9 +2103,9 @@ class ElasticCPUFunction
       ctx->saved_data["pml_width2"] = pml_width[2];
       ctx->saved_data["pml_width3"] = pml_width[3];
     }
-    return {vy,         vx,         sigmayy,    sigmaxy, sigmaxx,
-            m_vyy,      m_vyx,      m_vxy,      m_vxx,   m_sigmayyy,
-            m_sigmaxyy, m_sigmaxyx, m_sigmaxxx, r_y,     r_x};
+    return {vy,         vx,    sigmayy, sigmaxy,    sigmaxx,    m_vyy,
+            m_vyx,      m_vxy, m_vxx,   m_sigmayyy, m_sigmaxyy, m_sigmaxyx,
+            m_sigmaxxx, r_p,   r_y,     r_x};
   }
 
   static torch::autograd::tensor_list backward(
@@ -2094,6 +2128,7 @@ class ElasticCPUFunction
     auto const &sources_x_i{saved[12]};
     auto const &receivers_y_i{saved[13]};
     auto const &receivers_x_i{saved[14]};
+    auto const &receivers_p_i{saved[15]};
     auto const &dvydbuoyancy{ctx->saved_data["dvydbuoyancy"].toTensor()};
     auto const &dvxdbuoyancy{ctx->saved_data["dvxdbuoyancy"].toTensor()};
     auto const &dvydy_store{ctx->saved_data["dvydy_store"].toTensor()};
@@ -2148,8 +2183,9 @@ class ElasticCPUFunction
     auto m_sigmaxyyn{at::zeros_like(m_sigmaxyy)};
     auto m_sigmaxyxn{at::zeros_like(m_sigmaxyx)};
     auto m_sigmaxxxn{at::zeros_like(m_sigmaxxx)};
-    auto grad_r_y{grad_outputs[13].contiguous()};
-    auto grad_r_x{grad_outputs[14].contiguous()};
+    auto grad_r_p{grad_outputs[13].contiguous()};
+    auto grad_r_y{grad_outputs[14].contiguous()};
+    auto grad_r_x{grad_outputs[15].contiguous()};
     auto options{at::device(vy.device()).dtype(vy.scalar_type())};
     int64_t n_sources_per_shot_y{};
     int64_t n_sources_per_shot_x{};
@@ -2161,11 +2197,15 @@ class ElasticCPUFunction
     }
     int64_t n_receivers_per_shot_y{};
     int64_t n_receivers_per_shot_x{};
+    int64_t n_receivers_per_shot_p{};
     if (receivers_y_i.numel() > 0) {
       n_receivers_per_shot_y = receivers_y_i.size(1);
     }
     if (receivers_x_i.numel() > 0) {
       n_receivers_per_shot_x = receivers_x_i.size(1);
+    }
+    if (receivers_p_i.numel() > 0) {
+      n_receivers_per_shot_p = receivers_p_i.size(1);
     }
 
     int64_t n_parallel{
@@ -2238,6 +2278,7 @@ class ElasticCPUFunction
                              : grad_buoyancy_a};
           scalar_t const *__restrict grad_r_y_a{grad_r_y.data_ptr<scalar_t>()};
           scalar_t const *__restrict grad_r_x_a{grad_r_x.data_ptr<scalar_t>()};
+          scalar_t const *__restrict grad_r_p_a{grad_r_p.data_ptr<scalar_t>()};
           scalar_t *__restrict grad_f_y_a{grad_f_y.data_ptr<scalar_t>()};
           scalar_t *__restrict grad_f_x_a{grad_f_x.data_ptr<scalar_t>()};
           scalar_t *__restrict vy_a{vy.data_ptr<scalar_t>()};
@@ -2273,6 +2314,8 @@ class ElasticCPUFunction
               receivers_y_i.data_ptr<int64_t>()};
           int64_t const *__restrict receivers_x_i_a{
               receivers_x_i.data_ptr<int64_t>()};
+          int64_t const *__restrict receivers_p_i_a{
+              receivers_p_i.data_ptr<int64_t>()};
           scalar_t const *__restrict dvydbuoyancy_a{};
           scalar_t const *__restrict dvxdbuoyancy_a{};
           scalar_t const *__restrict dvydy_store_a{};
@@ -2302,6 +2345,7 @@ class ElasticCPUFunction
               auto six{shot * n_sources_per_shot_x};
               auto riy{shot * n_receivers_per_shot_y};
               auto rix{shot * n_receivers_per_shot_x};
+              auto rip{shot * n_receivers_per_shot_p};
               backward_shots[accuracy / 2 - 1](
                   vy_a + i, vx_a + i, sigmayy_a + i, sigmaxy_a + i,
                   sigmaxx_a + i, m_vyy_a + i, m_vyx_a + i, m_vxy_a + i,
@@ -2310,13 +2354,14 @@ class ElasticCPUFunction
                   m_sigmaxyyn_a + i, m_sigmaxyxn_a + i, m_sigmaxxxn_a + i,
                   sources_y_i_a + siy, sources_x_i_a + six,
                   receivers_y_i_a + riy, receivers_x_i_a + rix,
-                  dvydbuoyancy_a + i * (nt / step_ratio),
+                  receivers_p_i_a + rip, dvydbuoyancy_a + i * (nt / step_ratio),
                   dvxdbuoyancy_a + i * (nt / step_ratio),
                   dvydy_store_a + i * (nt / step_ratio),
                   dvxdx_store_a + i * (nt / step_ratio),
                   dvydxdvxdy_store_a + i * (nt / step_ratio), lamb_a, mu_a,
                   buoyancy_a, grad_f_y_a + siy * nt, grad_f_x_a + six * nt,
                   grad_r_y_a + riy * nt, grad_r_x_a + rix * nt,
+                  grad_r_p_a + rip * nt,
                   grad_lamb_batch_a + at::get_thread_num() * ny * nx,
                   grad_mu_batch_a + at::get_thread_num() * ny * nx,
                   grad_buoyancy_batch_a + at::get_thread_num() * ny * nx, ay_a,
@@ -2324,8 +2369,8 @@ class ElasticCPUFunction
                   fd_coeffsy, fd_coeffs1y, fd_coeffs2y, fd_coeffs3y, fd_coeffsx,
                   fd_coeffs1x, fd_coeffs2x, fd_coeffs3x, n_sources_per_shot_y,
                   n_sources_per_shot_x, n_receivers_per_shot_y,
-                  n_receivers_per_shot_x, ny, nx, nt, step_ratio,
-                  lamb.requires_grad(), mu.requires_grad(),
+                  n_receivers_per_shot_x, n_receivers_per_shot_p, ny, nx, nt,
+                  step_ratio, lamb.requires_grad(), mu.requires_grad(),
                   buoyancy.requires_grad(), spml_regionsy, spml_regionsx,
                   vpml_regionsy, vpml_regionsx);
             }
@@ -2399,6 +2444,7 @@ class ElasticCPUFunction
             torch::Tensor(),
             torch::Tensor(),
             torch::Tensor(),
+            torch::Tensor(),
             torch::Tensor()};
   }
 };
@@ -2418,15 +2464,16 @@ std::vector<torch::Tensor> elastic_cpu_autograd(
     torch::Tensor const &bx, torch::Tensor const &bxh,
     torch::Tensor const &sources_y_i, torch::Tensor const &sources_x_i,
     torch::Tensor const &receivers_y_i, torch::Tensor const &receivers_x_i,
-    double dy, double dx, double dt, int64_t nt, int64_t n_batch,
-    int64_t step_ratio, int64_t accuracy, int64_t pml_width0,
-    int64_t pml_width1, int64_t pml_width2, int64_t pml_width3) {
+    torch::Tensor const &receivers_p_i, double dy, double dx, double dt,
+    int64_t nt, int64_t n_batch, int64_t step_ratio, int64_t accuracy,
+    int64_t pml_width0, int64_t pml_width1, int64_t pml_width2,
+    int64_t pml_width3) {
   return ElasticCPUFunction::apply(
       lamb, mu, buoyancy, f_y, f_x, vy0, vx0, sigmayy0, sigmaxy0, sigmaxx0,
       m_vyy0, m_vyx0, m_vxy0, m_vxx0, m_sigmayyy0, m_sigmaxyy0, m_sigmaxyx0,
       m_sigmaxxx0, ay, ayh, ax, axh, by, byh, bx, bxh, sources_y_i, sources_x_i,
-      receivers_y_i, receivers_x_i, dy, dx, dt, nt, n_batch, step_ratio,
-      accuracy, pml_width0, pml_width1, pml_width2, pml_width3);
+      receivers_y_i, receivers_x_i, receivers_p_i, dy, dx, dt, nt, n_batch,
+      step_ratio, accuracy, pml_width0, pml_width1, pml_width2, pml_width3);
 }
 
 TORCH_LIBRARY_IMPL(deepwave, AutogradCPU, m) {

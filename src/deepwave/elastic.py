@@ -74,6 +74,7 @@ class Elastic(torch.nn.Module):
                 source_locations_x: Optional[Tensor] = None,
                 receiver_locations_y: Optional[Tensor] = None,
                 receiver_locations_x: Optional[Tensor] = None,
+                receiver_locations_p: Optional[Tensor] = None,
                 accuracy: int = 4, pml_width: Union[int, List[int]] = 20,
                 pml_freq: Optional[float] = None,
                 max_vel: Optional[float] = None,
@@ -108,6 +109,7 @@ class Elastic(torch.nn.Module):
                                                                     Tensor,
                                                                     Tensor,
                                                                     Tensor,
+                                                                    Tensor,
                                                                     Tensor]:
         """Perform forward propagation/modelling.
 
@@ -123,6 +125,7 @@ class Elastic(torch.nn.Module):
                        source_locations_x=source_locations_x,
                        receiver_locations_y=receiver_locations_y,
                        receiver_locations_x=receiver_locations_x,
+                       receiver_locations_p=receiver_locations_p,
                        accuracy=accuracy, pml_width=pml_width,
                        pml_freq=pml_freq,
                        max_vel=max_vel,
@@ -155,6 +158,7 @@ def elastic(lamb: Tensor, mu: Tensor, buoyancy: Tensor,
             source_locations_x: Optional[Tensor] = None,
             receiver_locations_y: Optional[Tensor] = None,
             receiver_locations_x: Optional[Tensor] = None,
+            receiver_locations_p: Optional[Tensor] = None,
             accuracy: int = 4, pml_width: Union[int, List[int]] = 20,
             pml_freq: Optional[float] = None,
             max_vel: Optional[float] = None,
@@ -182,7 +186,7 @@ def elastic(lamb: Tensor, mu: Tensor, buoyancy: Tensor,
                                                  Tensor, Tensor,
                                                  Tensor, Tensor,
                                                  Tensor, Tensor,
-                                                 Tensor]:
+                                                 Tensor, Tensor]:
     """Elastic wave propagation (functional interface).
 
     This function performs forward modelling with the elastic wave equation.
@@ -250,6 +254,8 @@ def elastic(lamb: Tensor, mu: Tensor, buoyancy: Tensor,
         receiver_locations_x:
             A Tensor containing the coordinates of the receivers oriented
             in the second spatial dimension.
+        receiver_locations_p:
+            A Tensor containing the coordinates of the pressure receivers.
         accuracy:
             An int specifying the finite difference order of accuracy. Possible
             values are 2 and 4, with larger numbers resulting in more
@@ -409,6 +415,9 @@ def elastic(lamb: Tensor, mu: Tensor, buoyancy: Tensor,
             m_sigmayyy_0, m_sigmaxyy_0, m_sigmaxyx_0, m_sigmaxxx_0:
                 A Tensor containing the final value for the "memory variable"
                 for the stress, used in the PML.
+            receiver_amplitudes_p:
+                A Tensor containing the receiver amplitudes for pressure
+                receivers.
             receiver_amplitudes_y:
                 A Tensor of dimensions [shot, receiver, time] containing
                 the receiver amplitudes recorded at the provided receiver
@@ -441,6 +450,15 @@ def elastic(lamb: Tensor, mu: Tensor, buoyancy: Tensor,
         raise RuntimeError("The minimum x receiver "
                            "location in the first dimension must be "
                            "greater than 0.")
+    if (receiver_locations_p is not None and
+            (receiver_locations_p[..., 1].max() >= lamb.shape[1] - 1 or
+             receiver_locations_p[..., 0].min() <= 0)):
+        raise RuntimeError("With the provided model, the pressure "
+                           "receiver locations in the second dimension "
+                           "must be less than " +
+                           str(lamb.shape[1] - 1) + " and "
+                           "in the first dimension must be "
+                           "greater than 0.")
     if accuracy not in [2, 4]:
         raise RuntimeError("The accuracy must be 2 or 4.")
 
@@ -456,7 +474,8 @@ def elastic(lamb: Tensor, mu: Tensor, buoyancy: Tensor,
                           m_sigmaxyx_0, m_sigmaxxx_0],
                          [source_amplitudes_y, source_amplitudes_x],
                          [source_locations_y, source_locations_x],
-                         [receiver_locations_y, receiver_locations_x],
+                         [receiver_locations_y, receiver_locations_x,
+                          receiver_locations_p],
                          accuracy, pml_width, pml_freq, max_vel,
                          survey_pad,
                          origin, nt, model_gradient_sampling_interval,
@@ -469,7 +488,7 @@ def elastic(lamb: Tensor, mu: Tensor, buoyancy: Tensor,
      m_sigmaxyx, m_sigmaxxx) = wavefields
     ay, ayh, ax, axh, by, byh, bx, bxh = pml_profiles
     sources_y_i, sources_x_i = sources_i
-    receivers_y_i, receivers_x_i = receivers_i
+    receivers_y_i, receivers_x_i, receivers_p_i = receivers_i
     if any([s <= (accuracy + 1) * 2 for s in lamb.shape]):
         raise RuntimeError("The model must have at least " +
                            str((accuracy + 1) * 2 + 1) +
@@ -478,7 +497,7 @@ def elastic(lamb: Tensor, mu: Tensor, buoyancy: Tensor,
     (vy, vx, sigmayy, sigmaxy, sigmaxx,
      m_vyy, m_vyx, m_vxy, m_vxx,
      m_sigmayyy, m_sigmaxyy,
-     m_sigmaxyx, m_sigmaxxx, receiver_amplitudes_y,
+     m_sigmaxyx, m_sigmaxxx, receiver_amplitudes_p, receiver_amplitudes_y,
      receiver_amplitudes_x) = \
         torch.ops.deepwave.elastic(
             lamb, mu, buoyancy, source_amplitudes_y, source_amplitudes_x,
@@ -488,7 +507,7 @@ def elastic(lamb: Tensor, mu: Tensor, buoyancy: Tensor,
             m_sigmaxyx, m_sigmaxxx,
             ay, ayh, ax, axh, by, byh, bx, bxh,
             sources_y_i, sources_x_i, receivers_y_i, receivers_x_i,
-            dy, dx, dt, nt,
+            receivers_p_i, dy, dx, dt, nt,
             n_batch, step_ratio * model_gradient_sampling_interval,
             accuracy, pml_width_list[0], pml_width_list[1], pml_width_list[2],
             pml_width_list[3]
@@ -500,9 +519,13 @@ def elastic(lamb: Tensor, mu: Tensor, buoyancy: Tensor,
     receiver_amplitudes_x = downsample_and_movedim(receiver_amplitudes_x,
                                                    step_ratio, freq_taper_frac,
                                                    time_pad_frac)
+    receiver_amplitudes_p = -downsample_and_movedim(receiver_amplitudes_p,
+                                                    step_ratio,
+                                                    freq_taper_frac,
+                                                    time_pad_frac)
 
     return (vy, vx, sigmayy, sigmaxy, sigmaxx,
             m_vyy, m_vyx, m_vxy, m_vxx,
             m_sigmayyy, m_sigmaxyy,
-            m_sigmaxyx, m_sigmaxxx, receiver_amplitudes_y,
-            receiver_amplitudes_x)
+            m_sigmaxyx, m_sigmaxxx, receiver_amplitudes_p,
+            receiver_amplitudes_y, receiver_amplitudes_x)

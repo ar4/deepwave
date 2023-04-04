@@ -306,8 +306,8 @@ def run_born_scatter(c, dc, freq, dx, dt, nx,
                               -sources['amplitude'][shot, source, :]).to(dtype)
 
     actual = propagator(model, scatter, dx, dt, sources['amplitude'],
-                        sources['locations'], x_r, x_r, prop_kwargs=prop_kwargs,
-                        **kwargs)[-1]
+                        sources['locations'], x_r, x_r,
+                        prop_kwargs=prop_kwargs, **kwargs)[-1]
 
     return expected, actual
 
