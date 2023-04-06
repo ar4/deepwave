@@ -3,10 +3,10 @@ import torchvision
 import deepwave
 import matplotlib.pyplot as plt
 
-source_amplitudes=deepwave.wavelets.ricker(25, 200, 0.004,
-                                           0.06).reshape(1, 1, -1)
-source_locations=torch.tensor([[[0, 10]]])
-receiver_locations=torch.tensor([[[0, 90]]])
+source_amplitudes = deepwave.wavelets.ricker(25, 200, 0.004,
+                                             0.06).reshape(1, 1, -1)
+source_locations = torch.tensor([[[0, 10]]])
+receiver_locations = torch.tensor([[[0, 90]]])
 
 v_true = 1500 * torch.ones(50, 100)
 v = 1600 * torch.ones(50, 100)
@@ -112,4 +112,3 @@ plt.figure(figsize=(10.5, 5))
 plt.imshow(v_smooth.detach())
 plt.title("Smooth model at the next iteration")
 plt.savefig("example_large_edge_gradient4.jpg")
-
