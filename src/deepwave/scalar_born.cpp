@@ -1696,7 +1696,6 @@ class ScalarBornCPUFunction
               for (int64_t shot = bstart; shot < bend; ++shot) {
                 auto i{shot * ny * nx};
                 auto ri{shot * n_receivers_per_shot};
-                auto bg_ri{shot * n_bg_receivers_per_shot};
                 backward_shot_scs[accuracy / 2 - 1](
                     wfcsc_a + i, wfpsc_a + i, wfcnsc_a + i, psiysc_a + i,
                     psixsc_a + i, psiynsc_a + i, psixnsc_a + i, zetaysc_a + i,

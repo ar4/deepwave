@@ -1787,16 +1787,6 @@ void zero_edge_top(torch::Tensor tensor) {
   tensor.index_put_({all_slice, 0, all_slice}, 0);
 }
 
-void zero_edge_bottom(torch::Tensor tensor, int ny) {
-  at::indexing::TensorIndex all_slice{torch::indexing::Slice()};
-  tensor.index_put_({all_slice, ny - 1, all_slice}, 0);
-}
-
-void zero_edge_left(torch::Tensor tensor) {
-  at::indexing::TensorIndex all_slice{torch::indexing::Slice()};
-  tensor.index_put_({all_slice, all_slice, 0}, 0);
-}
-
 void zero_edge_right(torch::Tensor tensor, int nx) {
   at::indexing::TensorIndex all_slice{torch::indexing::Slice()};
   tensor.index_put_({all_slice, all_slice, nx - 1}, 0);
