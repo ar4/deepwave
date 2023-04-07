@@ -111,9 +111,9 @@ __global__ void forward_kernel_v(
   auto i_nobatch{y * nxc + x};
   auto i{batch * nynxc + i_nobatch};
 
-  if (y < nyc and x < nxc - 1) {
-    bool pml_y{y < pml_regionsyc[0] or y >= pml_regionsyc[1]};
-    bool pml_x{x < pml_regionsxc[0] or x >= pml_regionsxc[1] - 1};
+  if (y < nyc && x < nxc - 1) {
+    bool pml_y{y < pml_regionsyc[0] || y >= pml_regionsyc[1]};
+    bool pml_x{x < pml_regionsxc[0] || x >= pml_regionsxc[1] - 1};
     T dsigmayydy{};
     T dsigmaxydx{};
 
@@ -129,7 +129,7 @@ __global__ void forward_kernel_v(
         }
       }
     }
-    if (x > A / 2 - 2 and x < nxc - 2 - A / 2 + 2) {
+    if (x > A / 2 - 2 && x < nxc - 2 - A / 2 + 2) {
       for (int k{}; k < A / 2; ++k) {
         dsigmaxydx += fd_coeffsx<T>(k) * (sigmaxy[i + 1 + k] - sigmaxy[i - k]);
       }
@@ -148,7 +148,7 @@ __global__ void forward_kernel_v(
         }
       }
     }
-    if (y > A / 2 - 1 and y < nyc - 1 - A / 2 + 1) {
+    if (y > A / 2 - 1 && y < nyc - 1 - A / 2 + 1) {
       for (int k{}; k < A / 2; ++k) {
         dsigmayydy += fd_coeffsy<T>(k) *
                       (sigmayy[i + (1 + k) * nxc] - sigmayy[i - k * nxc]);
@@ -178,9 +178,9 @@ __global__ void forward_kernel_v(
     }
   }
 
-  if (y >= 1 and y < nyc and x < nxc) {
-    bool pml_y{y < pml_regionsyc[0] + 1 or y >= pml_regionsyc[1]};
-    bool pml_x{x < pml_regionsxc[0] or x >= pml_regionsxc[1]};
+  if (y >= 1 && y < nyc && x < nxc) {
+    bool pml_y{y < pml_regionsyc[0] + 1 || y >= pml_regionsyc[1]};
+    bool pml_x{x < pml_regionsxc[0] || x >= pml_regionsxc[1]};
     T dsigmaxydy{};
     T dsigmaxxdx{};
 
@@ -196,7 +196,7 @@ __global__ void forward_kernel_v(
         }
       }
     }
-    if (y > 1 + A / 2 - 2 and y < nyc - 1 - A / 2 + 2) {
+    if (y > 1 + A / 2 - 2 && y < nyc - 1 - A / 2 + 2) {
       for (int k{}; k < A / 2; ++k) {
         dsigmaxydy += fd_coeffsy<T>(k) *
                       (sigmaxy[i + k * nxc] - sigmaxy[i - (k + 1) * nxc]);
@@ -215,7 +215,7 @@ __global__ void forward_kernel_v(
         }
       }
     }
-    if (x > A / 2 - 1 and x < nxc - 1 - A / 2 + 1) {
+    if (x > A / 2 - 1 && x < nxc - 1 - A / 2 + 1) {
       for (int k{}; k < A / 2; ++k) {
         dsigmaxxdx +=
             fd_coeffsx<T>(k) * (sigmaxx[i + k] - sigmaxx[i - (1 + k)]);
@@ -253,9 +253,9 @@ __global__ void forward_kernel_sigma(
   auto i_nobatch{y * nxc + x};
   auto i{batch * nynxc + i_nobatch};
 
-  if (y < nyc and x < nxc - 1) {
-    bool pml_y{y < pml_regionsyc[0] + 1 or y >= pml_regionsyc[1]};
-    bool pml_x{x < pml_regionsxc[0] or x >= pml_regionsxc[1] - 1};
+  if (y < nyc && x < nxc - 1) {
+    bool pml_y{y < pml_regionsyc[0] + 1 || y >= pml_regionsyc[1]};
+    bool pml_x{x < pml_regionsxc[0] || x >= pml_regionsxc[1] - 1};
     T dvydy{};
     T dvxdx{};
 
@@ -271,7 +271,7 @@ __global__ void forward_kernel_sigma(
         }
       }
     }
-    if (y > 1 + A / 2 - 2 and y < nyc - 1 - A / 2 + 2) {
+    if (y > 1 + A / 2 - 2 && y < nyc - 1 - A / 2 + 2) {
       for (int k{}; k < A / 2; ++k) {
         dvydy += fd_coeffsy<T>(k) * (vy[i + k * nxc] - vy[i - (k + 1) * nxc]);
       }
@@ -289,7 +289,7 @@ __global__ void forward_kernel_sigma(
         }
       }
     }
-    if (x > A / 2 - 2 and x < nxc - 2 - A / 2 + 2) {
+    if (x > A / 2 - 2 && x < nxc - 2 - A / 2 + 2) {
       for (int k{}; k < A / 2; ++k) {
         dvxdx += fd_coeffsx<T>(k) * (vx[i + 1 + k] - vx[i - k]);
       }
@@ -307,15 +307,15 @@ __global__ void forward_kernel_sigma(
     T muyxh{(mu[i_nobatch] + mu[i_nobatch + 1]) / 2};
     sigmayy[i] += dtc<T>() * ((lambyxh + 2 * muyxh) * dvydy + lambyxh * dvxdx);
     sigmaxx[i] += dtc<T>() * ((lambyxh + 2 * muyxh) * dvxdx + lambyxh * dvydy);
-    if (lamb_requires_grad or mu_requires_grad) {
+    if (lamb_requires_grad || mu_requires_grad) {
       dvydy_store[i] = dtc<T>() * dvydy;
       dvxdx_store[i] = dtc<T>() * dvxdx;
     }
   }
 
-  if (y < nyc - 1 and x >= 1 and x < nxc - 1) {
-    bool pml_y{y < pml_regionsyc[0] + 1 or y >= pml_regionsyc[1] - 1};
-    bool pml_x{x < pml_regionsxc[0] + 1 or x >= pml_regionsxc[1] - 1};
+  if (y < nyc - 1 && x >= 1 && x < nxc - 1) {
+    bool pml_y{y < pml_regionsyc[0] + 1 || y >= pml_regionsyc[1] - 1};
+    bool pml_x{x < pml_regionsxc[0] + 1 || x >= pml_regionsxc[1] - 1};
     T dvydx{};
     T dvxdy{};
 
@@ -335,7 +335,7 @@ __global__ void forward_kernel_sigma(
             }
           }
         }
-        if (x > 1 + A / 2 - 2 and x < nxc - 2 - A / 2 + 2) {
+        if (x > 1 + A / 2 - 2 && x < nxc - 2 - A / 2 + 2) {
           for (int k{}; k < A / 2; ++k) {
             dvydxp += fd_coeffsx<T>(k) * (vy[i - (j + 1) * nxc + k] -
                                           vy[i - (j + 1) * nxc - k - 1]);
@@ -359,7 +359,7 @@ __global__ void forward_kernel_sigma(
             }
           }
         }
-        if (x > 1 + A / 2 - 2 and x < nxc - 2 - A / 2 + 2) {
+        if (x > 1 + A / 2 - 2 && x < nxc - 2 - A / 2 + 2) {
           for (int k{}; k < A / 2; ++k) {
             dvydxp += fd_coeffsx<T>(k) * (vy[i + (j + 1) * nxc + k] -
                                           vy[i + (j + 1) * nxc - k - 1]);
@@ -371,7 +371,7 @@ __global__ void forward_kernel_sigma(
         }
       }
     }
-    if (y > 1 + A / 2 - 2 and y < nyc - 2 - A / 2 + 2) {
+    if (y > 1 + A / 2 - 2 && y < nyc - 2 - A / 2 + 2) {
       for (int k{}; k < A / 2; ++k) {
         dvxdy += fd_coeffsy<T>(k) * (vx[i + (k + 1) * nxc] - vx[i - k * nxc]);
       }
@@ -393,7 +393,7 @@ __global__ void forward_kernel_sigma(
             }
           }
         }
-        if (y > 1 + A / 2 - 2 and y < nyc - 2 - A / 2 + 2) {
+        if (y > 1 + A / 2 - 2 && y < nyc - 2 - A / 2 + 2) {
           for (int k{}; k < A / 2; ++k) {
             dvxdyp += fd_coeffsy<T>(k) * (vx[i - (j + 1) + (k + 1) * nxc] -
                                           vx[i - (j + 1) - k * nxc]);
@@ -417,7 +417,7 @@ __global__ void forward_kernel_sigma(
             }
           }
         }
-        if (y > 1 + A / 2 - 2 and y < nyc - 2 - A / 2 + 2) {
+        if (y > 1 + A / 2 - 2 && y < nyc - 2 - A / 2 + 2) {
           for (int k{}; k < A / 2; ++k) {
             dvxdyp += fd_coeffsy<T>(k) * (vx[i + (j + 1) + (k + 1) * nxc] -
                                           vx[i + (j + 1) + (-k) * nxc]);
@@ -429,7 +429,7 @@ __global__ void forward_kernel_sigma(
         }
       }
     }
-    if (x > 1 + A / 2 - 2 and x < nxc - 2 - A / 2 + 2) {
+    if (x > 1 + A / 2 - 2 && x < nxc - 2 - A / 2 + 2) {
       for (int k{}; k < A / 2; ++k) {
         dvydx += fd_coeffsx<T>(k) * (vy[i + k] - vy[i - k - 1]);
       }
@@ -457,7 +457,7 @@ __global__ void add_sources(T *__restrict wf, T const *__restrict f,
                             int64_t n_sources_per_shot, int64_t n_shots) {
   auto source_idx{blockIdx.x * blockDim.x + threadIdx.x};
   auto shot_idx{blockIdx.y * blockDim.y + threadIdx.y};
-  if (source_idx >= n_sources_per_shot or shot_idx >= n_shots) return;
+  if (source_idx >= n_sources_per_shot || shot_idx >= n_shots) return;
   auto k{shot_idx * n_sources_per_shot + source_idx};
   wf[shot_idx * nynxc + sources_i[k]] += f[k];
 }
@@ -469,7 +469,7 @@ __global__ void record_receivers(T *__restrict r, T const *__restrict wf,
                                  int64_t n_shots) {
   auto receiver_idx{blockIdx.x * blockDim.x + threadIdx.x};
   auto shot_idx{blockIdx.y * blockDim.y + threadIdx.y};
-  if (receiver_idx >= n_receivers_per_shot or shot_idx >= n_shots) return;
+  if (receiver_idx >= n_receivers_per_shot || shot_idx >= n_shots) return;
   auto k{shot_idx * n_receivers_per_shot + receiver_idx};
   r[k] = wf[shot_idx * nynxc + receivers_i[k]];
 }
@@ -483,7 +483,7 @@ __global__ void record_pressure_receivers(T *__restrict r,
                                           int64_t n_shots) {
   auto receiver_idx{blockIdx.x * blockDim.x + threadIdx.x};
   auto shot_idx{blockIdx.y * blockDim.y + threadIdx.y};
-  if (receiver_idx >= n_receivers_per_shot or shot_idx >= n_shots) return;
+  if (receiver_idx >= n_receivers_per_shot || shot_idx >= n_shots) return;
   auto k{shot_idx * n_receivers_per_shot + receiver_idx};
   r[k] = sigmayy[shot_idx * nynxc + receivers_i[k]] +
          sigmaxx[shot_idx * nynxc + receivers_i[k]];
@@ -666,9 +666,9 @@ __global__ void backward_kernel_sigma(
   int batch = blockIdx.z * blockDim.z + threadIdx.z;
   auto i_nobatch{y * nxc + x};
   auto i{batch * nynxc + i_nobatch};
-  if (y < nyc and x < nxc - 1) {
-    bool pml_y{y < spml_regionsyc[0] or y >= spml_regionsyc[1]};
-    bool pml_x{x < spml_regionsxc[0] or x >= spml_regionsxc[1] - 1};
+  if (y < nyc && x < nxc - 1) {
+    bool pml_y{y < spml_regionsyc[0] || y >= spml_regionsyc[1]};
+    bool pml_x{x < spml_regionsxc[0] || x >= spml_regionsxc[1] - 1};
     // from sigmayy/sigmaxx edges
     for (int k{}; k <= A; ++k) {
       for (int j{}; j < A / 2 - 1; ++j) {
@@ -703,7 +703,7 @@ __global__ void backward_kernel_sigma(
 
     // from sigmayy/sigmaxx centre
     for (int k{}; k < A / 2; ++k) {
-      if (y > 1 + A / 2 - 2 + k and y < nyc - 1 - A / 2 + 2 + k) {
+      if (y > 1 + A / 2 - 2 + k && y < nyc - 1 - A / 2 + 2 + k) {
         T lambyxh{(lamb[i_nobatch - k * nxc] + lamb[i_nobatch + 1 - k * nxc]) /
                   2};
         T muyxh{(mu[i_nobatch - k * nxc] + mu[i_nobatch + 1 - k * nxc]) / 2};
@@ -713,7 +713,7 @@ __global__ void backward_kernel_sigma(
                        lambyxh * sigmaxx[i - k * nxc]) +
                   by[y - k] * m_vyy[i - k * nxc]);
       }
-      if (y > 1 + A / 2 - 2 - (k + 1) and y < nyc - 1 - A / 2 + 2 - (k + 1)) {
+      if (y > 1 + A / 2 - 2 - (k + 1) && y < nyc - 1 - A / 2 + 2 - (k + 1)) {
         T lambyxh{(lamb[i_nobatch + (k + 1) * nxc] +
                    lamb[i_nobatch + 1 + (k + 1) * nxc]) /
                   2};
@@ -752,7 +752,7 @@ __global__ void backward_kernel_sigma(
           }
         }
         for (int k{}; k < A / 2; ++k) {
-          if (x > 1 + A / 2 - 2 + k and x < nxc - 2 - A / 2 + 2 + k) {
+          if (x > 1 + A / 2 - 2 + k && x < nxc - 2 - A / 2 + 2 + k) {
             int64_t i2{i - (-(j + 1) * nxc + k)};
             int64_t i2_nobatch{i_nobatch - (-(j + 1) * nxc + k)};
             T muyhx{(mu[i2_nobatch] + mu[i2_nobatch + nxc]) / 2};
@@ -760,7 +760,7 @@ __global__ void backward_kernel_sigma(
                      (muyhx * dtc<T>() * (1 + byh[y2]) * sigmaxy[i2] +
                       byh[y2] * m_vxy[i2]);
           }
-          if (x > 1 + A / 2 - 2 - k - 1 and x < nxc - 2 - A / 2 + 2 - k - 1) {
+          if (x > 1 + A / 2 - 2 - k - 1 && x < nxc - 2 - A / 2 + 2 - k - 1) {
             int64_t i2{i - (-(j + 1) * nxc - k - 1)};
             int64_t i2_nobatch{i_nobatch - (-(j + 1) * nxc - k - 1)};
             T muyhx{(mu[i2_nobatch] + mu[i2_nobatch + nxc]) / 2};
@@ -792,7 +792,7 @@ __global__ void backward_kernel_sigma(
           }
         }
         for (int k{}; k < A / 2; ++k) {
-          if (x > 1 + A / 2 - 2 + k and x < nxc - 2 - A / 2 + 2 + k) {
+          if (x > 1 + A / 2 - 2 + k && x < nxc - 2 - A / 2 + 2 + k) {
             int64_t i2{i - ((j + 1) * nxc + k)};
             int64_t i2_nobatch{i_nobatch - ((j + 1) * nxc + k)};
             T muyhx{(mu[i2_nobatch] + mu[i2_nobatch + nxc]) / 2};
@@ -800,7 +800,7 @@ __global__ void backward_kernel_sigma(
                      (muyhx * dtc<T>() * (1 + byh[y2]) * sigmaxy[i2] +
                       byh[y2] * m_vxy[i2]);
           }
-          if (x > 1 + A / 2 - 2 - k - 1 and x < nxc - 2 - A / 2 + 2 - k - 1) {
+          if (x > 1 + A / 2 - 2 - k - 1 && x < nxc - 2 - A / 2 + 2 - k - 1) {
             int64_t i2{i - ((j + 1) * nxc - k - 1)};
             int64_t i2_nobatch{i_nobatch - ((j + 1) * nxc - k - 1)};
             T muyhx{(mu[i2_nobatch] + mu[i2_nobatch + nxc]) / 2};
@@ -813,7 +813,7 @@ __global__ void backward_kernel_sigma(
     }
 
     // from sigmaxy dvydx
-    if (y > 0 and y < nyc - 1) {
+    if (y > 0 && y < nyc - 1) {
       for (int k{1}; k <= A + 1; ++k) {
         for (int j{}; j < A / 2 - 1; ++j) {
           if (x == 1 + j + (-j + k - 2)) {
@@ -836,7 +836,7 @@ __global__ void backward_kernel_sigma(
         }
       }
       for (int k{}; k < A / 2; ++k) {
-        if (x > 1 + A / 2 - 2 + k and x < nxc - 2 - A / 2 + 2 + k) {
+        if (x > 1 + A / 2 - 2 + k && x < nxc - 2 - A / 2 + 2 + k) {
           int64_t x2{x - k};
           int64_t i2{i - k};
           int64_t i2_nobatch{i_nobatch - k};
@@ -845,7 +845,7 @@ __global__ void backward_kernel_sigma(
                    (muyhx * dtc<T>() * (1 + bx[x2]) * sigmaxy[i2] +
                     bx[x2] * m_vyx[i2]);
         }
-        if (x > 1 + A / 2 - 2 - k - 1 and x < nxc - 2 - A / 2 + 2 - k - 1) {
+        if (x > 1 + A / 2 - 2 - k - 1 && x < nxc - 2 - A / 2 + 2 - k - 1) {
           int64_t x2{x + k + 1};
           int64_t i2{i + k + 1};
           int64_t i2_nobatch{i_nobatch + k + 1};
@@ -877,9 +877,9 @@ __global__ void backward_kernel_sigma(
     }
   }
 
-  if (y >= 1 and y < nyc and x < nxc) {
-    bool pml_y{y < spml_regionsyc[0] + 1 or y >= spml_regionsyc[1]};
-    bool pml_x{x < spml_regionsxc[0] or x >= spml_regionsxc[1]};
+  if (y >= 1 && y < nyc && x < nxc) {
+    bool pml_y{y < spml_regionsyc[0] + 1 || y >= spml_regionsyc[1]};
+    bool pml_x{x < spml_regionsxc[0] || x >= spml_regionsxc[1]};
     // from sigmayy/sigmaxx edges
     for (int k{}; k <= A; ++k) {
       for (int j{}; j < A / 2 - 1; ++j) {
@@ -911,7 +911,7 @@ __global__ void backward_kernel_sigma(
 
     // from sigmayy/sigmaxx centre
     for (int k{}; k < A / 2; ++k) {
-      if (x > A / 2 - 2 + 1 + k and x < nxc - 2 - A / 2 + 2 + 1 + k) {
+      if (x > A / 2 - 2 + 1 + k && x < nxc - 2 - A / 2 + 2 + 1 + k) {
         int64_t i2{i - (1 + k)};
         int64_t i2_nobatch{i_nobatch - (1 + k)};
         int64_t x2{x - (1 + k)};
@@ -923,7 +923,7 @@ __global__ void backward_kernel_sigma(
                  ((lambyxh + 2 * muyxh) * sigmaxx[i2] + lambyxh * sigmayy[i2]) +
              bxh[x2] * m_vxx[i2]);
       }
-      if (x > A / 2 - 2 - k and x < nxc - 2 - A / 2 + 2 - k) {
+      if (x > A / 2 - 2 - k && x < nxc - 2 - A / 2 + 2 - k) {
         int64_t i2{i + k};
         int64_t i2_nobatch{i_nobatch + k};
         int64_t x2{x + k};
@@ -961,7 +961,7 @@ __global__ void backward_kernel_sigma(
           }
         }
         for (int k{}; k < A / 2; ++k) {
-          if (y > 1 + A / 2 - 2 + k + 1 and y < nyc - 2 - A / 2 + 2 + k + 1) {
+          if (y > 1 + A / 2 - 2 + k + 1 && y < nyc - 2 - A / 2 + 2 + k + 1) {
             int64_t i2{i - (-(j + 1) + (k + 1) * nxc)};
             int64_t i2_nobatch{i_nobatch - (-(j + 1) + (k + 1) * nxc)};
             T muyhx{(mu[i2_nobatch] + mu[i2_nobatch + nxc]) / 2};
@@ -969,7 +969,7 @@ __global__ void backward_kernel_sigma(
                      (muyhx * dtc<T>() * (1 + bx[x2]) * sigmaxy[i2] +
                       bx[x2] * m_vyx[i2]);
           }
-          if (y > 1 + A / 2 - 2 - k and y < nyc - 2 - A / 2 + 2 - k) {
+          if (y > 1 + A / 2 - 2 - k && y < nyc - 2 - A / 2 + 2 - k) {
             int64_t i2{i - (-(j + 1) - k * nxc)};
             int64_t i2_nobatch{i_nobatch - (-(j + 1) - k * nxc)};
             T muyhx{(mu[i2_nobatch] + mu[i2_nobatch + nxc]) / 2};
@@ -1001,7 +1001,7 @@ __global__ void backward_kernel_sigma(
           }
         }
         for (int k{}; k < A / 2; ++k) {
-          if (y > 1 + A / 2 - 2 + k + 1 and y < nyc - 2 - A / 2 + 2 + k + 1) {
+          if (y > 1 + A / 2 - 2 + k + 1 && y < nyc - 2 - A / 2 + 2 + k + 1) {
             int64_t i2{i - ((j + 1) + (k + 1) * nxc)};
             int64_t i2_nobatch{i_nobatch - ((j + 1) + (k + 1) * nxc)};
             T muyhx{(mu[i2_nobatch] + mu[i2_nobatch + nxc]) / 2};
@@ -1009,7 +1009,7 @@ __global__ void backward_kernel_sigma(
                      (muyhx * dtc<T>() * (1 + bx[x2]) * sigmaxy[i2] +
                       bx[x2] * m_vyx[i2]);
           }
-          if (y > 1 + A / 2 - 2 - k and y < nyc - 2 - A / 2 + 2 - k) {
+          if (y > 1 + A / 2 - 2 - k && y < nyc - 2 - A / 2 + 2 - k) {
             int64_t i2{i - ((j + 1) + (-k) * nxc)};
             int64_t i2_nobatch{i_nobatch - ((j + 1) + (-k) * nxc)};
             T muyhx{(mu[i2_nobatch] + mu[i2_nobatch + nxc]) / 2};
@@ -1022,7 +1022,7 @@ __global__ void backward_kernel_sigma(
     }
 
     // from sigmaxy dvxdy
-    if (x > 0 and x < nxc - 1) {
+    if (x > 0 && x < nxc - 1) {
       for (int k{1}; k <= A + 1; ++k) {
         for (int j{}; j < A / 2 - 1; ++j) {
           if (y == 1 + j + (-j + k - 1)) {
@@ -1045,7 +1045,7 @@ __global__ void backward_kernel_sigma(
         }
       }
       for (int k{}; k < A / 2; ++k) {
-        if (y > 1 + A / 2 - 2 + k + 1 and y < nyc - 2 - A / 2 + 2 + k + 1) {
+        if (y > 1 + A / 2 - 2 + k + 1 && y < nyc - 2 - A / 2 + 2 + k + 1) {
           int64_t y2{y - (k + 1)};
           int64_t i2{i - (k + 1) * nxc};
           int64_t i2_nobatch{i_nobatch - (k + 1) * nxc};
@@ -1054,7 +1054,7 @@ __global__ void backward_kernel_sigma(
                    (muyhx * dtc<T>() * (1 + byh[y2]) * sigmaxy[i2] +
                     byh[y2] * m_vxy[i2]);
         }
-        if (y > 1 + A / 2 - 2 - k and y < nyc - 2 - A / 2 + 2 - k) {
+        if (y > 1 + A / 2 - 2 - k && y < nyc - 2 - A / 2 + 2 - k) {
           int64_t y2{y + k};
           int64_t i2{i + k * nxc};
           int64_t i2_nobatch{i_nobatch + k * nxc};
@@ -1094,9 +1094,9 @@ __global__ void backward_kernel_v(
   int batch = blockIdx.z * blockDim.z + threadIdx.z;
   auto i_nobatch{y * nxc + x};
   auto i{batch * nynxc + i_nobatch};
-  if (y < nyc and x < nxc - 1) {
-    bool pml_y{y < vpml_regionsyc[0] + 1 or y >= vpml_regionsyc[1]};
-    bool pml_x{x < vpml_regionsxc[0] or x >= vpml_regionsxc[1] - 1};
+  if (y < nyc && x < nxc - 1) {
+    bool pml_y{y < vpml_regionsyc[0] + 1 || y >= vpml_regionsyc[1]};
+    bool pml_x{x < vpml_regionsxc[0] || x >= vpml_regionsxc[1] - 1};
     T lambyxh{(lamb[i_nobatch] + lamb[i_nobatch + 1]) / 2};
     T muyxh{(mu[i_nobatch] + mu[i_nobatch + 1]) / 2};
 
@@ -1150,7 +1150,7 @@ __global__ void backward_kernel_v(
       }
     }
     for (int k{}; k < A / 2; ++k) {
-      if (y > A / 2 - 1 + (1 + k) and y < nyc - 1 - A / 2 + 1 + (1 + k)) {
+      if (y > A / 2 - 1 + (1 + k) && y < nyc - 1 - A / 2 + 1 + (1 + k)) {
         int64_t i2{i - (1 + k) * nxc};
         int64_t i2_nobatch{i_nobatch - (1 + k) * nxc};
         int64_t y2{y - (1 + k)};
@@ -1167,7 +1167,7 @@ __global__ void backward_kernel_v(
                       (buoyancyyhxh * dtc<T>() * (1 + byh[y2]) * vy[i2] +
                        byh[y2] * m_sigmayyy[i2]);
       }
-      if (y > A / 2 - 1 - k and y < nyc - 1 - A / 2 + 1 - k) {
+      if (y > A / 2 - 1 - k && y < nyc - 1 - A / 2 + 1 - k) {
         int64_t i2{i - (-k) * nxc};
         int64_t i2_nobatch{i_nobatch - (-k) * nxc};
         int64_t y2{y - (-k)};
@@ -1209,7 +1209,7 @@ __global__ void backward_kernel_v(
       }
     }
     for (int k{}; k < A / 2; ++k) {
-      if (x > A / 2 - 1 + (k) and x < nxc - 1 - A / 2 + 1 + (k)) {
+      if (x > A / 2 - 1 + (k) && x < nxc - 1 - A / 2 + 1 + (k)) {
         int64_t i2{i - (k)};
         int64_t i2_nobatch{i_nobatch - (k)};
         int64_t x2{x - (k)};
@@ -1217,7 +1217,7 @@ __global__ void backward_kernel_v(
                       (buoyancy[i2_nobatch] * dtc<T>() * (1 + bx[x2]) * vx[i2] +
                        bx[x2] * m_sigmaxxx[i2]);
       }
-      if (x > A / 2 - 1 - (1 + k) and x < nxc - 1 - A / 2 + 1 - (1 + k)) {
+      if (x > A / 2 - 1 - (1 + k) && x < nxc - 1 - A / 2 + 1 - (1 + k)) {
         int64_t i2{i + (1 + k)};
         int64_t i2_nobatch{i_nobatch + (1 + k)};
         int64_t x2{x + (1 + k)};
@@ -1228,9 +1228,9 @@ __global__ void backward_kernel_v(
     }
   }
 
-  if (y < nyc - 1 and x >= 1 and x < nxc - 1) {
-    bool pml_y{y < vpml_regionsyc[0] + 1 or y >= vpml_regionsyc[1] - 1};
-    bool pml_x{x < vpml_regionsxc[0] + 1 or x >= vpml_regionsxc[1] - 1};
+  if (y < nyc - 1 && x >= 1 && x < nxc - 1) {
+    bool pml_y{y < vpml_regionsyc[0] + 1 || y >= vpml_regionsyc[1] - 1};
+    bool pml_x{x < vpml_regionsxc[0] + 1 || x >= vpml_regionsxc[1] - 1};
 
     T muyhx{(mu[i_nobatch] + mu[i_nobatch + nxc]) / 2};
 
@@ -1282,7 +1282,7 @@ __global__ void backward_kernel_v(
       }
     }
     for (int k{}; k < A / 2; ++k) {
-      if (x > A / 2 - 2 + 1 + k and x < nxc - 2 - A / 2 + 2 + 1 + k) {
+      if (x > A / 2 - 2 + 1 + k && x < nxc - 2 - A / 2 + 2 + 1 + k) {
         int64_t i2{i - (1 + k)};
         int64_t i2_nobatch{i_nobatch - (1 + k)};
         int64_t x2{x - (1 + k)};
@@ -1299,7 +1299,7 @@ __global__ void backward_kernel_v(
                       (buoyancyyhxh * dtc<T>() * (1 + bxh[x2]) * vy[i2] +
                        bxh[x2] * m_sigmaxyx[i2]);
       }
-      if (x > A / 2 - 2 - k and x < nxc - 2 - A / 2 + 2 - k) {
+      if (x > A / 2 - 2 - k && x < nxc - 2 - A / 2 + 2 - k) {
         int64_t i2{i - (-k)};
         int64_t i2_nobatch{i_nobatch - (-k)};
         int64_t x2{x - (-k)};
@@ -1341,7 +1341,7 @@ __global__ void backward_kernel_v(
       }
     }
     for (int k{}; k < A / 2; ++k) {
-      if (y > 1 + A / 2 - 2 + k and y < nyc - 1 - A / 2 + 2 + k) {
+      if (y > 1 + A / 2 - 2 + k && y < nyc - 1 - A / 2 + 2 + k) {
         int64_t i2{i - (k)*nxc};
         int64_t i2_nobatch{i_nobatch - (k)*nxc};
         int64_t y2{y - (k)};
@@ -1349,7 +1349,7 @@ __global__ void backward_kernel_v(
                       (buoyancy[i2_nobatch] * dtc<T>() * (1 + by[y2]) * vx[i2] +
                        by[y2] * m_sigmaxyy[i2]);
       }
-      if (y > 1 + A / 2 - 2 - (k + 1) and y < nyc - 1 - A / 2 + 2 - (k + 1)) {
+      if (y > 1 + A / 2 - 2 - (k + 1) && y < nyc - 1 - A / 2 + 2 - (k + 1)) {
         int64_t i2{i - (-(k + 1)) * nxc};
         int64_t i2_nobatch{i_nobatch - (-(k + 1)) * nxc};
         int64_t y2{y - (-(k + 1))};
@@ -1416,7 +1416,7 @@ void forward_batch(
   dim3 dimGrid_receivers_p(gridx_receivers_p, gridy_receivers, gridz_receivers);
 
   for (int64_t t{}; t < nt; ++t) {
-    if (t % step_ratio == 0 and buoyancy_requires_grad) {
+    if (t % step_ratio == 0 && buoyancy_requires_grad) {
       forward_kernel_v<T, A, true><<<dimGrid, dimBlock>>>(
           vy, vx, sigmayy, sigmaxy, sigmaxx, m_sigmayyy, m_sigmaxyy, m_sigmaxyx,
           m_sigmaxxx, dvydbuoyancy + (t / step_ratio) * n_batch * ny * nx,
@@ -1453,8 +1453,8 @@ void forward_batch(
           n_receivers_per_shot_x, n_batch);
       gpuErrchk(cudaPeekAtLastError());
     }
-    if (t % step_ratio == 0 and (lamb_requires_grad or mu_requires_grad)) {
-      if (lamb_requires_grad and mu_requires_grad) {
+    if (t % step_ratio == 0 && (lamb_requires_grad || mu_requires_grad)) {
+      if (lamb_requires_grad && mu_requires_grad) {
         forward_kernel_sigma<T, A, true, true><<<dimGrid, dimBlock>>>(
             vy, vx, sigmayy, sigmaxy, sigmaxx, m_vyy, m_vyx, m_vxy, m_vxx,
             dvydy_store + (t / step_ratio) * n_batch * ny * nx,
@@ -1498,7 +1498,7 @@ __global__ void combine_grad_model(T *__restrict grad,
   auto x{blockIdx.x * blockDim.x + threadIdx.x};
   auto y{blockIdx.y * blockDim.y + threadIdx.y};
   auto i{y * nxc + x};
-  if (y < nyc and x < nxc) {
+  if (y < nyc && x < nxc) {
     for (int64_t batch{}; batch < n_batch; ++batch) {
       grad[i] += grad_batch[batch * nynxc + i];
     }
@@ -1572,14 +1572,14 @@ void backward_batch(
           n_receivers_per_shot_p, n_batch);
       gpuErrchk(cudaPeekAtLastError());
     }
-    if (t % step_ratio == 0 and lamb_requires_grad) {
+    if (t % step_ratio == 0 && lamb_requires_grad) {
       add_to_grad_lamb<T><<<dimGrid, dimBlock>>>(
           grad_lamb, sigmayy, sigmaxx,
           dvydy_store + (t / step_ratio) * n_batch * ny * nx,
           dvxdx_store + (t / step_ratio) * n_batch * ny * nx);
       gpuErrchk(cudaPeekAtLastError());
     }
-    if (t % step_ratio == 0 and mu_requires_grad) {
+    if (t % step_ratio == 0 && mu_requires_grad) {
       add_to_grad_mu<T><<<dimGrid, dimBlock>>>(
           grad_mu, sigmayy, sigmaxy, sigmaxx,
           dvydy_store + (t / step_ratio) * n_batch * ny * nx,
@@ -1618,7 +1618,7 @@ void backward_batch(
           n_sources_per_shot_x, n_batch);
       gpuErrchk(cudaPeekAtLastError());
     }
-    if (t % step_ratio == 0 and buoyancy_requires_grad) {
+    if (t % step_ratio == 0 && buoyancy_requires_grad) {
       add_to_grad_buoyancy<T><<<dimGrid, dimBlock>>>(
           grad_buoyancy, vy, vx,
           dvydbuoyancy + (t / step_ratio) * n_batch * ny * nx,
@@ -1795,7 +1795,7 @@ class ElasticCUDAFunction
       dvxdbuoyancy = at::empty(
           {(nt + step_ratio - 1) / step_ratio, n_batch, ny, nx}, options);
     }
-    if (lamb.requires_grad() or mu.requires_grad()) {
+    if (lamb.requires_grad() || mu.requires_grad()) {
       dvydy_store = at::empty(
           {(nt + step_ratio - 1) / step_ratio, n_batch, ny, nx}, options);
       dvxdx_store = at::empty(
@@ -1893,7 +1893,7 @@ class ElasticCUDAFunction
             dvydbuoyancy_a = dvydbuoyancy.data_ptr<scalar_t>();
             dvxdbuoyancy_a = dvxdbuoyancy.data_ptr<scalar_t>();
           }
-          if (lamb.requires_grad() or mu.requires_grad()) {
+          if (lamb.requires_grad() || mu.requires_grad()) {
             dvydy_store_a = dvydy_store.data_ptr<scalar_t>();
             dvxdx_store_a = dvxdx_store.data_ptr<scalar_t>();
           }
@@ -1934,14 +1934,14 @@ class ElasticCUDAFunction
               buoyancy.requires_grad(), n_batch);
         }));
 
-    if (lamb.requires_grad() or mu.requires_grad() or
-        buoyancy.requires_grad() or f_y.requires_grad() or
-        f_x.requires_grad() or vy0.requires_grad() or vx0.requires_grad() or
-        sigmayy0.requires_grad() or sigmaxy0.requires_grad() or
-        sigmaxx0.requires_grad() or m_vyy0.requires_grad() or
-        m_vyx0.requires_grad() or m_vxy0.requires_grad() or
-        m_vxx0.requires_grad() or m_sigmayyy0.requires_grad() or
-        m_sigmaxyy0.requires_grad() or m_sigmaxyx0.requires_grad() or
+    if (lamb.requires_grad() || mu.requires_grad() ||
+        buoyancy.requires_grad() || f_y.requires_grad() ||
+        f_x.requires_grad() || vy0.requires_grad() || vx0.requires_grad() ||
+        sigmayy0.requires_grad() || sigmaxy0.requires_grad() ||
+        sigmaxx0.requires_grad() || m_vyy0.requires_grad() ||
+        m_vyx0.requires_grad() || m_vxy0.requires_grad() ||
+        m_vxx0.requires_grad() || m_sigmayyy0.requires_grad() ||
+        m_sigmaxyy0.requires_grad() || m_sigmaxyx0.requires_grad() ||
         m_sigmaxxx0.requires_grad()) {
       ctx->save_for_backward({lamb, mu, buoyancy, ay, ayh, ax, axh, by, byh, bx,
                               bxh, sources_y_i, sources_x_i, receivers_y_i,
@@ -2188,7 +2188,7 @@ class ElasticCUDAFunction
           scalar_t const *__restrict dvydy_store_a{};
           scalar_t const *__restrict dvxdx_store_a{};
           scalar_t const *__restrict dvydxdvxdy_store_a{};
-          if (lamb.requires_grad() or mu.requires_grad()) {
+          if (lamb.requires_grad() || mu.requires_grad()) {
             dvydy_store_a = dvydy_store.data_ptr<scalar_t>();
             dvxdx_store_a = dvxdx_store.data_ptr<scalar_t>();
           }
@@ -2244,17 +2244,17 @@ class ElasticCUDAFunction
           auto gridz_combine{1};
           dim3 dimGrid_combine(gridx_combine, gridy_combine, gridz_combine);
           auto combine_grad_modeli{combine_grad_models[accuracy / 2 - 1]};
-          if (lamb.requires_grad() and n_batch > 1) {
+          if (lamb.requires_grad() && n_batch > 1) {
             combine_grad_modeli<<<dimGrid_combine, dimBlock_combine>>>(
                 grad_lamb_a, grad_lamb_batch_a, n_batch);
             gpuErrchk(cudaPeekAtLastError());
           }
-          if (mu.requires_grad() and n_batch > 1) {
+          if (mu.requires_grad() && n_batch > 1) {
             combine_grad_modeli<<<dimGrid_combine, dimBlock_combine>>>(
                 grad_mu_a, grad_mu_batch_a, n_batch);
             gpuErrchk(cudaPeekAtLastError());
           }
-          if (buoyancy.requires_grad() and n_batch > 1) {
+          if (buoyancy.requires_grad() && n_batch > 1) {
             combine_grad_modeli<<<dimGrid_combine, dimBlock_combine>>>(
                 grad_buoyancy_a, grad_buoyancy_batch_a, n_batch);
             gpuErrchk(cudaPeekAtLastError());

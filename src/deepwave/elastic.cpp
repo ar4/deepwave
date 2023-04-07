@@ -127,17 +127,17 @@ inline void forward_kernel_v(
 
       // dsigmaxydx
       for (int j{}; j < A / 2 - 1; ++j) {
-        if (pml_x == 0 and x == j) {
+        if (pml_x == 0 && x == j) {
           for (int k{}; k < A; ++k) {
             dsigmaxydx += fd_coeffs2x[1 + k] * sigmaxy[i - j + 1 + k];
           }
-        } else if (pml_x == 2 and x == nx - 2 - j) {
+        } else if (pml_x == 2 && x == nx - 2 - j) {
           for (int k{}; k < A; ++k) {
             dsigmaxydx -= fd_coeffs2x[1 + k] * sigmaxy[i + j - k];
           }
         }
       }
-      if (pml_x == 1 or (x > A / 2 - 2 and x < nx - 2 - A / 2 + 2)) {
+      if (pml_x == 1 || (x > A / 2 - 2 && x < nx - 2 - A / 2 + 2)) {
         for (int k{}; k < A / 2; ++k) {
           dsigmaxydx += fd_coeffsx[k] * (sigmaxy[i + 1 + k] - sigmaxy[i - k]);
         }
@@ -145,33 +145,33 @@ inline void forward_kernel_v(
 
       // dsigmayydy
       for (int j{}; j < A / 2; ++j) {
-        if (pml_y == 0 and y == j) {
+        if (pml_y == 0 && y == j) {
           for (int k{}; k < A; ++k) {
             dsigmayydy += fd_coeffs1y[j][1 + k] * sigmayy[i + (1 - j + k) * nx];
           }
-        } else if (pml_y == 2 and y == ny - 1 - j) {
+        } else if (pml_y == 2 && y == ny - 1 - j) {
           for (int k{}; k < A; ++k) {
             dsigmayydy -= fd_coeffs1y[j][1 + k] * sigmayy[i + (j - k) * nx];
           }
         }
       }
-      if (pml_y == 1 or (y > A / 2 - 1 and y < ny - 1 - A / 2 + 1)) {
+      if (pml_y == 1 || (y > A / 2 - 1 && y < ny - 1 - A / 2 + 1)) {
         for (int k{}; k < A / 2; ++k) {
           dsigmayydy +=
               fd_coeffsy[k] * (sigmayy[i + (1 + k) * nx] - sigmayy[i - k * nx]);
         }
       }
 
-      if (pml_y == 0 or pml_y == 2) {
+      if (pml_y == 0 || pml_y == 2) {
         m_sigmayyy[i] = ayh[y] * m_sigmayyy[i] + byh[y] * dsigmayydy;
         dsigmayydy += m_sigmayyy[i];
       }
-      if (pml_x == 0 or pml_x == 2) {
+      if (pml_x == 0 || pml_x == 2) {
         m_sigmaxyx[i] = axh[x] * m_sigmaxyx[i] + bxh[x] * dsigmaxydx;
         dsigmaxydx += m_sigmaxyx[i];
       }
       T buoyancyyhxh;
-      if (pml_y == 2 and y == ny - 1) {
+      if (pml_y == 2 && y == ny - 1) {
         buoyancyyhxh = (buoyancy[i] + buoyancy[i + 1]) / 2;
       } else {
         buoyancyyhxh = (buoyancy[i] + buoyancy[i + 1] + buoyancy[i + nx] +
@@ -194,17 +194,17 @@ inline void forward_kernel_v(
 
       // dsigmaxydy
       for (int j{}; j < A / 2 - 1; ++j) {
-        if (pml_y == 0 and y == 1 + j) {
+        if (pml_y == 0 && y == 1 + j) {
           for (int k{}; k < A; ++k) {
             dsigmaxydy += fd_coeffs2y[1 + k] * sigmaxy[i + (-j + k) * nx];
           }
-        } else if (pml_y == 2 and y == ny - 1 - j) {
+        } else if (pml_y == 2 && y == ny - 1 - j) {
           for (int k{}; k < A; ++k) {
             dsigmaxydy -= fd_coeffs2y[1 + k] * sigmaxy[i + (j - k - 1) * nx];
           }
         }
       }
-      if (pml_y == 1 or (y > 1 + A / 2 - 2 and y < ny - 1 - A / 2 + 2)) {
+      if (pml_y == 1 || (y > 1 + A / 2 - 2 && y < ny - 1 - A / 2 + 2)) {
         for (int k{}; k < A / 2; ++k) {
           dsigmaxydy +=
               fd_coeffsy[k] * (sigmaxy[i + k * nx] - sigmaxy[i - (k + 1) * nx]);
@@ -213,27 +213,27 @@ inline void forward_kernel_v(
 
       // dsigmaxxdx
       for (int j{}; j < A / 2; ++j) {
-        if (pml_x == 0 and x == j) {
+        if (pml_x == 0 && x == j) {
           for (int k{}; k < A; ++k) {
             dsigmaxxdx += fd_coeffs1x[j][1 + k] * sigmaxx[i - j + k];
           }
-        } else if (pml_x == 2 and x == nx - 1 - j) {
+        } else if (pml_x == 2 && x == nx - 1 - j) {
           for (int k{}; k < A; ++k) {
             dsigmaxxdx -= fd_coeffs1x[j][1 + k] * sigmaxx[i + (j - k - 1)];
           }
         }
       }
-      if (pml_x == 1 or (x > A / 2 - 1 and x < nx - 1 - A / 2 + 1)) {
+      if (pml_x == 1 || (x > A / 2 - 1 && x < nx - 1 - A / 2 + 1)) {
         for (int k{}; k < A / 2; ++k) {
           dsigmaxxdx += fd_coeffsx[k] * (sigmaxx[i + k] - sigmaxx[i - (1 + k)]);
         }
       }
 
-      if (pml_y == 0 or pml_y == 2) {
+      if (pml_y == 0 || pml_y == 2) {
         m_sigmaxyy[i] = ay[y] * m_sigmaxyy[i] + by[y] * dsigmaxydy;
         dsigmaxydy += m_sigmaxyy[i];
       }
-      if (pml_x == 0 or pml_x == 2) {
+      if (pml_x == 0 || pml_x == 2) {
         m_sigmaxxx[i] = ax[x] * m_sigmaxxx[i] + bx[x] * dsigmaxxdx;
         dsigmaxxdx += m_sigmaxxx[i];
       }
@@ -312,17 +312,17 @@ inline void forward_kernel_sigma(
 
       // dvydy
       for (int j{}; j < A / 2 - 1; ++j) {
-        if (pml_y == 0 and y == 1 + j) {
+        if (pml_y == 0 && y == 1 + j) {
           for (int k{}; k <= A; ++k) {
             dvydy += fd_coeffs2y[k] * vy[i + (-j + k - 1) * nx];
           }
-        } else if (pml_y == 2 and y == ny - 1 - j) {
+        } else if (pml_y == 2 && y == ny - 1 - j) {
           for (int k{}; k <= A; ++k) {
             dvydy -= fd_coeffs2y[k] * vy[i + (j - k) * nx];
           }
         }
       }
-      if (pml_y == 1 or (y > 1 + A / 2 - 2 and y < ny - 1 - A / 2 + 2)) {
+      if (pml_y == 1 || (y > 1 + A / 2 - 2 && y < ny - 1 - A / 2 + 2)) {
         for (int k{}; k < A / 2; ++k) {
           dvydy += fd_coeffsy[k] * (vy[i + k * nx] - vy[i - (k + 1) * nx]);
         }
@@ -330,27 +330,27 @@ inline void forward_kernel_sigma(
 
       // dvxdx
       for (int j{}; j < A / 2 - 1; ++j) {
-        if (pml_x == 0 and x == j) {
+        if (pml_x == 0 && x == j) {
           for (int k{}; k <= A; ++k) {
             dvxdx += fd_coeffs2x[k] * vx[i - j + k];
           }
-        } else if (pml_x == 2 and x == nx - 2 - j) {
+        } else if (pml_x == 2 && x == nx - 2 - j) {
           for (int k{}; k <= A; ++k) {
             dvxdx -= fd_coeffs2x[k] * vx[i + j - k + 1];
           }
         }
       }
-      if (pml_x == 1 or (x > A / 2 - 2 and x < nx - 2 - A / 2 + 2)) {
+      if (pml_x == 1 || (x > A / 2 - 2 && x < nx - 2 - A / 2 + 2)) {
         for (int k{}; k < A / 2; ++k) {
           dvxdx += fd_coeffsx[k] * (vx[i + 1 + k] - vx[i - k]);
         }
       }
 
-      if (pml_y == 0 or pml_y == 2) {
+      if (pml_y == 0 || pml_y == 2) {
         m_vyy[i] = ay[y] * m_vyy[i] + by[y] * dvydy;
         dvydy += m_vyy[i];
       }
-      if (pml_x == 0 or pml_x == 2) {
+      if (pml_x == 0 || pml_x == 2) {
         m_vxx[i] = axh[x] * m_vxx[i] + bxh[x] * dvxdx;
         dvxdx += m_vxx[i];
       }
@@ -358,7 +358,7 @@ inline void forward_kernel_sigma(
       T muyxh{(mu[i] + mu[i + 1]) / 2};
       sigmayy[i] += dt * ((lambyxh + 2 * muyxh) * dvydy + lambyxh * dvxdx);
       sigmaxx[i] += dt * ((lambyxh + 2 * muyxh) * dvxdx + lambyxh * dvydy);
-      if (lamb_requires_grad or mu_requires_grad) {
+      if (lamb_requires_grad || mu_requires_grad) {
         dvydy_store[i] = dt * dvydy;
         dvxdx_store[i] = dt * dvxdx;
       }
@@ -374,20 +374,20 @@ inline void forward_kernel_sigma(
 
       // dvxdy
       for (int j{}; j < A / 2 - 1; ++j) {
-        if (pml_y == 0 and y == 1 + j) {
+        if (pml_y == 0 && y == 1 + j) {
           T dvydxp{};
           for (int jp{}; jp < A / 2 - 1; ++jp) {
-            if (pml_x == 0 and x == 1 + jp) {
+            if (pml_x == 0 && x == 1 + jp) {
               for (int k{}; k <= A; ++k) {
                 dvydxp += fd_coeffs2x[k] * vy[i - (j + 1) * nx - (jp + 1) + k];
               }
-            } else if (pml_x == 2 and x == nx - 2 - jp) {
+            } else if (pml_x == 2 && x == nx - 2 - jp) {
               for (int k{}; k <= A; ++k) {
                 dvydxp -= fd_coeffs2x[k] * vy[i - (j + 1) * nx + jp - k];
               }
             }
           }
-          if (pml_x == 1 or (x > 1 + A / 2 - 2 and x < nx - 2 - A / 2 + 2)) {
+          if (pml_x == 1 || (x > 1 + A / 2 - 2 && x < nx - 2 - A / 2 + 2)) {
             for (int k{}; k < A / 2; ++k) {
               dvydxp += fd_coeffsx[k] * (vy[i - (j + 1) * nx + k] -
                                          vy[i - (j + 1) * nx - k - 1]);
@@ -397,20 +397,20 @@ inline void forward_kernel_sigma(
           for (int k{1}; k <= A + 1; ++k) {
             dvxdy += fd_coeffs3y[k] * vx[i + (-j + k - 1) * nx];
           }
-        } else if (pml_y == 2 and y == ny - 2 - j) {
+        } else if (pml_y == 2 && y == ny - 2 - j) {
           T dvydxp{};
           for (int jp{}; jp < A / 2 - 1; ++jp) {
-            if (pml_x == 0 and x == 1 + jp) {
+            if (pml_x == 0 && x == 1 + jp) {
               for (int k{}; k <= A; ++k) {
                 dvydxp += fd_coeffs2x[k] * vy[i + (j + 1) * nx - (jp + 1) + k];
               }
-            } else if (pml_x == 2 and x == nx - 2 - jp) {
+            } else if (pml_x == 2 && x == nx - 2 - jp) {
               for (int k{}; k <= A; ++k) {
                 dvydxp -= fd_coeffs2x[k] * vy[i + (j + 1) * nx + jp - k];
               }
             }
           }
-          if (pml_x == 1 or (x > 1 + A / 2 - 2 and x < nx - 2 - A / 2 + 2)) {
+          if (pml_x == 1 || (x > 1 + A / 2 - 2 && x < nx - 2 - A / 2 + 2)) {
             for (int k{}; k < A / 2; ++k) {
               dvydxp += fd_coeffsx[k] * (vy[i + (j + 1) * nx + k] -
                                          vy[i + (j + 1) * nx - k - 1]);
@@ -422,7 +422,7 @@ inline void forward_kernel_sigma(
           }
         }
       }
-      if (pml_y == 1 or (y > 1 + A / 2 - 2 and y < ny - 2 - A / 2 + 2)) {
+      if (pml_y == 1 || (y > 1 + A / 2 - 2 && y < ny - 2 - A / 2 + 2)) {
         for (int k{}; k < A / 2; ++k) {
           dvxdy += fd_coeffsy[k] * (vx[i + (k + 1) * nx] - vx[i - k * nx]);
         }
@@ -430,21 +430,21 @@ inline void forward_kernel_sigma(
 
       // dvydx
       for (int j{}; j < A / 2 - 1; ++j) {
-        if (pml_x == 0 and x == 1 + j) {
+        if (pml_x == 0 && x == 1 + j) {
           T dvxdyp{};
           for (int jp{}; jp < A / 2 - 1; ++jp) {
-            if (pml_y == 0 and y == 1 + jp) {
+            if (pml_y == 0 && y == 1 + jp) {
               for (int k{}; k <= A; ++k) {
                 dvxdyp += fd_coeffs2y[k] * vx[i - (j + 1) + (-jp + k) * nx];
               }
-            } else if (pml_y == 2 and y == ny - 2 - jp) {
+            } else if (pml_y == 2 && y == ny - 2 - jp) {
               for (int k{}; k <= A; ++k) {
                 dvxdyp -=
                     fd_coeffs2y[k] * vx[i - (j + 1) + ((jp + 1) - k) * nx];
               }
             }
           }
-          if (pml_y == 1 or (y > 1 + A / 2 - 2 and y < ny - 2 - A / 2 + 2)) {
+          if (pml_y == 1 || (y > 1 + A / 2 - 2 && y < ny - 2 - A / 2 + 2)) {
             for (int k{}; k < A / 2; ++k) {
               dvxdyp += fd_coeffsy[k] * (vx[i - (j + 1) + (k + 1) * nx] -
                                          vx[i - (j + 1) - k * nx]);
@@ -454,20 +454,20 @@ inline void forward_kernel_sigma(
           for (int k{1}; k <= A + 1; ++k) {
             dvydx += fd_coeffs3x[k] * vy[i + (-j + k - 2)];
           }
-        } else if (pml_x == 2 and x == nx - 2 - j) {
+        } else if (pml_x == 2 && x == nx - 2 - j) {
           T dvxdyp{};
           for (int jp{}; jp < A / 2 - 1; ++jp) {
-            if (pml_y == 0 and y == 1 + jp) {
+            if (pml_y == 0 && y == 1 + jp) {
               for (int k{}; k <= A; ++k) {
                 dvxdyp += fd_coeffs2y[k] * vx[i + (j + 1) + (-jp + k) * nx];
               }
-            } else if (pml_y == 2 and y == ny - 2 - jp) {
+            } else if (pml_y == 2 && y == ny - 2 - jp) {
               for (int k{}; k <= A; ++k) {
                 dvxdyp -= fd_coeffs2y[k] * vx[i + (j + 1) + (jp - k + 1) * nx];
               }
             }
           }
-          if (pml_y == 1 or (y > 1 + A / 2 - 2 and y < ny - 2 - A / 2 + 2)) {
+          if (pml_y == 1 || (y > 1 + A / 2 - 2 && y < ny - 2 - A / 2 + 2)) {
             for (int k{}; k < A / 2; ++k) {
               dvxdyp += fd_coeffsy[k] * (vx[i + (j + 1) + (k + 1) * nx] -
                                          vx[i + (j + 1) + (-k) * nx]);
@@ -479,17 +479,17 @@ inline void forward_kernel_sigma(
           }
         }
       }
-      if (pml_x == 1 or (x > 1 + A / 2 - 2 and x < nx - 2 - A / 2 + 2)) {
+      if (pml_x == 1 || (x > 1 + A / 2 - 2 && x < nx - 2 - A / 2 + 2)) {
         for (int k{}; k < A / 2; ++k) {
           dvydx += fd_coeffsx[k] * (vy[i + k] - vy[i - k - 1]);
         }
       }
 
-      if (pml_y == 0 or pml_y == 2) {
+      if (pml_y == 0 || pml_y == 2) {
         m_vxy[i] = ayh[y] * m_vxy[i] + byh[y] * dvxdy;
         dvxdy += m_vxy[i];
       }
-      if (pml_x == 0 or pml_x == 2) {
+      if (pml_x == 0 || pml_x == 2) {
         m_vyx[i] = ax[x] * m_vyx[i] + bx[x] * dvydx;
         dvydx += m_vyx[i];
       }
@@ -803,7 +803,7 @@ inline void backward_kernel_sigma(
       // from sigmayy/sigmaxx edges
       for (int k{}; k <= A; ++k) {
         for (int j{}; j < A / 2 - 1; ++j) {
-          if (pml_y == 0 and y == 1 + j + (-j + k - 1)) {
+          if (pml_y == 0 && y == 1 + j + (-j + k - 1)) {
             T lambyxh{(lamb[i - (-j + k - 1) * nx] +
                        lamb[i + 1 - (-j + k - 1) * nx]) /
                       2};
@@ -816,7 +816,7 @@ inline void backward_kernel_sigma(
                      ((lambyxh + 2 * muyxh) * sigmayy[i - (-j + k - 1) * nx] +
                       lambyxh * sigmaxx[i - (-j + k - 1) * nx]) +
                  by[y - (-j + k - 1)] * m_vyy[i - (-j + k - 1) * nx]);
-          } else if (pml_y == 2 and y == ny - 1 - j + (j - k)) {
+          } else if (pml_y == 2 && y == ny - 1 - j + (j - k)) {
             T lambyxh{(lamb[i - (j - k) * nx] + lamb[i + 1 - (j - k) * nx]) /
                       2};
             T muyxh{(mu[i - (j - k) * nx] + mu[i + 1 - (j - k) * nx]) / 2};
@@ -831,8 +831,8 @@ inline void backward_kernel_sigma(
 
       // from sigmayy/sigmaxx centre
       for (int k{}; k < A / 2; ++k) {
-        if (pml_y == 1 or
-            (y > 1 + A / 2 - 2 + k and y < ny - 1 - A / 2 + 2 + k)) {
+        if (pml_y == 1 ||
+            (y > 1 + A / 2 - 2 + k && y < ny - 1 - A / 2 + 2 + k)) {
           T lambyxh{(lamb[i - k * nx] + lamb[i + 1 - k * nx]) / 2};
           T muyxh{(mu[i - k * nx] + mu[i + 1 - k * nx]) / 2};
           vy[i] += fd_coeffsy[k] *
@@ -841,7 +841,7 @@ inline void backward_kernel_sigma(
                          lambyxh * sigmaxx[i - k * nx]) +
                     by[y - k] * m_vyy[i - k * nx]);
         }
-        if (pml_y == 1 or (y > 1 + A / 2 - 2 - (k + 1) and
+        if (pml_y == 1 || (y > 1 + A / 2 - 2 - (k + 1) &&
                            y < ny - 1 - A / 2 + 2 - (k + 1))) {
           T lambyxh{(lamb[i + (k + 1) * nx] + lamb[i + 1 + (k + 1) * nx]) / 2};
           T muyxh{(mu[i + (k + 1) * nx] + mu[i + 1 + (k + 1) * nx]) / 2};
@@ -855,17 +855,17 @@ inline void backward_kernel_sigma(
 
       // from sigmaxy dvxdy
       for (int j{}; j < A / 2 - 1; ++j) {
-        if (pml_y == 0 and y == 1 + j - (j + 1)) {
+        if (pml_y == 0 && y == 1 + j - (j + 1)) {
           int64_t y2{y + (j + 1)};
           for (int k{}; k <= A; ++k) {
             for (int jp{}; jp < A / 2 - 1; ++jp) {
-              if (pml_x == 0 and x == 1 + jp - (jp + 1) + k) {
+              if (pml_x == 0 && x == 1 + jp - (jp + 1) + k) {
                 int64_t i2{i - (-(j + 1) * nx - (jp + 1) + k)};
                 T muyhx{(mu[i2] + mu[i2 + nx]) / 2};
                 vy[i] += fd_coeffs2x[k] * (-fd_coeffs3y[0]) *
                          (muyhx * dt * (1 + byh[y2]) * sigmaxy[i2] +
                           byh[y2] * m_vxy[i2]);
-              } else if (pml_x == 2 and x == nx - 2 - jp + jp - k) {
+              } else if (pml_x == 2 && x == nx - 2 - jp + jp - k) {
                 int64_t i2{i - (-(j + 1) * nx + jp - k)};
                 T muyhx{(mu[i2] + mu[i2 + nx]) / 2};
                 vy[i] -= fd_coeffs2x[k] * (-fd_coeffs3y[0]) *
@@ -875,15 +875,15 @@ inline void backward_kernel_sigma(
             }
           }
           for (int k{}; k < A / 2; ++k) {
-            if (pml_x == 1 or
-                (x > 1 + A / 2 - 2 + k and x < nx - 2 - A / 2 + 2 + k)) {
+            if (pml_x == 1 ||
+                (x > 1 + A / 2 - 2 + k && x < nx - 2 - A / 2 + 2 + k)) {
               int64_t i2{i - (-(j + 1) * nx + k)};
               T muyhx{(mu[i2] + mu[i2 + nx]) / 2};
               vy[i] += fd_coeffsx[k] * (-fd_coeffs3y[0]) *
                        (muyhx * dt * (1 + byh[y2]) * sigmaxy[i2] +
                         byh[y2] * m_vxy[i2]);
             }
-            if (pml_x == 1 or (x > 1 + A / 2 - 2 - k - 1 and
+            if (pml_x == 1 || (x > 1 + A / 2 - 2 - k - 1 &&
                                x < nx - 2 - A / 2 + 2 - k - 1)) {
               int64_t i2{i - (-(j + 1) * nx - k - 1)};
               T muyhx{(mu[i2] + mu[i2 + nx]) / 2};
@@ -893,17 +893,17 @@ inline void backward_kernel_sigma(
             }
           }
 
-        } else if (pml_y == 2 and y == ny - 2 - j + (j + 1)) {
+        } else if (pml_y == 2 && y == ny - 2 - j + (j + 1)) {
           int64_t y2{y - (j + 1)};
           for (int k{}; k <= A; ++k) {
             for (int jp{}; jp < A / 2 - 1; ++jp) {
-              if (pml_x == 0 and x == 1 + jp - (jp + 1) + k) {
+              if (pml_x == 0 && x == 1 + jp - (jp + 1) + k) {
                 int64_t i2{i - ((j + 1) * nx - (jp + 1) + k)};
                 T muyhx{(mu[i2] + mu[i2 + nx]) / 2};
                 vy[i] += fd_coeffs2x[k] * (fd_coeffs3y[0]) *
                          (muyhx * dt * (1 + byh[y2]) * sigmaxy[i2] +
                           byh[y2] * m_vxy[i2]);
-              } else if (pml_x == 2 and x == nx - 2 - jp + jp - k) {
+              } else if (pml_x == 2 && x == nx - 2 - jp + jp - k) {
                 int64_t i2{i - ((j + 1) * nx + jp - k)};
                 T muyhx{(mu[i2] + mu[i2 + nx]) / 2};
                 vy[i] -= fd_coeffs2x[k] * (fd_coeffs3y[0]) *
@@ -913,15 +913,15 @@ inline void backward_kernel_sigma(
             }
           }
           for (int k{}; k < A / 2; ++k) {
-            if (pml_x == 1 or
-                (x > 1 + A / 2 - 2 + k and x < nx - 2 - A / 2 + 2 + k)) {
+            if (pml_x == 1 ||
+                (x > 1 + A / 2 - 2 + k && x < nx - 2 - A / 2 + 2 + k)) {
               int64_t i2{i - ((j + 1) * nx + k)};
               T muyhx{(mu[i2] + mu[i2 + nx]) / 2};
               vy[i] += fd_coeffsx[k] * (fd_coeffs3y[0]) *
                        (muyhx * dt * (1 + byh[y2]) * sigmaxy[i2] +
                         byh[y2] * m_vxy[i2]);
             }
-            if (pml_x == 1 or (x > 1 + A / 2 - 2 - k - 1 and
+            if (pml_x == 1 || (x > 1 + A / 2 - 2 - k - 1 &&
                                x < nx - 2 - A / 2 + 2 - k - 1)) {
               int64_t i2{i - ((j + 1) * nx - k - 1)};
               T muyhx{(mu[i2] + mu[i2 + nx]) / 2};
@@ -934,17 +934,17 @@ inline void backward_kernel_sigma(
       }
 
       // from sigmaxy dvydx
-      if (y > 0 and y < ny - 1) {
+      if (y > 0 && y < ny - 1) {
         for (int k{1}; k <= A + 1; ++k) {
           for (int j{}; j < A / 2 - 1; ++j) {
-            if (pml_x == 0 and x == 1 + j + (-j + k - 2)) {
+            if (pml_x == 0 && x == 1 + j + (-j + k - 2)) {
               int64_t x2{x - (-j + k - 2)};
               int64_t i2{i - (-j + k - 2)};
               T muyhx{(mu[i2] + mu[i2 + nx]) / 2};
               vy[i] +=
                   fd_coeffs3x[k] * (muyhx * dt * (1 + bx[x2]) * sigmaxy[i2] +
                                     bx[x2] * m_vyx[i2]);
-            } else if (pml_x == 2 and x == nx - 2 - j + (j - k + 1)) {
+            } else if (pml_x == 2 && x == nx - 2 - j + (j - k + 1)) {
               int64_t x2{x - (j - k + 1)};
               int64_t i2{i - (j - k + 1)};
               T muyhx{(mu[i2] + mu[i2 + nx]) / 2};
@@ -955,16 +955,16 @@ inline void backward_kernel_sigma(
           }
         }
         for (int k{}; k < A / 2; ++k) {
-          if (pml_x == 1 or
-              (x > 1 + A / 2 - 2 + k and x < nx - 2 - A / 2 + 2 + k)) {
+          if (pml_x == 1 ||
+              (x > 1 + A / 2 - 2 + k && x < nx - 2 - A / 2 + 2 + k)) {
             int64_t x2{x - k};
             int64_t i2{i - k};
             T muyhx{(mu[i2] + mu[i2 + nx]) / 2};
             vy[i] += fd_coeffsx[k] * (muyhx * dt * (1 + bx[x2]) * sigmaxy[i2] +
                                       bx[x2] * m_vyx[i2]);
           }
-          if (pml_x == 1 or
-              (x > 1 + A / 2 - 2 - k - 1 and x < nx - 2 - A / 2 + 2 - k - 1)) {
+          if (pml_x == 1 ||
+              (x > 1 + A / 2 - 2 - k - 1 && x < nx - 2 - A / 2 + 2 - k - 1)) {
             int64_t x2{x + k + 1};
             int64_t i2{i + k + 1};
             T muyhx{(mu[i2] + mu[i2 + nx]) / 2};
@@ -975,7 +975,7 @@ inline void backward_kernel_sigma(
       }
 
       T buoyancyyhxh;
-      if (pml_y == 2 and y == ny - 1) {
+      if (pml_y == 2 && y == ny - 1) {
         buoyancyyhxh = (buoyancy[i] + buoyancy[i + 1]) / 2;
       } else {
         buoyancyyhxh = (buoyancy[i] + buoyancy[i + 1] + buoyancy[i + nx] +
@@ -983,11 +983,11 @@ inline void backward_kernel_sigma(
                        4;
       }
 
-      if (pml_y == 0 or pml_y == 2) {
+      if (pml_y == 0 || pml_y == 2) {
         m_sigmayyyn[i] =
             buoyancyyhxh * dt * ayh[y] * vy[i] + ayh[y] * m_sigmayyy[i];
       }
-      if (pml_x == 0 or pml_x == 2) {
+      if (pml_x == 0 || pml_x == 2) {
         m_sigmaxyxn[i] =
             buoyancyyhxh * dt * axh[x] * vy[i] + axh[x] * m_sigmaxyx[i];
       }
@@ -1002,7 +1002,7 @@ inline void backward_kernel_sigma(
       // from sigmayy/sigmaxx edges
       for (int k{}; k <= A; ++k) {
         for (int j{}; j < A / 2 - 1; ++j) {
-          if (pml_x == 0 and x == j + (-j + k)) {
+          if (pml_x == 0 && x == j + (-j + k)) {
             int64_t i2{i - (-j + k)};
             int64_t x2{x - (-j + k)};
             T lambyxh{(lamb[i2] + lamb[i2 + 1]) / 2};
@@ -1012,7 +1012,7 @@ inline void backward_kernel_sigma(
                                       ((lambyxh + 2 * muyxh) * sigmaxx[i2] +
                                        lambyxh * sigmayy[i2]) +
                                   bxh[x2] * m_vxx[i2]);
-          } else if (pml_x == 2 and x == nx - 2 - j + (j - k + 1)) {
+          } else if (pml_x == 2 && x == nx - 2 - j + (j - k + 1)) {
             int64_t i2{i - (j - k + 1)};
             int64_t x2{x - (j - k + 1)};
             T lambyxh{(lamb[i2] + lamb[i2 + 1]) / 2};
@@ -1028,8 +1028,8 @@ inline void backward_kernel_sigma(
 
       // from sigmayy/sigmaxx centre
       for (int k{}; k < A / 2; ++k) {
-        if (pml_x == 1 or
-            (x > A / 2 - 2 + 1 + k and x < nx - 2 - A / 2 + 2 + 1 + k)) {
+        if (pml_x == 1 ||
+            (x > A / 2 - 2 + 1 + k && x < nx - 2 - A / 2 + 2 + 1 + k)) {
           int64_t i2{i - (1 + k)};
           int64_t x2{x - (1 + k)};
           T lambyxh{(lamb[i2] + lamb[i2 + 1]) / 2};
@@ -1039,7 +1039,7 @@ inline void backward_kernel_sigma(
                                          lambyxh * sigmayy[i2]) +
                                     bxh[x2] * m_vxx[i2]);
         }
-        if (pml_x == 1 or (x > A / 2 - 2 - k and x < nx - 2 - A / 2 + 2 - k)) {
+        if (pml_x == 1 || (x > A / 2 - 2 - k && x < nx - 2 - A / 2 + 2 - k)) {
           int64_t i2{i + k};
           int64_t x2{x + k};
           T lambyxh{(lamb[i2] + lamb[i2 + 1]) / 2};
@@ -1053,17 +1053,17 @@ inline void backward_kernel_sigma(
 
       // from sigmaxy dvydx
       for (int j{}; j < A / 2 - 1; ++j) {
-        if (pml_x == 0 and x == 1 + j - (j + 1)) {
+        if (pml_x == 0 && x == 1 + j - (j + 1)) {
           int64_t x2{x + (j + 1)};
           for (int k{}; k <= A; ++k) {
             for (int jp{}; jp < A / 2 - 1; ++jp) {
-              if (pml_y == 0 and y == 1 + jp - jp + k) {
+              if (pml_y == 0 && y == 1 + jp - jp + k) {
                 int64_t i2{i - (-(j + 1) + (-jp + k) * nx)};
                 T muyhx{(mu[i2] + mu[i2 + nx]) / 2};
                 vx[i] += fd_coeffs2y[k] * (-fd_coeffs3x[0]) *
                          (muyhx * dt * (1 + bx[x2]) * sigmaxy[i2] +
                           bx[x2] * m_vyx[i2]);
-              } else if (pml_y == 2 and y == ny - 2 - jp + (jp + 1) - k) {
+              } else if (pml_y == 2 && y == ny - 2 - jp + (jp + 1) - k) {
                 int64_t i2{i - (-(j + 1) + ((jp + 1) - k) * nx)};
                 T muyhx{(mu[i2] + mu[i2 + nx]) / 2};
                 vx[i] -= fd_coeffs2y[k] * (-fd_coeffs3x[0]) *
@@ -1073,7 +1073,7 @@ inline void backward_kernel_sigma(
             }
           }
           for (int k{}; k < A / 2; ++k) {
-            if (pml_y == 1 or (y > 1 + A / 2 - 2 + k + 1 and
+            if (pml_y == 1 || (y > 1 + A / 2 - 2 + k + 1 &&
                                y < ny - 2 - A / 2 + 2 + k + 1)) {
               int64_t i2{i - (-(j + 1) + (k + 1) * nx)};
               T muyhx{(mu[i2] + mu[i2 + nx]) / 2};
@@ -1081,8 +1081,8 @@ inline void backward_kernel_sigma(
                        (muyhx * dt * (1 + bx[x2]) * sigmaxy[i2] +
                         bx[x2] * m_vyx[i2]);
             }
-            if (pml_y == 1 or
-                (y > 1 + A / 2 - 2 - k and y < ny - 2 - A / 2 + 2 - k)) {
+            if (pml_y == 1 ||
+                (y > 1 + A / 2 - 2 - k && y < ny - 2 - A / 2 + 2 - k)) {
               int64_t i2{i - (-(j + 1) - k * nx)};
               T muyhx{(mu[i2] + mu[i2 + nx]) / 2};
               vx[i] -= fd_coeffsy[k] * (-fd_coeffs3x[0]) *
@@ -1091,17 +1091,17 @@ inline void backward_kernel_sigma(
             }
           }
 
-        } else if (pml_x == 2 and x == nx - 2 - j + (j + 1)) {
+        } else if (pml_x == 2 && x == nx - 2 - j + (j + 1)) {
           int64_t x2{x - (j + 1)};
           for (int k{}; k <= A; ++k) {
             for (int jp{}; jp < A / 2 - 1; ++jp) {
-              if (pml_y == 0 and y == 1 + jp - jp + k) {
+              if (pml_y == 0 && y == 1 + jp - jp + k) {
                 int64_t i2{i - ((j + 1) + (-jp + k) * nx)};
                 T muyhx{(mu[i2] + mu[i2 + nx]) / 2};
                 vx[i] += fd_coeffs2y[k] * (fd_coeffs3x[0]) *
                          (muyhx * dt * (1 + bx[x2]) * sigmaxy[i2] +
                           bx[x2] * m_vyx[i2]);
-              } else if (pml_y == 2 and y == ny - 2 - jp + jp - k + 1) {
+              } else if (pml_y == 2 && y == ny - 2 - jp + jp - k + 1) {
                 int64_t i2{i - ((j + 1) + (jp - k + 1) * nx)};
                 T muyhx{(mu[i2] + mu[i2 + nx]) / 2};
                 vx[i] -= fd_coeffs2y[k] * (fd_coeffs3x[0]) *
@@ -1111,7 +1111,7 @@ inline void backward_kernel_sigma(
             }
           }
           for (int k{}; k < A / 2; ++k) {
-            if (pml_y == 1 or (y > 1 + A / 2 - 2 + k + 1 and
+            if (pml_y == 1 || (y > 1 + A / 2 - 2 + k + 1 &&
                                y < ny - 2 - A / 2 + 2 + k + 1)) {
               int64_t i2{i - ((j + 1) + (k + 1) * nx)};
               T muyhx{(mu[i2] + mu[i2 + nx]) / 2};
@@ -1119,8 +1119,8 @@ inline void backward_kernel_sigma(
                        (muyhx * dt * (1 + bx[x2]) * sigmaxy[i2] +
                         bx[x2] * m_vyx[i2]);
             }
-            if (pml_y == 1 or
-                (y > 1 + A / 2 - 2 - k and y < ny - 2 - A / 2 + 2 - k)) {
+            if (pml_y == 1 ||
+                (y > 1 + A / 2 - 2 - k && y < ny - 2 - A / 2 + 2 - k)) {
               int64_t i2{i - ((j + 1) + (-k) * nx)};
               T muyhx{(mu[i2] + mu[i2 + nx]) / 2};
               vx[i] -= fd_coeffsy[k] * (fd_coeffs3x[0]) *
@@ -1132,17 +1132,17 @@ inline void backward_kernel_sigma(
       }
 
       // from sigmaxy dvxdy
-      if (x > 0 and x < nx - 1) {
+      if (x > 0 && x < nx - 1) {
         for (int k{1}; k <= A + 1; ++k) {
           for (int j{}; j < A / 2 - 1; ++j) {
-            if (pml_y == 0 and y == 1 + j + (-j + k - 1)) {
+            if (pml_y == 0 && y == 1 + j + (-j + k - 1)) {
               int64_t y2{y - (-j + k - 1)};
               int64_t i2{i - (-j + k - 1) * nx};
               T muyhx{(mu[i2] + mu[i2 + nx]) / 2};
               vx[i] +=
                   fd_coeffs3y[k] * (muyhx * dt * (1 + byh[y2]) * sigmaxy[i2] +
                                     byh[y2] * m_vxy[i2]);
-            } else if (pml_y == 2 and y == ny - 2 - j + (j - k + 2)) {
+            } else if (pml_y == 2 && y == ny - 2 - j + (j - k + 2)) {
               int64_t y2{y - (j - k + 2)};
               int64_t i2{i - (j - k + 2) * nx};
               T muyhx{(mu[i2] + mu[i2 + nx]) / 2};
@@ -1153,16 +1153,16 @@ inline void backward_kernel_sigma(
           }
         }
         for (int k{}; k < A / 2; ++k) {
-          if (pml_y == 1 or
-              (y > 1 + A / 2 - 2 + k + 1 and y < ny - 2 - A / 2 + 2 + k + 1)) {
+          if (pml_y == 1 ||
+              (y > 1 + A / 2 - 2 + k + 1 && y < ny - 2 - A / 2 + 2 + k + 1)) {
             int64_t y2{y - (k + 1)};
             int64_t i2{i - (k + 1) * nx};
             T muyhx{(mu[i2] + mu[i2 + nx]) / 2};
             vx[i] += fd_coeffsy[k] * (muyhx * dt * (1 + byh[y2]) * sigmaxy[i2] +
                                       byh[y2] * m_vxy[i2]);
           }
-          if (pml_y == 1 or
-              (y > 1 + A / 2 - 2 - k and y < ny - 2 - A / 2 + 2 - k)) {
+          if (pml_y == 1 ||
+              (y > 1 + A / 2 - 2 - k && y < ny - 2 - A / 2 + 2 - k)) {
             int64_t y2{y + k};
             int64_t i2{i + k * nx};
             T muyhx{(mu[i2] + mu[i2 + nx]) / 2};
@@ -1172,11 +1172,11 @@ inline void backward_kernel_sigma(
         }
       }
 
-      if (pml_y == 0 or pml_y == 2) {
+      if (pml_y == 0 || pml_y == 2) {
         m_sigmaxyyn[i] =
             buoyancy[i] * dt * ay[y] * vx[i] + ay[y] * m_sigmaxyy[i];
       }
-      if (pml_x == 0 or pml_x == 2) {
+      if (pml_x == 0 || pml_x == 2) {
         m_sigmaxxxn[i] =
             buoyancy[i] * dt * ax[x] * vx[i] + ax[x] * m_sigmaxxx[i];
       }
@@ -1250,11 +1250,11 @@ inline void backward_kernel_v(
       T lambyxh{(lamb[i] + lamb[i + 1]) / 2};
       T muyxh{(mu[i] + mu[i + 1]) / 2};
 
-      if (pml_y == 0 or pml_y == 2) {
+      if (pml_y == 0 || pml_y == 2) {
         m_vyy[i] = (lambyxh + 2 * muyxh) * dt * ay[y] * sigmayy[i] +
                    lambyxh * dt * ay[y] * sigmaxx[i] + ay[y] * m_vyy[i];
       }
-      if (pml_x == 0 or pml_x == 2) {
+      if (pml_x == 0 || pml_x == 2) {
         m_vxx[i] = (lambyxh + 2 * muyxh) * dt * axh[x] * sigmaxx[i] +
                    lambyxh * dt * axh[x] * sigmayy[i] + axh[x] * m_vxx[i];
       }
@@ -1262,11 +1262,11 @@ inline void backward_kernel_v(
       // dsigmayydy
       for (int k{}; k < A; ++k) {
         for (int j{}; j < A / 2; ++j) {
-          if (pml_y == 0 and y == j + (1 - j + k)) {
+          if (pml_y == 0 && y == j + (1 - j + k)) {
             int64_t i2{i - (1 - j + k) * nx};
             int64_t y2{y - (1 - j + k)};
             T buoyancyyhxh;
-            if (pml_y == 2 and y2 == ny - 1) {
+            if (pml_y == 2 && y2 == ny - 1) {
               buoyancyyhxh = (buoyancy[i2] + buoyancy[i2 + 1]) / 2;
             } else {
               buoyancyyhxh = (buoyancy[i2] + buoyancy[i2 + 1] +
@@ -1276,11 +1276,11 @@ inline void backward_kernel_v(
             sigmayy[i] += fd_coeffs1y[j][1 + k] *
                           (buoyancyyhxh * dt * (1 + byh[y2]) * vy[i2] +
                            byh[y2] * m_sigmayyy[i2]);
-          } else if (pml_y == 2 and y == ny - 1 - j + (j - k)) {
+          } else if (pml_y == 2 && y == ny - 1 - j + (j - k)) {
             int64_t i2{i - (j - k) * nx};
             int64_t y2{y - (j - k)};
             T buoyancyyhxh;
-            if (pml_y == 2 and y2 == ny - 1) {
+            if (pml_y == 2 && y2 == ny - 1) {
               buoyancyyhxh = (buoyancy[i2] + buoyancy[i2 + 1]) / 2;
             } else {
               buoyancyyhxh = (buoyancy[i2] + buoyancy[i2 + 1] +
@@ -1294,12 +1294,12 @@ inline void backward_kernel_v(
         }
       }
       for (int k{}; k < A / 2; ++k) {
-        if (pml_y == 1 or
-            (y > A / 2 - 1 + (1 + k) and y < ny - 1 - A / 2 + 1 + (1 + k))) {
+        if (pml_y == 1 ||
+            (y > A / 2 - 1 + (1 + k) && y < ny - 1 - A / 2 + 1 + (1 + k))) {
           int64_t i2{i - (1 + k) * nx};
           int64_t y2{y - (1 + k)};
           T buoyancyyhxh;
-          if (pml_y == 2 and y2 == ny - 1) {
+          if (pml_y == 2 && y2 == ny - 1) {
             buoyancyyhxh = (buoyancy[i2] + buoyancy[i2 + 1]) / 2;
           } else {
             buoyancyyhxh = (buoyancy[i2] + buoyancy[i2 + 1] +
@@ -1310,11 +1310,11 @@ inline void backward_kernel_v(
               fd_coeffsy[k] * (buoyancyyhxh * dt * (1 + byh[y2]) * vy[i2] +
                                byh[y2] * m_sigmayyy[i2]);
         }
-        if (pml_y == 1 or (y > A / 2 - 1 - k and y < ny - 1 - A / 2 + 1 - k)) {
+        if (pml_y == 1 || (y > A / 2 - 1 - k && y < ny - 1 - A / 2 + 1 - k)) {
           int64_t i2{i - (-k) * nx};
           int64_t y2{y - (-k)};
           T buoyancyyhxh;
-          if (pml_y == 2 and y2 == ny - 1) {
+          if (pml_y == 2 && y2 == ny - 1) {
             buoyancyyhxh = (buoyancy[i2] + buoyancy[i2 + 1]) / 2;
           } else {
             buoyancyyhxh = (buoyancy[i2] + buoyancy[i2 + 1] +
@@ -1330,13 +1330,13 @@ inline void backward_kernel_v(
       // dsigmaxxdx
       for (int k{}; k < A; ++k) {
         for (int j{}; j < A / 2; ++j) {
-          if (pml_x == 0 and x == j + (-j + k)) {
+          if (pml_x == 0 && x == j + (-j + k)) {
             int64_t i2{i - (-j + k)};
             int64_t x2{x - (-j + k)};
             sigmaxx[i] += fd_coeffs1x[j][1 + k] *
                           (buoyancy[i2] * dt * (1 + bx[x2]) * vx[i2] +
                            bx[x2] * m_sigmaxxx[i2]);
-          } else if (pml_x == 2 and x == nx - 1 - j + (j - k - 1)) {
+          } else if (pml_x == 2 && x == nx - 1 - j + (j - k - 1)) {
             int64_t i2{i - (j - k - 1)};
             int64_t x2{x - (j - k - 1)};
             sigmaxx[i] -= fd_coeffs1x[j][1 + k] *
@@ -1346,16 +1346,16 @@ inline void backward_kernel_v(
         }
       }
       for (int k{}; k < A / 2; ++k) {
-        if (pml_x == 1 or
-            (x > A / 2 - 1 + (k) and x < nx - 1 - A / 2 + 1 + (k))) {
+        if (pml_x == 1 ||
+            (x > A / 2 - 1 + (k) && x < nx - 1 - A / 2 + 1 + (k))) {
           int64_t i2{i - (k)};
           int64_t x2{x - (k)};
           sigmaxx[i] +=
               fd_coeffsx[k] * (buoyancy[i2] * dt * (1 + bx[x2]) * vx[i2] +
                                bx[x2] * m_sigmaxxx[i2]);
         }
-        if (pml_x == 1 or
-            (x > A / 2 - 1 - (1 + k) and x < nx - 1 - A / 2 + 1 - (1 + k))) {
+        if (pml_x == 1 ||
+            (x > A / 2 - 1 - (1 + k) && x < nx - 1 - A / 2 + 1 - (1 + k))) {
           int64_t i2{i + (1 + k)};
           int64_t x2{x + (1 + k)};
           sigmaxx[i] -=
@@ -1372,21 +1372,21 @@ inline void backward_kernel_v(
       int64_t i{yi + x};
       T muyhx{(mu[i] + mu[i + nx]) / 2};
 
-      if (pml_y == 0 or pml_y == 2) {
+      if (pml_y == 0 || pml_y == 2) {
         m_vxy[i] = muyhx * dt * ayh[y] * sigmaxy[i] + ayh[y] * m_vxy[i];
       }
-      if (pml_x == 0 or pml_x == 2) {
+      if (pml_x == 0 || pml_x == 2) {
         m_vyx[i] = muyhx * dt * ax[x] * sigmaxy[i] + ax[x] * m_vyx[i];
       }
 
       // dsigmaxydx
       for (int k{}; k < A; ++k) {
         for (int j{}; j < A / 2 - 1; ++j) {
-          if (pml_x == 0 and x == j - j + 1 + k) {
+          if (pml_x == 0 && x == j - j + 1 + k) {
             int64_t i2{i - (-j + 1 + k)};
             int64_t x2{x - (-j + 1 + k)};
             T buoyancyyhxh;
-            if (pml_y == 2 and y == ny - 1) {
+            if (pml_y == 2 && y == ny - 1) {
               buoyancyyhxh = (buoyancy[i2] + buoyancy[i2 + 1]) / 2;
             } else {
               buoyancyyhxh = (buoyancy[i2] + buoyancy[i2 + 1] +
@@ -1396,11 +1396,11 @@ inline void backward_kernel_v(
             sigmaxy[i] += fd_coeffs2x[1 + k] *
                           (buoyancyyhxh * dt * (1 + bxh[x2]) * vy[i2] +
                            bxh[x2] * m_sigmaxyx[i2]);
-          } else if (pml_x == 2 and x == nx - 2 - j + j - k) {
+          } else if (pml_x == 2 && x == nx - 2 - j + j - k) {
             int64_t i2{i - (j - k)};
             int64_t x2{x - (j - k)};
             T buoyancyyhxh;
-            if (pml_y == 2 and y == ny - 1) {
+            if (pml_y == 2 && y == ny - 1) {
               buoyancyyhxh = (buoyancy[i2] + buoyancy[i2 + 1]) / 2;
             } else {
               buoyancyyhxh = (buoyancy[i2] + buoyancy[i2 + 1] +
@@ -1414,12 +1414,12 @@ inline void backward_kernel_v(
         }
       }
       for (int k{}; k < A / 2; ++k) {
-        if (pml_x == 1 or
-            (x > A / 2 - 2 + 1 + k and x < nx - 2 - A / 2 + 2 + 1 + k)) {
+        if (pml_x == 1 ||
+            (x > A / 2 - 2 + 1 + k && x < nx - 2 - A / 2 + 2 + 1 + k)) {
           int64_t i2{i - (1 + k)};
           int64_t x2{x - (1 + k)};
           T buoyancyyhxh;
-          if (pml_y == 2 and y == ny - 1) {
+          if (pml_y == 2 && y == ny - 1) {
             buoyancyyhxh = (buoyancy[i2] + buoyancy[i2 + 1]) / 2;
           } else {
             buoyancyyhxh = (buoyancy[i2] + buoyancy[i2 + 1] +
@@ -1430,11 +1430,11 @@ inline void backward_kernel_v(
               fd_coeffsx[k] * (buoyancyyhxh * dt * (1 + bxh[x2]) * vy[i2] +
                                bxh[x2] * m_sigmaxyx[i2]);
         }
-        if (pml_x == 1 or (x > A / 2 - 2 - k and x < nx - 2 - A / 2 + 2 - k)) {
+        if (pml_x == 1 || (x > A / 2 - 2 - k && x < nx - 2 - A / 2 + 2 - k)) {
           int64_t i2{i - (-k)};
           int64_t x2{x - (-k)};
           T buoyancyyhxh;
-          if (pml_y == 2 and y == ny - 1) {
+          if (pml_y == 2 && y == ny - 1) {
             buoyancyyhxh = (buoyancy[i2] + buoyancy[i2 + 1]) / 2;
           } else {
             buoyancyyhxh = (buoyancy[i2] + buoyancy[i2 + 1] +
@@ -1450,13 +1450,13 @@ inline void backward_kernel_v(
       // dsigmaxydy
       for (int k{}; k < A; ++k) {
         for (int j{}; j < A / 2 - 1; ++j) {
-          if (pml_y == 0 and y == 1 + j - j + k) {
+          if (pml_y == 0 && y == 1 + j - j + k) {
             int64_t i2{i - (-j + k) * nx};
             int64_t y2{y - (-j + k)};
             sigmaxy[i] += fd_coeffs2y[1 + k] *
                           (buoyancy[i2] * dt * (1 + by[y2]) * vx[i2] +
                            by[y2] * m_sigmaxyy[i2]);
-          } else if (pml_y == 2 and y == ny - 1 - j + j - k - 1) {
+          } else if (pml_y == 2 && y == ny - 1 - j + j - k - 1) {
             int64_t i2{i - (j - k - 1) * nx};
             int64_t y2{y - (j - k - 1)};
             sigmaxy[i] -= fd_coeffs2y[1 + k] *
@@ -1466,15 +1466,15 @@ inline void backward_kernel_v(
         }
       }
       for (int k{}; k < A / 2; ++k) {
-        if (pml_y == 1 or
-            (y > 1 + A / 2 - 2 + k and y < ny - 1 - A / 2 + 2 + k)) {
+        if (pml_y == 1 ||
+            (y > 1 + A / 2 - 2 + k && y < ny - 1 - A / 2 + 2 + k)) {
           int64_t i2{i - (k)*nx};
           int64_t y2{y - (k)};
           sigmaxy[i] +=
               fd_coeffsy[k] * (buoyancy[i2] * dt * (1 + by[y2]) * vx[i2] +
                                by[y2] * m_sigmaxyy[i2]);
         }
-        if (pml_y == 1 or (y > 1 + A / 2 - 2 - (k + 1) and
+        if (pml_y == 1 || (y > 1 + A / 2 - 2 - (k + 1) &&
                            y < ny - 1 - A / 2 + 2 - (k + 1))) {
           int64_t i2{i - (-(k + 1)) * nx};
           int64_t y2{y - (-(k + 1))};
@@ -1561,7 +1561,7 @@ void forward_shot(
       dt, fd_coeffsy, fd_coeffs2y, fd_coeffs3y, fd_coeffsx, fd_coeffs2x,      \
       fd_coeffs3x, pml_regionsy, pml_regionsx);
   for (int64_t t{}; t < nt; ++t) {
-    if (t % step_ratio == 0 and buoyancy_requires_grad) {
+    if (t % step_ratio == 0 && buoyancy_requires_grad) {
       FORWARD_KERNEL_VGRAD(0, 0);
       FORWARD_KERNEL_VGRAD(0, 1);
       FORWARD_KERNEL_VGRAD(0, 2);
@@ -1598,8 +1598,8 @@ void forward_shot(
       record_receivers(r_x + t * n_receivers_per_shot_x, vx, receivers_x_i,
                        n_receivers_per_shot_x);
     }
-    if (t % step_ratio == 0 and (lamb_requires_grad or mu_requires_grad)) {
-      if (lamb_requires_grad and mu_requires_grad) {
+    if (t % step_ratio == 0 && (lamb_requires_grad || mu_requires_grad)) {
+      if (lamb_requires_grad && mu_requires_grad) {
         FORWARD_KERNEL_SIGMALAMBMUGRAD(0, 0);
         FORWARD_KERNEL_SIGMALAMBMUGRAD(0, 1);
         FORWARD_KERNEL_SIGMALAMBMUGRAD(0, 2);
@@ -1716,12 +1716,12 @@ void backward_shot(
       add_sources(sigmaxx, r_p + t * n_receivers_per_shot_p, receivers_p_i,
                   n_receivers_per_shot_p);
     }
-    if (t % step_ratio == 0 and lamb_requires_grad) {
+    if (t % step_ratio == 0 && lamb_requires_grad) {
       add_to_grad_lamb<T>(
           grad_lamb, sigmayy, sigmaxx, dvydy_store + (t / step_ratio) * ny * nx,
           dvxdx_store + (t / step_ratio) * ny * nx, step_ratio, ny, nx);
     }
-    if (t % step_ratio == 0 and mu_requires_grad) {
+    if (t % step_ratio == 0 && mu_requires_grad) {
       add_to_grad_mu<T>(grad_mu, sigmayy, sigmaxy, sigmaxx,
                         dvydy_store + (t / step_ratio) * ny * nx,
                         dvxdx_store + (t / step_ratio) * ny * nx,
@@ -1753,7 +1753,7 @@ void backward_shot(
       record_receivers(f_x + t * n_sources_per_shot_x, vx, sources_x_i,
                        n_sources_per_shot_x);
     }
-    if (t % step_ratio == 0 and buoyancy_requires_grad) {
+    if (t % step_ratio == 0 && buoyancy_requires_grad) {
       add_to_grad_buoyancy<T>(
           grad_buoyancy, vy, vx, dvydbuoyancy + (t / step_ratio) * ny * nx,
           dvxdbuoyancy + (t / step_ratio) * ny * nx, step_ratio, ny, nx);
@@ -1921,7 +1921,7 @@ class ElasticCPUFunction
       dvxdbuoyancy = at::empty(
           {n_batch, (nt + step_ratio - 1) / step_ratio, ny, nx}, options);
     }
-    if (lamb.requires_grad() or mu.requires_grad()) {
+    if (lamb.requires_grad() || mu.requires_grad()) {
       dvydy_store = at::empty(
           {n_batch, (nt + step_ratio - 1) / step_ratio, ny, nx}, options);
       dvxdx_store = at::empty(
@@ -2018,7 +2018,7 @@ class ElasticCPUFunction
             dvydbuoyancy_a = dvydbuoyancy.data_ptr<scalar_t>();
             dvxdbuoyancy_a = dvxdbuoyancy.data_ptr<scalar_t>();
           }
-          if (lamb.requires_grad() or mu.requires_grad()) {
+          if (lamb.requires_grad() || mu.requires_grad()) {
             dvydy_store_a = dvydy_store.data_ptr<scalar_t>();
             dvxdx_store_a = dvxdx_store.data_ptr<scalar_t>();
           }
@@ -2064,14 +2064,14 @@ class ElasticCPUFunction
           });
         }));
 
-    if (lamb.requires_grad() or mu.requires_grad() or
-        buoyancy.requires_grad() or f_y.requires_grad() or
-        f_x.requires_grad() or vy0.requires_grad() or vx0.requires_grad() or
-        sigmayy0.requires_grad() or sigmaxy0.requires_grad() or
-        sigmaxx0.requires_grad() or m_vyy0.requires_grad() or
-        m_vyx0.requires_grad() or m_vxy0.requires_grad() or
-        m_vxx0.requires_grad() or m_sigmayyy0.requires_grad() or
-        m_sigmaxyy0.requires_grad() or m_sigmaxyx0.requires_grad() or
+    if (lamb.requires_grad() || mu.requires_grad() ||
+        buoyancy.requires_grad() || f_y.requires_grad() ||
+        f_x.requires_grad() || vy0.requires_grad() || vx0.requires_grad() ||
+        sigmayy0.requires_grad() || sigmaxy0.requires_grad() ||
+        sigmaxx0.requires_grad() || m_vyy0.requires_grad() ||
+        m_vyx0.requires_grad() || m_vxy0.requires_grad() ||
+        m_vxx0.requires_grad() || m_sigmayyy0.requires_grad() ||
+        m_sigmaxyy0.requires_grad() || m_sigmaxyx0.requires_grad() ||
         m_sigmaxxx0.requires_grad()) {
       ctx->save_for_backward({lamb, mu, buoyancy, ay, ayh, ax, axh, by, byh, bx,
                               bxh, sources_y_i, sources_x_i, receivers_y_i,
@@ -2311,7 +2311,7 @@ class ElasticCPUFunction
           scalar_t const *__restrict dvydy_store_a{};
           scalar_t const *__restrict dvxdx_store_a{};
           scalar_t const *__restrict dvydxdvxdy_store_a{};
-          if (lamb.requires_grad() or mu.requires_grad()) {
+          if (lamb.requires_grad() || mu.requires_grad()) {
             dvydy_store_a = dvydy_store.data_ptr<scalar_t>();
             dvxdx_store_a = dvxdx_store.data_ptr<scalar_t>();
           }
@@ -2368,14 +2368,14 @@ class ElasticCPUFunction
           decltype(&combine_grad_model<scalar_t, 4>) combine_grad_models[]{
               combine_grad_model<scalar_t, 2>, combine_grad_model<scalar_t, 4>};
           auto combine_grad_modeli{combine_grad_models[accuracy / 2 - 1]};
-          if (lamb.requires_grad() and n_parallel > 1) {
+          if (lamb.requires_grad() && n_parallel > 1) {
             combine_grad_modeli(grad_lamb_a, grad_lamb_batch_a, n_parallel, ny,
                                 nx);
           }
-          if (mu.requires_grad() and n_parallel > 1) {
+          if (mu.requires_grad() && n_parallel > 1) {
             combine_grad_modeli(grad_mu_a, grad_mu_batch_a, n_parallel, ny, nx);
           }
-          if (buoyancy.requires_grad() and n_parallel > 1) {
+          if (buoyancy.requires_grad() && n_parallel > 1) {
             combine_grad_modeli(grad_buoyancy_a, grad_buoyancy_batch_a,
                                 n_parallel, ny, nx);
           }

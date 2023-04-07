@@ -125,7 +125,7 @@ __global__ void forward_kernel(
   auto batch{blockIdx.z * blockDim.z + threadIdx.z};
   auto j{y * nxc + x};
   auto i{batch * nynxc + j};
-  if (y < pml_regionsyc[3] and x < pml_regionsxc[3]) {
+  if (y < pml_regionsyc[3] && x < pml_regionsxc[3]) {
     T d2wdy2;
     T d2wdx2;
 #define D2WDY20 fd_coeffs2y<T>(0) * wfc[i]
@@ -147,7 +147,7 @@ __global__ void forward_kernel(
     }
 
     T w_sum{};
-    if (y < pml_regionsyc[1] or y >= pml_regionsyc[2]) {
+    if (y < pml_regionsyc[1] || y >= pml_regionsyc[2]) {
       T dwdy;
       T dpsiydy;
 #define DDY(a, t) \
@@ -173,7 +173,7 @@ __global__ void forward_kernel(
     } else {
       w_sum += d2wdy2;
     }
-    if (x < pml_regionsxc[1] or x >= pml_regionsxc[2]) {
+    if (x < pml_regionsxc[1] || x >= pml_regionsxc[2]) {
       T dwdx;
       T dpsixdx;
 #define DDX(a, t) fd_coeffs1x<T>(t) * (a[i + (t + 1)] - a[i - (t + 1)])
@@ -211,7 +211,7 @@ __global__ void add_sources(T *__restrict wf, T const *__restrict f,
                             int64_t n_sources_per_shot, int64_t n_shots) {
   auto source_idx{blockIdx.x * blockDim.x + threadIdx.x};
   auto shot_idx{blockIdx.y * blockDim.y + threadIdx.y};
-  if (source_idx >= n_sources_per_shot or shot_idx >= n_shots) return;
+  if (source_idx >= n_sources_per_shot || shot_idx >= n_shots) return;
   auto k{shot_idx * n_sources_per_shot + source_idx};
   wf[shot_idx * nynxc + sources_i[k]] += f[k];
 }
@@ -223,7 +223,7 @@ __global__ void record_receivers(T *__restrict r, T const *__restrict wf,
                                  int64_t n_shots) {
   auto receiver_idx{blockIdx.x * blockDim.x + threadIdx.x};
   auto shot_idx{blockIdx.y * blockDim.y + threadIdx.y};
-  if (receiver_idx >= n_receivers_per_shot or shot_idx >= n_shots) return;
+  if (receiver_idx >= n_receivers_per_shot || shot_idx >= n_shots) return;
   auto k{shot_idx * n_receivers_per_shot + receiver_idx};
   r[k] = wf[shot_idx * nynxc + receivers_i[k]];
 }
@@ -236,7 +236,7 @@ __global__ void add_to_grad_v(T *__restrict grad_v, T const *__restrict wfc,
   auto y{blockIdx.y * blockDim.y + threadIdx.y + fd_pad};
   auto batch{blockIdx.z * blockDim.z + threadIdx.z};
   auto i{batch * nynxc + y * nxc + x};
-  if (y < pml_regionsyc[3] and x < pml_regionsxc[3]) {
+  if (y < pml_regionsyc[3] && x < pml_regionsxc[3]) {
     grad_v[i] += wfc[i] * dwdv[i] * step_ratio;
   }
 }
@@ -257,9 +257,9 @@ __global__ void backward_kernel(
   auto batch{blockIdx.z * blockDim.z + threadIdx.z};
   auto j{y * nxc + x};
   auto i{batch * nynxc + j};
-  if (y < pml_regionsyc[3] and x < pml_regionsxc[3]) {
-    bool pml_y{y < pml_regionsyc[1] or y >= pml_regionsyc[2]};
-    bool pml_x{x < pml_regionsxc[1] or x >= pml_regionsxc[2]};
+  if (y < pml_regionsyc[3] && x < pml_regionsxc[3]) {
+    bool pml_y{y < pml_regionsyc[1] || y >= pml_regionsyc[2]};
+    bool pml_x{x < pml_regionsxc[1] || x >= pml_regionsxc[2]};
     T wfp_y_term;
     T wfp_x_term;
 #define WFPY0 fd_coeffs2y<T>(0) * v2dt2[j] * wfc[i]
@@ -445,7 +445,7 @@ void forward_batch(T *__restrict wfc, T *__restrict wfp, T *__restrict psiy,
   auto gridz_receivers{1};
   dim3 dimGrid_receivers(gridx_receivers, gridy_receivers, gridz_receivers);
   for (int64_t t{}; t < nt; ++t) {
-    if (t % step_ratio == 0 and v_requires_grad) {
+    if (t % step_ratio == 0 && v_requires_grad) {
       forward_kernel<T, A, true><<<dimGrid, dimBlock>>>(
           wfc, wfp, psiy, psix, psiyn, psixn, zetay, zetax,
           dwdv + (t / step_ratio) * n_batch * ny * nx, v, ay, ax, by, bx, daydy,
@@ -482,7 +482,7 @@ __global__ void combine_grad_v(T *__restrict grad_v,
   auto x{blockIdx.x * blockDim.x + threadIdx.x + fd_pad};
   auto y{blockIdx.y * blockDim.y + threadIdx.y + fd_pad};
   auto i{y * nxc + x};
-  if (y < pml_regionsyc[3] and x < pml_regionsxc[3]) {
+  if (y < pml_regionsyc[3] && x < pml_regionsxc[3]) {
     for (int64_t batch{}; batch < n_batch; ++batch) {
       grad_v[i] += grad_v_batch[batch * nynxc + i];
     }
@@ -539,7 +539,7 @@ void backward_batch(T *__restrict wfc, T *__restrict wfp, T *__restrict wfcn,
           n_sources_per_shot, n_batch);
       gpuErrchk(cudaPeekAtLastError());
     }
-    if (t % step_ratio == 0 and v_requires_grad) {
+    if (t % step_ratio == 0 && v_requires_grad) {
       add_to_grad_v<T, A><<<dimGrid, dimBlock>>>(
           grad_v, wfc, dwdv + (t / step_ratio) * n_batch * ny * nx, step_ratio);
       gpuErrchk(cudaPeekAtLastError());
@@ -754,9 +754,9 @@ class ScalarCUDAFunction
               n_sources_per_shot, n_receivers_per_shot, ny, nx, nt, step_ratio,
               v.requires_grad(), n_batch);
         }));
-    if (v.requires_grad() or f.requires_grad() or wfc0.requires_grad() or
-        wfp0.requires_grad() or psiy0.requires_grad() or
-        psix0.requires_grad() or zetay0.requires_grad() or
+    if (v.requires_grad() || f.requires_grad() || wfc0.requires_grad() ||
+        wfp0.requires_grad() || psiy0.requires_grad() ||
+        psix0.requires_grad() || zetay0.requires_grad() ||
         zetax0.requires_grad()) {
       ctx->save_for_backward({v, ay, ax, by, bx, sources_i, receivers_i});
       ctx->saved_data["dwdv"] = dwdv;
@@ -954,7 +954,7 @@ class ScalarCUDAFunction
               bx_a, daydy_a, daxdx_a, dbydy_a, dbxdx_a, n_sources_per_shot,
               n_receivers_per_shot, ny, nx, nt, step_ratio, v.requires_grad(),
               n_batch);
-          if (v.requires_grad() and n_batch > 1) {
+          if (v.requires_grad() && n_batch > 1) {
             dim3 dimBlock_combine(32, 32, 1);
             auto gridx_combine{ceil_div(
                 nx - 2 * fd_pad, static_cast<int64_t>(dimBlock_combine.x))};

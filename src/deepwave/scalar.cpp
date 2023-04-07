@@ -123,7 +123,7 @@ inline void forward_kernel(
       }
 
       T w_sum{};
-      if (pml_y == 0 or pml_y == 2) {
+      if (pml_y == 0 || pml_y == 2) {
         T dwdy;
         T dpsiydy;
 #define DDY(a, t) fd_coeffs1y[t] * (a[i + (t + 1) * nx] - a[i - (t + 1) * nx])
@@ -148,7 +148,7 @@ inline void forward_kernel(
       } else {
         w_sum += d2wdy2;
       }
-      if (pml_x == 0 or pml_x == 2) {
+      if (pml_x == 0 || pml_x == 2) {
         T dwdx;
         T dpsixdx;
 #define DDX(a, t) fd_coeffs1x[t] * (a[i + (t + 1)] - a[i - (t + 1)])
@@ -357,7 +357,7 @@ inline void backward_kernel(
 
       wfp[i] = wfp_y_term + wfp_x_term + 2 * wfc[i] + wfp[i];
       wfcn[i] = -wfc[i];
-      if (pml_y == 0 or pml_y == 2) {
+      if (pml_y == 0 || pml_y == 2) {
         T tmp;
 #define PSIY(t)                                                              \
   fd_coeffs1y[t - 1] *                                                       \
@@ -379,7 +379,7 @@ inline void backward_kernel(
                    ayi * psiy[i];
         zetayn[i] = ayi * v2dt2[i] * wfc[i] + ayi * zetay[i];
       }
-      if (pml_x == 0 or pml_x == 2) {
+      if (pml_x == 0 || pml_x == 2) {
         T tmp;
 #define PSIX(t)                                                    \
   fd_coeffs1x[t - 1] *                                             \
@@ -437,7 +437,7 @@ void forward_shot(T *__restrict wfc, T *__restrict wfp, T *__restrict psiy,
       by, bx, daydy, daxdx, dbydy, dbxdx, nx, dt2, fd_coeffs1y, fd_coeffs1x, \
       fd_coeffs2y, fd_coeffs2x, pml_regionsy, pml_regionsx)
   for (int64_t t{}; t < nt; ++t) {
-    if (t % step_ratio == 0 and v_requires_grad) {
+    if (t % step_ratio == 0 && v_requires_grad) {
       FORWARD_KERNELGRAD(0, 0);
       FORWARD_KERNELGRAD(0, 1);
       FORWARD_KERNELGRAD(0, 2);
@@ -521,7 +521,7 @@ void backward_shot(
       record_receivers(f + t * n_sources_per_shot, wfc, sources_i,
                        n_sources_per_shot);
     }
-    if (t % step_ratio == 0 and v_requires_grad) {
+    if (t % step_ratio == 0 && v_requires_grad) {
       add_to_grad_v<T, A>(grad_v, wfc, dwdv + (t / step_ratio) * ny * nx,
                           step_ratio, ny, nx);
     }
@@ -737,9 +737,9 @@ class ScalarCPUFunction : public torch::autograd::Function<ScalarCPUFunction> {
           });
         }));
 
-    if (v.requires_grad() or f.requires_grad() or wfc0.requires_grad() or
-        wfp0.requires_grad() or psiy0.requires_grad() or
-        psix0.requires_grad() or zetay0.requires_grad() or
+    if (v.requires_grad() || f.requires_grad() || wfc0.requires_grad() ||
+        wfp0.requires_grad() || psiy0.requires_grad() ||
+        psix0.requires_grad() || zetay0.requires_grad() ||
         zetax0.requires_grad()) {
       ctx->save_for_backward({v, ay, ax, by, bx, sources_i, receivers_i});
       ctx->saved_data["dwdv"] = dwdv;
@@ -940,7 +940,7 @@ class ScalarCPUFunction : public torch::autograd::Function<ScalarCPUFunction> {
                   v.requires_grad(), pml_regionsy, pml_regionsx);
             }
           });
-          if (v.requires_grad() and n_parallel > 1) {
+          if (v.requires_grad() && n_parallel > 1) {
             decltype(&combine_grad_v<scalar_t, 4>) combine_grad_vs[]{
                 combine_grad_v<scalar_t, 2>, combine_grad_v<scalar_t, 4>,
                 combine_grad_v<scalar_t, 6>, combine_grad_v<scalar_t, 8>};

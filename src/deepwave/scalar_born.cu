@@ -128,7 +128,7 @@ __global__ void forward_kernel(
   auto batch{blockIdx.z * blockDim.z + threadIdx.z};
   auto j{y * nxc + x};
   auto i{batch * nynxc + j};
-  if (y < pml_regionsyc[3] and x < pml_regionsxc[3]) {
+  if (y < pml_regionsyc[3] && x < pml_regionsxc[3]) {
     T d2wdy2;
     T d2wdx2;
     T d2wscdy2;
@@ -168,7 +168,7 @@ __global__ void forward_kernel(
 
     T w_sum{};
     T wsc_sum{};
-    if (y < pml_regionsyc[1] or y >= pml_regionsyc[2]) {
+    if (y < pml_regionsyc[1] || y >= pml_regionsyc[2]) {
       T dwdy;
       T dpsiydy;
       T dwscdy;
@@ -211,7 +211,7 @@ __global__ void forward_kernel(
       w_sum += d2wdy2;
       wsc_sum += d2wscdy2;
     }
-    if (x < pml_regionsxc[1] or x >= pml_regionsxc[2]) {
+    if (x < pml_regionsxc[1] || x >= pml_regionsxc[2]) {
       T dwdx;
       T dpsixdx;
       T dwscdx;
@@ -253,7 +253,7 @@ __global__ void forward_kernel(
       w_sum += d2wdx2;
       wsc_sum += d2wscdx2;
     }
-    if (v_requires_grad or scatter_requires_grad) {
+    if (v_requires_grad || scatter_requires_grad) {
       w_store[i] = w_sum;
     }
     if (v_requires_grad) {
@@ -272,7 +272,7 @@ __global__ void add_sources(T *__restrict wf, T const *__restrict f,
                             int64_t n_sources_per_shot, int64_t n_shots) {
   auto source_idx{blockIdx.x * blockDim.x + threadIdx.x};
   auto shot_idx{blockIdx.y * blockDim.y + threadIdx.y};
-  if (source_idx >= n_sources_per_shot or shot_idx >= n_shots) return;
+  if (source_idx >= n_sources_per_shot || shot_idx >= n_shots) return;
   auto k{shot_idx * n_sources_per_shot + source_idx};
   wf[shot_idx * nynxc + sources_i[k]] += f[k];
 }
@@ -284,7 +284,7 @@ __global__ void record_receivers(T *__restrict r, T const *__restrict wf,
                                  int64_t n_shots) {
   auto receiver_idx{blockIdx.x * blockDim.x + threadIdx.x};
   auto shot_idx{blockIdx.y * blockDim.y + threadIdx.y};
-  if (receiver_idx >= n_receivers_per_shot or shot_idx >= n_shots) return;
+  if (receiver_idx >= n_receivers_per_shot || shot_idx >= n_shots) return;
   auto k{shot_idx * n_receivers_per_shot + receiver_idx};
   r[k] = wf[shot_idx * nynxc + receivers_i[k]];
 }
@@ -302,7 +302,7 @@ __global__ void add_to_grad_v(T *__restrict grad_v, T const *__restrict wfc,
   auto batch{blockIdx.z * blockDim.z + threadIdx.z};
   auto j{y * nxc + x};
   auto i{batch * nynxc + j};
-  if (y < pml_regionsyc[3] and x < pml_regionsxc[3]) {
+  if (y < pml_regionsyc[3] && x < pml_regionsxc[3]) {
     grad_v[i] += wfc[i] * 2 * v[j] * dt2<T>() * w_store[i] * step_ratio +
                  wfcsc[i] *
                      (2 * dt2<T>() * scatter[j] * w_store[i] +
@@ -322,7 +322,7 @@ __global__ void add_to_grad_scatter(T *__restrict grad_scatter,
   auto batch{blockIdx.z * blockDim.z + threadIdx.z};
   auto j{y * nxc + x};
   auto i{batch * nynxc + j};
-  if (y < pml_regionsyc[3] and x < pml_regionsxc[3]) {
+  if (y < pml_regionsyc[3] && x < pml_regionsxc[3]) {
     grad_scatter[i] += wfcsc[i] * 2 * v[j] * dt2<T>() * w_store[i] * step_ratio;
   }
 }
@@ -347,9 +347,9 @@ __global__ void backward_kernel(
   auto batch{blockIdx.z * blockDim.z + threadIdx.z};
   auto j{y * nxc + x};
   auto i{batch * nynxc + j};
-  if (y < pml_regionsyc[3] and x < pml_regionsxc[3]) {
-    bool pml_y{y < pml_regionsyc[1] or y >= pml_regionsyc[2]};
-    bool pml_x{x < pml_regionsxc[1] or x >= pml_regionsxc[2]};
+  if (y < pml_regionsyc[3] && x < pml_regionsxc[3]) {
+    bool pml_y{y < pml_regionsyc[1] || y >= pml_regionsyc[2]};
+    bool pml_x{x < pml_regionsxc[1] || x >= pml_regionsxc[2]};
     T wfp_y_term;
     T wfp_x_term;
     T wfpsc_y_term;
@@ -694,9 +694,9 @@ __global__ void backward_kernel_sc(
   auto batch{blockIdx.z * blockDim.z + threadIdx.z};
   auto j{y * nxc + x};
   auto i{batch * nynxc + j};
-  if (y < pml_regionsyc[3] and x < pml_regionsxc[3]) {
-    bool pml_y{y < pml_regionsyc[1] or y >= pml_regionsyc[2]};
-    bool pml_x{x < pml_regionsxc[1] or x >= pml_regionsxc[2]};
+  if (y < pml_regionsyc[3] && x < pml_regionsxc[3]) {
+    bool pml_y{y < pml_regionsyc[1] || y >= pml_regionsyc[2]};
+    bool pml_x{x < pml_regionsxc[1] || x >= pml_regionsxc[2]};
     T wfp_y_term;
     T wfp_x_term;
 #define WFPY0_SC fd_coeffs2y<T>(0) * v[j] * v[j] * dt2<T>() * wfc[i]
@@ -908,8 +908,8 @@ void forward_batch(
                             gridz_receivers);
 
   for (int64_t t{}; t < nt; ++t) {
-    if (t % step_ratio == 0 and (v_requires_grad or scatter_requires_grad)) {
-      if (v_requires_grad and scatter_requires_grad) {
+    if (t % step_ratio == 0 && (v_requires_grad || scatter_requires_grad)) {
+      if (v_requires_grad && scatter_requires_grad) {
         forward_kernel<T, A, true, true><<<dimGrid, dimBlock>>>(
             wfc, wfp, psiy, psix, psiyn, psixn, zetay, zetax, wfcsc, wfpsc,
             psiysc, psixsc, psiynsc, psixnsc, zetaysc, zetaxsc,
@@ -972,7 +972,7 @@ __global__ void combine_grad_model(T *__restrict grad_v,
   auto x{blockIdx.x * blockDim.x + threadIdx.x + fd_pad};
   auto y{blockIdx.y * blockDim.y + threadIdx.y + fd_pad};
   auto i{y * nxc + x};
-  if (y < pml_regionsyc[3] and x < pml_regionsxc[3]) {
+  if (y < pml_regionsyc[3] && x < pml_regionsxc[3]) {
     for (int64_t batch{}; batch < n_batch; ++batch) {
       grad_v[i] += grad_v_batch[batch * nynxc + i];
     }
@@ -1044,14 +1044,14 @@ void backward_batch(
           n_sources_per_shot, n_batch);
       gpuErrchk(cudaPeekAtLastError());
     }
-    if (t % step_ratio == 0 and v_requires_grad) {
+    if (t % step_ratio == 0 && v_requires_grad) {
       add_to_grad_v<T, A><<<dimGrid, dimBlock>>>(
           grad_v, wfc, wfcsc, w_store + (t / step_ratio) * n_batch * ny * nx,
           wsc_store + (t / step_ratio) * n_batch * ny * nx, v, scatter,
           step_ratio);
       gpuErrchk(cudaPeekAtLastError());
     }
-    if (t % step_ratio == 0 and scatter_requires_grad) {
+    if (t % step_ratio == 0 && scatter_requires_grad) {
       add_to_grad_scatter<T, A><<<dimGrid, dimBlock>>>(
           grad_scatter, wfcsc, w_store + (t / step_ratio) * n_batch * nx * ny,
           v, step_ratio);
@@ -1115,7 +1115,7 @@ void backward_batch_sc(
           n_receivers_per_shot, n_batch);
       gpuErrchk(cudaPeekAtLastError());
     }
-    if (t % step_ratio == 0 and scatter_requires_grad) {
+    if (t % step_ratio == 0 && scatter_requires_grad) {
       add_to_grad_scatter<T, A><<<dimGrid, dimBlock>>>(
           grad_scatter, wfcsc, w_store + (t / step_ratio) * n_batch * ny * nx,
           v, step_ratio);
@@ -1272,7 +1272,7 @@ class ScalarBornCUDAFunction
     auto dbxdx{at::zeros_like(bx)};
     torch::Tensor w_store;
     torch::Tensor wsc_store;
-    if (v.requires_grad() or scatter.requires_grad()) {
+    if (v.requires_grad() || scatter.requires_grad()) {
       w_store = at::empty({(nt + step_ratio - 1) / step_ratio, n_batch, ny, nx},
                           options);
     }
@@ -1281,10 +1281,10 @@ class ScalarBornCUDAFunction
           {(nt + step_ratio - 1) / step_ratio, n_batch, ny, nx}, options);
     }
 
-    bool non_sc{v.requires_grad() or f.requires_grad() or
-                wfc0.requires_grad() or wfp0.requires_grad() or
-                psiy0.requires_grad() or psix0.requires_grad() or
-                zetay0.requires_grad() or zetax0.requires_grad()};
+    bool non_sc{v.requires_grad() || f.requires_grad() ||
+                wfc0.requires_grad() || wfp0.requires_grad() ||
+                psiy0.requires_grad() || psix0.requires_grad() ||
+                zetay0.requires_grad() || zetax0.requires_grad()};
 
     zero_interior<true>(psiy, ny, nx, fd_pad, pml_width);
     zero_interior<false>(psix, ny, nx, fd_pad, pml_width);
@@ -1335,7 +1335,7 @@ class ScalarBornCUDAFunction
               bg_receivers_i.data_ptr<int64_t>()};
           scalar_t *__restrict w_store_a{};
           scalar_t *__restrict wsc_store_a{};
-          if (v.requires_grad() or scatter.requires_grad()) {
+          if (v.requires_grad() || scatter.requires_grad()) {
             w_store_a = w_store.data_ptr<scalar_t>();
           }
           if (v.requires_grad()) {
@@ -1381,12 +1381,12 @@ class ScalarBornCUDAFunction
               n_bg_receivers_per_shot, ny, nx, nt, step_ratio,
               v.requires_grad(), scatter.requires_grad(), n_batch);
         }));
-    if (v.requires_grad() or scatter.requires_grad() or f.requires_grad() or
-        wfc0.requires_grad() or wfp0.requires_grad() or psiy0.requires_grad() or
-        psix0.requires_grad() or zetay0.requires_grad() or
-        zetax0.requires_grad() or wfcsc0.requires_grad() or
-        wfpsc0.requires_grad() or psiysc0.requires_grad() or
-        psixsc0.requires_grad() or zetaysc0.requires_grad() or
+    if (v.requires_grad() || scatter.requires_grad() || f.requires_grad() ||
+        wfc0.requires_grad() || wfp0.requires_grad() || psiy0.requires_grad() ||
+        psix0.requires_grad() || zetay0.requires_grad() ||
+        zetax0.requires_grad() || wfcsc0.requires_grad() ||
+        wfpsc0.requires_grad() || psiysc0.requires_grad() ||
+        psixsc0.requires_grad() || zetaysc0.requires_grad() ||
         zetaxsc0.requires_grad()) {
       ctx->save_for_backward(
           {v, scatter, ay, ax, by, bx, sources_i, receivers_i, bg_receivers_i});
@@ -1556,7 +1556,7 @@ class ScalarBornCUDAFunction
     }
 
     auto grad_v{non_sc ? at::zeros_like(v) : at::empty(0, options)};
-    auto grad_v_batch{non_sc and n_batch > 1
+    auto grad_v_batch{non_sc && n_batch > 1
                           ? at::zeros({n_batch, ny, nx}, options)
                           : at::empty(0, options)};
     auto grad_scatter{at::zeros_like(scatter)};
@@ -1618,7 +1618,7 @@ class ScalarBornCUDAFunction
               bg_receivers_i.data_ptr<int64_t>()};
           scalar_t const *__restrict w_store_a{};
           scalar_t const *__restrict wsc_store_a{};
-          if (v.requires_grad() or scatter.requires_grad()) {
+          if (v.requires_grad() || scatter.requires_grad()) {
             w_store_a = w_store.data_ptr<scalar_t>();
           }
           if (v.requires_grad()) {
@@ -1690,12 +1690,12 @@ class ScalarBornCUDAFunction
               combine_grad_model<scalar_t, 6>, combine_grad_model<scalar_t, 8>};
           auto combine_grad_modeli{combine_grad_models[accuracy / 2 - 1]};
 
-          if (v.requires_grad() and n_batch > 1) {
+          if (v.requires_grad() && n_batch > 1) {
             combine_grad_modeli<<<dimGrid_combine, dimBlock_combine>>>(
                 grad_v_a, grad_v_batch_a, n_batch);
             gpuErrchk(cudaPeekAtLastError());
           }
-          if (scatter.requires_grad() and n_batch > 1) {
+          if (scatter.requires_grad() && n_batch > 1) {
             combine_grad_modeli<<<dimGrid_combine, dimBlock_combine>>>(
                 grad_scatter_a, grad_scatter_batch_a, n_batch);
             gpuErrchk(cudaPeekAtLastError());

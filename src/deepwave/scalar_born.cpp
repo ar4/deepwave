@@ -153,7 +153,7 @@ inline void forward_kernel(
 
       T w_sum{};
       T wsc_sum{};
-      if (pml_y == 0 or pml_y == 2) {
+      if (pml_y == 0 || pml_y == 2) {
         T dwdy;
         T dpsiydy;
         T dwscdy;
@@ -196,7 +196,7 @@ inline void forward_kernel(
         w_sum += d2wdy2;
         wsc_sum += d2wscdy2;
       }
-      if (pml_x == 0 or pml_x == 2) {
+      if (pml_x == 0 || pml_x == 2) {
         T dwdx;
         T dpsixdx;
         T dwscdx;
@@ -239,7 +239,7 @@ inline void forward_kernel(
         w_sum += d2wdx2;
         wsc_sum += d2wscdx2;
       }
-      if (v_requires_grad or scatter_requires_grad) {
+      if (v_requires_grad || scatter_requires_grad) {
         w_store[i] = w_sum;
       }
       if (v_requires_grad) {
@@ -568,7 +568,7 @@ void backward_kernel(
       wfcn[i] = -wfc[i];
       wfpsc[i] = wfpsc_y_term + wfpsc_x_term + 2 * wfcsc[i] + wfpsc[i];
       wfcnsc[i] = -wfcsc[i];
-      if (pml_y == 0 or pml_y == 2) {
+      if (pml_y == 0 || pml_y == 2) {
         T tmp;
         T tmpsc;
 #define PSIY(t)                                                              \
@@ -618,7 +618,7 @@ void backward_kernel(
                      ayi * psiysc[i];
         zetaynsc[i] = ayi * v[i] * v[i] * dt2 * wfcsc[i] + ayi * zetaysc[i];
       }
-      if (pml_x == 0 or pml_x == 2) {
+      if (pml_x == 0 || pml_x == 2) {
         T tmp;
         T tmpsc;
 #define PSIX(t)                                                               \
@@ -824,7 +824,7 @@ inline void backward_kernel_sc(
 
       wfp[i] = wfp_y_term + wfp_x_term + 2 * wfc[i] + wfp[i];
       wfcn[i] = -wfc[i];
-      if (pml_y == 0 or pml_y == 2) {
+      if (pml_y == 0 || pml_y == 2) {
         T tmp;
 #define PSIY_SC(t)                                                           \
   fd_coeffs1y[t - 1] *                                                       \
@@ -849,7 +849,7 @@ inline void backward_kernel_sc(
             ayi * psiy[i];
         zetayn[i] = ayi * v[i] * v[i] * dt2 * wfc[i] + ayi * zetay[i];
       }
-      if (pml_x == 0 or pml_x == 2) {
+      if (pml_x == 0 || pml_x == 2) {
         T tmp;
 #define PSIX_SC(t)                                                            \
   fd_coeffs1x[t - 1] * ((ax[x + t] * ((1 + bx[x + t]) * v[i + t] * v[i + t] * \
@@ -930,8 +930,8 @@ void forward_shot(
       fd_coeffs1y, fd_coeffs1x, fd_coeffs2y, fd_coeffs2x, pml_regionsy,       \
       pml_regionsx)
   for (int64_t t{}; t < nt; ++t) {
-    if (t % step_ratio == 0 and (v_requires_grad or scatter_requires_grad)) {
-      if (v_requires_grad and scatter_requires_grad) {
+    if (t % step_ratio == 0 && (v_requires_grad || scatter_requires_grad)) {
+      if (v_requires_grad && scatter_requires_grad) {
         FORWARD_KERNELVSCGRAD(0, 0);
         FORWARD_KERNELVSCGRAD(0, 1);
         FORWARD_KERNELVSCGRAD(0, 2);
@@ -1056,13 +1056,13 @@ void backward_shot(
       record_receivers(f + t * n_sources_per_shot, wfc, sources_i,
                        n_sources_per_shot);
     }
-    if (t % step_ratio == 0 and v_requires_grad) {
+    if (t % step_ratio == 0 && v_requires_grad) {
       add_to_grad_v<T, A>(grad_v, wfc, wfcsc,
                           w_store + (t / step_ratio) * nx * ny,
                           wsc_store + (t / step_ratio) * nx * ny, v, scatter,
                           dt2, step_ratio, ny, nx);
     }
-    if (t % step_ratio == 0 and scatter_requires_grad) {
+    if (t % step_ratio == 0 && scatter_requires_grad) {
       add_to_grad_scatter<T, A>(grad_scatter, wfcsc,
                                 w_store + (t / step_ratio) * nx * ny, v, dt2,
                                 step_ratio, ny, nx);
@@ -1123,7 +1123,7 @@ void backward_shot_sc(
       add_sources(wfpsc, r + t * n_receivers_per_shot, receivers_i,
                   n_receivers_per_shot);
     }
-    if (t % step_ratio == 0 and scatter_requires_grad) {
+    if (t % step_ratio == 0 && scatter_requires_grad) {
       add_to_grad_scatter<T, A>(grad_scatter, wfcsc,
                                 w_store + (t / step_ratio) * nx * ny, v, dt2,
                                 step_ratio, ny, nx);
@@ -1276,7 +1276,7 @@ class ScalarBornCPUFunction
     auto dbxdx{at::zeros_like(bx)};
     torch::Tensor w_store;
     torch::Tensor wsc_store;
-    if (v.requires_grad() or scatter.requires_grad()) {
+    if (v.requires_grad() || scatter.requires_grad()) {
       w_store = at::empty({n_batch, (nt + step_ratio - 1) / step_ratio, ny, nx},
                           options);
     }
@@ -1285,10 +1285,10 @@ class ScalarBornCPUFunction
           {n_batch, (nt + step_ratio - 1) / step_ratio, ny, nx}, options);
     }
 
-    bool non_sc{v.requires_grad() or f.requires_grad() or
-                wfc0.requires_grad() or wfp0.requires_grad() or
-                psiy0.requires_grad() or psix0.requires_grad() or
-                zetay0.requires_grad() or zetax0.requires_grad()};
+    bool non_sc{v.requires_grad() || f.requires_grad() ||
+                wfc0.requires_grad() || wfp0.requires_grad() ||
+                psiy0.requires_grad() || psix0.requires_grad() ||
+                zetay0.requires_grad() || zetax0.requires_grad()};
 
     zero_interior<true>(psiy, ny, nx, fd_pad, pml_width);
     zero_interior<false>(psix, ny, nx, fd_pad, pml_width);
@@ -1342,7 +1342,7 @@ class ScalarBornCPUFunction
               bg_receivers_i.data_ptr<int64_t>()};
           scalar_t *__restrict w_store_a{};
           scalar_t *__restrict wsc_store_a{};
-          if (v.requires_grad() or scatter.requires_grad()) {
+          if (v.requires_grad() || scatter.requires_grad()) {
             w_store_a = w_store.data_ptr<scalar_t>();
           }
           if (v.requires_grad()) {
@@ -1395,12 +1395,12 @@ class ScalarBornCPUFunction
             }
           });
         }));
-    if (v.requires_grad() or scatter.requires_grad() or f.requires_grad() or
-        wfc0.requires_grad() or wfp0.requires_grad() or psiy0.requires_grad() or
-        psix0.requires_grad() or zetay0.requires_grad() or
-        zetax0.requires_grad() or wfcsc0.requires_grad() or
-        wfpsc0.requires_grad() or psiysc0.requires_grad() or
-        psixsc0.requires_grad() or zetaysc0.requires_grad() or
+    if (v.requires_grad() || scatter.requires_grad() || f.requires_grad() ||
+        wfc0.requires_grad() || wfp0.requires_grad() || psiy0.requires_grad() ||
+        psix0.requires_grad() || zetay0.requires_grad() ||
+        zetax0.requires_grad() || wfcsc0.requires_grad() ||
+        wfpsc0.requires_grad() || psiysc0.requires_grad() ||
+        psixsc0.requires_grad() || zetaysc0.requires_grad() ||
         zetaxsc0.requires_grad()) {
       ctx->save_for_backward(
           {v, scatter, ay, ax, by, bx, sources_i, receivers_i, bg_receivers_i});
@@ -1566,7 +1566,7 @@ class ScalarBornCPUFunction
     int64_t n_parallel{
         std::min(static_cast<int>(n_batch), at::get_num_threads())};
     auto grad_v{non_sc ? at::zeros_like(v) : at::empty(0, options)};
-    auto grad_v_batch{non_sc and n_parallel > 1
+    auto grad_v_batch{non_sc && n_parallel > 1
                           ? at::zeros({n_parallel, ny, nx}, options)
                           : at::empty(0, options)};
     auto grad_scatter{at::zeros_like(scatter)};
@@ -1632,7 +1632,7 @@ class ScalarBornCPUFunction
               bg_receivers_i.data_ptr<int64_t>()};
           scalar_t const *__restrict w_store_a{};
           scalar_t const *__restrict wsc_store_a{};
-          if (v.requires_grad() or scatter.requires_grad()) {
+          if (v.requires_grad() || scatter.requires_grad()) {
             w_store_a = w_store.data_ptr<scalar_t>();
           }
           if (v.requires_grad()) {
@@ -1714,10 +1714,10 @@ class ScalarBornCPUFunction
               combine_grad_model<scalar_t, 2>, combine_grad_model<scalar_t, 4>,
               combine_grad_model<scalar_t, 6>, combine_grad_model<scalar_t, 8>};
           auto combine_grad_modeli{combine_grad_models[accuracy / 2 - 1]};
-          if (v.requires_grad() and n_parallel > 1) {
+          if (v.requires_grad() && n_parallel > 1) {
             combine_grad_modeli(grad_v_a, grad_v_batch_a, n_parallel, ny, nx);
           }
-          if (scatter.requires_grad() and n_parallel > 1) {
+          if (scatter.requires_grad() && n_parallel > 1) {
             combine_grad_modeli(grad_scatter_a, grad_scatter_batch_a,
                                 n_parallel, ny, nx);
           }
