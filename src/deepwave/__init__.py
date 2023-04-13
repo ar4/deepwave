@@ -15,6 +15,7 @@ CUDA. It is compiled when Deepwave is loaded, if necessary.
 import pathlib
 import torch.utils.cpp_extension
 import torch.cuda
+import sys
 from deepwave.scalar import Scalar, scalar
 from deepwave.scalar_born import ScalarBorn, scalar_born
 from deepwave.elastic import Elastic, elastic
@@ -28,11 +29,17 @@ if torch.cuda.is_available():
     sources += [source_dir / 'scalar.cu',
                 source_dir / 'scalar_born.cu',
                 source_dir / 'elastic.cu']
+if sys.platform == 'win32':
+    extra_cflags = ['/O2', '/openmp']
+    extra_ldflags = None
+else:
+    extra_cflags = ['-march=native', '-Ofast', '-fopenmp']
+    extra_ldflags = ['-march=native', '-Ofast', '-fopenmp']
 torch.utils.cpp_extension.load(
     name="deepwave",
     sources=sources,
     is_python_module=False,
-    extra_cflags=['-march=native', '-Ofast', '-fopenmp'],
+    extra_cflags=extra_cflags,
     extra_cuda_cflags=['--restrict', '-O3', '--use_fast_math'],
-    extra_ldflags=['-march=native', '-Ofast', '-fopenmp']
+    extra_ldflags=extra_ldflags
 )
