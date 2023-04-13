@@ -7,7 +7,7 @@ DEFAULT_EPS = 1e-5
 
 
 def _get_hicks_for_one_location_dim(
-        hicks_weight_cache: Dict[Tensor, Tensor],
+        hicks_weight_cache: Dict[Tuple[int, int, int], Tensor],
         location: float, halfwidth: int, beta: Tensor,
         free_surface: List[bool], size: int,
         monopole: bool = True,
@@ -16,8 +16,8 @@ def _get_hicks_for_one_location_dim(
         locations = torch.tensor([location]).round().long().to(beta.device)
         weights = torch.ones(1, dtype=beta.dtype, device=beta.device)
     else:
-        key = torch.tensor([int((location - int(location)) / eps),
-                            halfwidth, int(monopole)])
+        key = (int((location - int(location)) / eps),
+               halfwidth, int(monopole))
         x = (torch.arange(-halfwidth + 1, halfwidth + 1, dtype=beta.dtype,
                           device=beta.device) -
              location + int(location))
@@ -62,9 +62,9 @@ def _get_hicks_locations_and_weights(
         dipole_dim: Union[Tensor, int] = 0,
         eps: float = DEFAULT_EPS
         ) -> Tuple[Tensor, List[List[List[int]]], List[List[List[Tensor]]]]:
-    hicks_weight_cache: Dict[Tensor, Tensor] = {}
+    hicks_weight_cache: Dict[Tuple[int, int, int], Tensor] = {}
     n_shots, n_per_shot, _ = locations.shape
-    hicks_locations_list: List[List[Tensor]] = []
+    hicks_locations_list: List[List[Tuple[int, int]]] = []
     hicks_idxs: List[List[List[int]]] = []
     weights: List[List[List[Tensor]]] = []
     n_per_shot_hicks = 0
@@ -72,7 +72,7 @@ def _get_hicks_locations_and_weights(
         shot_location_idxs: List[List[int]] = []
         shot_weights: List[List[Tensor]] = []
         n_hicks_locations = 0
-        locations_dict: Dict[Tensor, int] = {}
+        locations_dict: Dict[Tuple[int, int], int] = {}
         for i in range(n_per_shot):
             if isinstance(monopole, Tensor):
                 monopole_i = bool(monopole[shotidx, i].item())
@@ -101,10 +101,11 @@ def _get_hicks_locations_and_weights(
             shot_weights.append([weights0, weights1])
             i_idxs: List[int] = []
             for loc in torch.cartesian_prod(locations0, locations1):
-                if loc in locations_dict:
-                    i_idxs.append(locations_dict[loc])
+                loc_tuple = (loc[0].item(), loc[1].item())
+                if loc_tuple in locations_dict:
+                    i_idxs.append(locations_dict[loc_tuple])
                 else:
-                    locations_dict[loc] = n_hicks_locations
+                    locations_dict[loc_tuple] = n_hicks_locations
                     i_idxs.append(n_hicks_locations)
                     n_hicks_locations += 1
             shot_location_idxs.append(i_idxs)
@@ -122,7 +123,9 @@ def _get_hicks_locations_and_weights(
     )
     for shotidx in range(n_shots):
         for i, loc in enumerate(hicks_locations_list[shotidx]):
-            hicks_locations[shotidx, i] = loc
+            hicks_locations[shotidx, i] = (
+                torch.tensor(loc).to(locations.device)
+            )
 
     return hicks_locations, hicks_idxs, weights
 
