@@ -36,6 +36,11 @@ Undefined symbol errors
 
 If you update to a new version of PyTorch, you will probably need to reinstall Deepwave (`pip install --force-reinstall deepwave`, and you may also want to include `--upgrade` to check for updates) or you will get errors such as complaints about undefined symbols.
 
+Compiler error "cannot find -lcudart"
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+PyTorch is hardcoded to expect the CUDA runtime library to be in the "lib64" directory, but sometimes it is instead in the "lib" directory, cuasing the compilation (during the first import) to fail because it cannot find the library. A solution is to create a soft link from the expected path to the actual path so that the library can be found. First you need to find where it is looking. In the compiler output (usually just before the error) you will see something like `-L/home/alanr/anaconda3/lib64`. That is where the compiler is being told to search the lib64 directory for libraries. Look in the "lib" directory (in the example case, this would be `/home/alanr/anaconda3/lib`) to make sure the `libcudart.so` file that the compiler wants is there. If it is, you can add a soft link. In the example case, this would be done with `ln -s /home/alanr/anaconda3/lib/libcudart.so /home/alanr/anaconda3/lib64/libcudart.so`.
+
 Other issues
 ^^^^^^^^^^^^
 
