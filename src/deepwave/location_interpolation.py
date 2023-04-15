@@ -273,9 +273,12 @@ class Hicks:
         _check_shot_idxs(amplitudes, shot_idxs)
         n_shots, n_per_shot, nt = amplitudes.shape
         n_per_shot_hicks = self.hicks_locations.shape[1]
+        # In the below I put `out` on the CPU because there seems to
+        # be a bug (in PyTorch?) that causes the incorrect answer
+        # otherwise
         out = torch.zeros(n_shots, n_per_shot_hicks, nt,
                           dtype=amplitudes.dtype,
-                          device=amplitudes.device)
+                          device=torch.device('cpu'))
         for shotidx in range(n_shots):
             if shot_idxs is not None:
                 hicks_shotidx = int(shot_idxs[shotidx])
@@ -287,8 +290,8 @@ class Hicks:
                     (self.weights[hicks_shotidx][i][0].reshape(-1, 1) *
                      self.weights[hicks_shotidx][i][1].reshape(1, -1))
                     .reshape(-1)[..., None]
-                )
-        return out
+                ).cpu()
+        return out.to(amplitudes.device)
 
     def receiver(self, amplitudes: Tensor,
                  shot_idxs: Optional[Tensor] = None) -> Tensor:
