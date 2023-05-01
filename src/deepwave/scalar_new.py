@@ -373,17 +373,398 @@ def scalar(v: Tensor,
     receivers_i = receivers_i_l[0]
     ay, ax, by, bx = pml_profiles
 
+    if sources_i is not None:
+        sources_i = (
+            sources_i +
+            (torch.arange(n_batch, device=v.device) * v.numel())[:, None]
+        ).flatten()
+    if receivers_i is not None:
+        receivers_i = (
+            receivers_i +
+            (torch.arange(n_batch, device=v.device) * v.numel())[:, None]
+        ).flatten()
+
+    source_amplitudes = torch.movedim(source_amplitudes, 1, 0)
+    wfc = None
+    wfp = None
+    psiy = None
+    psix = None
+    zetay = None
+    zetax = None
+
     wfc, wfp, psiy, psix, zetay, zetax, receiver_amplitudes = \
-        torch.ops.deepwave.scalar(
+        scalar_prop(
             v, source_amplitudes, wfc, wfp, psiy, psix, zetay, zetax,
             ay, ax, by, bx, sources_i, receivers_i, dy, dx, dt, nt,
             n_batch, step_ratio * model_gradient_sampling_interval,
-            accuracy, pml_width_list[0], pml_width_list[1], pml_width_list[2],
-            pml_width_list[3]
+            accuracy, pml_width_list
         )
+
+    receiver_amplitudes = torch.movedim(receiver_amplitudes, 0, 1)
 
     receiver_amplitudes = downsample_and_movedim(receiver_amplitudes,
                                                  step_ratio, freq_taper_frac,
                                                  time_pad_frac)
 
     return (wfc, wfp, psiy, psix, zetay, zetax, receiver_amplitudes)
+
+
+def scalar_prop(v: Tensor, source_amplitudes: Optional[Tensor],
+                wfc0: Optional[Tensor], wfp0: Optional[Tensor],
+                psiy0: Optional[Tensor], psix0: Optional[Tensor],
+                zetay0: Optional[Tensor], zetax0: Optional[Tensor],
+                ay: Tensor, ax: Tensor, by: Tensor, bx: Tensor,
+                sources_i: Optional[Tensor],
+                receivers_i: Optional[Tensor],
+                dy: float, dx: float, dt: float, nt: int,
+                n_batch: int, step_ratio: int,
+                accuracy: int,
+                pml_width: List[int]) -> Tuple[Tensor, Tensor,
+                                               Tensor, Tensor,
+                                               Tensor, Tensor,
+                                               Tensor]:
+
+    device = v.device
+    dtype = v.dtype
+    ny = v.shape[0]
+    nx = v.shape[1]
+    size_with_batch = [n_batch, ny, nx]
+    fd_pad = accuracy // 2
+    pml_regionsy0 = fd_pad
+    pml_regionsy1 = min(pml_width[0] + 2 * fd_pad, ny - fd_pad)
+    pml_regionsy2 = max(pml_regionsy1, ny - pml_width[1] - 2 * fd_pad)
+    pml_regionsy3 = ny - fd_pad
+    pml_regionsy = torch.tensor([pml_regionsy0, pml_regionsy1, pml_regionsy2,
+                                 pml_regionsy3]).long().to(device)
+    pml_regionsx0 = fd_pad
+    pml_regionsx1 = min(pml_width[2] + 2 * fd_pad, nx - fd_pad)
+    pml_regionsx2 = max(pml_regionsx1, nx - pml_width[3] - 2 * fd_pad)
+    pml_regionsx3 = nx - fd_pad
+    pml_regionsx = torch.tensor([pml_regionsx0, pml_regionsx1, pml_regionsx2,
+                                 pml_regionsx3]).long().to(device)
+
+    wfc = create_or_pad(wfc0, fd_pad, device, dtype, size_with_batch)
+    wfp = create_or_pad(wfp0, fd_pad, device, dtype, size_with_batch)
+    psiy = create_or_pad(psiy0, fd_pad, device, dtype, size_with_batch)
+    psix = create_or_pad(psix0, fd_pad, device, dtype, size_with_batch)
+    zetay = create_or_pad(zetay0, fd_pad, device, dtype, size_with_batch)
+    zetax = create_or_pad(zetax0, fd_pad, device, dtype, size_with_batch)
+    receiver_amplitudes = torch.tensor(0, device=device, dtype=dtype)
+    if receivers_i is not None:
+        receiver_amplitudes = torch.zeros(nt, n_batch,
+                                          receivers_i.numel() // n_batch,
+                                          device=device, dtype=dtype)
+
+    zero_interior(psiy, fd_pad, pml_width, True)
+    zero_interior(psix, fd_pad, pml_width, False)
+    zero_interior(zetay, fd_pad, pml_width, True)
+    zero_interior(zetax, fd_pad, pml_width, False)
+
+    fd_coeffs1y, fd_coeffs2y = set_fd_coeffs(accuracy, dy, device, dtype)
+    fd_coeffs1x, fd_coeffs2x = set_fd_coeffs(accuracy, dx, device, dtype)
+    daydy = diff(ay, fd_coeffs1y, accuracy)
+    daxdx = diff(ax, fd_coeffs1x, accuracy)
+    dbydy = diff(by, fd_coeffs1y, accuracy)
+    dbxdx = diff(bx, fd_coeffs1x, accuracy)
+
+    dt2 = dt**2
+    ay = ay[None, :, None]
+    ax = ax[None, None, :]
+    by = by[None, :, None]
+    bx = bx[None, None, :]
+    daydy = daydy[None, :, None]
+    daxdx = daxdx[None, None, :]
+    dbydy = dbydy[None, :, None]
+    dbxdx = dbxdx[None, None, :]
+
+    for t in range(nt):
+        wfn, psiy, psix, zetay, zetax = \
+            forward_kernel(wfc, wfp, psiy, psix,
+                           zetay, zetax, v, ay, ax, by, bx,
+                           daydy, daxdx, dbydy, dbxdx,
+                           fd_coeffs1y, fd_coeffs2y,
+                           fd_coeffs1x, fd_coeffs2x,
+                           accuracy, dt2, pml_regionsy,
+                           pml_regionsx)
+        if source_amplitudes is not None and sources_i is not None:
+            add_sources(wfn, source_amplitudes[t], sources_i)
+        if receivers_i is not None:
+            receiver_amplitudes[t] = record_receivers(wfc, receivers_i)
+        wfc, wfp = wfn, wfc
+
+    return (
+        wfc[:, fd_pad:-fd_pad, fd_pad:-fd_pad],
+        wfp[:, fd_pad:-fd_pad, fd_pad:-fd_pad],
+        psiy[:, fd_pad:-fd_pad, fd_pad:-fd_pad],
+        psix[:, fd_pad:-fd_pad, fd_pad:-fd_pad],
+        zetay[:, fd_pad:-fd_pad, fd_pad:-fd_pad],
+        zetax[:, fd_pad:-fd_pad, fd_pad:-fd_pad],
+        receiver_amplitudes
+    )
+
+
+def create_or_pad(tensor: Optional[Tensor], fd_pad: int,
+                  device: torch.device, dtype: torch.dtype,
+                  size: List[int]) -> Tensor:
+    if tensor is None:
+        return torch.zeros(size[0], size[1], size[2], device=device,
+                           dtype=dtype)
+    else:
+        return torch.nn.functional.pad(
+            tensor, (fd_pad, fd_pad, fd_pad, fd_pad)
+        )
+
+
+def zero_interior(tensor: Tensor, fd_pad: int, pml_width: List[int],
+                  y: bool) -> None:
+    ny = tensor.shape[1]
+    nx = tensor.shape[2]
+    if y:
+        tensor[:, fd_pad + pml_width[0] : ny - pml_width[1] - fd_pad] = 0
+    else:
+        tensor[:, :, fd_pad + pml_width[2] : nx - pml_width[3] - fd_pad] = 0
+
+
+def set_fd_coeffs(accuracy: int, dx: float, device: torch.device,
+                  dtype: torch.dtype) -> Tuple[Tensor, Tensor]:
+    dx2 = dx * dx
+    if accuracy == 2:
+        fd_coeffs1 = [1 / 2 / dx]
+        fd_coeffs2 = [-2 / dx2, 1 / dx2]
+    elif accuracy == 4:
+        fd_coeffs1 = [8 / 12 / dx, -1 / 12 / dx]
+        fd_coeffs2 = [
+            -5 / 2 / dx2,
+            4 / 3 / dx2,
+            -1 / 12 / dx2
+        ]
+    elif accuracy == 6:
+        fd_coeffs1 = [
+            3 / 4 / dx,
+            -3 / 20 / dx,
+            1 / 60 / dx
+        ]
+        fd_coeffs2 = [
+            -49 / 18 / dx2,
+            3 / 2 / dx2,
+            -3 / 20 / dx2,
+            1 / 90 / dx2
+        ]
+    else:
+        fd_coeffs1 = [
+            4 / 5 / dx,
+            -1 / 5 / dx,
+            4 / 105 / dx,
+            -1 / 280 / dx
+        ]
+        fd_coeffs2 = [
+            -205 / 72 / dx2,
+            8 / 5 / dx2,
+            -1 / 5 / dx2,
+            8 / 315 / dx2,
+            -1 / 560 / dx2
+        ]
+    return (
+        torch.tensor(fd_coeffs1).to(dtype).to(device),
+        torch.tensor(fd_coeffs2).to(dtype).to(device)
+    )
+
+
+def diff(a: Tensor, fd_coeffs: Tensor, accuracy: int) -> Tensor:
+    if accuracy == 2:
+        return torch.nn.functional.pad(
+            fd_coeffs[0] * (a[2:] - a[:-2]),
+            (1, 1)
+        )
+    if accuracy == 4:
+        return torch.nn.functional.pad(
+            fd_coeffs[0] * (a[3:-1] - a[1:-3]) +
+            fd_coeffs[1] * (a[4:] - a[:-4]),
+            (2, 2)
+        )
+    if accuracy == 6:
+        return torch.nn.functional.pad(
+            fd_coeffs[0] * (a[4:-2] - a[2:-4]) +
+            fd_coeffs[1] * (a[5:-1] - a[1:-5]) +
+            fd_coeffs[2] * (a[6:] - a[:-6]),
+            (3, 3)
+        )
+    return torch.nn.functional.pad(
+        fd_coeffs[0] * (a[5:-3] - a[3:-5]) +
+        fd_coeffs[1] * (a[6:-2] - a[2:-6]) +
+        fd_coeffs[2] * (a[7:-1] - a[1:-7]) +
+        fd_coeffs[3] * (a[8:] - a[:-8]),
+        (4, 4)
+    )
+
+
+def diffy1(a: Tensor, fd_coeffs: Tensor, accuracy: int) -> Tensor:
+    if accuracy == 2:
+        return torch.nn.functional.pad(
+            fd_coeffs[0] * (a[:, 2:] - a[:, :-2]),
+            (0, 0, 1, 1)
+        )
+    if accuracy == 4:
+        return torch.nn.functional.pad(
+            fd_coeffs[0] * (a[:, 3:-1] - a[:, 1:-3]) +
+            fd_coeffs[1] * (a[:, 4:] - a[:, :-4]),
+            (0, 0, 2, 2)
+        )
+    if accuracy == 6:
+        return torch.nn.functional.pad(
+            fd_coeffs[0] * (a[:, 4:-2] - a[:, 2:-4]) +
+            fd_coeffs[1] * (a[:, 5:-1] - a[:, 1:-5]) +
+            fd_coeffs[2] * (a[:, 6:] - a[:, :-6]),
+            (0, 0, 3, 3)
+        )
+    return torch.nn.functional.pad(
+        fd_coeffs[0] * (a[:, 5:-3] - a[:, 3:-5]) +
+        fd_coeffs[1] * (a[:, 6:-2] - a[:, 2:-6]) +
+        fd_coeffs[2] * (a[:, 7:-1] - a[:, 1:-7]) +
+        fd_coeffs[3] * (a[:, 8:] - a[:, :-8]),
+        (0, 0, 4, 4)
+    )
+
+
+def diffx1(a: Tensor, fd_coeffs: Tensor, accuracy: int) -> Tensor:
+    if accuracy == 2:
+        return torch.nn.functional.pad(
+            fd_coeffs[0] * (a[:, :, 2:] - a[:, :, :-2]),
+            (1, 1)
+        )
+    if accuracy == 4:
+        return torch.nn.functional.pad(
+            fd_coeffs[0] * (a[:, :, 3:-1] - a[:, :, 1:-3]) +
+            fd_coeffs[1] * (a[:, :, 4:] - a[:, :, :-4]),
+            (2, 2)
+        )
+    if accuracy == 6:
+        return torch.nn.functional.pad(
+            fd_coeffs[0] * (a[:, :, 4:-2] - a[:, :, 2:-4]) +
+            fd_coeffs[1] * (a[:, :, 5:-1] - a[:, :, 1:-5]) +
+            fd_coeffs[2] * (a[:, :, 6:] - a[:, :, :-6]),
+            (3, 3)
+        )
+    return torch.nn.functional.pad(
+        fd_coeffs[0] * (a[:, :, 5:-3] - a[:, :, 3:-5]) +
+        fd_coeffs[1] * (a[:, :, 6:-2] - a[:, :, 2:-6]) +
+        fd_coeffs[2] * (a[:, :, 7:-1] - a[:, :, 1:-7]) +
+        fd_coeffs[3] * (a[:, :, 8:] - a[:, :, :-8]),
+        (4, 4)
+    )
+
+
+def diffy2(a: Tensor, fd_coeffs: Tensor, accuracy: int) -> Tensor:
+    if accuracy == 2:
+        return torch.nn.functional.pad(
+            fd_coeffs[0] * a[:, 1:-1] +
+            fd_coeffs[1] * (a[:, 2:] + a[:, :-2]),
+            (0, 0, 1, 1)
+        )
+    if accuracy == 4:
+        return torch.nn.functional.pad(
+            fd_coeffs[0] * a[:, 2:-2] +
+            fd_coeffs[1] * (a[:, 3:-1] + a[:, 1:-3]) +
+            fd_coeffs[2] * (a[:, 4:] + a[:, :-4]),
+            (0, 0, 2, 2)
+        )
+    if accuracy == 6:
+        return torch.nn.functional.pad(
+            fd_coeffs[0] * a[:, 3:-3] +
+            fd_coeffs[1] * (a[:, 4:-2] + a[:, 2:-4]) +
+            fd_coeffs[2] * (a[:, 5:-1] + a[:, 1:-5]) +
+            fd_coeffs[3] * (a[:, 6:] + a[:, :-6]),
+            (0, 0, 3, 3)
+        )
+    return torch.nn.functional.pad(
+        fd_coeffs[0] * a[:, 4:-4] +
+        fd_coeffs[1] * (a[:, 5:-3] + a[:, 3:-5]) +
+        fd_coeffs[2] * (a[:, 6:-2] + a[:, 2:-6]) +
+        fd_coeffs[3] * (a[:, 7:-1] + a[:, 1:-7]) +
+        fd_coeffs[4] * (a[:, 8:] + a[:, :-8]),
+        (0, 0, 4, 4)
+    )
+
+
+def diffx2(a: Tensor, fd_coeffs: Tensor, accuracy: int) -> Tensor:
+    if accuracy == 2:
+        return torch.nn.functional.pad(
+            fd_coeffs[0] * a[:, :, 1:-1] +
+            fd_coeffs[1] * (a[:, :, 2:] + a[:, :, :-2]),
+            (1, 1)
+        )
+    if accuracy == 4:
+        return torch.nn.functional.pad(
+            fd_coeffs[0] * a[:, :, 2:-2] +
+            fd_coeffs[1] * (a[:, :, 3:-1] + a[:, :, 1:-3]) +
+            fd_coeffs[2] * (a[:, :, 4:] + a[:, :, :-4]),
+            (2, 2)
+        )
+    if accuracy == 6:
+        return torch.nn.functional.pad(
+            fd_coeffs[0] * a[:, :, 3:-3] +
+            fd_coeffs[1] * (a[:, :, 4:-2] + a[:, :, 2:-4]) +
+            fd_coeffs[2] * (a[:, :, 5:-1] + a[:, :, 1:-5]) +
+            fd_coeffs[3] * (a[:, :, 6:] + a[:, :, :-6]),
+            (3, 3)
+        )
+    return torch.nn.functional.pad(
+        fd_coeffs[0] * a[:, :, 4:-4] +
+        fd_coeffs[1] * (a[:, :, 5:-3] + a[:, :, 3:-5]) +
+        fd_coeffs[2] * (a[:, :, 6:-2] + a[:, :, 2:-6]) +
+        fd_coeffs[3] * (a[:, :, 7:-1] + a[:, :, 1:-7]) +
+        fd_coeffs[4] * (a[:, :, 8:] + a[:, :, :-8]),
+        (4, 4)
+    )
+
+
+@torch.jit.script
+def add_sources(wf: Tensor, f: Tensor, sources_i: Tensor):
+    wf.view(-1)[sources_i] += f.view(-1)
+
+
+@torch.jit.script
+def record_receivers(wf: Tensor, receivers_i: Tensor) -> Tensor:
+    return wf.view(-1)[receivers_i]
+
+
+@torch.jit.script
+def forward_kernel(wfc: Tensor, wfp: Tensor,
+                   psiy: Tensor, psix: Tensor,
+                   zetay: Tensor, zetax: Tensor,
+                   v: Tensor, ay: Tensor, ax: Tensor,
+                   by: Tensor, bx: Tensor,
+                   daydy: Tensor, daxdx: Tensor,
+                   dbydy: Tensor, dbxdx: Tensor,
+                   fd_coeffs1y: Tensor, fd_coeffs2y: Tensor,
+                   fd_coeffs1x: Tensor, fd_coeffs2x: Tensor,
+                   accuracy: int, dt2: float, pml_regionsy: Tensor,
+                   pml_regionsx: Tensor) -> Tuple[Tensor,
+                                                  Tensor, Tensor,
+                                                  Tensor, Tensor]:
+
+    dwfcdy = diffy1(wfc, fd_coeffs1y, accuracy)
+    dwfcdx = diffx1(wfc, fd_coeffs1x, accuracy)
+
+    tmpy = (
+        (1 + by) * diffy2(wfc, fd_coeffs2y, accuracy) +
+        dbydy * dwfcdy +
+        daydy * psiy +
+        ay * diffy1(psiy, fd_coeffs1y, accuracy)
+    )
+    tmpx = (
+        (1 + bx) * diffx2(wfc, fd_coeffs2x, accuracy) +
+        dbxdx * dwfcdx +
+        daxdx * psix +
+        ax * diffx1(psix, fd_coeffs1x, accuracy)
+    )
+    return (
+        v[None]**2 * dt2 * (
+            (1 + by) * tmpy + ay * zetay + 
+            (1 + bx) * tmpx + ax * zetax
+        ) + 2 * wfc - wfp,
+        by * dwfcdy + ay * psiy,
+        bx * dwfcdx + ax * psix,
+        by * tmpy + ay * zetay,
+        bx * tmpx + ax * zetax
+    )

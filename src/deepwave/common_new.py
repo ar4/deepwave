@@ -25,8 +25,11 @@ def setup_propagator(models: List[Tensor],
                      model_gradient_sampling_interval: int = 1,
                      freq_taper_frac: float = 0.0,
                      time_pad_frac: float = 0.0) -> Tuple[
-                        List[Tensor], List[Tensor], List[Tensor],
-                        List[Tensor], List[Tensor], List[Tensor],
+                        List[Tensor], List[Optional[Tensor]],
+                        List[Optional[Tensor]],
+                        List[Tensor],
+                        List[Optional[Tensor]],
+                        List[Optional[Tensor]],
                         float, float, float, int, int, int, int, int,
                         List[int]]:
     # scalar, models = [v]
@@ -130,10 +133,7 @@ def setup_propagator(models: List[Tensor],
             sa = upsample(sa, step_ratio,
                           freq_taper_frac=freq_taper_frac,
                           time_pad_frac=time_pad_frac)
-            if sa.device == torch.device('cpu'):
-                sa = torch.movedim(sa, -1, 1)
-            else:
-                sa = torch.movedim(sa, -1, 0)
+            sa = torch.movedim(sa, -1, 0)
             source_amplitudes[i] = sa
         else:
             sources_i.append(None)
@@ -207,10 +207,7 @@ def downsample_and_movedim(receiver_amplitudes: Tensor,
                            step_ratio: int, freq_taper_frac: float = 0.0,
                            time_pad_frac: float = 0.0) -> Tensor:
     if receiver_amplitudes.numel() > 0:
-        if receiver_amplitudes.device == torch.device('cpu'):
-            receiver_amplitudes = torch.movedim(receiver_amplitudes, 1, -1)
-        else:
-            receiver_amplitudes = torch.movedim(receiver_amplitudes, 0, -1)
+        receiver_amplitudes = torch.movedim(receiver_amplitudes, 0, -1)
         receiver_amplitudes = downsample(receiver_amplitudes, step_ratio,
                                          freq_taper_frac=freq_taper_frac,
                                          time_pad_frac=time_pad_frac)
@@ -567,9 +564,9 @@ def downsample(signal: Tensor, step_ratio: int, freq_taper_frac: float = 0.0,
     return signal
 
 
-def convert_to_contiguous(tensor: Optional[Tensor]) -> Tensor:
+def convert_to_contiguous(tensor: Optional[Tensor]) -> Optional[Tensor]:
     if tensor is None:
-        return torch.empty(0)
+        return tensor
     return tensor.contiguous()
 
 
