@@ -24,7 +24,7 @@ def setup_propagator(models: List[Tensor],
                      nt: Optional[int] = None,
                      model_gradient_sampling_interval: int = 1,
                      freq_taper_frac: float = 0.0,
-                     time_pad_frac: float = 0.0) -> Tuple[
+                     time_pad_frac: float = 0.0, jit: bool = False) -> Tuple[
                         List[Tensor], List[Tensor], List[Tensor],
                         List[Tensor], List[Tensor], List[Tensor],
                         float, float, float, int, int, int, int, int,
@@ -51,6 +51,9 @@ def setup_propagator(models: List[Tensor],
         fd_pad = 0
     else:
         raise RuntimeError("Unknown prop_type.")
+
+    if jit:
+        fd_pad = 0
 
     if isinstance(pml_width, int):
         pml_width = [pml_width for _ in range(4)]
@@ -130,7 +133,7 @@ def setup_propagator(models: List[Tensor],
             sa = upsample(sa, step_ratio,
                           freq_taper_frac=freq_taper_frac,
                           time_pad_frac=time_pad_frac)
-            if sa.device == torch.device('cpu'):
+            if sa.device == torch.device('cpu') and not jit:
                 sa = torch.movedim(sa, -1, 1)
             else:
                 sa = torch.movedim(sa, -1, 0)
@@ -205,9 +208,9 @@ def setup_propagator(models: List[Tensor],
 
 def downsample_and_movedim(receiver_amplitudes: Tensor,
                            step_ratio: int, freq_taper_frac: float = 0.0,
-                           time_pad_frac: float = 0.0) -> Tensor:
+                           time_pad_frac: float = 0.0, jit: bool = False) -> Tensor:
     if receiver_amplitudes.numel() > 0:
-        if receiver_amplitudes.device == torch.device('cpu'):
+        if receiver_amplitudes.device == torch.device('cpu') and not jit:
             receiver_amplitudes = torch.movedim(receiver_amplitudes, 1, -1)
         else:
             receiver_amplitudes = torch.movedim(receiver_amplitudes, 0, -1)

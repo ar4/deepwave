@@ -365,7 +365,7 @@ def scalar(v: Tensor,
                          accuracy, pml_width, pml_freq, max_vel,
                          survey_pad,
                          origin, nt, model_gradient_sampling_interval,
-                         freq_taper_frac, time_pad_frac)
+                         freq_taper_frac, time_pad_frac, jit=True)
     v = models[0]
     wfc, wfp, psiy, psix, zetay, zetax = wavefields
     source_amplitudes = source_amplitudes_l[0]
@@ -384,7 +384,6 @@ def scalar(v: Tensor,
             (torch.arange(n_batch, device=v.device) * v.numel())[:, None]
         ).flatten()
 
-    source_amplitudes = torch.movedim(source_amplitudes, 1, 0)
     wfc = None
     wfp = None
     psiy = None
@@ -400,11 +399,9 @@ def scalar(v: Tensor,
             accuracy, pml_width_list
         )
 
-    receiver_amplitudes = torch.movedim(receiver_amplitudes, 0, 1)
-
     receiver_amplitudes = downsample_and_movedim(receiver_amplitudes,
                                                  step_ratio, freq_taper_frac,
-                                                 time_pad_frac)
+                                                 time_pad_frac, jit=True)
 
     return (wfc, wfp, psiy, psix, zetay, zetax, receiver_amplitudes)
 
@@ -443,22 +440,22 @@ def scalar_prop(v: Tensor, source_amplitudes: Optional[Tensor],
     pml_regionsx = torch.tensor([pml_regionsx0, pml_regionsx1, pml_regionsx2,
                                  pml_regionsx3]).long().to(device)
 
-    wfc = create_or_pad(wfc0, fd_pad, device, dtype, size_with_batch)
-    wfp = create_or_pad(wfp0, fd_pad, device, dtype, size_with_batch)
-    psiy = create_or_pad(psiy0, fd_pad, device, dtype, size_with_batch)
-    psix = create_or_pad(psix0, fd_pad, device, dtype, size_with_batch)
-    zetay = create_or_pad(zetay0, fd_pad, device, dtype, size_with_batch)
-    zetax = create_or_pad(zetax0, fd_pad, device, dtype, size_with_batch)
+    wfc = create_or_pad(wfc0, 0, device, dtype, size_with_batch)
+    wfp = create_or_pad(wfp0, 0, device, dtype, size_with_batch)
+    psiy = create_or_pad(psiy0, 0, device, dtype, size_with_batch)
+    psix = create_or_pad(psix0, 0, device, dtype, size_with_batch)
+    zetay = create_or_pad(zetay0, 0, device, dtype, size_with_batch)
+    zetax = create_or_pad(zetax0, 0, device, dtype, size_with_batch)
     receiver_amplitudes = torch.tensor(0, device=device, dtype=dtype)
     if receivers_i is not None:
         receiver_amplitudes = torch.zeros(nt, n_batch,
                                           receivers_i.numel() // n_batch,
                                           device=device, dtype=dtype)
 
-    zero_interior(psiy, fd_pad, pml_width, True)
-    zero_interior(psix, fd_pad, pml_width, False)
-    zero_interior(zetay, fd_pad, pml_width, True)
-    zero_interior(zetax, fd_pad, pml_width, False)
+    zero_interior(psiy, 0, pml_width, True)
+    zero_interior(psix, 0, pml_width, False)
+    zero_interior(zetay, 0, pml_width, True)
+    zero_interior(zetax, 0, pml_width, False)
 
     fd_coeffs1y, fd_coeffs2y = set_fd_coeffs(accuracy, dy, device, dtype)
     fd_coeffs1x, fd_coeffs2x = set_fd_coeffs(accuracy, dx, device, dtype)
@@ -508,12 +505,12 @@ def scalar_prop(v: Tensor, source_amplitudes: Optional[Tensor],
             wfc, wfp = wfn, wfc
 
     return (
-        wfc[:, fd_pad:-fd_pad, fd_pad:-fd_pad],
-        wfp[:, fd_pad:-fd_pad, fd_pad:-fd_pad],
-        psiy[:, fd_pad:-fd_pad, fd_pad:-fd_pad],
-        psix[:, fd_pad:-fd_pad, fd_pad:-fd_pad],
-        zetay[:, fd_pad:-fd_pad, fd_pad:-fd_pad],
-        zetax[:, fd_pad:-fd_pad, fd_pad:-fd_pad],
+        wfc,
+        wfp,
+        psiy,
+        psix,
+        zetay,
+        zetax,
         receiver_amplitudes
     )
 
@@ -587,149 +584,149 @@ def set_fd_coeffs(accuracy: int, dx: float, device: torch.device,
 
 def diff(a: Tensor, fd_coeffs: Tensor, accuracy: int) -> Tensor:
     if accuracy == 2:
-        return torch.nn.functional.pad(
-            fd_coeffs[0] * (a[2:] - a[:-2]),
-            (1, 1)
+        a = torch.nn.functional.pad(a, (1, 1))
+        return (
+            fd_coeffs[0] * (a[2:] - a[:-2])
         )
     if accuracy == 4:
-        return torch.nn.functional.pad(
+        a = torch.nn.functional.pad(a, (2, 2))
+        return (
             fd_coeffs[0] * (a[3:-1] - a[1:-3]) +
-            fd_coeffs[1] * (a[4:] - a[:-4]),
-            (2, 2)
+            fd_coeffs[1] * (a[4:] - a[:-4])
         )
     if accuracy == 6:
-        return torch.nn.functional.pad(
+        a = torch.nn.functional.pad(a, (3, 3))
+        return (
             fd_coeffs[0] * (a[4:-2] - a[2:-4]) +
             fd_coeffs[1] * (a[5:-1] - a[1:-5]) +
-            fd_coeffs[2] * (a[6:] - a[:-6]),
-            (3, 3)
+            fd_coeffs[2] * (a[6:] - a[:-6])
         )
-    return torch.nn.functional.pad(
+    a = torch.nn.functional.pad(a, (4, 4))
+    return (
         fd_coeffs[0] * (a[5:-3] - a[3:-5]) +
         fd_coeffs[1] * (a[6:-2] - a[2:-6]) +
         fd_coeffs[2] * (a[7:-1] - a[1:-7]) +
-        fd_coeffs[3] * (a[8:] - a[:-8]),
-        (4, 4)
+        fd_coeffs[3] * (a[8:] - a[:-8])
     )
 
 
 def diffy1(a: Tensor, fd_coeffs: Tensor, accuracy: int) -> Tensor:
     if accuracy == 2:
-        return torch.nn.functional.pad(
-            fd_coeffs[0] * (a[:, 2:] - a[:, :-2]),
-            (0, 0, 1, 1)
+        a = torch.nn.functional.pad(a, (0, 0, 1, 1))
+        return (
+            fd_coeffs[0] * (a[:, 2:] - a[:, :-2])
         )
     if accuracy == 4:
-        return torch.nn.functional.pad(
+        a = torch.nn.functional.pad(a, (0, 0, 2, 2))
+        return (
             fd_coeffs[0] * (a[:, 3:-1] - a[:, 1:-3]) +
-            fd_coeffs[1] * (a[:, 4:] - a[:, :-4]),
-            (0, 0, 2, 2)
+            fd_coeffs[1] * (a[:, 4:] - a[:, :-4])
         )
     if accuracy == 6:
-        return torch.nn.functional.pad(
+        a = torch.nn.functional.pad(a, (0, 0, 3, 3))
+        return (
             fd_coeffs[0] * (a[:, 4:-2] - a[:, 2:-4]) +
             fd_coeffs[1] * (a[:, 5:-1] - a[:, 1:-5]) +
-            fd_coeffs[2] * (a[:, 6:] - a[:, :-6]),
-            (0, 0, 3, 3)
+            fd_coeffs[2] * (a[:, 6:] - a[:, :-6])
         )
-    return torch.nn.functional.pad(
+    a = torch.nn.functional.pad(a, (0, 0, 4, 4))
+    return (
         fd_coeffs[0] * (a[:, 5:-3] - a[:, 3:-5]) +
         fd_coeffs[1] * (a[:, 6:-2] - a[:, 2:-6]) +
         fd_coeffs[2] * (a[:, 7:-1] - a[:, 1:-7]) +
-        fd_coeffs[3] * (a[:, 8:] - a[:, :-8]),
-        (0, 0, 4, 4)
+        fd_coeffs[3] * (a[:, 8:] - a[:, :-8])
     )
 
 
 def diffx1(a: Tensor, fd_coeffs: Tensor, accuracy: int) -> Tensor:
     if accuracy == 2:
-        return torch.nn.functional.pad(
-            fd_coeffs[0] * (a[:, :, 2:] - a[:, :, :-2]),
-            (1, 1)
+        a = torch.nn.functional.pad(a, (1, 1))
+        return (
+            fd_coeffs[0] * (a[:, :, 2:] - a[:, :, :-2])
         )
     if accuracy == 4:
-        return torch.nn.functional.pad(
+        a = torch.nn.functional.pad(a, (2, 2))
+        return (
             fd_coeffs[0] * (a[:, :, 3:-1] - a[:, :, 1:-3]) +
-            fd_coeffs[1] * (a[:, :, 4:] - a[:, :, :-4]),
-            (2, 2)
+            fd_coeffs[1] * (a[:, :, 4:] - a[:, :, :-4])
         )
     if accuracy == 6:
-        return torch.nn.functional.pad(
+        a = torch.nn.functional.pad(a, (3, 3))
+        return (
             fd_coeffs[0] * (a[:, :, 4:-2] - a[:, :, 2:-4]) +
             fd_coeffs[1] * (a[:, :, 5:-1] - a[:, :, 1:-5]) +
-            fd_coeffs[2] * (a[:, :, 6:] - a[:, :, :-6]),
-            (3, 3)
+            fd_coeffs[2] * (a[:, :, 6:] - a[:, :, :-6])
         )
-    return torch.nn.functional.pad(
+    a = torch.nn.functional.pad(a, (4, 4))
+    return (
         fd_coeffs[0] * (a[:, :, 5:-3] - a[:, :, 3:-5]) +
         fd_coeffs[1] * (a[:, :, 6:-2] - a[:, :, 2:-6]) +
         fd_coeffs[2] * (a[:, :, 7:-1] - a[:, :, 1:-7]) +
-        fd_coeffs[3] * (a[:, :, 8:] - a[:, :, :-8]),
-        (4, 4)
+        fd_coeffs[3] * (a[:, :, 8:] - a[:, :, :-8])
     )
 
 
 def diffy2(a: Tensor, fd_coeffs: Tensor, accuracy: int) -> Tensor:
     if accuracy == 2:
-        return torch.nn.functional.pad(
+        a = torch.nn.functional.pad(a, (0, 0, 1, 1))
+        return (
             fd_coeffs[0] * a[:, 1:-1] +
-            fd_coeffs[1] * (a[:, 2:] + a[:, :-2]),
-            (0, 0, 1, 1)
+            fd_coeffs[1] * (a[:, 2:] + a[:, :-2])
         )
     if accuracy == 4:
-        return torch.nn.functional.pad(
+        a = torch.nn.functional.pad(a, (0, 0, 2, 2))
+        return (
             fd_coeffs[0] * a[:, 2:-2] +
             fd_coeffs[1] * (a[:, 3:-1] + a[:, 1:-3]) +
-            fd_coeffs[2] * (a[:, 4:] + a[:, :-4]),
-            (0, 0, 2, 2)
+            fd_coeffs[2] * (a[:, 4:] + a[:, :-4])
         )
     if accuracy == 6:
-        return torch.nn.functional.pad(
+        a = torch.nn.functional.pad(a, (0, 0, 3, 3))
+        return (
             fd_coeffs[0] * a[:, 3:-3] +
             fd_coeffs[1] * (a[:, 4:-2] + a[:, 2:-4]) +
             fd_coeffs[2] * (a[:, 5:-1] + a[:, 1:-5]) +
-            fd_coeffs[3] * (a[:, 6:] + a[:, :-6]),
-            (0, 0, 3, 3)
+            fd_coeffs[3] * (a[:, 6:] + a[:, :-6])
         )
-    return torch.nn.functional.pad(
+    a = torch.nn.functional.pad(a, (0, 0, 4, 4))
+    return (
         fd_coeffs[0] * a[:, 4:-4] +
         fd_coeffs[1] * (a[:, 5:-3] + a[:, 3:-5]) +
         fd_coeffs[2] * (a[:, 6:-2] + a[:, 2:-6]) +
         fd_coeffs[3] * (a[:, 7:-1] + a[:, 1:-7]) +
-        fd_coeffs[4] * (a[:, 8:] + a[:, :-8]),
-        (0, 0, 4, 4)
+        fd_coeffs[4] * (a[:, 8:] + a[:, :-8])
     )
 
 
 def diffx2(a: Tensor, fd_coeffs: Tensor, accuracy: int) -> Tensor:
     if accuracy == 2:
-        return torch.nn.functional.pad(
+        a = torch.nn.functional.pad(a, (1, 1))
+        return (
             fd_coeffs[0] * a[:, :, 1:-1] +
-            fd_coeffs[1] * (a[:, :, 2:] + a[:, :, :-2]),
-            (1, 1)
+            fd_coeffs[1] * (a[:, :, 2:] + a[:, :, :-2])
         )
     if accuracy == 4:
-        return torch.nn.functional.pad(
+        a = torch.nn.functional.pad(a, (2, 2))
+        return (
             fd_coeffs[0] * a[:, :, 2:-2] +
             fd_coeffs[1] * (a[:, :, 3:-1] + a[:, :, 1:-3]) +
-            fd_coeffs[2] * (a[:, :, 4:] + a[:, :, :-4]),
-            (2, 2)
+            fd_coeffs[2] * (a[:, :, 4:] + a[:, :, :-4])
         )
     if accuracy == 6:
-        return torch.nn.functional.pad(
+        a = torch.nn.functional.pad(a, (3, 3))
+        return (
             fd_coeffs[0] * a[:, :, 3:-3] +
             fd_coeffs[1] * (a[:, :, 4:-2] + a[:, :, 2:-4]) +
             fd_coeffs[2] * (a[:, :, 5:-1] + a[:, :, 1:-5]) +
-            fd_coeffs[3] * (a[:, :, 6:] + a[:, :, :-6]),
-            (3, 3)
+            fd_coeffs[3] * (a[:, :, 6:] + a[:, :, :-6])
         )
-    return torch.nn.functional.pad(
+    a = torch.nn.functional.pad(a, (4, 4))
+    return (
         fd_coeffs[0] * a[:, :, 4:-4] +
         fd_coeffs[1] * (a[:, :, 5:-3] + a[:, :, 3:-5]) +
         fd_coeffs[2] * (a[:, :, 6:-2] + a[:, :, 2:-6]) +
         fd_coeffs[3] * (a[:, :, 7:-1] + a[:, :, 1:-7]) +
-        fd_coeffs[4] * (a[:, :, 8:] + a[:, :, :-8]),
-        (4, 4)
+        fd_coeffs[4] * (a[:, :, 8:] + a[:, :, :-8])
     )
 
 
