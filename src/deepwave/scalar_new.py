@@ -478,19 +478,34 @@ def scalar_prop(v: Tensor, source_amplitudes: Optional[Tensor],
     dbxdx = dbxdx[None, None, :]
 
     for t in range(nt):
-        wfn, psiy, psix, zetay, zetax = \
-            forward_kernel(wfc, wfp, psiy, psix,
-                           zetay, zetax, v, ay, ax, by, bx,
-                           daydy, daxdx, dbydy, dbxdx,
-                           fd_coeffs1y, fd_coeffs2y,
-                           fd_coeffs1x, fd_coeffs2x,
-                           accuracy, dt2, pml_regionsy[1], pml_regionsy[2],
-                           pml_regionsx)
-        if source_amplitudes is not None and sources_i is not None:
-            add_sources(wfn, source_amplitudes[t], sources_i)
-        if receivers_i is not None:
-            receiver_amplitudes[t] = record_receivers(wfc, receivers_i)
-        wfc, wfp = wfn, wfc
+        if t % step_ratio == 0:
+            wfn, psiy, psix, zetay, zetax = \
+                forward_kernel(wfc, wfp, psiy, psix,
+                               zetay, zetax, v, ay, ax, by, bx,
+                               daydy, daxdx, dbydy, dbxdx,
+                               fd_coeffs1y, fd_coeffs2y,
+                               fd_coeffs1x, fd_coeffs2x,
+                               accuracy, dt2, pml_regionsy,
+                               pml_regionsx)
+            if source_amplitudes is not None and sources_i is not None:
+                add_sources(wfn, source_amplitudes[t], sources_i)
+            if receivers_i is not None:
+                receiver_amplitudes[t] = record_receivers(wfc, receivers_i)
+            wfc, wfp = wfn, wfc
+        else:
+            wfn, psiy, psix, zetay, zetax = \
+                forward_kernel(wfc, wfp, psiy, psix,
+                               zetay, zetax, v.detach(), ay, ax, by, bx,
+                               daydy, daxdx, dbydy, dbxdx,
+                               fd_coeffs1y, fd_coeffs2y,
+                               fd_coeffs1x, fd_coeffs2x,
+                               accuracy, dt2, pml_regionsy,
+                               pml_regionsx)
+            if source_amplitudes is not None and sources_i is not None:
+                add_sources(wfn, source_amplitudes.detach()[t], sources_i)
+            if receivers_i is not None:
+                receiver_amplitudes[t] = record_receivers(wfc, receivers_i)
+            wfc, wfp = wfn, wfc
 
     return (
         wfc[:, fd_pad:-fd_pad, fd_pad:-fd_pad],
@@ -598,32 +613,31 @@ def diff(a: Tensor, fd_coeffs: Tensor, accuracy: int) -> Tensor:
     )
 
 
-def diffy1(a: Tensor, fd_coeffs: Tensor, accuracy: int,
-           pad_top: int, pad_bottom: int) -> Tensor:
+def diffy1(a: Tensor, fd_coeffs: Tensor, accuracy: int) -> Tensor:
     if accuracy == 2:
         return torch.nn.functional.pad(
             fd_coeffs[0] * (a[:, 2:] - a[:, :-2]),
-            (0, 0, pad_top, pad_bottom)
+            (0, 0, 1, 1)
         )
     if accuracy == 4:
         return torch.nn.functional.pad(
             fd_coeffs[0] * (a[:, 3:-1] - a[:, 1:-3]) +
             fd_coeffs[1] * (a[:, 4:] - a[:, :-4]),
-            (0, 0, pad_top, pad_bottom)
+            (0, 0, 2, 2)
         )
     if accuracy == 6:
         return torch.nn.functional.pad(
             fd_coeffs[0] * (a[:, 4:-2] - a[:, 2:-4]) +
             fd_coeffs[1] * (a[:, 5:-1] - a[:, 1:-5]) +
             fd_coeffs[2] * (a[:, 6:] - a[:, :-6]),
-            (0, 0, pad_top, pad_bottom)
+            (0, 0, 3, 3)
         )
     return torch.nn.functional.pad(
         fd_coeffs[0] * (a[:, 5:-3] - a[:, 3:-5]) +
         fd_coeffs[1] * (a[:, 6:-2] - a[:, 2:-6]) +
         fd_coeffs[2] * (a[:, 7:-1] - a[:, 1:-7]) +
         fd_coeffs[3] * (a[:, 8:] - a[:, :-8]),
-        (0, 0, pad_top, pad_bottom)
+        (0, 0, 4, 4)
     )
 
 
@@ -739,35 +753,19 @@ def forward_kernel(wfc: Tensor, wfp: Tensor,
                    dbydy: Tensor, dbxdx: Tensor,
                    fd_coeffs1y: Tensor, fd_coeffs2y: Tensor,
                    fd_coeffs1x: Tensor, fd_coeffs2x: Tensor,
-                   accuracy: int, dt2: float, pmlyt: int, pmlyb: int,
+                   accuracy: int, dt2: float, pml_regionsy: Tensor,
                    pml_regionsx: Tensor) -> Tuple[Tensor,
                                                   Tensor, Tensor,
                                                   Tensor, Tensor]:
-    fd_pad = accuracy // 2
-    pyt = slice(None, pmlyt)
-    pyti = slice(None, pmlyt + fd_pad)
-    pym = slice(pmlyt, pmlyb)
-    pyb = slice(pmlyb, None)
-    pybi = slice(pmlyb - fd_pad, None)
-    n_shots, ny, nx = wfc.shape
 
-    d2wfcdy2 = diffy2(wfc, fd_coeffs2y, accuracy)
-    d2wfcdx2 = diffx2(wfc, fd_coeffs2x, accuracy)
-    dwfcdyt = diffy1(wfc[:, pyti], fd_coeffs1y, accuracy, fd_pad, 0)
-    dwfcdyb = diffy1(wfc[:, pybi], fd_coeffs1y, accuracy, 0, fd_pad)
+    dwfcdy = diffy1(wfc, fd_coeffs1y, accuracy)
     dwfcdx = diffx1(wfc, fd_coeffs1x, accuracy)
 
-    tmpyt = (
-        (1 + by[:, pyt]) * d2wfcdy2[:, pyt] +
-        dbydy[:, pyt] * dwfcdyt +
-        daydy[:, pyt] * psiy[:, pyt] +
-        ay[:, pyt] * diffy1(psiy[:, pyti], fd_coeffs1y, accuracy, fd_pad, 0)
-    )
-    tmpyb = (
-        (1 + by[:, pyb]) * d2wfcdy2[:, pyb] +
-        dbydy[:, pyb] * dwfcdyb +
-        daydy[:, pyb] * psiy[:, pyb] +
-        ay[:, pyb] * diffy1(psiy[:, pybi], fd_coeffs1y, accuracy, 0, fd_pad)
+    tmpy = (
+        (1 + by) * diffy2(wfc, fd_coeffs2y, accuracy) +
+        dbydy * dwfcdy +
+        daydy * psiy +
+        ay * diffy1(psiy, fd_coeffs1y, accuracy)
     )
     tmpx = (
         (1 + bx) * diffx2(wfc, fd_coeffs2x, accuracy) +
@@ -777,25 +775,11 @@ def forward_kernel(wfc: Tensor, wfp: Tensor,
     )
     return (
         v[None]**2 * dt2 * (
-            torch.cat([
-                (1 + by[:, pyt]) * tmpyt + ay[:, pyt] * zetay[:, pyt],
-                d2wfcdy2[:, pym],
-                (1 + by[:, pyb]) * tmpyb + ay[:, pyb] * zetay[:, pyb]
-            ], dim=1) +
+            (1 + by) * tmpy + ay * zetay + 
             (1 + bx) * tmpx + ax * zetax
         ) + 2 * wfc - wfp,
-        torch.cat([
-            by[:, pyt] * dwfcdyt + ay[:, pyt] * psiy[:, pyt],
-            torch.zeros(n_shots, pmlyb - pmlyt, nx,
-                        device=psiy.device, dtype=psiy.dtype),
-            by[:, pyb] * dwfcdyb + ay[:, pyb] * psiy[:, pyb]
-        ], dim=1),
+        by * dwfcdy + ay * psiy,
         bx * dwfcdx + ax * psix,
-        torch.cat([
-            by[:, pyt] * tmpyt + ay[:, pyt] * zetay[:, pyt],
-            torch.zeros(n_shots, pmlyb - pmlyt, nx,
-                        device=zetay.device, dtype=zetay.dtype),
-            by[:, pyb] * tmpyb + ay[:, pyb] * zetay[:, pyb]
-        ], dim=1),
+        by * tmpy + ay * zetay,
         bx * tmpx + ax * zetax
     )
