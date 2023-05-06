@@ -121,12 +121,14 @@ def setup_propagator(models: List[Tensor],
                                       None]
                         ) / 4 * dt
                     )
-                else:  # source_amplitudes_x
+                elif i == 1:  # source_amplitudes_x
                     sa = (
                         sa * models[2][sl[..., 0],
                                        sl[..., 1],
                                        None] * dt
                     )
+                else:  # source_amplitudes_p
+                    sa = sa * dt
             sa = upsample(sa, step_ratio,
                           freq_taper_frac=freq_taper_frac,
                           time_pad_frac=time_pad_frac)

@@ -13,9 +13,10 @@ DEFAULT_BUOYANCY = 1/2200
 
 
 def elasticprop(lamb, mu, buoyancy, dx, dt, source_amplitudes_y,
-                source_amplitudes_x, source_locations_y,
-                source_locations_x, receiver_locations_y,
-                receiver_locations_x, receiver_locations_p,
+                source_amplitudes_x, source_amplitudes_p,
+                source_locations_y,  source_locations_x, source_locations_p,
+                receiver_locations_y, receiver_locations_x,
+                receiver_locations_p,
                 prop_kwargs=None, pml_width=None,
                 survey_pad=None, origin=None, vy0=None,
                 vx0=None,
@@ -46,6 +47,9 @@ def elasticprop(lamb, mu, buoyancy, dx, dt, source_amplitudes_y,
     if source_amplitudes_x is not None:
         source_amplitudes_x = source_amplitudes_x.to(device)
         source_locations_x = source_locations_x.to(device)
+    if source_amplitudes_p is not None:
+        source_amplitudes_p = source_amplitudes_p.to(device)
+        source_locations_p = source_locations_p.to(device)
     if receiver_locations_y is not None:
         receiver_locations_y = receiver_locations_y.to(device)
     if receiver_locations_x is not None:
@@ -57,8 +61,10 @@ def elasticprop(lamb, mu, buoyancy, dx, dt, source_amplitudes_y,
         return elastic(lamb, mu, buoyancy, dx, dt,
                        source_amplitudes_y=source_amplitudes_y,
                        source_amplitudes_x=source_amplitudes_x,
+                       source_amplitudes_p=source_amplitudes_p,
                        source_locations_y=source_locations_y,
                        source_locations_x=source_locations_x,
+                       source_locations_p=source_locations_p,
                        receiver_locations_y=receiver_locations_y,
                        receiver_locations_x=receiver_locations_x,
                        receiver_locations_p=receiver_locations_p,
@@ -79,8 +85,10 @@ def elasticprop(lamb, mu, buoyancy, dx, dt, source_amplitudes_y,
     return prop(dt,
                 source_amplitudes_y=source_amplitudes_y,
                 source_amplitudes_x=source_amplitudes_x,
+                source_amplitudes_p=source_amplitudes_p,
                 source_locations_y=source_locations_y,
                 source_locations_x=source_locations_x,
+                source_locations_p=source_locations_p,
                 receiver_locations_y=receiver_locations_y,
                 receiver_locations_x=receiver_locations_x,
                 receiver_locations_p=receiver_locations_p,
@@ -99,8 +107,9 @@ def elasticprop(lamb, mu, buoyancy, dx, dt, source_amplitudes_y,
 
 
 def elasticpropchained(lamb, mu, buoyancy, dx, dt, source_amplitudes_y,
-                       source_amplitudes_x, source_locations_y,
-                       source_locations_x, receiver_locations_y,
+                       source_amplitudes_x, source_amplitudes_p,
+                       source_locations_y, source_locations_x, source_locations_p,
+                       receiver_locations_y,
                        receiver_locations_x, receiver_locations_p,
                        prop_kwargs=None, pml_width=None,
                        survey_pad=None, origin=None, vy0=None,
@@ -131,6 +140,9 @@ def elasticpropchained(lamb, mu, buoyancy, dx, dt, source_amplitudes_y,
     if source_amplitudes_x is not None:
         source_amplitudes_x = source_amplitudes_x.to(device)
         source_locations_x = source_locations_x.to(device)
+    if source_amplitudes_p is not None:
+        source_amplitudes_p = source_amplitudes_p.to(device)
+        source_locations_p = source_locations_p.to(device)
     if receiver_locations_y is not None:
         receiver_locations_y = receiver_locations_y.to(device)
     if receiver_locations_x is not None:
@@ -141,7 +153,8 @@ def elasticpropchained(lamb, mu, buoyancy, dx, dt, source_amplitudes_y,
     max_vel = 2000
     dt, step_ratio = cfl_condition(dx[0], dx[1], dt, max_vel)
     source_nt = None
-    if source_amplitudes_y is not None or source_amplitudes_x is not None:
+    if (source_amplitudes_y is not None or source_amplitudes_x is not None or
+        source_amplitudes_p is not None):
         if source_amplitudes_y is not None:
             source_amplitudes_y = upsample(source_amplitudes_y, step_ratio)
             source_nt = source_amplitudes_y.shape[-1]
@@ -154,6 +167,13 @@ def elasticpropchained(lamb, mu, buoyancy, dx, dt, source_amplitudes_y,
             nt_per_segment = ((((source_nt + n_chained - 1) //
                                 n_chained + step_ratio - 1) // step_ratio)
                               * step_ratio)
+        if source_amplitudes_p is not None:
+            source_amplitudes_p = upsample(source_amplitudes_p, step_ratio)
+            source_nt = source_amplitudes_p.shape[-1]
+            nt_per_segment = ((((source_nt + n_chained - 1) //
+                                n_chained + step_ratio - 1) // step_ratio)
+                              * step_ratio)
+
     else:
         nt *= step_ratio
         nt_per_segment = (((nt + n_chained - 1) // n_chained + step_ratio - 1)
@@ -214,7 +234,8 @@ def elasticpropchained(lamb, mu, buoyancy, dx, dt, source_amplitudes_y,
 
     for segment_idx in range(n_chained):
         if (source_amplitudes_y is not None or
-                source_amplitudes_x is not None):
+                source_amplitudes_x is not None or
+                source_amplitudes_p is not None):
             if source_amplitudes_y is not None:
                 segment_source_amplitudes_y = \
                     source_amplitudes_y[...,
@@ -227,10 +248,17 @@ def elasticpropchained(lamb, mu, buoyancy, dx, dt, source_amplitudes_y,
                                         nt_per_segment * segment_idx:
                                         min(nt_per_segment * (segment_idx+1),
                                             source_nt)]
+            if source_amplitudes_p is not None:
+                segment_source_amplitudes_p = \
+                    source_amplitudes_p[...,
+                                        nt_per_segment * segment_idx:
+                                        min(nt_per_segment * (segment_idx+1),
+                                            source_nt)]
             segment_nt = None
         else:
             segment_source_amplitudes_y = None
             segment_source_amplitudes_x = None
+            segment_source_amplitudes_p = None
             segment_nt = (nt_per_segment * (segment_idx+1) -
                           nt_per_segment * segment_idx)
         (vy, vx, sigmayy, sigmaxy, sigmaxx, m_vyy, m_vyx, m_vxy, m_vxx,
@@ -240,8 +268,10 @@ def elasticpropchained(lamb, mu, buoyancy, dx, dt, source_amplitudes_y,
             elastic(lamb, mu, buoyancy, dx, dt,
                     source_amplitudes_y=segment_source_amplitudes_y,
                     source_amplitudes_x=segment_source_amplitudes_x,
+                    source_amplitudes_p=segment_source_amplitudes_p,
                     source_locations_y=source_locations_y,
                     source_locations_x=source_locations_x,
+                    source_locations_p=source_locations_p,
                     receiver_locations_y=receiver_locations_y,
                     receiver_locations_x=receiver_locations_x,
                     receiver_locations_p=receiver_locations_p,
@@ -519,8 +549,11 @@ def run_forward_lamb(orientation=0, prop_kwargs=None, device=None,
         x_r_y = torch.tensor([[[ny-1-17, nx-1-6]]])
         x_r_x = torch.tensor([[[ny-1-16, nx-1-5]]])
         pml_width = [pml_width, pml_width, pml_width, 0]
+    sa_p = None
+    x_s_p = None
     return elasticprop(lamb, mu, buoyancy, dx, dt, sa_y,
-                       sa_x, x_s_y, x_s_x, x_r_y, x_r_x, x_r_x,
+                       sa_x, sa_p, x_s_y, x_s_x, x_s_p,
+                       x_r_y, x_r_x, x_r_x,
                        prop_kwargs=prop_kwargs, pml_width=pml_width,
                        **kwargs)
 
@@ -562,11 +595,14 @@ def run_forward(mlamb, mmu, mbuoyancy, freq, dx, dt, nx,
     x_r_x = x_r[:, num_receivers_per_shot:]
     sources_y = _set_sources(x_s_y, freq, dt, nt, dtype, dpeak_time=dpeak_time)
     sources_x = _set_sources(x_s_x, freq, dt, nt, dtype, dpeak_time=dpeak_time)
+    sources_p = _set_sources(x_s_x, freq, dt, nt, dtype, dpeak_time=dpeak_time)
 
     return propagator(lamb, mu, buoyancy, dx, dt, sources_y['amplitude'],
                       sources_x['amplitude'],
+                      sources_p['amplitude'],
                       sources_y['locations'],
                       sources_x['locations'],
+                      sources_p['locations'],
                       x_r_y, x_r_x, x_r_x,
                       prop_kwargs=prop_kwargs, **kwargs)
 
@@ -631,12 +667,15 @@ def run_gradcheck(mlamb, mmu, mbuoyancy, freq, dx, dt, nx,
         x_s_x = x_s[:, num_sources_per_shot:]
         sources_y = _set_sources(x_s_y, freq, dt, nt, dtype, dpeak_time=0.05)
         sources_x = _set_sources(x_s_x, freq, dt, nt, dtype, dpeak_time=0.05)
+        sources_p = _set_sources(x_s_x, freq, dt, nt, dtype, dpeak_time=0.05)
         sources_y['amplitude'].requires_grad_(source_requires_grad)
         sources_x['amplitude'].requires_grad_(source_requires_grad)
+        sources_p['amplitude'].requires_grad_(source_requires_grad)
         nt = None
     else:
         sources_y = {'amplitude': None, 'locations': None}
         sources_x = {'amplitude': None, 'locations': None}
+        sources_p = {'amplitude': None, 'locations': None}
     if num_receivers_per_shot > 0:
         x_r = _set_coords(num_shots, 2*num_receivers_per_shot, nx)
         x_r_y = x_r[:, :num_receivers_per_shot]
@@ -658,15 +697,20 @@ def run_gradcheck(mlamb, mmu, mbuoyancy, freq, dx, dt, nx,
     mu.requires_grad_(mu_requires_grad)
     buoyancy.requires_grad_(buoyancy_requires_grad)
 
-    def wrap(lamb, mu, buoyancy, sources_y_amplitude, sources_x_amplitude):
+    def wrap(lamb, mu, buoyancy, sources_y_amplitude, sources_x_amplitude,
+             sources_p_amplitude):
         if sources_y_amplitude is not None and mbuoyancy != 0:
             sources_y_amplitude = sources_y_amplitude / mbuoyancy / dt
         if sources_x_amplitude is not None and mbuoyancy != 0:
             sources_x_amplitude = sources_x_amplitude / mbuoyancy / dt
+        if sources_p_amplitude is not None:
+            sources_p_amplitude = sources_p_amplitude / dt
         out = propagator(lamb*mlamb, mu*mmu, buoyancy*mbuoyancy, dx, dt,
                          sources_y_amplitude,
                          sources_x_amplitude,
+                         sources_p_amplitude,
                          sources_y['locations'],
+                         sources_x['locations'],
                          sources_x['locations'],
                          x_r_y, x_r_x, x_r_x,
                          prop_kwargs, pml_width, survey_pad,
@@ -675,7 +719,8 @@ def run_gradcheck(mlamb, mmu, mbuoyancy, freq, dx, dt, nx,
 
     torch.autograd.gradcheck(wrap, (lamb, mu, buoyancy,
                                     sources_y['amplitude'],
-                                    sources_x['amplitude']),
+                                    sources_x['amplitude'],
+                                    sources_p['amplitude']),
                              nondet_tol=1e-3, check_grad_dtypes=True)
 
 
