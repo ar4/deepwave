@@ -4,7 +4,7 @@
 
 Deepwave provides wave propagation modules for PyTorch, for applications such as seismic imaging/inversion. You can use it to perform forward modelling and backpropagation, so it can simulate wave propagation to generate synthetic data, invert for the scattering potential (RTM/LSRTM), other model parameters (FWI), initial wavefields, or source wavelets. You can use it to integrate wave propagation into a larger chain of operations with end-to-end forward and backpropagation. Deepwave enables you to easily experiment with your own objective functions or functions that generate the inputs to the propagator, letting PyTorch's automatic differentiation do the hard work of calculating how to backpropagate through them.
 
-[The documentation](https://ausargeo.com/deepwave) contains examples and instructions on how to install and use Deepwave.
+[The documentation](https://ausargeo.com/deepwave) contains examples and instructions on how to install and use Deepwave. You might also like to watch [a video summary of Deepwave](https://www.youtube.com/watch?v=rTVEV-EHl98).
 
 ## Features
 - Supports the 2D constant density acoustic / scalar wave equation (regular and Born modelling) and 2D elastic wave equation (P-SV)
