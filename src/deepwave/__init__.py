@@ -22,9 +22,9 @@ from deepwave.elastic import Elastic, elastic
 import deepwave.wavelets
 import deepwave.location_interpolation
 source_dir = pathlib.Path(__file__).parent.resolve()
-sources = [source_dir / 'scalar.cpp',
-           source_dir / 'scalar_born.cpp',
-           source_dir / 'elastic.cpp']
+sources = [source_dir / 'scalar.cpp',]
+           #source_dir / 'scalar_born.cpp',
+           #source_dir / 'elastic.cpp']
 if torch.cuda.is_available():
     sources += [source_dir / 'scalar.cu',
                 source_dir / 'scalar_born.cu',

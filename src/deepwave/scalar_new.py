@@ -452,6 +452,24 @@ def scalar_prop(v: Tensor, source_amplitudes: Optional[Tensor],
                                           receivers_i.numel() // n_batch,
                                           device=device, dtype=dtype)
 
+
+    def set_requires_grad(inputs, tensors):
+        req_grad = torch.ones_like(inputs[0].view(-1).detach()[0])
+        for i in inputs:
+            if i is not None and i.requires_grad:
+                req_grad = i.view(-1)[0] / i.view(-1).detach()[0]
+                break
+
+        if not req_grad.requires_grad:
+            return tensors
+
+        return [t * req_grad for t in tensors]
+
+
+    wfc, wfp, psiy, psix, zetay, zetax, receiver_amplitudes = \
+        set_requires_grad([v, source_amplitudes, wfc0, wfp0, psiy0, psix0, zetay0, zetax0],
+                      [wfc, wfp, psiy, psix, zetay, zetax, receiver_amplitudes])
+
     zero_interior(psiy, 0, pml_width, True)
     zero_interior(psix, 0, pml_width, False)
     zero_interior(zetay, 0, pml_width, True)
@@ -474,20 +492,6 @@ def scalar_prop(v: Tensor, source_amplitudes: Optional[Tensor],
     dbydy = dbydy[None, :, None]
     dbxdx = dbxdx[None, None, :]
 
-    source_amplitudes = source_amplitudes.contiguous()
-    req_grad = (
-        v.requires_grad or source_amplitudes.requires_grad or
-        wfc.requires_grad or wfp.requires_grad or
-        psiy.requires_grad or psix.requires_grad or
-        zetay.requires_grad or zetax.requires_grad
-    )
-    wfc.requires_grad = req_grad
-    wfp.requires_grad = req_grad
-    psiy.requires_grad = req_grad
-    psix.requires_grad = req_grad
-    zetay.requires_grad = req_grad
-    zetax.requires_grad = req_grad
-
     for t in range(0, nt, step_ratio):
         wfc, wfp, psiy, psix, zetay, zetax = forward_step_ratio(
             wfc, wfp, psiy, psix, zetay, zetax, v, ay, ax, by, bx,
@@ -499,6 +503,8 @@ def scalar_prop(v: Tensor, source_amplitudes: Optional[Tensor],
 
     if v.requires_grad:
         v.register_hook(lambda grad: step_ratio * grad)
+
+    #print(prof.report())
 
     return (
         wfc,
@@ -774,7 +780,7 @@ def forward_kernel(wfc: Tensor, wfp: Tensor,
     )
 
 
-@torch.jit.script
+#@torch.jit.script
 def forward_step_ratio(
             wfc: Tensor, wfp: Tensor,
             psiy: Tensor, psix: Tensor,
@@ -818,4 +824,9 @@ def forward_step_ratio(
             wfc, wfp = wfn, wfc
 
         return wfc, wfp, psiy, psix, zetay, zetax
-#forward_step_ratio = torch.compile(forward_step_ratio, fullgraph=True)
+#import torch._inductor.config
+#torch._inductor.config.debug = True
+forward_step_ratio = torch.compile(forward_step_ratio, fullgraph=True)
+#from torch._dynamo.utils import CompileProfiler
+#prof = CompileProfiler()
+#forward_step_ratio = torch.compile(forward_step_ratio, fullgraph=True, backend=prof)
