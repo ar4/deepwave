@@ -88,7 +88,7 @@ We set-up the sources and receivers as before::
         .repeat(n_shots, n_sources_per_shot, 1).to(device)
     )
 
-We are now ready to run the optimiser to perform iterative inversion of the wavespeed model. We apply a scaling to boost the gradient values to a range that will help us to make good progress with each iteration, but also apply a clipping to the gradients to avoid making very large changes at a small number of points (such as around the sources)::
+We are now ready to run the optimiser to perform iterative inversion of the wavespeed model. We apply a scaling (1e10) to boost the gradient values to a range that will help us to make good progress with each iteration, but also apply a clipping to the gradients (to the 98th percentile of their magnitude) to avoid making very large changes at a small number of points (such as around the sources)::
 
     # Setup optimiser to perform inversion
     optimiser = torch.optim.SGD([v], lr=0.1, momentum=0.9)
