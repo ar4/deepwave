@@ -46,10 +46,15 @@ Windows
 
 I successfully installed Deepwave on Windows using the following steps (but I am not very familiar with Windows, so there might be a better way). I installed `Visual Studio <https://visualstudio.microsoft.com/>`_ with the "Desktop Development with C++" workload to install the MSVC C++ compiler. I also installed the `Anaconda <https://www.anaconda.com/>`_ Python distribution. I opened the Anaconda command prompt and ran `echo %PATH%` and copied the resulting list of paths. I closed this command prompt and opened the "x86_64 Cross Tools Command Prompt". I then ran `set PATH=<paste>;%PATH%`, where in `<paste>` I pasted the list of paths copied from the Anaconda environment. I then ran `set LIB=%LIB%;<path to Python library>`. On my computer the `<path to Python library>` was `C:\ProgramData\Anaconda3` (the same location as the `python` executable), but it might be something different on yours. Finally I ran `pip install deepwave`, `set MAX_JOBS=1` (to limit the number of parallel compiler jobs to one to avoid running out of memory during the compile stage, but if you have more memory than I do then you might not need to do this), and `python -c "import deepwave"` to do an initial import of Deepwave that causes it to be compiled.
 
+MacOS
+^^^^^
+
+The main problem on MacOS is that the default compiler does not support OpenMP. One user who successfully installed Deepwave on MacOS posted the steps they took `here <https://github.com/ar4/deepwave/issues/57#issuecomment-1531786477>`_.
+
 Other issues
 ^^^^^^^^^^^^
 
-If you encounter any problems, it might be because compilation failed due to your compiler not being compatible with PyTorch. If you are able to install one that is compatible, you might need to set the `CXX` environment variable to the path to the new compiler before launching Python. On MacOS you might need to first install OpenMP. If you are still stuck, please `file an issue <https://github.com/ar4/deepwave/issues>`_ or `send me an email <mailto:alan@ausargeo.com>`_.
+If you encounter any problems, it might be because compilation failed due to your compiler not being compatible with PyTorch. If you are able to install one that is compatible, you might need to set the `CXX` environment variable to the path to the new compiler before launching Python. If you are still stuck, please `file an issue <https://github.com/ar4/deepwave/issues>`_ or `send me an email <mailto:alan@ausargeo.com>`_.
 
 .. toctree::
    :maxdepth: 2
