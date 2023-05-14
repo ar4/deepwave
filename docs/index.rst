@@ -56,5 +56,6 @@ If you encounter any problems, it might be because compilation failed due to you
    :caption: Contents:
 
    pytorch
+   what_deepwave_calculates
    examples
    usage
