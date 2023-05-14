@@ -101,7 +101,7 @@ Using finite differences in time, the update equation for :math:`u` is thus
 .. math::
     :label: u_timestep
 
-    u_{t+1} = c^2dt^2\left(\frac{\partial^2 u_t}{\partial x^2} + \frac{\partial p_t}{\partial x} + z_t\right) + 2u_t - u_{t-1} - c^2dt^2 f_t
+    u_{t+1} = c^2\Delta_t^2\left(\frac{\partial^2 u_t}{\partial x^2} + \frac{\partial p_t}{\partial x} + z_t\right) + 2u_t - u_{t-1} - c^2\Delta_t^2 f_t
 
 Using :eq:`psi_update` in :eq:`p_eqn` and :eq:`z_eqn`, we can calculate :math:`p` and :math:`z` using
 
@@ -116,6 +116,45 @@ and
     :label: z_update
 
     z_t = az_{t-1} + b\left(\frac{\partial^2 u_t}{\partial_x^2} + \frac{\partial p_t}{\partial x}\right)
+
+We see that :math:`z_t` depends on the spatial derivative of :math:`p_t`. This is problematic to calculate, especially on a GPU (where it is preferable for each element's calculation to be independent from those of its neighbours). We therefore substitute :eq:`p_update` into :eq:`z_update` to get
+
+.. math::
+    :label: z_update_independent
+
+    z_t = az_{t-1} + b\left(\frac{\partial^2 u_t}{\partial_x^2} + \frac{\partial \left(ap_{t-1} + b\frac{\partial u_t}{\partial_x}\right)}{\partial x}\right)
+
+Applying the same change to :eq:`u_timestep`, we get
+
+.. math::
+    :label: u_timestep_independent
+
+    u_{t+1} = c^2\Delta_t^2\left(\frac{\partial^2 u_t}{\partial x^2} + \frac{\partial \left(ap_{t-1} + b\frac{\partial u_t}{\partial_x}\right)}{\partial x} + \left(az_{t-1} + b\left(\frac{\partial^2 u_t}{\partial_x^2} + \frac{\partial \left(ap_{t-1} + b\frac{\partial u_t}{\partial_x}\right)}{\partial x}\right)\right)\right) + 2u_t - u_{t-1} - c^2\Delta_t^2 f_t
+
+With some rearrangement, we can express each timestep in matrix form,
+
+.. math::
+    :label: scalar_timestep_matrix
+
+    \begin{pmatrix}
+    u_{t+1} \\
+    u_t \\
+    z_t \\
+    p_t
+    \end{pmatrix} = 
+    \begin{pmatrix}
+    c^2\Delta_t^2(1+b)\left((1+b)\partial_x^2 +\partial_x(b)\partial_x\right) + 2 & -1 & c^2\Delta_t^2a & c^2\Delta_t^2(1+b)\left(\partial_x(a) + a\partial_x\right) & -c^2\Delta_t^2 \\
+    1 & 0 & 0 & 0 & 0\\
+    b\left((1+b)\partial_{x^2}+\partial_x(b)\partial_x\right) & 0 & a & b\left(\partial_x(a) + a \partial_x\right) & 0\\
+    b\partial_x & 0 & 0 & a & 0
+    \end{pmatrix}
+    \begin{pmatrix}
+    u_t \\
+    u_{t-1} \\
+    z_{t-1} \\
+    p_{t-1} \\
+    f_t
+    \end{pmatrix}
 
 Time sample :math:`t` of the output receiver data is produced by recording :math:`u_t` at the specified receiver locations. This means that the receiver data covers the same time range as the source data. Since the wavefield :math:`u` isn't affected by time sample :math:`t` of the source until time step :math:`t+1` (see :eq:`u_timestep`, where :math:`f_t` is added to :math:`u_{t+1}`), the first time sample of the receiver data will not be affected by the source, and the last time sample of the source does not affect the receiver data.
 

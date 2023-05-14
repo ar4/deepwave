@@ -1,8 +1,7 @@
 import math
 import torch
 import scipy.special
-from deepwave import Scalar#, scalar
-from deepwave.scalar_new import scalar
+from deepwave import Scalar, scalar
 from deepwave.wavelets import ricker
 from deepwave.common import cfl_condition, upsample, downsample
 
@@ -232,6 +231,14 @@ def test_scatter_2d():
                                       prop_kwargs={'pml_width': 30})
     diff = (expected - actual.cpu()).flatten()
     assert diff.norm().item() < 0.008
+
+
+def test_chained():
+    """Test that the chained result is the same."""
+    out = run_forward_2d(propagator=scalarprop, nt=500)
+    out_chained = run_forward_2d(propagator=scalarpropchained, nt=500)
+    for i in range(len(out)):
+        assert torch.allclose(out[i], out_chained[i])
 
 
 def test_gradcheck_2d():
