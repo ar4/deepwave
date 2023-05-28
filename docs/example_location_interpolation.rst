@@ -100,4 +100,36 @@ Finally, it is important to note that if your desired non-grid-point locations a
 
 If you specify an edge as being a free surface, however, then the array of points will not extend beyond that edge.
 
-`Full example code <https://github.com/ar4/deepwave/blob/master/docs/example_location_interpolation.py>`_
+We can also simulate sources and receivers oriented in arbitrary directions by combining two at the same location with weights determined by the orientation. For example, if we wish to make a circle of sources, with all of the sources oriented away from the centre of the circle, we could weight the amplitude of the source at each location that is oriented in the first dimension by :math:`\sin(angle)` and the one in the second dimension by :math:`\cos(angle)`, and then use the Hicks method to combine them::
+
+    for l in range(n_source_locations):
+        angle = l / n_source_locations * 2 * math.pi
+        source_locations[0, l*2:(l+1)*2, 0] = (
+            math.sin(angle) * radius + cy
+        )
+        source_locations[0, l*2:(l+1)*2, 1] = (
+            math.cos(angle) * radius + cx
+        )
+        source_amplitudes[0, l*2] *= math.sin(angle)
+        source_amplitudes[0, l*2+1] *= math.cos(angle)
+
+    source_monopole = torch.zeros(n_shots, n_sources_per_shot,
+                                  dtype=torch.bool, device=device)
+    source_dipole_dim = torch.zeros(n_shots, n_sources_per_shot,
+                                    dtype=torch.int, device=device)
+
+    source_dipole_dim[0, 1::2] = 1  # every second source is x-oriented
+    hicks_source = deepwave.location_interpolation.Hicks(
+        source_locations,
+        monopole=source_monopole,
+        dipole_dim=source_dipole_dim,
+    )
+
+    hicks_source_locations = hicks_source.get_locations()
+    hicks_source_amplitudes = hicks_source.source(source_amplitudes)
+
+.. image:: example_location_interpolation_circle.jpg
+
+`Full example dipole/location interpolation code <https://github.com/ar4/deepwave/blob/master/docs/example_location_interpolation.py>`_
+
+`Full example circle of sources code <https://github.com/ar4/deepwave/blob/master/docs/example_location_interpolation_circle.py>`_

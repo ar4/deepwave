@@ -5,7 +5,10 @@ import torch
 from torch import Tensor
 
 
-def ricker(freq: float, length: int, dt: float, peak_time: float,
+def ricker(freq: float,
+           length: int,
+           dt: float,
+           peak_time: float,
            dtype: Optional[torch.dtype] = None) -> Tensor:
     """Return a Ricker wavelet with the specified central frequency.
 

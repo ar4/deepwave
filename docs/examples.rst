@@ -5,10 +5,9 @@ These examples demonstrate how to use Deepwave. Each is designed to show differe
 
 .. toctree::
     example_forward_model
+    example_fwi
+    example_lsrtm
     example_rtm
-    example_simple_fwi
-    example_normalised_fwi
-    example_increasing_freq_fwi
     example_checkpointing
     example_target_wavefield
     example_location_interpolation

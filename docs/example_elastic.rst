@@ -116,4 +116,39 @@ This just used a standard inversion with the LBFGS optimiser, but the result loo
 
 The gradients flowed end-to-end, back into the `vp`, `vs`, and `rho` parameters. You can see that there is a little bit of crosstalk between the parameters, though. Maybe you can come-up with a way of parameterising the model, or a different loss function, that does better?
 
-`Full example code <https://github.com/ar4/deepwave/blob/master/docs/example_elastic.py>`_
+Another interesting aspect of the elastic wave equation is that it can produce the phenomenon known as ground-roll. We can cause it by having a free surface on our model (setting the PML width to zero there, so the edge is not absorbing)::
+
+    out = deepwave.elastic(
+        *deepwave.common.vpvsrho_to_lambmubuoyancy(vp, vs,
+                                                   rho),
+        grid_spacing=2, dt=0.004,
+        source_amplitudes_y=(
+            deepwave.wavelets.ricker(25, 50, 0.004, 0.06)
+            .reshape(1, 1, -1)
+        ),
+        source_locations_y=torch.tensor([[[0, nx//2]]]),
+        receiver_locations_y=x_r_y,
+        receiver_locations_x=x_r_x,
+        pml_width=[0, 20, 20, 20]
+    )
+
+.. image:: example_elastic_groundroll.jpg
+
+As discussed in the section on :doc:`elastic propagator implementation <elastic>`, an explosive source can be simulated in Deepwave's elastic propagator with multiple sources oriented away from the explosive source location. Using one source before and after it in both dimensions, we will thus have four sources per shot, two in the x dimension and two in the y dimension. For example, for one shot with an explosive source located at `(35, 35.5)` (the half cell shift in the x dimension is due to the staggered grid) we would use::
+
+    source_locations_y = torch.tensor([[[34, 35], [35, 35]]]).to(device)
+    source_locations_x = torch.tensor([[[35, 35], [35, 36]]]).to(device)
+    source_amplitudes_y = source_amplitudes.repeat(1, 2, 1)
+    source_amplitudes_y[:, 0] *= -1
+    source_amplitudes_x = source_amplitudes.repeat(1, 2, 1)
+    source_amplitudes_x[:, 0] *= -1
+
+where `source_amplitudes` are the amplitudes of the explosive source (of dimensions `[shot, source_per_shot, time]`). We can also create body force sources in the y and x dimensions (:math:`f_y` and :math:`f_x`) and compare them with the explosive source (:math:`f_p`) by looking at the resulting particle velocity in the y and x dimensions (:math:`v_y` and :math:`v_x`) and the pressure field (:math:`-\sigma_{yy}-\sigma_{xx}`, denoted :math:`p`).
+
+.. image:: example_elastic_source.jpg
+
+`Full example inversion code <https://github.com/ar4/deepwave/blob/master/docs/example_elastic.py>`_
+
+`Full example ground-roll code <https://github.com/ar4/deepwave/blob/master/docs/example_elastic_groundroll.py>`_
+
+`Full example source code <https://github.com/ar4/deepwave/blob/master/docs/example_elastic_source.py>`_

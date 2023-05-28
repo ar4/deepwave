@@ -1,3 +1,13 @@
 [build-system]
 requires = ["setuptools>=42"]
 build-backend = "setuptools.build_meta"
+
+[tool.cibuildwheel]
+build = "cp37-*"
+skip = ["pp*", "*686", "musl*"]
+manylinux-x86_64-image = "manylinux2014"
+build-verbosity = 3
+build-frontend = "build"
+
+[tool.cibuildwheel.linux]
+before-all = "bash {project}/src/deepwave/linux_before_all.sh"

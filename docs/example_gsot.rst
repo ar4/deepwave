@@ -1,7 +1,7 @@
 Graph Space Optimal Transport
 =============================
 
-A well-known problem with the conventional implementation of FWI is cycle-skipping. This causes inversions to get stuck in local minima when the initial velocity model is not close enough to the true model. A common approach to try to avoid cycle-skipping is to perform inversion from low to high frequencies, as we did in :doc:`an earlier example <example_increasing_freq_fwi>`. An alternative is to use a loss/cost/objective function that is less susceptible to it. One that was recently proposed is `Graph Space Optimal Transport (GSOT) <https://dx.doi.org/10.1088/1361-6420/ab206f>`_. This does not just consider amplitude changes, like the squared error loss commonly used in FWI, but also time shifts. As a result, it reportedly has a better chance of converging to the global minimum, even when the starting model is far from the true model.
+A well-known problem with the conventional implementation of FWI is cycle-skipping. This causes inversions to get stuck in local minima when the initial velocity model is not close enough to the true model. A common approach to try to avoid cycle-skipping is to perform inversion from low to high frequencies, as we did in :doc:`an earlier example <example_fwi>`. An alternative is to use a loss/cost/objective function that is less susceptible to it. One that was recently proposed is `Graph Space Optimal Transport (GSOT) <https://dx.doi.org/10.1088/1361-6420/ab206f>`_. This does not just consider amplitude changes, like the squared error loss commonly used in FWI, but also time shifts. As a result, it reportedly has a better chance of converging to the global minimum, even when the starting model is far from the true model.
 
 We will begin by defining a function to compute the GSOT loss between two datasets. Most of the work in GSOT is in solving a linear sum assignment problem. The authors who proposed GSOT recommend using the auction algorithm to solve this problem with good performance, but for simplicity in this example we will use the linear sum assignment method provided by SciPy. As a result, it is quite slow, but is sufficient for the very small datasets in this example::
 
@@ -31,7 +31,7 @@ The `eta` parameter here controls the relative sensitivity of the loss function 
 
 Note that we use `.detach()` when building the cost matrix `c` as we will not need to calculate gradients along that computation path, but we do not use `.detach()` when calculating `loss` because we will use automatic differentiation on that path when we perform FWI with this cost function.
 
-If we compute the loss between a target signal and a shifted version of the target signal, we can see that the GSOT loss is indeed convex (with the chosen value of `eta`) while the traditional squared L2 norm loss has local minima.
+If we compute the loss between a target signal and a shifted version of the target signal, we can see that the GSOT loss is indeed almost convex (with the chosen value of `eta`) while the traditional squared L2 norm loss has local minima.
 
 .. image:: example_gsot_shifted.png
 .. image:: example_gsot_shift_loss.png

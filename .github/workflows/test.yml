@@ -1,20 +1,21 @@
-name: Python package
-
-on: [push]
+name: Test
+on: push
 jobs:
-  build:
-
-    runs-on: ubuntu-latest
-
-    steps:
-    - uses: actions/checkout@v3
-    - name: Set up Python
-      uses: actions/setup-python@v3
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        python -m pip install pytest scipy
-        python -m pip install .
-    - name: Test with pytest
-      run: |
-        pytest
+    Test:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v3
+            - name: Compile
+              run: |
+                cd src/deepwave
+                ./build_linux.sh NOCUDA
+            - name: Set up Python
+              uses: actions/setup-python@v3
+            - name: Install dependencies
+              run: |
+                python -m pip install --upgrade pip
+                python -m pip install pytest scipy
+                python -m pip install .
+            - name: Test with pytest
+              run: pytest

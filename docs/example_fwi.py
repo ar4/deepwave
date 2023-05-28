@@ -20,7 +20,10 @@ nx = 250
 v_true = v_true[:ny, :nx]
 
 # Smooth to use as starting model
-v_init = torch.tensor(1/gaussian_filter(1/v_true.numpy(), 40))
+v_init = (torch.tensor(1/gaussian_filter(1/v_true.numpy(), 40))
+          .to(device))
+v = v_init.clone()
+v.requires_grad_()
 
 n_shots = 115
 
@@ -45,19 +48,12 @@ observed_data = (
     .reshape(n_shots, n_receivers_per_shot, nt)
 )
 
-
-# Define a function to taper the ends of traces
-def taper(x):
-    return deepwave.common.cosine_taper_end(x, 100)
-
-
 # Select portion of data for inversion
 n_shots = 20
 n_receivers_per_shot = 100
 nt = 300
 observed_data = (
-    taper(observed_data[:n_shots, :n_receivers_per_shot, :nt])
-    .to(device)
+    observed_data[:n_shots, :n_receivers_per_shot, :nt].to(device)
 )
 
 # source_locations
@@ -84,6 +80,59 @@ source_amplitudes = (
 )
 
 
+## First attempt: simple inversion
+
+
+# Setup optimiser to perform inversion
+optimiser = torch.optim.SGD([v], lr=1e9, momentum=0.9)
+loss_fn = torch.nn.MSELoss()
+
+# Run optimisation/inversion
+n_epochs = 250
+
+for epoch in range(n_epochs):
+    optimiser.zero_grad()
+    out = scalar(
+        v, dx, dt,
+        source_amplitudes=source_amplitudes,
+        source_locations=source_locations,
+        receiver_locations=receiver_locations,
+        pml_freq=freq,
+    )
+    loss = loss_fn(out[-1], observed_data)
+    loss.backward()
+    torch.nn.utils.clip_grad_value_(
+        v,
+        torch.quantile(v.grad.detach().abs(), 0.98)
+    )
+    optimiser.step()
+
+# Plot
+vmin = v_true.min()
+vmax = v_true.max()
+_, ax = plt.subplots(3, figsize=(10.5, 10.5), sharex=True,
+                     sharey=True)
+ax[0].imshow(v_init.cpu().T, aspect='auto', cmap='gray',
+             vmin=vmin, vmax=vmax)
+ax[0].set_title("Initial")
+ax[1].imshow(v.detach().cpu().T, aspect='auto', cmap='gray',
+             vmin=vmin, vmax=vmax)
+ax[1].set_title("Out")
+ax[2].imshow(v_true.cpu().T, aspect='auto', cmap='gray',
+             vmin=vmin, vmax=vmax)
+ax[2].set_title("True")
+plt.tight_layout()
+plt.savefig('example_simple_fwi.jpg')
+
+
+## Second attempt: constrained velocity and frequency filtering
+
+
+# Define a function to taper the ends of traces
+def taper(x):
+    return deepwave.common.cosine_taper_end(x, 100)
+
+
 # Generate a velocity model constrained to be within a desired range
 class Model(torch.nn.Module):
     def __init__(self, initial, min_vel, max_vel):
@@ -101,10 +150,8 @@ class Model(torch.nn.Module):
                 self.min_vel)
 
 
+observed_data = taper(observed_data)
 model = Model(v_init, 1000, 2500).to(device)
-
-# Setup optimiser to perform inversion
-loss_fn = torch.nn.MSELoss()
 
 # Run optimisation/inversion
 n_epochs = 2
@@ -139,7 +186,6 @@ for cutoff_freq in [10, 15, 20, 25, 30]:
 
         optimiser.step(closure)
 
-# Plot
 v = model()
 vmin = v_true.min()
 vmax = v_true.max()
@@ -156,5 +202,3 @@ ax[2].imshow(v_true.cpu().T, aspect='auto', cmap='gray',
 ax[2].set_title("True")
 plt.tight_layout()
 plt.savefig('example_increasing_freq_fwi.jpg')
-
-v.detach().cpu().numpy().tofile('marmousi_v_inv.bin')

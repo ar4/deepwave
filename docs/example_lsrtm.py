@@ -2,7 +2,7 @@ import torch
 from scipy.ndimage import gaussian_filter
 import matplotlib.pyplot as plt
 import deepwave
-from deepwave import scalar
+from deepwave import scalar, scalar_born
 
 device = torch.device('cuda' if torch.cuda.is_available()
                       else 'cpu')
@@ -18,10 +18,8 @@ nx = 250
 v_true = v_true[:ny, :nx]
 
 # Smooth to use as starting model
-v_init = (torch.tensor(1/gaussian_filter(1/v_true.numpy(), 40))
+v_mig = (torch.tensor(1/gaussian_filter(1/v_true.numpy(), 5))
           .to(device))
-v = v_init.clone()
-v.requires_grad_()
 
 n_shots = 115
 
@@ -77,49 +75,66 @@ source_amplitudes = (
     .repeat(n_shots, n_sources_per_shot, 1).to(device)
 )
 
+# Estimate direct arrival by forward modelling through
+# migration velocity model, and then subtract it from
+# the observed data. We set max_vel to be the maximum
+# velocity in the true velocity model so that Deepwave's
+# internal time step size will be the same as when the
+# observed dataset was created, to get a better match.
+out = scalar(
+    v_mig, dx, dt,
+    source_amplitudes=source_amplitudes,
+    source_locations=source_locations,
+    receiver_locations=receiver_locations,
+    pml_freq=freq,
+    accuracy=8,
+    max_vel=v_true.max(),
+)
+observed_scattered_data = observed_data - out[-1]
+
+_, ax = plt.subplots(1, 3, figsize=(10.5, 3.5), sharex=True,
+                     sharey=True)
+ax[0].imshow(observed_data[0].cpu().T, aspect='auto', cmap='gray')
+ax[0].set_title("Observed")
+ax[1].imshow(out[-1][0].cpu().T, aspect='auto', cmap='gray')
+ax[1].set_title("Predicted")
+ax[2].imshow(observed_scattered_data[0].cpu().T, aspect='auto',
+             cmap='gray')
+ax[2].set_title("Observed - Predicted")
+plt.tight_layout()
+plt.savefig('example_lsrtm_scattered.jpg')
+
+# Create scattering amplitude that we will invert for
+scatter = torch.zeros_like(v_mig)
+scatter.requires_grad_()
+
 # Setup optimiser to perform inversion
-optimiser = torch.optim.SGD([v], lr=0.1, momentum=0.9)
+optimiser = torch.optim.LBFGS([scatter])
 loss_fn = torch.nn.MSELoss()
 
 # Run optimisation/inversion
-n_epochs = 250
-v_true = v_true.to(device)
+n_epochs = 3
 
 for epoch in range(n_epochs):
     def closure():
         optimiser.zero_grad()
-        out = scalar(
-            v, dx, dt,
+        out = scalar_born(
+            v_mig, scatter, dx, dt,
             source_amplitudes=source_amplitudes,
             source_locations=source_locations,
             receiver_locations=receiver_locations,
             pml_freq=freq,
         )
-        loss = 1e10 * loss_fn(out[-1], observed_data)
+        loss = 1e6 * loss_fn(out[-1], observed_scattered_data)
         loss.backward()
-        torch.nn.utils.clip_grad_value_(
-            v,
-            torch.quantile(v.grad.detach().abs(), 0.98)
-        )
-        return loss
+        return loss.item()
 
     optimiser.step(closure)
 
 # Plot
-vmin = v_true.min()
-vmax = v_true.max()
-_, ax = plt.subplots(3, figsize=(10.5, 10.5), sharex=True,
-                     sharey=True)
-ax[0].imshow(v_init.cpu().T, aspect='auto', cmap='gray',
-             vmin=vmin, vmax=vmax)
-ax[0].set_title("Initial")
-ax[1].imshow(v.detach().cpu().T, aspect='auto', cmap='gray',
-             vmin=vmin, vmax=vmax)
-ax[1].set_title("Out")
-ax[2].imshow(v_true.cpu().T, aspect='auto', cmap='gray',
-             vmin=vmin, vmax=vmax)
-ax[2].set_title("True")
-plt.tight_layout()
-plt.savefig('example_simple_fwi.jpg')
-
-v.detach().cpu().numpy().tofile('marmousi_v_inv.bin')
+vmin, vmax = torch.quantile(scatter.detach(),
+                            torch.tensor([0.05, 0.95]).to(device))
+plt.figure(figsize=(10.5, 3.5))
+plt.imshow(scatter.detach().cpu().T, aspect='auto', cmap='gray',
+           vmin=vmin, vmax=vmax)
+plt.savefig('example_lsrtm.jpg')

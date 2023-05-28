@@ -97,45 +97,58 @@ for shot_idx in range(n_shots):
                  actual_mute_end-mute_start]
 observed_scatter_masked = observed_data * mask
 
+vmin, vmax = torch.quantile(observed_data[0],
+                            torch.tensor([0.05, 0.95]).to(device))
+_, ax = plt.subplots(1, 3, figsize=(10.5, 3.5), sharex=True,
+                     sharey=True)
+ax[0].imshow(observed_data[0].cpu().T, aspect='auto', cmap='gray',
+             vmin=vmin, vmax=vmax)
+ax[0].set_title("Observed")
+ax[1].imshow(mask[0].cpu().T, aspect='auto', cmap='gray')
+ax[1].set_title("Mask")
+ax[2].imshow(observed_scatter_masked[0].cpu().T, aspect='auto',
+             cmap='gray', vmin=vmin, vmax=vmax)
+ax[2].set_title("Masked data")
+plt.tight_layout()
+plt.savefig('example_rtm_mask.jpg')
+
 # Create scattering amplitude that we will invert for
 scatter = torch.zeros_like(v_mig)
 scatter.requires_grad_()
 
 # Setup optimiser to perform inversion
-optimiser = torch.optim.SGD([scatter], lr=1)
+optimiser = torch.optim.SGD([scatter], lr=1e9)
 loss_fn = torch.nn.MSELoss()
 
 # Run optimisation/inversion
 n_epochs = 1
-n_batch = 46
+n_batch = 46  # The number of batches to use
 n_shots_per_batch = (n_shots + n_batch - 1) // n_batch
 for epoch in range(n_epochs):
-    def closure():
-        epoch_loss = 0
-        optimiser.zero_grad()
-        for batch in range(n_batch):
-            batch_start = batch * n_shots_per_batch
-            batch_end = min(batch_start + n_shots_per_batch,
-                            n_shots)
-            if batch_end <= batch_start:
-                continue
-            s = slice(batch_start, batch_end)
-            out = scalar_born(
-                v_mig, scatter, dx, dt,
-                source_amplitudes=source_amplitudes[s],
-                source_locations=source_locations[s],
-                receiver_locations=receiver_locations[s],
-                pml_freq=freq
-            )
-            loss = (
-                1e9 * loss_fn(out[-1] * mask[s],
-                              observed_scatter_masked[s])
-            )
-            epoch_loss += loss.item()
-            loss.backward()
-        print(epoch_loss)
-        return epoch_loss
-    optimiser.step(closure)
+    epoch_loss = 0
+    optimiser.zero_grad()
+    for batch in range(n_batch):
+        batch_start = batch * n_shots_per_batch
+        batch_end = min(batch_start + n_shots_per_batch,
+                        n_shots)
+        if batch_end <= batch_start:
+            continue
+        s = slice(batch_start, batch_end)
+        out = scalar_born(
+            v_mig, scatter, dx, dt,
+            source_amplitudes=source_amplitudes[s],
+            source_locations=source_locations[s],
+            receiver_locations=receiver_locations[s],
+            pml_freq=freq
+        )
+        loss = (
+            loss_fn(out[-1] * mask[s],
+                    observed_scatter_masked[s])
+        )
+        epoch_loss += loss.item()
+        loss.backward()
+    print(epoch_loss)
+    optimiser.step()
 
 # Plot
 vmin, vmax = torch.quantile(scatter.detach(),

@@ -1,0 +1,111 @@
+name: Build and test
+on: push
+jobs:
+    Linux-build:
+        runs-on: ubuntu-latest
+        container: quay.io/pypa/manylinux2014_x86_64
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v3
+            - name: Install NVCC
+              run: |
+                yum-config-manager --add-repo https://developer.download.nvidia.com/compute/cuda/repos/rhel7/x86_64/cuda-rhel7.repo
+                yum install -y cuda-nvcc-11-1-11.1.105-1 cuda-cudart-devel-11-1-11.1.74-1
+            - name: Compile
+              run: |
+                PATH=$PATH:/usr/local/cuda-11.1/bin
+                CUDA_HOME=/usr/local/cuda-11.1
+                CUDA_ROOT=/usr/local/cuda-11.1
+                CUDA_PATH=/usr/local/cuda-11.1
+                CUDADIR=/usr/local/cuda-11.1
+                LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/cuda-11.1/lib64
+                cd src/deepwave
+                cp /lib64/libgomp.so.1 .
+                ./build_linux.sh
+            - name: Archive built libraries
+              uses: actions/upload-artifact@v3
+              with:
+                name: linux_libraries
+                path: src/deepwave/*.so*
+    MacOS-build:
+        runs-on: macos-11
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v3
+            - name: Compile
+              run: |
+                cd src/deepwave
+                ./build_macos.sh
+            - name: Archive built libraries
+              uses: actions/upload-artifact@v3
+              with:
+                name: macos_libraries
+                path: src/deepwave/*.dylib
+    Windows-build:
+        runs-on: windows-2019
+        defaults:
+            run:
+                shell: bash
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v3
+            - name: Install NVCC
+              run: |
+                curl https://developer.download.nvidia.com/compute/cuda/11.1.1/network_installers/cuda_11.1.1_win10_network.exe -o cuda_11.1.1_win10_network.exe
+                chmod +x ./cuda_11.1.1_win10_network.exe
+                ./cuda_11.1.1_win10_network.exe -s nvcc_11.1 cudart_11.1
+                echo "CUDA_PATH=C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v11.1" >> $GITHUB_ENV
+                echo "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v11.1\\bin" >> $GITHUB_PATH
+            - name: Setup MSVC
+              uses: ilammy/msvc-dev-cmd@v1
+            - name: Compile
+              run: |
+                cd src/deepwave
+                nuget install intelopenmp.devel.win -DirectDownload -NonInteractive
+                nuget install intelopenmp.redist.win -DirectDownload -NonInteractive
+                cp intelopenmp.devel.win*/lib/native/win-x64/libiomp5md.lib .
+                cp intelopenmp.redist.win*/runtimes/win-x86/native/libiomp5md.dll .
+                ./build_windows.sh
+            - name: Archive built libraries
+              uses: actions/upload-artifact@v3
+              with:
+                name: windows_libraries
+                path: src/deepwave/*.dll
+    Test:
+        strategy:
+            matrix:
+                os: [ubuntu-latest, macos-latest, windows-latest]
+            fail-fast: false
+        runs-on: ${{ matrix.os }}
+        needs: [Linux-build, MacOS-build, Windows-build]
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v3
+            - name: Download built Linux libraries
+              uses: actions/download-artifact@v3
+              with:
+                name: linux_libraries
+                path: src/deepwave/
+            - name: Download built MacOS libraries
+              uses: actions/download-artifact@v3
+              with:
+                name: macos_libraries
+                path: src/deepwave/
+            - name: Download built Windows libraries
+              uses: actions/download-artifact@v3
+              with:
+                name: windows_libraries
+                path: src/deepwave/
+            - name: Set up Python
+              uses: actions/setup-python@v3
+            - name: Install dependencies
+              run: |
+                python -m pip install --upgrade pip
+                python -m pip install pytest scipy
+                python -m pip install .
+            - name: Test with pytest (full)
+              if: matrix.os == 'ubuntu-latest'
+              run: pytest
+            - name: Test with pytest (partial)
+              if: matrix.os != 'ubuntu-latest'
+              run: pytest tests/test_scalar.py

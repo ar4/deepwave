@@ -3,65 +3,68 @@ from typing import List, Optional, Union, Dict, Tuple
 import math
 import torch
 from torch import Tensor
+
 DEFAULT_EPS = 1e-5
 
 
 def _get_hicks_for_one_location_dim(
         hicks_weight_cache: Dict[Tuple[int, int, int], Tensor],
-        location: float, halfwidth: int, beta: Tensor,
-        free_surface: List[bool], size: int,
+        location: float,
+        halfwidth: int,
+        beta: Tensor,
+        free_surface: List[bool],
+        size: int,
         monopole: bool = True,
         eps: float = DEFAULT_EPS) -> Tuple[Tensor, Tensor]:
     if monopole and abs(location - round(location)) < eps:
         locations = torch.tensor([location]).round().long().to(beta.device)
         weights = torch.ones(1, dtype=beta.dtype, device=beta.device)
     else:
-        key = (int((location - int(location)) / eps),
-               halfwidth, int(monopole))
-        x = (torch.arange(-halfwidth + 1, halfwidth + 1, dtype=beta.dtype,
-                          device=beta.device) -
-             location + int(location))
+        key = (int((location - int(location)) / eps), halfwidth, int(monopole))
+        x = (torch.arange(-halfwidth + 1,
+                          halfwidth + 1,
+                          dtype=beta.dtype,
+                          device=beta.device) - location + int(location))
         locations = (location + x).long()
 
         if key in hicks_weight_cache:
             weights = hicks_weight_cache[key]
         else:
             if monopole:
-                weights = (
-                    torch.sinc(x) *
-                    torch.i0(beta * (1 - (x / halfwidth)**2).sqrt()) /
-                    torch.i0(beta)
-                )
+                weights = (torch.sinc(x) *
+                           torch.i0(beta * (1 - (x / halfwidth)**2).sqrt()) /
+                           torch.i0(beta))
             else:
-                weights = (
-                    (torch.cos(math.pi * x) - torch.sinc(x)) /
-                    (x**2 + eps) * x *
-                    torch.i0(beta * (1 - (x / halfwidth)**2).sqrt()) /
-                    torch.i0(beta)
-                )
+                weights = ((torch.cos(math.pi * x) - torch.sinc(x)) /
+                           (x**2 + eps) * x *
+                           torch.i0(beta * (1 - (x / halfwidth)**2).sqrt()) /
+                           torch.i0(beta))
             hicks_weight_cache[key] = weights
         if free_surface[0] and locations[0].item() < 0:
             idx0 = int(-locations[0].item())
             locations = locations[idx0:]
-            flipped_weights = weights[:idx0-1].flip(0)
+            flipped_weights = weights[:idx0 - 1].flip(0)
             weights[idx0:idx0 + len(flipped_weights)] -= flipped_weights
             weights = weights[idx0:]
         if free_surface[1] and locations[-1].item() >= size:
             idxe = size - int(locations[-1].item()) - 1
             locations = locations[:idxe]
-            flipped_weights = weights[idxe+1:].flip(0)
+            flipped_weights = weights[idxe + 1:].flip(0)
             weights[idxe - len(flipped_weights):idxe] -= flipped_weights
             weights = weights[:idxe]
     return locations, weights
 
 
 def _get_hicks_locations_and_weights(
-        locations: Tensor, halfwidth: int, beta: Tensor,
-        free_surfaces: List[bool], model_shape: List[int],
-        monopole: Union[Tensor, bool] = True,
-        dipole_dim: Union[Tensor, int] = 0,
-        eps: float = DEFAULT_EPS
-        ) -> Tuple[Tensor, List[List[List[int]]], List[List[List[Tensor]]]]:
+    locations: Tensor,
+    halfwidth: int,
+    beta: Tensor,
+    free_surfaces: List[bool],
+    model_shape: List[int],
+    monopole: Union[Tensor, bool] = True,
+    dipole_dim: Union[Tensor, int] = 0,
+    eps: float = DEFAULT_EPS
+) -> Tuple[Tensor, List[List[List[int]]], List[List[List[Tensor]]]]:
     hicks_weight_cache: Dict[Tuple[int, int, int], Tensor] = {}
     n_shots, n_per_shot, _ = locations.shape
     hicks_locations_list: List[List[Tuple[int, int]]] = []
@@ -111,28 +114,24 @@ def _get_hicks_locations_and_weights(
             shot_location_idxs.append(i_idxs)
         hicks_idxs.append(shot_location_idxs)
         weights.append(shot_weights)
-        n_per_shot_hicks = max(
-            n_per_shot_hicks,
-            n_hicks_locations
-        )
+        n_per_shot_hicks = max(n_per_shot_hicks, n_hicks_locations)
         hicks_locations_list.append(list(locations_dict.keys()))
-    hicks_locations = torch.zeros(
-        n_shots, n_per_shot_hicks, 2,
-        dtype=torch.long,
-        device=locations.device
-    )
+    hicks_locations = torch.zeros(n_shots,
+                                  n_per_shot_hicks,
+                                  2,
+                                  dtype=torch.long,
+                                  device=locations.device)
     for shotidx in range(n_shots):
         for i, loc in enumerate(hicks_locations_list[shotidx]):
-            hicks_locations[shotidx, i] = (
-                torch.tensor(loc).to(locations.device)
-            )
+            hicks_locations[shotidx,
+                            i] = (torch.tensor(loc).to(locations.device))
 
     return hicks_locations, hicks_idxs, weights
 
 
 def _check_shot_idxs(amplitudes: Tensor,
                      shot_idxs: Optional[Tensor] = None) -> None:
-    if (shot_idxs is not None and shot_idxs.shape != (len(amplitudes),)):
+    if (shot_idxs is not None and shot_idxs.shape != (len(amplitudes), )):
         raise RuntimeError("shot_idxs must have the same length "
                            "as amplitudes")
 
@@ -187,7 +186,9 @@ class Hicks:
             a grid cell centre than this will be rounded to the grid cell.
             Default 1e-5.
     """
-    def __init__(self, locations: Tensor,
+
+    def __init__(self,
+                 locations: Tensor,
                  halfwidth: int = 4,
                  free_surfaces: Optional[List[bool]] = None,
                  model_shape: Optional[List[int]] = None,
@@ -209,19 +210,19 @@ class Hicks:
                                "must be specified")
         if model_shape is None:
             model_shape = [-1, -1]
-        if (isinstance(monopole, Tensor) and
-            (monopole.shape[0] != locations.shape[0] or
-             monopole.shape[1] != locations.shape[1])):
+        if (isinstance(monopole, Tensor)
+                and (monopole.shape[0] != locations.shape[0]
+                     or monopole.shape[1] != locations.shape[1])):
             raise RuntimeError("monopole must have dimensions "
                                "[shot, per_shot]")
-        if (isinstance(dipole_dim, Tensor) and
-            (dipole_dim.shape[0] != locations.shape[0] or
-             dipole_dim.shape[1] != locations.shape[1])):
+        if (isinstance(dipole_dim, Tensor)
+                and (dipole_dim.shape[0] != locations.shape[0]
+                     or dipole_dim.shape[1] != locations.shape[1])):
             raise RuntimeError("dipole_dim must have dimensions "
                                "[shot, per_shot]")
         betas = [0.0, 1.84, 3.04, 4.14, 5.26, 6.40, 7.51, 8.56, 9.56, 10.64]
-        beta = (torch.tensor(betas[halfwidth - 1]).to(dtype)
-                .to(locations.device))
+        beta = (torch.tensor(betas[halfwidth - 1]).to(dtype).to(
+            locations.device))
         self.locations = locations
         self.hicks_locations, self.idxs, self.weights = \
             _get_hicks_locations_and_weights(
@@ -250,7 +251,8 @@ class Hicks:
             return self.hicks_locations[shot_idxs]
         return self.hicks_locations
 
-    def source(self, amplitudes: Tensor,
+    def source(self,
+               amplitudes: Tensor,
                shot_idxs: Optional[Tensor] = None) -> Tensor:
         """Calculate the amplitudes of the interpolated sources.
 
@@ -276,7 +278,9 @@ class Hicks:
         # In the below I put `out` on the CPU because there seems to
         # be a bug (in PyTorch?) that causes the incorrect answer
         # otherwise
-        out = torch.zeros(n_shots, n_per_shot_hicks, nt,
+        out = torch.zeros(n_shots,
+                          n_per_shot_hicks,
+                          nt,
                           dtype=amplitudes.dtype,
                           device=torch.device('cpu'))
         for shotidx in range(n_shots):
@@ -288,12 +292,12 @@ class Hicks:
                 out[shotidx, self.idxs[hicks_shotidx][i], :] += (
                     amplitudes[shotidx, i][None] *
                     (self.weights[hicks_shotidx][i][0].reshape(-1, 1) *
-                     self.weights[hicks_shotidx][i][1].reshape(1, -1))
-                    .reshape(-1)[..., None]
-                ).cpu()
+                     self.weights[hicks_shotidx][i][1].reshape(
+                         1, -1)).reshape(-1)[..., None]).cpu()
         return out.to(amplitudes.device)
 
-    def receiver(self, amplitudes: Tensor,
+    def receiver(self,
+                 amplitudes: Tensor,
                  shot_idxs: Optional[Tensor] = None) -> Tensor:
         """Convert receiver amplitudes from interpolated to original locations.
 
@@ -314,7 +318,9 @@ class Hicks:
         _check_shot_idxs(amplitudes, shot_idxs)
         n_shots, _, nt = amplitudes.shape
         n_per_shot = self.locations.shape[1]
-        out = torch.zeros(n_shots, n_per_shot, nt,
+        out = torch.zeros(n_shots,
+                          n_per_shot,
+                          nt,
                           dtype=amplitudes.dtype,
                           device=amplitudes.device)
         for shotidx in range(n_shots):
@@ -326,7 +332,6 @@ class Hicks:
                 out[shotidx, i, :] = (
                     amplitudes[shotidx, self.idxs[hicks_shotidx][i]] *
                     (self.weights[hicks_shotidx][i][0].reshape(-1, 1) *
-                     self.weights[hicks_shotidx][i][1].reshape(1, -1))
-                    .reshape(-1)[..., None]
-                ).sum(dim=0)
+                     self.weights[hicks_shotidx][i][1].reshape(
+                         1, -1)).reshape(-1)[..., None]).sum(dim=0)
         return out

@@ -1,2 +1,5 @@
-include src/deepwave/*.cpp
-include src/deepwave/*.cu
+exclude tests/*
+exclude src/deepwave/*.c
+exclude src/deepwave/*.cu
+exclude src/deepwave/*.h
+exclude src/deepwave/*.sh

@@ -1,7 +1,7 @@
 Generated model
 ===============
 
-I have mentioned on several occasions that because Deepwave provides wave propagation as a PyTorch module, we can use it to include wave propagation as part of a chain of operations, and PyTorch will do forward modelling and backpropagation end-to-end. We have already seen examples of applying operations to the output of wave propagation, such as normalisation and loss functions. We have also seen examples of applying operations before wave propagation, when we used a function to generate the velocity model that was constrained to only have velocities within a specified range. In this example I will show another example of using a function to generate the velocity model.
+I have mentioned on several occasions that because Deepwave provides wave propagation as a PyTorch module, we can use it to include wave propagation as part of a chain of operations, and PyTorch will do forward modelling and backpropagation end-to-end. We have already seen examples of applying operations to the output of wave propagation, such as loss functions. We have also seen examples of applying operations before wave propagation, when we used a function to generate the velocity model that was constrained to only have velocities within a specified range. In this example I will show another example of using a function to generate the velocity model.
 
 We are going to use a function to generate a layered velocity model. When we provide it with a list of the velocities of the different layers, it will expand those to generate the model that we can then provide to Deepwave::
 
