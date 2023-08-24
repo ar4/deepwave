@@ -359,10 +359,10 @@ class ScalarBornForwardFunc(torch.autograd.Function):
             if v.requires_grad:
                 wsc_store.resize_(nt // step_ratio, n_shots, *v.shape)
                 wsc_store.fill_(0)
-            if receivers_i is not None:
+            if receivers_i.numel() > 0:
                 receiver_amplitudes.resize_(nt, n_shots, n_receivers_per_shot)
                 receiver_amplitudes.fill_(0)
-            if receiverssc_i is not None:
+            if receiverssc_i.numel() > 0:
                 receiver_amplitudessc.resize_(nt, n_shots,
                                               n_receiverssc_per_shot)
                 receiver_amplitudessc.fill_(0)
@@ -395,10 +395,10 @@ class ScalarBornForwardFunc(torch.autograd.Function):
             if v.requires_grad:
                 wsc_store.resize_(n_shots, nt // step_ratio, *v.shape)
                 wsc_store.fill_(0)
-            if receivers_i is not None:
+            if receivers_i.numel() > 0:
                 receiver_amplitudes.resize_(n_shots, nt, n_receivers_per_shot)
                 receiver_amplitudes.fill_(0)
-            if receiverssc_i is not None:
+            if receiverssc_i.numel() > 0:
                 receiver_amplitudessc.resize_(n_shots, nt,
                                               n_receiverssc_per_shot)
                 receiver_amplitudessc.fill_(0)

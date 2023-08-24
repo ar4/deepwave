@@ -674,15 +674,15 @@ class ElasticForwardFunc(torch.autograd.Function):
             if (mu.requires_grad):
                 dvydxdvxdy_store.resize_(nt // step_ratio, n_shots, ny, nx)
 
-            if receivers_y_i is not None:
+            if receivers_y_i.numel() > 0:
                 receiver_amplitudes_y.resize_(nt + 1, n_shots,
                                               n_receivers_y_per_shot)
                 receiver_amplitudes_y.fill_(0)
-            if receivers_x_i is not None:
+            if receivers_x_i.numel() > 0:
                 receiver_amplitudes_x.resize_(nt + 1, n_shots,
                                               n_receivers_x_per_shot)
                 receiver_amplitudes_x.fill_(0)
-            if receivers_p_i is not None:
+            if receivers_p_i.numel() > 0:
                 receiver_amplitudes_p.resize_(nt, n_shots,
                                               n_receivers_p_per_shot)
                 receiver_amplitudes_p.fill_(0)
@@ -711,15 +711,15 @@ class ElasticForwardFunc(torch.autograd.Function):
                 dvxdx_store.resize_(n_shots, nt // step_ratio, ny, nx)
             if (mu.requires_grad):
                 dvydxdvxdy_store.resize_(n_shots, nt // step_ratio, ny, nx)
-            if receivers_y_i is not None:
+            if receivers_y_i.numel() > 0:
                 receiver_amplitudes_y.resize_(n_shots, nt + 1,
                                               n_receivers_y_per_shot)
                 receiver_amplitudes_y.fill_(0)
-            if receivers_x_i is not None:
+            if receivers_x_i.numel() > 0:
                 receiver_amplitudes_x.resize_(n_shots, nt + 1,
                                               n_receivers_x_per_shot)
                 receiver_amplitudes_x.fill_(0)
-            if receivers_p_i is not None:
+            if receivers_p_i.numel() > 0:
                 receiver_amplitudes_p.resize_(n_shots, nt,
                                               n_receivers_p_per_shot)
                 receiver_amplitudes_p.fill_(0)
