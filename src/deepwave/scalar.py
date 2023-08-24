@@ -448,7 +448,7 @@ class ScalarForwardFunc(torch.autograd.Function):
             if v.requires_grad:
                 dwdv.resize_(nt // step_ratio, n_shots, *v.shape)
                 dwdv.fill_(0)
-            if receivers_i is not None:
+            if receivers_i.numel() > 0:
                 receiver_amplitudes.resize_(nt, n_shots, n_receivers_per_shot)
                 receiver_amplitudes.fill_(0)
             if dtype == torch.float32:
@@ -477,7 +477,7 @@ class ScalarForwardFunc(torch.autograd.Function):
             if v.requires_grad:
                 dwdv.resize_(n_shots, nt // step_ratio, *v.shape)
                 dwdv.fill_(0)
-            if receivers_i is not None:
+            if receivers_i.numel() > 0:
                 receiver_amplitudes.resize_(n_shots, nt, n_receivers_per_shot)
                 receiver_amplitudes.fill_(0)
             if dtype == torch.float32:
@@ -526,6 +526,7 @@ class ScalarForwardFunc(torch.autograd.Function):
                 ax, by, bx, dbydy, dbxdx, sources_i, receivers_i, dy, dx, dt,
                 nt, step_ratio, accuracy, pml_width, n_shots) = inputs
         (_0, _1, _2, _3, _4, _5, _6, dwdv) = outputs
+        ctx.mark_non_differentiable(dwdv)
         if (v.requires_grad or source_amplitudes.requires_grad
                 or wfc.requires_grad or wfp.requires_grad or psiy.requires_grad
                 or psix.requires_grad or zetay.requires_grad
@@ -674,9 +675,9 @@ class ScalarBackwardFunc(torch.autograd.Function):
                     backward = deepwave.dll_cpu.scalar_iso_8_double_backward
 
         v2dt2 = v**2 * dt**2
-        wfp = -wfp
+        gwfp = -gwfp
 
-        if wfc.numel() > 0 and nt > 0:
+        if gwfc.numel() > 0 and nt > 0:
             backward(v2dt2.data_ptr(), grad_r.data_ptr(), gwfc.data_ptr(),
                      gwfp.data_ptr(), gpsiy.data_ptr(), gpsix.data_ptr(),
                      gpsiyn.data_ptr(), gpsixn.data_ptr(), gzetay.data_ptr(),
@@ -693,11 +694,9 @@ class ScalarBackwardFunc(torch.autograd.Function):
 
         s = (slice(None), slice(fd_pad, -fd_pad), slice(fd_pad, -fd_pad))
         if nt % 2 == 0:
-            return grad_v, grad_f, gwfc[s], -gwfp[s], gpsiy[s], gpsix[s], gzetay[s], gzetax[
-                s]
+            return grad_v, grad_f, gwfc[s], -gwfp[s], gpsiy[s], gpsix[s], gzetay[s], gzetax[s]
         else:
-            return grad_v, grad_f, gwfp[s], -gwfc[s], gpsiyn[s], gpsixn[s], gzetayn[s], gzetaxn[
-                s]
+            return grad_v, grad_f, gwfp[s], -gwfc[s], gpsiyn[s], gpsixn[s], gzetayn[s], gzetaxn[s]
 
     @staticmethod
     def setup_context(ctx, inputs, outputs):
@@ -729,6 +728,11 @@ class ScalarBackwardFunc(torch.autograd.Function):
         accuracy = ctx.accuracy
         pml_width = ctx.pml_width
         source_amplitudes_requires_grad = ctx.source_amplitudes_requires_grad
+
+        if ggv.numel() == 0:
+            ggv = torch.zeros_like(v.detach());
+        if ggf.numel() == 0:
+            ggf = torch.zeros_like(source_amplitudes.detach())
 
         v = v.contiguous()
         ggv = ggv.contiguous()
@@ -802,10 +806,10 @@ class ScalarBackwardFunc(torch.autograd.Function):
                 w_store.fill_(0)
                 ggw_store.resize_(nt // step_ratio, n_shots, *v.shape)
                 ggw_store.fill_(0)
-            if fwd_receivers_i is not None:
+            if fwd_receivers_i.numel() > 0:
                 receiver_amplitudes.resize_(nt, n_shots, n_receivers_per_shot)
                 receiver_amplitudes.fill_(0)
-            if fwd_ggreceivers_i is not None:
+            if fwd_ggreceivers_i.numel() > 0:
                 ggreceiver_amplitudes.resize_(nt, n_shots,
                                               n_ggreceivers_per_shot)
                 ggreceiver_amplitudes.fill_(0)
@@ -837,10 +841,10 @@ class ScalarBackwardFunc(torch.autograd.Function):
                 w_store.fill_(0)
                 ggw_store.resize_(n_shots, nt // step_ratio, *v.shape)
                 ggw_store.fill_(0)
-            if fwd_receivers_i is not None:
+            if fwd_receivers_i.numel() > 0:
                 receiver_amplitudes.resize_(n_shots, nt, n_receivers_per_shot)
                 receiver_amplitudes.fill_(0)
-            if fwd_ggreceivers_i is not None:
+            if fwd_ggreceivers_i.numel() > 0:
                 ggreceiver_amplitudes.resize_(n_shots, nt,
                                               n_ggreceivers_per_shot)
                 ggreceiver_amplitudes.fill_(0)
@@ -888,17 +892,10 @@ class ScalarBackwardFunc(torch.autograd.Function):
         bwd_greceivers_i = receivers_i.contiguous()
 
         source_amplitudes_requires_grad = ctx.source_amplitudes_requires_grad
-        ggsource_amplitudes_requires_grad = False
-        device = v.device
-        dtype = v.dtype
-        ny = v.shape[0]
-        nx = v.shape[1]
         n_sources_per_shot = bwd_sources_i.numel() // n_shots
         n_receivers_per_shot = bwd_receivers_i.numel() // n_shots
-        n_greceiverssc_per_shot = bwd_greceivers_i.numel() // n_shots
-        fd_pad = accuracy // 2
+        n_greceivers_per_shot = bwd_greceivers_i.numel() // n_shots
 
-        size_with_batch = (n_shots, *v.shape)
         wfc = create_or_pad(torch.empty(0), fd_pad, v.device, v.dtype,
                             size_with_batch)
         wfp = create_or_pad(torch.empty(0), fd_pad, v.device, v.dtype,
@@ -965,9 +962,6 @@ class ScalarBackwardFunc(torch.autograd.Function):
             if source_amplitudes_requires_grad:
                 grad_f.resize_(nt, n_shots, n_sources_per_shot)
                 grad_f.fill_(0)
-            if gsource_amplitudes_requires_grad:
-                grad_gf.resize_(nt, n_shots, n_sources_per_shot)
-                grad_gf.fill_(0)
             if dtype == torch.float32:
                 if accuracy == 2:
                     backward = deepwave.dll_cuda.scalar_born_iso_2_float_backward
@@ -998,9 +992,6 @@ class ScalarBackwardFunc(torch.autograd.Function):
             if source_amplitudes_requires_grad:
                 grad_f.resize_(n_shots, nt, n_sources_per_shot)
                 grad_f.fill_(0)
-            if gsource_amplitudes_requires_grad:
-                grad_gf.resize_(n_shots, nt, n_sources_per_shot)
-                grad_gf.fill_(0)
             if dtype == torch.float32:
                 if accuracy == 2:
                     backward = deepwave.dll_cpu.scalar_born_iso_2_float_backward
@@ -1020,10 +1011,9 @@ class ScalarBackwardFunc(torch.autograd.Function):
                 else:
                     backward = deepwave.dll_cpu.scalar_born_iso_8_double_backward
 
-        wfp = -wfp
         gwfp = -gwfp
 
-        if wfc.numel() > 0 and nt > 0:
+        if wfc.numel() > 0 and nt > 0 and v.requires_grad:
             backward(
                 v.data_ptr(), ggv.data_ptr(), torch.empty(0).data_ptr(),
                 grad_r.data_ptr(), wfc.data_ptr(), wfp.data_ptr(),
@@ -1043,16 +1033,16 @@ class ScalarBackwardFunc(torch.autograd.Function):
                 bwd_receivers_i.data_ptr(), bwd_greceivers_i.data_ptr(), 1 / dy,
                 1 / dx, 1 / dy**2, 1 / dx**2, dt**2, nt, n_shots, ny, nx,
                 n_sources_per_shot * source_amplitudes_requires_grad,
-                n_sources_per_shot * gsource_amplitudes_requires_grad,
+                0,
                 n_receivers_per_shot, n_greceivers_per_shot, step_ratio,
                 v.requires_grad, False, pml_y0, pml_y1,
                 pml_x0, pml_x1, aux)
 
         s = (slice(None), slice(fd_pad, -fd_pad), slice(fd_pad, -fd_pad))
         if nt % 2 == 0:
-            return ggwfc[s], ggwfp[s], ggpsiy[s], ggpsix[s], ggzetay[s], ggzetax[s], ggreceiver_amplitudes, grad_v, None, None, None, None, None, None, None, grad_f, wfc[s], -wfp[s], psiy[s], psix[s], zetay[s], zetax[s], None, None, None, None, None, None, None, None, None
+            return ggwfc[s], ggwfp[s], ggpsiy[s], ggpsix[s], ggzetay[s], ggzetax[s], ggreceiver_amplitudes, grad_v, None, None, None, None, None, None, None, None, None, grad_f, wfc[s], -wfp[s], psiy[s], psix[s], zetay[s], zetax[s], None, None, None, None, None, None, None, None, None
         else:
-            return ggwfc[s], ggwfp[s], ggpsiyn[s], ggpsixn[s], ggzetay[s], ggzetax[s], ggreceiver_amplitudes, grad_v, None, None, None, None, None, None, None, grad_f, wfc[s], -wfp[s], psiyn[s], psixn[s], zetayn[s], zetaxn[s], None, None, None, None, None, None, None, None, None
+            return ggwfp[s], ggwfc[s], ggpsiyn[s], ggpsixn[s], ggzetay[s], ggzetax[s], ggreceiver_amplitudes, grad_v, None, None, None, None, None, None, None, None, None, grad_f, wfp[s], -wfc[s], psiyn[s], psixn[s], zetayn[s], zetaxn[s], None, None, None, None, None, None, None, None, None
 
 
 def scalar_func(*args):
