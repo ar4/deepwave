@@ -336,6 +336,10 @@ def run_scalarfunc(nt=3):
         scalar_func, (c, source_amplitudes, wfc, wfp, psiy, psix, zetay, zetax,
                       ay, ax, by, bx, dbydy, dbxdx, sources_i, receivers_i, dy,
                       dx, dt, nt, step_ratio, accuracy, pml_width, n_batch))
+    torch.autograd.gradgradcheck(
+        scalar_func, (c, source_amplitudes, wfc, wfp, psiy, psix, zetay, zetax,
+                      ay, ax, by, bx, dbydy, dbxdx, sources_i, receivers_i, dy,
+                      dx, dt, nt, step_ratio, accuracy, pml_width, n_batch))
 
 
 def test_scalarfunc():
@@ -367,7 +371,8 @@ def test_gradcheck_2d_8th_order():
 
 def test_gradcheck_2d_cfl():
     """Test gradcheck with a timestep greater than the CFL limit."""
-    run_gradcheck_2d(propagator=scalarprop, dt=0.002, atol=1.5e-6)
+    run_gradcheck_2d(propagator=scalarprop, dt=0.002, atol=1.5e-6,
+                     gradgradatol=0.02)
 
 
 def test_gradcheck_2d_odd_timesteps():
@@ -449,7 +454,7 @@ def test_gradcheck_2d_big():
     """Test gradcheck with a big model."""
     run_gradcheck_2d(propagator=scalarprop,
                      nx=(5 + 2 * (3 + 3 * 2), 4 + 2 * (3 + 3 * 2)),
-                     atol=2e-8)
+                     atol=2e-8, gradgradatol=6e-4)
 
 
 def test_negative_vel(c=1500,
@@ -909,6 +914,7 @@ def run_gradcheck(c,
                   zetax_m1_requires_grad=True,
                   atol=2e-8,
                   rtol=2e-5,
+                  gradgradatol=None,
                   nt_add=0):
     """Run PyTorch's gradcheck to test the gradient."""
     torch.manual_seed(1)
@@ -978,6 +984,17 @@ def run_gradcheck(c,
         check_grad_dtypes=True,
         atol=atol,
         rtol=rtol)
+
+    if gradgradatol is None:
+        gradgradatol = math.sqrt(atol)
+    torch.autograd.gradgradcheck(
+        propagator,
+        (model, dx, dt, sources['amplitude'], sources['locations'], x_r,
+         prop_kwargs, pml_width, survey_pad, origin, wavefield_0, wavefield_m1,
+         psiy_m1, psix_m1, zetay_m1, zetax_m1, nt, 1, True),
+        nondet_tol=1e-3,
+        atol=gradgradatol,
+        check_grad_dtypes=True)
 
 
 def run_gradcheck_2d(c=1500,
