@@ -18,3 +18,4 @@ These examples demonstrate how to use Deepwave. Each is designed to show differe
     example_large_edge_gradient
     example_gsot
     example_joint_migration_inversion
+    example_hessian
