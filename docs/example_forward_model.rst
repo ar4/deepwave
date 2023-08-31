@@ -65,6 +65,8 @@ Next we will specify where we wish to place the sources and receivers, and what 
         .to(device)
     )
 
+Both spatial dimensions are treated equally in Deepwave. In this example we chose to orient our velocity model so that dimension 0 is horizontal and dimension 1 is vertical, and specified our source and receiver locations in a way that is consistent with that, but we could have transposed the model and used dimension 0 as depth if we wished.
+
 That's all the setup that we need for forward modelling, so we are now ready to call Deepwave. As we would like to ensure that the results are as accurate as possible, we will specify that we wish to use 8th order accurate spatial finite differences::
 
     out = scalar(v, dx, dt, source_amplitudes=source_amplitudes,

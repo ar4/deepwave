@@ -64,7 +64,7 @@ We begin by setting up the model (both background and true, the latter of which 
         .repeat(n_shots, n_sources_per_shot, 1).to(device)
     )
 
-This created a model where each of the three parameters is constant except for a box, which is in a different location for each parameter. We will use eight shots, with sources spread over the top surface, and receivers covering the top surface. We are now ready to generate data using the true model::
+This created a model where each of the three parameters is constant except for a box, which is in a different location for each parameter. We will use eight shots, with sources spread over the top surface, and receivers covering the top surface. Deepwave treats both spatial dimensions equally, so we could have transposed our model and defined our source and receiver locations with dimension 1 corresponding to depth instead of dimension 0 (although, because of the :ref:`staggered grid <Staggered grid>`, you might need to shift locations by one cell). As a demonstration of this, this example uses the opposite convention of the earlier Marmousi examples. We are now ready to generate data using the true model::
 
     observed_data = elastic(
         *deepwave.common.vpvsrho_to_lambmubuoyancy(vp_true, vs_true,

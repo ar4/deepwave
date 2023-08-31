@@ -55,7 +55,21 @@ and :eq:`stress` as
 
     \dot\sigma_{ij} = \lambda\delta_{ij}\dot\epsilon_{kk} + 2\mu\dot\epsilon_{ij}.
 
-The staggered grid has :math:`v_x` positioned on :math:`(y, x)` grid cells, :math:`v_y` at :math:`(y+\frac{1}{2}, x+\frac{1}{2})`, :math:`\sigma_{xx}` and :math:`\sigma_{yy}` at :math:`(y, x+\frac{1}{2})`, and :math:`\sigma_{xy}` at :math:`(y+\frac{1}{2}, x)`. Staggering also occurs in time, with the stress (:math:`\sigma`) components defined at time steps :math:`t` while velocity components are at times :math:`t+\frac{1}{2}`. Staggering the components in time and space, we obtain
+.. _Staggered grid:
+
+The staggered grid has :math:`v_x` positioned on :math:`(y, x)` grid cells, :math:`v_y` at :math:`(y+\frac{1}{2}, x+\frac{1}{2})`, :math:`\sigma_{xx}` and :math:`\sigma_{yy}` at :math:`(y, x+\frac{1}{2})`, and :math:`\sigma_{xy}` at :math:`(y+\frac{1}{2}, x)`. The :math:`v_x` and :math:`\sigma_{ii}` (where :math:`ii` refers to :math:`xx` or :math:`yy`) components in the first row of the model, and the :math:`v_y` and :math:`\sigma_{ii}` components in the last column, are not used. This is depicted in the diagram below, where lowercase means that the component is not used. In this diagram, equals symbols and square brackets are used to denote the edges of the computational domain (so, if the PML width is zero, this will be the surface), while pipes and hyphens correspond to grid cell boundaries. The model parameters (lamba, mu, and buoyancy) are at the same locations as :math:`v_x`::
+
+    o--------->x
+    | vx  sii | vx  sii | vx  sii
+    | SXY=VY==|=SXY=VY==|=SXY vy
+    v [-------------------]------
+    y VX  SII | VX  SII | VX  sii
+      SXY VY  | SXY VY  | SXY vy
+      [-------------------]------
+      VX  SII | VX  SII | VX  sii
+      SXY=VY==|=SXY=VY==|=SXY vy
+
+Staggering also occurs in time, with the stress (:math:`\sigma`) components defined at time steps :math:`t` while velocity components are at times :math:`t+\frac{1}{2}`. Staggering the components in time and space, we obtain
 
 .. math::
 

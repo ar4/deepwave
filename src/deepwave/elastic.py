@@ -192,6 +192,9 @@ def elastic(
     For computational performance, multiple shots may be propagated
     simultaneously.
 
+    This propagator uses a staggered grid. See
+    https://ausargeo.com/deepwave/elastic for a description.
+
     Args:
         lamb:
             A 2D Tensor containing the first Lamé parameter model, lambda.
