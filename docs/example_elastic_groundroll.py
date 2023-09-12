@@ -29,19 +29,23 @@ out = deepwave.elastic(
     pml_width=[0, 20, 20, 20]
 )
 
-_, ax = plt.subplots(3, figsize=(3.5, 3.5), sharey=True,
+_, ax = plt.subplots(4, figsize=(3.5, 5), sharey=True,
                      sharex=True)
 ax[0].imshow(out[0][0, :-20, 20:-20], cmap='gray')
-ax[0].set_title('Wavefield x')
+ax[0].set_title('Wavefield y')
 ax[0].set_xticks([])
 ax[0].set_yticks([])
 ax[1].imshow(out[1][0, :-20, 20:-20], cmap='gray')
-ax[1].set_title('Wavefield y')
+ax[1].set_title('Wavefield x')
 ax[1].set_xticks([])
 ax[1].set_yticks([])
-ax[2].imshow(out[-1][0].T, cmap='gray', aspect='auto', vmin=-1e-8, vmax=1e-8)
-ax[2].set_title('Data')
+ax[2].imshow(out[-2][0].T, cmap='gray', aspect='auto', vmin=-1e-8, vmax=1e-8)
+ax[2].set_title('Data (y)')
 ax[2].set_xticks([])
 ax[2].set_yticks([])
+ax[3].imshow(out[-1][0].T, cmap='gray', aspect='auto', vmin=-1e-8, vmax=1e-8)
+ax[3].set_title('Data (x)')
+ax[3].set_xticks([])
+ax[3].set_yticks([])
 plt.tight_layout()
 plt.savefig('example_elastic_groundroll.jpg')
