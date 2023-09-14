@@ -370,6 +370,8 @@ def check_inputs(source_amplitudes: List[Optional[Tensor]],
         raise RuntimeError("pml_width must be a list of ints.")
     if any([dim_pad < 0 for dim_pad in pml_width]):
         raise RuntimeError("pml_width must be positive.")
+    if len(pml_width) != 4:
+        raise RuntimeError("pml_width must be a list of length 4.")
 
     if wavefield_shape[1] > ny + pml_width[0] + pml_width[1]:
         raise RuntimeError("Provided wavefields must be of size at most " +

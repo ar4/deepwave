@@ -168,3 +168,17 @@ def test_wavefield_too_big2(prop):
              source_locations,
              receiver_locations,
              wavefield_0=wavefield_0)
+
+
+def test_pml_width_list_too_long(prop):
+    """Check error when pml_width list is too long."""
+    source_amplitudes = torch.zeros(2, 1, 2)
+    source_locations = torch.zeros(2, 1, 2, dtype=torch.long)
+    receiver_locations = torch.zeros(2, 1, 2, dtype=torch.long)
+    dt = 0.004
+    with pytest.raises(RuntimeError):
+        prop(dt,
+             source_amplitudes,
+             source_locations,
+             receiver_locations,
+             pml_width=[0, 20, 20, 20, 20])
