@@ -445,8 +445,8 @@ def cosine_taper_end(signal: Tensor, n_taper: int) -> Tensor:
                        dtype=signal.dtype,
                        device=signal.device)
     taper[len(taper) - n_taper:] = (torch.cos(
-        torch.arange(n_taper, device=signal.device) /
-        (n_taper - 1) * math.pi) + 1).to(signal.dtype) / 2
+        torch.arange(1, n_taper + 1, device=signal.device) /
+        n_taper * math.pi) + 1).to(signal.dtype) / 2
     return signal * taper
 
 
