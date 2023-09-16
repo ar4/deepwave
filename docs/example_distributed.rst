@@ -15,6 +15,7 @@ This is nice, but the PyTorch documentation instead recommends using the more co
 
     def run_rank(rank, world_size):
         torch.distributed.init_process_group("nccl")
+        torch.cuda.set_device(rank)
         source_amplitudes = \
             torch.chunk(source_amplitudes, world_size)[rank].to(rank)
         source_locations = \
