@@ -372,7 +372,21 @@ def test_gradcheck_2d_8th_order():
 def test_gradcheck_2d_cfl():
     """Test gradcheck with a timestep greater than the CFL limit."""
     run_gradcheck_2d(propagator=scalarprop, dt=0.002, atol=1.5e-6,
-                     gradgradatol=0.02)
+                     gradgrad=False)
+
+
+def test_gradcheck_2d_cfl_gradgrad():
+    """Test gradcheck with a timestep greater than the CFL limit."""
+    run_gradcheck_2d(propagator=scalarprop, dt=0.002, atol=1.5e-6,
+                     gradgrad=True,
+                     source_requires_grad=False,
+                     wavefield_0_requires_grad=False,
+                     wavefield_m1_requires_grad=False,
+                     psiy_m1_requires_grad=False,
+                     psix_m1_requires_grad=False,
+                     zetay_m1_requires_grad=False,
+                     zetax_m1_requires_grad=False,
+)
 
 
 def test_gradcheck_2d_odd_timesteps():
@@ -454,7 +468,23 @@ def test_gradcheck_2d_big():
     """Test gradcheck with a big model."""
     run_gradcheck_2d(propagator=scalarprop,
                      nx=(5 + 2 * (3 + 3 * 2), 4 + 2 * (3 + 3 * 2)),
-                     atol=2e-8, gradgradatol=6e-4)
+                     atol=2e-8, gradgrad=False)
+
+
+def test_gradcheck_2d_big_gradgrad():
+    """Test gradcheck with a big model."""
+    run_gradcheck_2d(propagator=scalarprop,
+                     nx=(5 + 2 * (3 + 3 * 2), 4 + 2 * (3 + 3 * 2)),
+                     atol=2e-8,
+                     gradgrad=True,
+                     source_requires_grad=False,
+                     wavefield_0_requires_grad=False,
+                     wavefield_m1_requires_grad=False,
+                     psiy_m1_requires_grad=False,
+                     psix_m1_requires_grad=False,
+                     zetay_m1_requires_grad=False,
+                     zetax_m1_requires_grad=False
+                     )
 
 
 def test_negative_vel(c=1500,
@@ -914,7 +944,7 @@ def run_gradcheck(c,
                   zetax_m1_requires_grad=True,
                   atol=2e-8,
                   rtol=2e-5,
-                  gradgradatol=None,
+                  gradgrad=True,
                   nt_add=0):
     """Run PyTorch's gradcheck to test the gradient."""
     torch.manual_seed(1)
@@ -985,16 +1015,17 @@ def run_gradcheck(c,
         atol=atol,
         rtol=rtol)
 
-    if gradgradatol is None:
+    if gradgrad:
+        #if gradgradatol is None:
         gradgradatol = math.sqrt(atol)
-    torch.autograd.gradgradcheck(
-        propagator,
-        (model, dx, dt, sources['amplitude'], sources['locations'], x_r,
-         prop_kwargs, pml_width, survey_pad, origin, wavefield_0, wavefield_m1,
-         psiy_m1, psix_m1, zetay_m1, zetax_m1, nt, 1, True),
-        nondet_tol=1e-3,
-        atol=gradgradatol,
-        check_grad_dtypes=True)
+        torch.autograd.gradgradcheck(
+            propagator,
+            (model, dx, dt, sources['amplitude'], sources['locations'], x_r,
+             prop_kwargs, pml_width, survey_pad, origin, wavefield_0, wavefield_m1,
+             psiy_m1, psix_m1, zetay_m1, zetax_m1, nt, 1, True),
+            nondet_tol=1e-3,
+            atol=gradgradatol,
+            check_grad_dtypes=True)
 
 
 def run_gradcheck_2d(c=1500,
