@@ -398,9 +398,26 @@ def scalar(
 class ScalarForwardFunc(torch.autograd.Function):
 
     @staticmethod
-    def forward(v, source_amplitudes, wfc, wfp, psiy, psix, zetay, zetax, ay,
-                ax, by, bx, dbydy, dbxdx, sources_i, receivers_i, dy, dx, dt,
-                nt, step_ratio, accuracy, pml_width, n_shots):
+    def forward(ctx, v, source_amplitudes, wfc, wfp, psiy, psix, zetay, zetax,
+                ay, ax, by, bx, dbydy, dbxdx, sources_i, receivers_i, dy, dx,
+                dt, nt, step_ratio, accuracy, pml_width, n_shots):
+
+        if (v.requires_grad or source_amplitudes.requires_grad
+                or wfc.requires_grad or wfp.requires_grad or psiy.requires_grad
+                or psix.requires_grad or zetay.requires_grad
+                or zetax.requires_grad):
+            ctx.save_for_backward(v, ay, ax, by, bx, dbydy, dbxdx, sources_i,
+                                  receivers_i, source_amplitudes, wfc, wfp,
+                                  psiy, psix, zetay, zetax)
+            ctx.dy = dy
+            ctx.dx = dx
+            ctx.dt = dt
+            ctx.nt = nt
+            ctx.n_shots = n_shots
+            ctx.step_ratio = step_ratio
+            ctx.accuracy = accuracy
+            ctx.pml_width = pml_width
+            ctx.source_amplitudes_requires_grad = source_amplitudes.requires_grad
 
         v = v.contiguous()
         source_amplitudes = source_amplitudes.contiguous()
@@ -512,41 +529,19 @@ class ScalarForwardFunc(torch.autograd.Function):
                     n_receivers_per_shot, step_ratio, v.requires_grad, pml_y0,
                     pml_y1, pml_x0, pml_x1, aux)
 
+        ctx.dwdv = dwdv
+
         s = (slice(None), slice(fd_pad, -fd_pad), slice(fd_pad, -fd_pad))
         if nt % 2 == 0:
             return (wfc[s], wfp[s], psiy[s], psix[s], zetay[s], zetax[s],
-                    receiver_amplitudes, dwdv)
+                    receiver_amplitudes)
         else:
             return (wfp[s], wfc[s], psiyn[s], psixn[s], zetay[s], zetax[s],
-                    receiver_amplitudes, dwdv)
+                    receiver_amplitudes)
 
     @staticmethod
-    def setup_context(ctx, inputs, outputs):
-        (v, source_amplitudes, wfc, wfp, psiy, psix, zetay, zetax, ay, ax, by,
-         bx, dbydy, dbxdx, sources_i, receivers_i, dy, dx, dt, nt, step_ratio,
-         accuracy, pml_width, n_shots) = inputs
-        (_0, _1, _2, _3, _4, _5, _6, dwdv) = outputs
-        ctx.mark_non_differentiable(dwdv)
-        if (v.requires_grad or source_amplitudes.requires_grad
-                or wfc.requires_grad or wfp.requires_grad or psiy.requires_grad
-                or psix.requires_grad or zetay.requires_grad
-                or zetax.requires_grad):
-            ctx.save_for_backward(v, ay, ax, by, bx, dbydy, dbxdx, sources_i,
-                                  receivers_i, dwdv, source_amplitudes, wfc,
-                                  wfp, psiy, psix, zetay, zetax)
-            ctx.dy = dy
-            ctx.dx = dx
-            ctx.dt = dt
-            ctx.nt = nt
-            ctx.n_shots = n_shots
-            ctx.step_ratio = step_ratio
-            ctx.accuracy = accuracy
-            ctx.pml_width = pml_width
-            ctx.source_amplitudes_requires_grad = source_amplitudes.requires_grad
-
-    @staticmethod
-    def backward(ctx, gwfc, gwfp, gpsiy, gpsix, gzetay, gzetax, grad_r, _):
-        (v, ay, ax, by, bx, dbydy, dbxdx, sources_i, receivers_i, dwdv,
+    def backward(ctx, gwfc, gwfp, gpsiy, gpsix, gzetay, gzetax, grad_r):
+        (v, ay, ax, by, bx, dbydy, dbxdx, sources_i, receivers_i,
          source_amplitudes, wfc, wfp, psiy, psix, zetay,
          zetax) = ctx.saved_tensors
         dy = ctx.dy
@@ -558,6 +553,7 @@ class ScalarForwardFunc(torch.autograd.Function):
         accuracy = ctx.accuracy
         pml_width = ctx.pml_width
         source_amplitudes_requires_grad = ctx.source_amplitudes_requires_grad
+        dwdv = ctx.dwdv
 
         return ScalarBackwardFunc.apply(
             gwfc, gwfp, gpsiy, gpsix, gzetay, gzetax, grad_r, v, ay, ax, by,
@@ -570,11 +566,26 @@ class ScalarForwardFunc(torch.autograd.Function):
 class ScalarBackwardFunc(torch.autograd.Function):
 
     @staticmethod
-    def forward(gwfc, gwfp, gpsiy, gpsix, gzetay, gzetax, grad_r, v, ay, ax,
-                by, bx, dbydy, dbxdx, sources_i, receivers_i, dwdv,
+    def forward(ctx, gwfc, gwfp, gpsiy, gpsix, gzetay, gzetax, grad_r, v, ay,
+                ax, by, bx, dbydy, dbxdx, sources_i, receivers_i, dwdv,
                 source_amplitudes, wfc, wfp, psiy, psix, zetay, zetax, dy, dx,
                 dt, nt, n_shots, step_ratio, accuracy, pml_width,
                 source_amplitudes_requires_grad):
+
+        ctx.save_for_backward(gwfc, gwfp, gpsiy, gpsix, gzetay, gzetax, grad_r,
+                              v, ay, ax, by, bx, dbydy, dbxdx, sources_i,
+                              receivers_i, source_amplitudes, wfc, wfp, psiy,
+                              psix, zetay, zetax)
+        ctx.dy = dy
+        ctx.dx = dx
+        ctx.dt = dt
+        ctx.nt = nt
+        ctx.n_shots = n_shots
+        ctx.step_ratio = step_ratio
+        ctx.accuracy = accuracy
+        ctx.pml_width = pml_width
+        ctx.source_amplitudes_requires_grad = source_amplitudes.requires_grad
+
         v = v.contiguous()
         grad_r = grad_r.contiguous()
         ay = ay.contiguous()
@@ -585,6 +596,7 @@ class ScalarBackwardFunc(torch.autograd.Function):
         dbxdx = dbxdx.contiguous()
         sources_i = sources_i.contiguous()
         receivers_i = receivers_i.contiguous()
+        dwdv = dwdv.contiguous()
 
         device = v.device
         dtype = v.dtype
@@ -710,26 +722,6 @@ class ScalarBackwardFunc(torch.autograd.Function):
         else:
             return grad_v, grad_f, gwfp[s], -gwfc[s], gpsiyn[s], gpsixn[
                 s], gzetayn[s], gzetaxn[s]
-
-    @staticmethod
-    def setup_context(ctx, inputs, outputs):
-        (gwfc, gwfp, gpsiy, gpsix, gzetay, gzetax, grad_r, v, ay, ax, by, bx,
-         dbydy, dbxdx, sources_i, receivers_i, dwdv, source_amplitudes, wfc,
-         wfp, psiy, psix, zetay, zetax, dy, dx, dt, nt, n_shots, step_ratio,
-         accuracy, pml_width, source_amplitudes_requires_grad) = inputs
-        ctx.save_for_backward(gwfc, gwfp, gpsiy, gpsix, gzetay, gzetax, grad_r,
-                              v, ay, ax, by, bx, dbydy, dbxdx, sources_i,
-                              receivers_i, source_amplitudes, wfc, wfp, psiy,
-                              psix, zetay, zetax)
-        ctx.dy = dy
-        ctx.dx = dx
-        ctx.dt = dt
-        ctx.nt = nt
-        ctx.n_shots = n_shots
-        ctx.step_ratio = step_ratio
-        ctx.accuracy = accuracy
-        ctx.pml_width = pml_width
-        ctx.source_amplitudes_requires_grad = source_amplitudes.requires_grad
 
     @staticmethod
     @once_differentiable
@@ -1068,4 +1060,4 @@ class ScalarBackwardFunc(torch.autograd.Function):
 
 
 def scalar_func(*args):
-    return ScalarForwardFunc.apply(*args)[:-1]
+    return ScalarForwardFunc.apply(*args)
