@@ -152,7 +152,8 @@ def scalar(
     nt: Optional[int] = None,
     model_gradient_sampling_interval: int = 1,
     freq_taper_frac: float = 0.0,
-    time_pad_frac: float = 0.0
+    time_pad_frac: float = 0.0,
+    time_taper: bool = False
 ) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
     """Scalar wave propagation (functional interface).
 
@@ -339,6 +340,12 @@ def scalar(
             useful to reduce wraparound artifacts. A value of 0.1 means that
             zero padding of 10% of the number of time samples will be used.
             Default 0.0.
+        time_taper:
+            A bool specifying whether to apply a Hann window in time to
+            source and receiver amplitudes (if present). This is useful
+            during correctness tests of the propagators as it ensures that
+            signals taper to zero at their edges in time, avoiding the
+            possibility of high frequencies being introduced.
 
     Returns:
         Tuple[Tensor]:
@@ -373,7 +380,7 @@ def scalar(
                          accuracy, pml_width, pml_freq, max_vel,
                          survey_pad,
                          origin, nt, model_gradient_sampling_interval,
-                         freq_taper_frac, time_pad_frac)
+                         freq_taper_frac, time_pad_frac, time_taper)
     v = models[0]
     wfc, wfp, psiy, psix, zetay, zetax = wavefields
     source_amplitudes = source_amplitudes_l[0]
@@ -390,7 +397,7 @@ def scalar(
 
     receiver_amplitudes = downsample_and_movedim(receiver_amplitudes,
                                                  step_ratio, freq_taper_frac,
-                                                 time_pad_frac)
+                                                 time_pad_frac, time_taper)
 
     return wfc, wfp, psiy, psix, zetay, zetax, receiver_amplitudes
 

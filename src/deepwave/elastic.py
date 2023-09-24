@@ -181,7 +181,8 @@ def elastic(
     nt: Optional[int] = None,
     model_gradient_sampling_interval: int = 1,
     freq_taper_frac: float = 0.0,
-    time_pad_frac: float = 0.0
+    time_pad_frac: float = 0.0,
+    time_taper: bool = False
 ) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor,
            Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
     """Elastic wave propagation (functional interface).
@@ -400,6 +401,12 @@ def elastic(
             useful to reduce wraparound artifacts. A value of 0.1 means that
             zero padding of 10% of the number of time samples will be used.
             Default 0.0.
+        time_taper:
+            A bool specifying whether to apply a Hann window in time to
+            source and receiver amplitudes (if present). This is useful
+            during correctness tests of the propagators as it ensures that
+            signals taper to zero at their edges in time, avoiding the
+            possibility of high frequencies being introduced.
 
     Returns:
         Tuple[Tensor]:
@@ -478,7 +485,7 @@ def elastic(
                          accuracy, pml_width, pml_freq, max_vel,
                          survey_pad,
                          origin, nt, model_gradient_sampling_interval,
-                         freq_taper_frac, time_pad_frac)
+                         freq_taper_frac, time_pad_frac, time_taper)
     lamb, mu, buoyancy = models
     source_amplitudes_y, source_amplitudes_x = source_amplitudes
     (vy, vx, sigmayy, sigmaxy, sigmaxx, m_vyy, m_vyx, m_vxy, m_vxx, m_sigmayyy,
@@ -524,13 +531,13 @@ def elastic(
     receiver_amplitudes_x = average_adjacent(receiver_amplitudes_x)
     receiver_amplitudes_y = downsample_and_movedim(receiver_amplitudes_y,
                                                    step_ratio, freq_taper_frac,
-                                                   time_pad_frac)
+                                                   time_pad_frac, time_taper)
     receiver_amplitudes_x = downsample_and_movedim(receiver_amplitudes_x,
                                                    step_ratio, freq_taper_frac,
-                                                   time_pad_frac)
+                                                   time_pad_frac, time_taper)
     receiver_amplitudes_p = downsample_and_movedim(receiver_amplitudes_p,
                                                    step_ratio, freq_taper_frac,
-                                                   time_pad_frac)
+                                                   time_pad_frac, time_taper)
 
     return (vy, vx, sigmayy, sigmaxy, sigmaxx, m_vyy, m_vyx, m_vxy, m_vxx,
             m_sigmayyy, m_sigmaxyy, m_sigmaxyx, m_sigmaxxx,

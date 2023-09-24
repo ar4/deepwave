@@ -23,7 +23,8 @@ def setup_propagator(
     nt: Optional[int] = None,
     model_gradient_sampling_interval: int = 1,
     freq_taper_frac: float = 0.0,
-    time_pad_frac: float = 0.0
+    time_pad_frac: float = 0.0,
+    time_taper: bool = False
 ) -> Tuple[List[Tensor], List[Tensor], List[Tensor], List[Tensor],
            List[Tensor], List[Tensor], float, float, float, int, int, int, int,
            int, List[int]]:
@@ -114,7 +115,8 @@ def setup_propagator(
             sa = upsample(sa,
                           step_ratio,
                           freq_taper_frac=freq_taper_frac,
-                          time_pad_frac=time_pad_frac)
+                          time_pad_frac=time_pad_frac,
+                          time_taper=time_taper)
             if sa.device == torch.device('cpu'):
                 sa = torch.movedim(sa, -1, 1)
             else:
@@ -195,6 +197,7 @@ def downsample_and_movedim(receiver_amplitudes: Tensor,
                            step_ratio: int,
                            freq_taper_frac: float = 0.0,
                            time_pad_frac: float = 0.0,
+                           time_taper: bool = False,
                            shift: float = 0.0) -> Tensor:
     if receiver_amplitudes.numel() > 0:
         if receiver_amplitudes.device == torch.device('cpu'):
@@ -205,6 +208,7 @@ def downsample_and_movedim(receiver_amplitudes: Tensor,
                                          step_ratio,
                                          freq_taper_frac=freq_taper_frac,
                                          time_pad_frac=time_pad_frac,
+                                         time_taper=time_taper,
                                          shift=shift)
     return receiver_amplitudes
 
@@ -463,7 +467,8 @@ def zero_last_element_of_final_dimension(signal: Tensor) -> Tensor:
 def upsample(signal: Tensor,
              step_ratio: int,
              freq_taper_frac: float = 0.0,
-             time_pad_frac: float = 0.0) -> Tensor:
+             time_pad_frac: float = 0.0,
+             time_taper: bool = False) -> Tensor:
     """Upsamples the final dimension of a Tensor by a factor.
 
     Low-pass upsampling is used to produce an upsampled signal without
@@ -475,8 +480,8 @@ def upsample(signal: Tensor,
             The Tensor that will have its final dimension upsampled.
         step_ratio:
             The integer factor by which the signal will be upsampled.
-            The input signal is returned if this is 1 (freq_taper_frac
-            and time_pad_frac will be ignored).
+            The input signal is returned if this is 1 (freq_taper_frac,
+            time_pad_frac, and time_taper will be ignored).
         freq_taper_frac:
             A float specifying the fraction of the end of the signal
             amplitude in the frequency domain to cosine taper. This
@@ -490,6 +495,12 @@ def upsample(signal: Tensor,
             dimension of the input signal. This might be useful to reduce
             wraparound artifacts. A value of 0.1 means that zero padding
             of 10% of the length of the signal will be used. Default 0.0.
+        time_taper:
+            A bool specifying whether to apply a Hann window in time.
+            This is useful during correctness tests of the propagators
+            as it ensures that signals taper to zero at their edges in
+            time, avoiding the possibility of high frequencies being
+            introduced.
 
     Returns:
         The signal after upsampling.
@@ -515,6 +526,9 @@ def upsample(signal: Tensor,
     signal = torch.fft.irfft(signal_f, n=up_nt, norm='ortho')
     if time_pad_frac > 0.0:
         signal = signal[..., :signal.shape[-1] - n_time_pad * step_ratio]
+    if time_taper:
+        signal = signal * torch.hann_window(signal.shape[-1], periodic=False,
+                                            device=signal.device)
     return signal
 
 
@@ -522,6 +536,7 @@ def downsample(signal: Tensor,
                step_ratio: int,
                freq_taper_frac: float = 0.0,
                time_pad_frac: float = 0.0,
+               time_taper: bool = False,
                shift: float = 0.0) -> Tensor:
     """Downsamples the final dimension of a Tensor by a factor.
 
@@ -533,8 +548,9 @@ def downsample(signal: Tensor,
             The Tensor that will have its final dimension downsampled.
         step_ratio:
             The integer factor by which the signal will be downsampled.
-            The input signal is returned if this is 1 (freq_taper_frac
-            and time_pad_frac will be ignored).
+            The input signal is returned if this is 1 and shift is 0
+            (freq_taper_frac, time_pad_frac, and time_taper will be
+            ignored).
         freq_taper_frac:
             A float specifying the fraction of the end of the signal
             amplitude in the frequency domain to cosine taper. This
@@ -549,6 +565,12 @@ def downsample(signal: Tensor,
             wraparound artifacts. A value of 0.1 means that zero padding
             of 10% of the length of the output signal will be used.
             Default 0.0.
+        time_taper:
+            A bool specifying whether to apply a Hann window in time.
+            This is useful during correctness tests of the propagators
+            as it ensures that signals taper to zero at their edges in
+            time, avoiding the possibility of high frequencies being
+            introduced.
         shift:
             Amount (in units of time samples) to shift the data in time
             before downsampling.
@@ -559,6 +581,9 @@ def downsample(signal: Tensor,
     """
     if step_ratio == 1 and shift == 0.0:
         return signal
+    if time_taper:
+        signal = signal * torch.hann_window(signal.shape[-1], periodic=False,
+                                            device=signal.device)
     if time_pad_frac > 0.0:
         n_time_pad = int(time_pad_frac * (signal.shape[-1] // step_ratio))
         signal = torch.nn.functional.pad(signal, (0, n_time_pad * step_ratio))

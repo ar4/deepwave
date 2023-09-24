@@ -164,7 +164,8 @@ def scalar_born(
     nt: Optional[int] = None,
     model_gradient_sampling_interval: int = 1,
     freq_taper_frac: float = 0.0,
-    time_pad_frac: float = 0.0
+    time_pad_frac: float = 0.0,
+    time_taper: bool = False
 ) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor,
            Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
     """Scalar Born wave propagation (functional interface).
@@ -248,7 +249,7 @@ def scalar_born(
                          accuracy, pml_width, pml_freq, max_vel,
                          survey_pad,
                          origin, nt, model_gradient_sampling_interval,
-                         freq_taper_frac, time_pad_frac)
+                         freq_taper_frac, time_pad_frac, time_taper)
     v, scatter = models
     (wfc, wfp, psiy, psix, zetay, zetax, wfcsc, wfpsc, psiysc, psixsc, zetaysc,
      zetaxsc) = wavefields
@@ -268,10 +269,10 @@ def scalar_born(
 
     receiver_amplitudes = downsample_and_movedim(receiver_amplitudes,
                                                  step_ratio, freq_taper_frac,
-                                                 time_pad_frac)
+                                                 time_pad_frac, time_taper)
     receiver_amplitudessc = downsample_and_movedim(receiver_amplitudessc,
                                                    step_ratio, freq_taper_frac,
-                                                   time_pad_frac)
+                                                   time_pad_frac, time_taper)
 
     return (wfc, wfp, psiy, psix, zetay, zetax, wfcsc, wfpsc, psiysc, psixsc,
             zetaysc, zetaxsc, receiver_amplitudes, receiver_amplitudessc)

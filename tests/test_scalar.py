@@ -377,9 +377,10 @@ def test_gradcheck_2d_cfl():
 
 def test_gradcheck_2d_cfl_gradgrad():
     """Test gradcheck with a timestep greater than the CFL limit."""
-    run_gradcheck_2d(propagator=scalarprop, dt=0.002, atol=1.5e-6,
+    run_gradcheck_2d(propagator=scalarprop, dt=0.002, atol=1e-7,
+                     prop_kwargs={'time_taper': True},
                      gradgrad=True,
-                     source_requires_grad=False,
+                     source_requires_grad=True,
                      wavefield_0_requires_grad=False,
                      wavefield_m1_requires_grad=False,
                      psiy_m1_requires_grad=False,
@@ -475,9 +476,9 @@ def test_gradcheck_2d_big_gradgrad():
     """Test gradcheck with a big model."""
     run_gradcheck_2d(propagator=scalarprop,
                      nx=(5 + 2 * (3 + 3 * 2), 4 + 2 * (3 + 3 * 2)),
-                     atol=2e-8,
+                     prop_kwargs={'time_taper': True},
                      gradgrad=True,
-                     source_requires_grad=False,
+                     source_requires_grad=True,
                      wavefield_0_requires_grad=False,
                      wavefield_m1_requires_grad=False,
                      psiy_m1_requires_grad=False,
@@ -1016,7 +1017,6 @@ def run_gradcheck(c,
         rtol=rtol)
 
     if gradgrad:
-        #if gradgradatol is None:
         gradgradatol = math.sqrt(atol)
         torch.autograd.gradgradcheck(
             propagator,
