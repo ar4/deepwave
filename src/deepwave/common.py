@@ -152,9 +152,9 @@ def setup_propagator(
                       right_start=0.5)
         pml_profiles = [ay, ayh, ax, axh, by, byh, bx, bxh]
         ax[pml_width[2]] = 0
-        ax[-pml_width[3]] = 0
+        ax[-pml_width[3]-1] = 0
         ayh[pml_width[0]] = 0
-        ayh[-pml_width[1]] = 0
+        ayh[-pml_width[1]-1] = 0
     else:
         ay, by = \
             setup_pml(pml_width[:2], [fd_pad+1, fd_pad+1], dt, dy, ny, max_vel,
