@@ -600,17 +600,6 @@ def test_gradcheck_only_wavefield_0_2d():
     )
 
 
-#def test_jit():
-#    """Test that the propagator can be JIT compiled"""
-#    torch.jit.script(Scalar(torch.ones(1, 1), 5.0))(
-#        0.001, source_amplitudes=torch.ones(1, 1, 1),
-#        source_locations=torch.zeros(1, 1, 2)
-#    )
-#    torch.jit.script(scalar)(torch.ones(1, 1), 5.0, 0.001,
-#                             source_amplitudes=torch.ones(1, 1, 1),
-#                             source_locations=torch.zeros(1, 1, 2).long())
-
-
 def direct_2d_approx(x, x_s, dx, dt, c, f):
     """Use an approximation of the 2D Green's function to calculate the
     wavefield at a given location due to the given source.
