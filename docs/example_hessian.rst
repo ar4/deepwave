@@ -27,7 +27,7 @@ The Hessian describes the effect that changing the velocity model at a point wil
 
 .. image:: example_hessian.jpg
 
-Taking account of these second order effects, by multiply the gradient by the inverse of the Hessian, we get a better estimate of where we should update the model to reduce the loss function value. The gradient has high amplitude around the source, because the source has high amplitude there, but after applying the inverse Hessian the amplitudes of the gradient around the source are downweighted in favour of amplitudes near the reflector.
+Taking account of these second order effects, by multiplying the gradient by the inverse of the Hessian, we get a better estimate of where we should update the model to reduce the loss function value. The gradient has high amplitude around the source, because the source has high amplitude there, but after applying the inverse Hessian the amplitudes of the gradient around the source are downweighted in favour of amplitudes near the reflector.
 
 .. image:: example_hessian_vs_gradient.jpg
 
