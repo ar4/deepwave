@@ -399,8 +399,8 @@ def test_forward_cpu_gpu_match():
 def run_elasticfunc(nt=3):
     from deepwave.elastic import elastic_func
     torch.manual_seed(1)
-    ny = 7
-    nx = 8
+    ny = 11
+    nx = 12
     n_batch = 2
     dt = 0.0005
     dy = dx = 5
@@ -414,14 +414,9 @@ def run_elasticfunc(nt=3):
     accuracy = 4
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     dtype = torch.double
-    lamb, mu, buoyancy = vpvsrho_to_lambmubuoyancy(
-        1500 * torch.ones(1, dtype=dtype, device=device),
-        1000.0 * torch.ones(1, dtype=dtype, device=device),
-        2200 * torch.ones(1, dtype=dtype, device=device))
-    lamb = (0.9 + 0.2 * torch.rand(ny, nx, dtype=dtype, device=device)) * lamb
-    mu = (0.9 + 0.2 * torch.rand(ny, nx, dtype=dtype, device=device)) * mu
-    buoyancy = (
-        0.9 + 0.2 * torch.ones(ny, nx, dtype=dtype, device=device)) * buoyancy
+    vp = 1500 + 100*torch.rand(ny, nx, dtype=dtype, device=device)
+    vs = 1000 + 100*torch.rand(ny, nx, dtype=dtype, device=device)
+    rho = 2200 + 100*torch.rand(ny, nx, dtype=dtype, device=device)
 
     vy = torch.randn(n_batch, ny, nx, dtype=torch.double, device=device)
     vx = torch.randn_like(vy)
@@ -471,9 +466,9 @@ def run_elasticfunc(nt=3):
         [[1 * nx + 1, 2 * nx + 2, 3 * nx + 3, 3 * nx + 2, 3 * nx + 4],
          [4 * nx + 4, 2 * nx + 3, 2 * nx + 1, 3 * nx + 3,
           2 * nx + 2]]).long().to(device)
-    lamb.requires_grad_()
-    mu.requires_grad_()
-    buoyancy.requires_grad_()
+    vp.requires_grad_()
+    vs.requires_grad_()
+    rho.requires_grad_()
     source_amplitudes_y.requires_grad_()
     source_amplitudes_x.requires_grad_()
     vy.requires_grad_()
@@ -499,16 +494,22 @@ def run_elasticfunc(nt=3):
     bxh = torch.randn(nx, dtype=torch.double, device=device)
     ay[1 + pml_width[0]:ny - pml_width[1]].fill_(0)
     by[1 + pml_width[0]:ny - pml_width[1]].fill_(0)
-    ax[1 + pml_width[2]:nx - 1 - pml_width[3]].fill_(0)
-    bx[1 + pml_width[2]:nx - 1 - pml_width[3]].fill_(0)
-    ayh[1 + pml_width[0]:ny - pml_width[1]].fill_(0)
-    byh[1 + pml_width[0]:ny - pml_width[1]].fill_(0)
+    ax[pml_width[2]:nx - pml_width[3]].fill_(0)
+    bx[pml_width[2]:nx - pml_width[3]].fill_(0)
+    ayh[pml_width[0]:ny - pml_width[1]].fill_(0)
+    byh[pml_width[0]:ny - pml_width[1]].fill_(0)
     axh[pml_width[2]:nx - 1 - pml_width[3]].fill_(0)
     bxh[pml_width[2]:nx - 1 - pml_width[3]].fill_(0)
 
+    def wrap(vp, vs, rho, *args):
+        o = list(elastic_func(*vpvsrho_to_lambmubuoyancy(vp, vs, rho), *args))
+        for i in [2, 3, 4, 9, 10, 11, 12, 13]:
+            o[i] /= 1e6
+        return o
+
     torch.autograd.gradcheck(
-        elastic_func,
-        (lamb, mu, buoyancy, source_amplitudes_y, source_amplitudes_x, vy, vx,
+        wrap,
+        (vp, vs, rho, source_amplitudes_y, source_amplitudes_x, vy, vx,
          sigmayy, sigmaxy, sigmaxx, m_vyy, m_vyx, m_vxy, m_vxx, m_sigmayyy,
          m_sigmaxyy, m_sigmaxyx, m_sigmaxxx, ay, ayh, ax, axh, by, byh, bx,
          bxh, sources_y_i, sources_x_i, receivers_y_i, receivers_x_i,
@@ -516,9 +517,10 @@ def run_elasticfunc(nt=3):
          n_batch))
 
 
-#def test_elasticfunc():
-#    run_elasticfunc(nt=1)
-#    run_elasticfunc(nt=2)
+def test_elasticfunc():
+    run_elasticfunc(nt=1)
+    run_elasticfunc(nt=2)
+    run_elasticfunc(nt=3)
 
 
 def test_gradcheck_2d():
