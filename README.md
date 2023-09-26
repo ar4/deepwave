@@ -20,7 +20,7 @@ To install it, I recommend first installing PyTorch using the instructions on th
 - The PML width for each edge can be set independently, allowing a free surface (no PML) on any side
 - Finite difference accuracy can be set by the user
 - A region of the model around the sources and receivers currently being propagated can be automatically extracted to avoid the unnecessary computation of propagation in distant parts of the model
-- Double backpropagation through the regular scalar propagator, including calculating the Hessian ([coming soon](https://ausargeo.com/deepwave/example_hessian))
+- Double backpropagation through the regular scalar propagator, including [calculating the Hessian](https://ausargeo.com/deepwave/example_hessian)
 
 ## Quick Example
 In a few lines you can make a velocity model, propagate a wave from a source in the top left corner to a receiver in the top right, calculate an objective function, and backpropagate to obtain its gradient with respect to the velocity.

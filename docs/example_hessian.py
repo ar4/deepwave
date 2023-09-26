@@ -1,5 +1,3 @@
-# Double backpropagation to calculate the Hessian, used in this example, is not yet available in the released version of Deepwave. If you would like to beta test it, please write to me: alan@ausargeo.com
-
 import torch
 import torchvision
 from scipy.sparse.linalg import eigsh
