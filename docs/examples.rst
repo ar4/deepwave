@@ -4,6 +4,8 @@ Examples
 These examples demonstrate how to use Deepwave. Each is designed to show different features of Deepwave, so I recommend that you read and try to understand all of them.
 
 .. toctree::
+    :maxdepth: 1
+
     example_forward_model
     example_fwi
     example_lsrtm
@@ -19,3 +21,4 @@ These examples demonstrate how to use Deepwave. Each is designed to show differe
     example_gsot
     example_joint_migration_inversion
     example_hessian
+    example_custom_imaging_condition
