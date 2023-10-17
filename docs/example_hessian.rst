@@ -1,7 +1,7 @@
 Hessian
 =======
 
-Deepwave supports backpropagating up to two times through the regular scalar propagator. One advantage of this is that it makes it possible to calculate Hessian matrices, which are used in optimisation methods such as `Newton-Raphson <https://en.wikipedia.org/wiki/Newton%27s_method_in_optimization>`_. I will demonstrate that in this example.
+Deepwave supports backpropagating up to two times through the regular scalar propagator (but currently does not support this double backpropagation for the elastic propagator). One advantage of this is that it makes it possible to calculate Hessian matrices, which are used in optimisation methods such as `Newton-Raphson <https://en.wikipedia.org/wiki/Newton%27s_method_in_optimization>`_. I will demonstrate that in this example.
 
 After setting up a simple two layer model with a single shot, we can calculate the gradient and Hessian of a loss function based on the output receiver data, with respect to the velocity model, using::
 
