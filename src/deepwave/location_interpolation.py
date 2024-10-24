@@ -331,7 +331,7 @@ class Hicks:
             for i in range(n_per_shot):
                 out[shotidx, i, :] = (
                     amplitudes[shotidx, self.idxs[hicks_shotidx][i]] *
-                    (self.weights[hicks_shotidx][i][0].reshape(-1, 1) *
-                     self.weights[hicks_shotidx][i][1].reshape(
+                    (self.weights[hicks_shotidx][i][0].to(amplitudes.device).reshape(-1, 1) *
+                     self.weights[hicks_shotidx][i][1].to(amplitudes.device).reshape(
                          1, -1)).reshape(-1)[..., None]).sum(dim=0)
         return out
