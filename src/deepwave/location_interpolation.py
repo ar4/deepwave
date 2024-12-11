@@ -13,6 +13,7 @@ def _get_hicks_for_one_location_dim(
         halfwidth: int,
         beta: Tensor,
         free_surface: List[bool],
+        free_surface_loc: List[float],
         size: int,
         monopole: bool = True,
         eps: float = DEFAULT_EPS) -> Tuple[Tensor, Tensor]:
@@ -28,7 +29,7 @@ def _get_hicks_for_one_location_dim(
         locations = (location + x).long()
 
         if key in hicks_weight_cache:
-            weights = hicks_weight_cache[key]
+            weights = hicks_weight_cache[key].clone()
         else:
             if monopole:
                 weights = (torch.sinc(x) *
@@ -40,18 +41,26 @@ def _get_hicks_for_one_location_dim(
                            torch.i0(beta * (1 - (x / halfwidth)**2).sqrt()) /
                            torch.i0(beta))
             hicks_weight_cache[key] = weights
-        if free_surface[0] and locations[0].item() < 0:
-            idx0 = int(-locations[0].item())
+        if free_surface[0] and locations[0].item() < free_surface_loc[0]:
+            # idx0: first index at, or on model side of, free surface
+            # idx1: first index on model side of free surface
+            idx0 = int(math.ceil(free_surface_loc[0] - locations[0].item()))
+            idx1 = idx0 + int(
+                math.isclose(round(free_surface_loc[0]), free_surface_loc[0]))
             locations = locations[idx0:]
-            flipped_weights = weights[:idx0 - 1].flip(0)
+            flipped_weights = weights[:idx1].flip(0)
             weights[idx0:idx0 + len(flipped_weights)] -= flipped_weights
             weights = weights[idx0:]
-        if free_surface[1] and locations[-1].item() >= size:
-            idxe = size - int(locations[-1].item()) - 1
-            locations = locations[:idxe]
-            flipped_weights = weights[idxe + 1:].flip(0)
-            weights[idxe - len(flipped_weights):idxe] -= flipped_weights
-            weights = weights[:idxe]
+        if free_surface[1] and locations[-1].item() > free_surface_loc[1]:
+            idx0 = len(weights) - 1 - int(
+                math.ceil(locations[-1].item() - free_surface_loc[1]))
+            idx1 = idx0 - int(
+                math.isclose(round(free_surface_loc[1]), free_surface_loc[1]))
+            locations = locations[:idx0 + 1]
+            flipped_weights = weights[idx1 + 1:].flip(0)
+            weights[idx0 + 1 - len(flipped_weights):idx0 +
+                    1] -= flipped_weights
+            weights = weights[:idx0 + 1]
     return locations, weights
 
 
@@ -60,6 +69,7 @@ def _get_hicks_locations_and_weights(
     halfwidth: int,
     beta: Tensor,
     free_surfaces: List[bool],
+    free_surface_locs: List[float],
     model_shape: List[int],
     monopole: Union[Tensor, bool] = True,
     dipole_dim: Union[Tensor, int] = 0,
@@ -89,7 +99,7 @@ def _get_hicks_locations_and_weights(
                 _get_hicks_for_one_location_dim(
                     hicks_weight_cache,
                     float(locations[shotidx, i, 0].item()), halfwidth, beta,
-                    free_surfaces[:2], model_shape[0],
+                    free_surfaces[:2], free_surface_locs[:2], model_shape[0],
                     monopole_i or (not monopole_i and dipole_dim_i == 1),
                     eps=eps
                 )
@@ -97,7 +107,7 @@ def _get_hicks_locations_and_weights(
                 _get_hicks_for_one_location_dim(
                     hicks_weight_cache,
                     float(locations[shotidx, i, 1].item()), halfwidth, beta,
-                    free_surfaces[2:], model_shape[1],
+                    free_surfaces[2:], free_surface_locs[2:], model_shape[1],
                     monopole_i or (not monopole_i and dipole_dim_i == 0),
                     eps=eps
                 )
@@ -191,6 +201,7 @@ class Hicks:
                  locations: Tensor,
                  halfwidth: int = 4,
                  free_surfaces: Optional[List[bool]] = None,
+                 free_surface_locs: Optional[List[float]] = None,
                  model_shape: Optional[List[int]] = None,
                  monopole: Union[Tensor, bool] = True,
                  dipole_dim: Union[Tensor, int] = 0,
@@ -205,11 +216,29 @@ class Hicks:
             raise RuntimeError("halfwidth must be in [1, 10]")
         if free_surfaces is None:
             free_surfaces = [False, False, False, False]
+        if free_surfaces is not None and (
+                not isinstance(free_surfaces, list) or len(free_surfaces) != 4
+                or any([not isinstance(f, bool) for f in free_surfaces])):
+            raise RuntimeError("free_surface must be a list of four bools")
         if any(free_surfaces) and model_shape is None:
             raise RuntimeError("If there are free surfaces then model_shape "
                                "must be specified")
+        if model_shape is not None and (not isinstance(model_shape, list)
+                                        or len(model_shape) != 2
+                                        or not isinstance(model_shape[0], int)
+                                        or not isinstance(model_shape[1], int)):
+            raise RuntimeError(
+                "model_shape must be a list with two int entries")
+        if free_surface_locs is not None and (not isinstance(
+                free_surface_locs, list) or len(free_surface_locs) != 4):
+            raise RuntimeError(
+                "free_surface_locs must be a list of four floats")
         if model_shape is None:
             model_shape = [-1, -1]
+        if free_surface_locs is None:
+            free_surface_locs = [
+                -0.5, model_shape[0] - 0.5, -0.5, model_shape[1] - 0.5
+            ]
         if (isinstance(monopole, Tensor)
                 and (monopole.shape[0] != locations.shape[0]
                      or monopole.shape[1] != locations.shape[1])):
@@ -226,8 +255,8 @@ class Hicks:
         self.locations = locations
         self.hicks_locations, self.idxs, self.weights = \
             _get_hicks_locations_and_weights(
-                locations, halfwidth, beta, free_surfaces, model_shape,
-                monopole, dipole_dim, eps
+                locations, halfwidth, beta, free_surfaces, free_surface_locs,
+                model_shape, monopole, dipole_dim, eps
             )
 
     def get_locations(self, shot_idxs: Optional[Tensor] = None) -> Tensor:
@@ -329,9 +358,11 @@ class Hicks:
             else:
                 hicks_shotidx = shotidx
             for i in range(n_per_shot):
-                out[shotidx, i, :] = (
-                    amplitudes[shotidx, self.idxs[hicks_shotidx][i]] *
-                    (self.weights[hicks_shotidx][i][0].to(amplitudes.device).reshape(-1, 1) *
-                     self.weights[hicks_shotidx][i][1].to(amplitudes.device).reshape(
-                         1, -1)).reshape(-1)[..., None]).sum(dim=0)
+                out[shotidx,
+                    i, :] = (amplitudes[shotidx, self.idxs[hicks_shotidx][i]] *
+                             (self.weights[hicks_shotidx][i][0].to(
+                                 amplitudes.device).reshape(-1, 1) *
+                              self.weights[hicks_shotidx][i][1].to(
+                                  amplitudes.device).reshape(1, -1)
+                              ).reshape(-1)[..., None]).sum(dim=0)
         return out

@@ -1,6 +1,7 @@
+import pytest
 import torch
 import deepwave
-from deepwave.location_interpolation import Hicks
+from deepwave.location_interpolation import Hicks, _get_hicks_for_one_location_dim
 from test_scalar import direct_2d_approx
 
 
@@ -78,3 +79,84 @@ def test_shot_idxs(n_shots=10,
     shot_idxs = torch.arange(n_shots).flip(0)
     hicks_amplitudes_bwd = hicks.source(amplitudes.flip(0), shot_idxs)
     assert torch.allclose(hicks_amplitudes_fwd.flip(0), hicks_amplitudes_bwd)
+
+
+def test_free_surface_left(halfwidth=8):
+    betas = [0.0, 1.84, 3.04, 4.14, 5.26, 6.40, 7.51, 8.56, 9.56, 10.64]
+    beta = torch.tensor(betas[halfwidth - 1])
+    l0, w0 = _get_hicks_for_one_location_dim({}, 0.5, halfwidth, beta,
+                                             [False, False], [-0.5, 19.5], 20,
+                                             True)
+    l1, w1 = _get_hicks_for_one_location_dim({}, 0.5, halfwidth, beta,
+                                             [True, False], [-0.5, 19.5], 20,
+                                             True)
+    assert len(l0) == 2 * halfwidth
+    assert l0[0] == -halfwidth + 1
+    assert len(l1) == halfwidth + 1
+    assert l1[0] == 0
+    assert w0[-1] == w1[-1]
+    assert w0[-2] == w1[-2]
+    for i in range(halfwidth - 1):
+        assert w1[i] == pytest.approx(w0[halfwidth - 1 + i] -
+                                      w0[halfwidth - 2 - i])
+
+
+def test_free_surface_right(halfwidth=8):
+    betas = [0.0, 1.84, 3.04, 4.14, 5.26, 6.40, 7.51, 8.56, 9.56, 10.64]
+    beta = torch.tensor(betas[halfwidth - 1])
+    l0, w0 = _get_hicks_for_one_location_dim({}, 18.5, halfwidth, beta,
+                                             [False, False], [-0.5, 19.5], 20,
+                                             True)
+    l1, w1 = _get_hicks_for_one_location_dim({}, 18.5, halfwidth, beta,
+                                             [False, True], [-0.5, 19.5], 20,
+                                             True)
+    assert len(l0) == 2 * halfwidth
+    assert l0[-1] == 19 + halfwidth - 1
+    print(l1)
+    assert len(l1) == halfwidth + 1
+    assert l1[-1] == 19
+    assert w0[0] == w1[0]
+    assert w0[1] == w1[1]
+    for i in range(halfwidth - 1):
+        assert w1[len(w1) - 1 -
+                  i] == pytest.approx(w0[len(w0) - 1 - (halfwidth - 1 + i)] -
+                                      w0[len(w0) - 1 - (halfwidth - 2 - i)])
+
+
+def test_free_surface_shift_left(halfwidth=8):
+    betas = [0.0, 1.84, 3.04, 4.14, 5.26, 6.40, 7.51, 8.56, 9.56, 10.64]
+    beta = torch.tensor(betas[halfwidth - 1])
+    l0, w0 = _get_hicks_for_one_location_dim({}, 1.5, halfwidth, beta,
+                                             [False, False], [1.0, 18.0], 20,
+                                             True)
+    l1, w1 = _get_hicks_for_one_location_dim({}, 1.5, halfwidth, beta,
+                                             [True, False], [1.0, 18.0], 20,
+                                             True)
+    assert len(l0) == 2 * halfwidth
+    assert l0[0] == 1 - halfwidth + 1
+    assert len(l1) == halfwidth + 1
+    assert l1[0] == 1
+    assert w0[-1] == w1[-1]
+    for i in range(halfwidth):
+        assert w1[i] == pytest.approx(w0[halfwidth - 1 + i] -
+                                      w0[halfwidth - 1 - i])
+
+
+def test_free_surface_shift_right(halfwidth=8):
+    betas = [0.0, 1.84, 3.04, 4.14, 5.26, 6.40, 7.51, 8.56, 9.56, 10.64]
+    beta = torch.tensor(betas[halfwidth - 1])
+    l0, w0 = _get_hicks_for_one_location_dim({}, 17.5, halfwidth, beta,
+                                             [False, False], [1.0, 18.0], 20,
+                                             True)
+    l1, w1 = _get_hicks_for_one_location_dim({}, 17.5, halfwidth, beta,
+                                             [False, True], [1.0, 18.0], 20,
+                                             True)
+    assert len(l0) == 2 * halfwidth
+    assert l0[-1] == 18 + halfwidth - 1
+    assert len(l1) == halfwidth + 1
+    assert l1[-1] == 18
+    assert w0[0] == w1[0]
+    for i in range(halfwidth):
+        assert w1[len(w1) - 1 -
+                  i] == pytest.approx(w0[len(w0) - 1 - (halfwidth - 1 + i)] -
+                                      w0[len(w0) - 1 - (halfwidth - 1 - i)])
