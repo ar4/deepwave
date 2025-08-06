@@ -29,7 +29,50 @@ def setup_propagator(
              freq_taper_frac: float,
              time_pad_frac: float,
              time_taper: bool,
-             n_dims: int):
+             n_dims: int) -> Tuple[List[Tensor], List[Tensor], List[Tensor], List[Tensor],
+           List[Tensor], List[float], float, int, int, int, int,
+           int, List[int], float, Dict, torch.device, torch.dtype]:
+    """Common setup for propagators.
+
+    This function performs tasks that are common to all of the
+    propagators, such as checking inputs, calculating the internal
+    time step interval, setting up the PML, and preparing source
+    and receiver Tensors.
+
+    Args:
+        models: A list of model Tensors.
+        prop_type: A string specifying the propagator type. One of
+                   'scalar', 'scalar_born', or 'elastic'.
+        grid_spacing: The spatial grid cell size.
+        dt: The time step interval.
+        wavefields: A list of initial wavefields.
+        source_amplitudes: A list of source amplitude Tensors.
+        source_locations: A list of source location Tensors.
+        receiver_locations: A list of receiver location Tensors.
+        accuracy: The finite difference accuracy.
+        pml_width: The width of the PML in number of cells.
+        pml_freq: The frequency to use for the PML.
+        max_vel: The maximum velocity for the CFL condition.
+        survey_pad: Padding to add around sources and receivers to
+                    extract a smaller model for propagation.
+        origin: The origin of the initial wavefields.
+        nt: The number of time steps.
+        model_gradient_sampling_interval: The sampling interval for the
+                                          model gradient calculation.
+        freq_taper_frac: The fraction of the end of the frequency spectrum
+                         to taper.
+        time_pad_frac: The fraction of the time axis to pad with zeros.
+        time_taper: Whether to apply a Hann window in time.
+
+    Returns:
+        A tuple containing the processed models, source amplitudes,
+        wavefields, source and receiver location indices, grid
+        spacing, time step interval, number of time steps, number of
+        shots, step ratio, model gradient sampling interval, accuracy,
+        PML width, maximum velocity, source/receiver time series resampling
+        configuration, and PyTorch device and dtype.
+    """
+
     
     n_batch = get_n_batch(source_locations, wavefields)
     device = models[0].device
@@ -62,7 +105,6 @@ def setup_propagator(
             dt, nt, n_batch, step_ratio, model_gradient_sampling_interval,
             accuracy, pml_width, max_vel, resample_config, device, dtype)
 
-
 def get_n_batch(source_locations: List[Optional[Tensor]], wavefields: List[Optional[Tensor]]) -> int:
     "Get the size of the batch dimension."
     tensors = source_locations + wavefields
@@ -77,6 +119,24 @@ def downsample_and_movedim(receiver_amplitudes: Tensor,
                            time_pad_frac: float = 0.0,
                            time_taper: bool = False,
                            shift: float = 0.0) -> Tensor:
+    """Downsample receiver data and move the time dimension.
+
+    This is a convenience function that combines the downsampling of
+    receiver data (if `step_ratio` > 1) with moving the time dimension
+    to be the last dimension, which is the format expected by the user.
+
+    Args:
+        receiver_amplitudes: A Tensor containing the receiver amplitudes.
+        step_ratio: The integer factor by which to downsample.
+        freq_taper_frac: The fraction of the end of the frequency spectrum
+                         to taper.
+        time_pad_frac: The fraction of the time axis to pad with zeros.
+        time_taper: Whether to apply a Hann window in time.
+        shift: The amount to shift the data in time before downsampling.
+
+    Returns:
+        The processed receiver amplitudes.
+    """
     if receiver_amplitudes.numel() > 0:
         receiver_amplitudes = torch.movedim(receiver_amplitudes, 0, -1)
         receiver_amplitudes = downsample(receiver_amplitudes,

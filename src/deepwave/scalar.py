@@ -165,6 +165,14 @@ def scalar(
     For computational performance, multiple shots may be propagated
     simultaneously.
 
+    The scalar wave equation is: `d^2u/dt^2 = v^2 * laplacian(u) + v^2 * f`,
+    where `u` is the wavefield, `t` is time, `v` is the wavespeed, and `f`
+    is the source. The Laplacian is applied to the spatial dimensions.
+
+    The function returns the final wavefields and the data recorded at
+    the specified receiver locations. All returned Tensors are
+    differentiable with respect to the float Tensors in the input.
+
     Args:
         v:
             A 2D Tensor containing the wavespeed model. Unlike the module

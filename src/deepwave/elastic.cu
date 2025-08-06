@@ -1,3 +1,24 @@
+/*
+ * Elastic wave equation propagator (CUDA implementation)
+ */
+
+/*
+ * This file contains the CUDA implementation of the elastic wave equation
+ * propagator. It is compiled multiple times with different options
+ * to generate a set of functions that can be called from Python.
+ * The options are specified by the following macros:
+ *  * DW_ACCURACY: The order of accuracy of the spatial finite difference
+ *    stencil. Possible values are 2 and 4.
+ *  * DW_DTYPE: The floating point type to use for calculations. Possible
+ *    values are float and double.
+ */
+
+/*
+ * For a description of the method, see the C implementation in elastic.c.
+ * This file implements the same functionality, but for execution on a GPU
+ * using CUDA.
+ */
+
 #include <stdio.h>
 
 #include <cstdint>

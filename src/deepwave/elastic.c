@@ -1,13 +1,47 @@
 /*
-vx  sii | vx  sii | vx  sii
-SXY-VY--|-SXY-VY--|-SXY vy
-[-------------------]------
-VX  SII | VX  SII | VX  sii
-SXY VY  | SXY VY  | SXY vy
-[-------------------]------
-VX  SII | VX  SII | VX  sii
-SXY-VY--|-SXY-VY--|-SXY vy
-*/
+ * Elastic wave equation propagator
+ */
+
+/*
+ * This file contains the C implementation of the elastic wave equation
+ * propagator. It is compiled multiple times with different options
+ * to generate a set of functions that can be called from Python.
+ * The options are specified by the following macros:
+ *  * DW_ACCURACY: The order of accuracy of the spatial finite difference
+ *    stencil. Possible values are 2 and 4.
+ *  * DW_DTYPE: The floating point type to use for calculations. Possible
+ *    values are float and double.
+ */
+
+/*
+ * The propagator solves the 2D elastic wave equation using a velocity-stress
+ * formulation on a staggered grid. The free surface boundary condition is
+ * implemented using the W-AFDA method of Kristek et al. (2002), and the
+ * PML implementation is based on the C-PML method of Komatitsch and
+ * Martin (2007).
+ *
+ * The code is structured to maximize performance by using macros to
+ * generate the code for each of the nine regions of the computational
+ * domain (a central region, four edge regions, and four corner regions),
+ * and by using OpenMP to parallelize the loops over shots.
+ */
+
+/*
+ * The staggered grid used in this propagator is shown below.
+ * Lowercase letters indicate that the component is not used.
+ * The model parameters (lambda, mu, and buoyancy) are at the same
+ * locations as vx.
+ *
+ * o--------->x
+ * | vx  sii | vx  sii | vx  sii
+ * | SXY=VY==|=SXY=VY==|=SXY vy
+ * v [-------------------]------
+ * y VX  SII | VX  SII | VX  sii
+ *   SXY VY  | SXY VY  | SXY vy
+ *   [-------------------]------
+ *   VX  SII | VX  SII | VX  sii
+ *   SXY=VY==|=SXY=VY==|=SXY vy
+ */
 
 #ifdef _OPENMP
 #include <omp.h>

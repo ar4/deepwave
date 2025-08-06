@@ -1,20 +1,22 @@
 /*
- * Scalar wave equation propagator
- *
- * Assumptions:
- *  * The first and last accuracy/2 elements in each spatial dimension
- *    are zero in all wavefields (forward and backward).
- *  * Elements of ay, ax, by, bx are zero except for the first and last
- *    accuracy/2 + pml_width elements.
- *  * Elements of dbydx and dbxdx are zero except for the first and last
- *    accuracy + pml_width elements.
- *  * Elements of psiy and zetay are zero except for the first and last
- *    accuracy + pml_width elements in the y dimension for forward,
- *    and 3 * accuracy / 2 + pml_width elements in the y dimension for
- *    backward.
- *  * The previous assumption applies to psix and zetax in the x dimension.
- *  * The values in wfp are multiplied by -1 before and after calls to
- *    backward.
+ * Scalar Born wave equation propagator (CUDA implementation)
+ */
+
+/*
+ * This file contains the CUDA implementation of the scalar Born wave equation
+ * propagator. It is compiled multiple times with different options
+ * to generate a set of functions that can be called from Python.
+ * The options are specified by the following macros:
+ *  * DW_ACCURACY: The order of accuracy of the spatial finite difference
+ *    stencil. Possible values are 2, 4, 6, and 8.
+ *  * DW_DTYPE: The floating point type to use for calculations. Possible
+ *    values are float and double.
+ */
+
+/*
+ * For a description of the method, see the C implementation in
+ * scalar_born.c and scalar.c. This file implements the same functionality,
+ * but for execution on a GPU using CUDA.
  */
 
 #include <stdio.h>

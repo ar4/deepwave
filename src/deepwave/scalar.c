@@ -1,20 +1,65 @@
 /*
  * Scalar wave equation propagator
+ */
+
+/*
+ * This file contains the C implementation of the scalar wave equation
+ * propagator. It is compiled multiple times with different options
+ * to generate a set of functions that can be called from Python.
+ * The options are specified by the following macros:
+ *  * DW_ACCURACY: The order of accuracy of the spatial finite difference
+ *    stencil. Possible values are 2, 4, 6, and 8.
+ *  * DW_DTYPE: The floating point type to use for calculations. Possible
+ *    values are float and double.
+ */
+
+/*
+ * The propagator solves the 2D scalar wave equation:
+ * d^2u/dt^2 = v^2 * laplacian(u) + v^2 * f
+ * where u is the wavefield, t is time, v is the wavespeed, and f is the
+ * source. The Laplacian is applied to the spatial dimensions.
  *
+ * The propagator uses a finite difference scheme that is second-order
+ * accurate in time and has a user-specifiable order of accuracy in space.
+ * To prevent reflections from the boundaries of the computational domain,
+ * a Perfectly Matched Layer (PML) is used. The PML implementation is based
+ * on the Convolutional PML (C-PML) method of Pasalic and McGarry (2010).
+ * This requires the use of auxiliary wavefields (psi and zeta).
+ *
+ * To improve performance, the computational domain is divided into nine
+ * regions, and only the necessary calculations are performed in each
+ * region. The regions are:
+ *  * The central region, where no PML calculations are needed.
+ *  * Four edge regions, where PML calculations are needed in one
+ *    dimension.
+ *  * Four corner regions, where PML calculations are needed in both
+ *    dimensions.
+ *
+ * The code is structured to maximize performance by using macros to
+ * generate the code for each of the nine regions, and by using OpenMP
+ * to parallelize the loops over shots.
+ */
+
+/*
  * Assumptions:
  *  * The first and last accuracy/2 elements in each spatial dimension
- *    are zero in all wavefields (forward and backward).
+ *    are zero in all wavefields (forward and backward). This is to avoid
+ *    the need for special handling of the boundaries, which would prevent
+ *    vectorisation.
  *  * Elements of ay, ax, by, bx are zero except for the first and last
- *    accuracy/2 + pml_width elements.
+ *    accuracy/2 + pml_width elements. These are the PML profiles.
  *  * Elements of dbydx and dbxdx are zero except for the first and last
- *    accuracy + pml_width elements.
+ *    accuracy + pml_width elements. These are the spatial derivatives of
+ *    the PML profiles.
  *  * Elements of psiy and zetay are zero except for the first and last
- *    accuracy + pml_width elements in the y dimension for forward,
- *    and 3 * accuracy / 2 + pml_width elements in the y dimension for
- *    backward.
+ *    accuracy + pml_width elements in the y dimension for forward
+ *    propagation, and 3 * accuracy / 2 + pml_width elements in the y
+ *    dimension for backward propagation. These are the PML auxiliary
+ *    wavefields.
  *  * The previous assumption applies to psix and zetax in the x dimension.
- *  * The values in wfp are multiplied by -1 before and after calls to
- *    backward.
+ *  * The values in wfp (the wavefield at the previous time step) are
+ *    multiplied by -1 before and after calls to the backward propagator.
+ *    This is to simplify the backpropagation calculations.
  */
 
 #ifdef _OPENMP

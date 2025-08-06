@@ -194,6 +194,11 @@ def elastic(
     For computational performance, multiple shots may be propagated
     simultaneously.
 
+    The elastic wave equation is:
+        `rho * d^2u/dt^2 = nabla . (lambda * I * (nabla . u) + mu * (nabla*u + (nabla*u).T)) + f`
+    where `u` is the displacement vector, `t` is time, `rho` is density,
+    `lambda` and `mu` are the Lame parameters, and `f` is the source vector.
+
     This propagator uses a staggered grid. See
     https://ausargeo.com/deepwave/elastic for a description.
 
@@ -437,6 +442,8 @@ def elastic(
                 oriented in the second spatial dimension.
 
     """
+    # Check that sources and receivers are not on the last row or column,
+    # as these are not used
     if (source_locations_y is not None
             and source_locations_y[..., 1].max() >= lamb.shape[1] - 1):
         raise RuntimeError("With the provided model, the maximum y source "
@@ -541,6 +548,7 @@ def elastic(
 
     pml_profiles = set_pml_profiles(pml_width_l, accuracy, fd_pad, dt, grid_spacing, max_vel, dtype, device, pml_freq, ny, nx)
 
+    # Run the forward propagator
     (vy, vx, sigmayy, sigmaxy, sigmaxx,
      m_vyy, m_vyx, m_vxy, m_vxx,
      m_sigmayyy, m_sigmaxyy,

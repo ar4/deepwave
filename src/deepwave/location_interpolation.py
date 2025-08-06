@@ -1,4 +1,5 @@
-"Interpolation of points at arbitrary locations onto a grid."
+"""Interpolation of sources and receivers at arbitrary locations onto a grid."""
+
 from typing import List, Optional, Union, Dict, Tuple
 import math
 import torch

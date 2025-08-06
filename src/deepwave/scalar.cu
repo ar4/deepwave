@@ -1,7 +1,31 @@
 /*
- * Scalar wave equation propagator
+ * Scalar wave equation propagator (CUDA implementation)
+ */
+
+/*
+ * This file contains the CUDA implementation of the scalar wave equation
+ * propagator. It is compiled multiple times with different options
+ * to generate a set of functions that can be called from Python.
+ * The options are specified by the following macros:
+ *  * DW_ACCURACY: The order of accuracy of the spatial finite difference
+ *    stencil. Possible values are 2, 4, 6, and 8.
+ *  * DW_DTYPE: The floating point type to use for calculations. Possible
+ *    values are float and double.
+ */
+
+/*
+ * For a description of the method, see the C implementation in scalar.c.
+ * This file implements the same functionality, but for execution on a GPU
+ * using CUDA.
  *
- * See scalar.c
+ * The CUDA kernels are launched with a 3D grid of threads. The slowest
+ * varying dimension corresponds to the shot number, while the other two
+ * correspond to the spatial dimensions of the model. This allows multiple
+ * shots to be propagated simultaneously.
+ *
+ * Constant memory is used to store the configuration parameters of the
+ * propagator, which are the same for all threads. This is more efficient
+ * than passing them as arguments to the kernels.
  */
 
 #include <stdio.h>

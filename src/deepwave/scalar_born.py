@@ -179,6 +179,25 @@ def scalar_born(
     For computational performance, multiple shots may be propagated
     simultaneously.
 
+    The scalar wave equation is: `d^2u/dt^2 = v^2 * laplacian(u) + v^2 * f`,
+    where `u` is the wavefield, `t` is time, `v` is the wavespeed, and `f`
+    is the source. The Laplacian is applied to the spatial dimensions.
+
+    In Born scattering, the velocity `v` is considered to be a sum of a
+    background component `v0` and a perturbation `dv`, `v = v0 + dv`.
+    The wavefield `u` is similarly `u = u0 + du`. Substituting these into
+    the wave equation and keeping only the first-order terms results in
+    two equations:
+
+    `d^2u0/dt^2 = v0^2 * laplacian(u0) + v0^2 * f`
+    `d^2du/dt^2 = v0^2 * laplacian(du) + 2*v0*dv*laplacian(u0)`
+
+    This propagator solves these two equations simultaneously. The first
+    is the normal scalar wave equation for the background wavefield `u0`,
+    and the second is the wave equation for the scattered wavefield `du`,
+    with a source term that is proportional to the Laplacian of the
+    background wavefield.
+
     Most arguments and returns are the same as those of :func:`scalar`, so
     only those that are different will be described here.
 
