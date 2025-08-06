@@ -1,25 +1,28 @@
+"""This script demonstrates Least-Squares Reverse-Time Migration (LSRTM)
+using Deepwave. It shows how to invert for the scattering potential
+with Born modeling, including handling direct arrivals.
+"""
+
+import matplotlib.pyplot as plt
 import torch
 from scipy.ndimage import gaussian_filter
-import matplotlib.pyplot as plt
+
 import deepwave
 from deepwave import scalar, scalar_born
 
-device = torch.device('cuda' if torch.cuda.is_available()
-                      else 'cpu')
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 ny = 2301
 nx = 751
 dx = 4.0
-v_true = torch.from_file('marmousi_vp.bin',
-                         size=ny*nx).reshape(ny, nx)
+v_true = torch.from_file("marmousi_vp.bin", size=ny * nx).reshape(ny, nx)
 
 # Select portion of model for inversion
-ny = 600
-nx = 250
-v_true = v_true[:ny, :nx]
+ny_subset = 600
+nx_subset = 250
+v_true = v_true[:ny_subset, :nx_subset]
 
 # Smooth to use as starting model
-v_mig = (torch.tensor(1/gaussian_filter(1/v_true.numpy(), 5))
-          .to(device))
+v_mig = torch.tensor(1 / gaussian_filter(1 / v_true.numpy(), 5)).to(device)
 
 n_shots = 115
 
@@ -38,41 +41,50 @@ nt = 750
 dt = 0.004
 peak_time = 1.5 / freq
 
-observed_data = (
-    torch.from_file('marmousi_data.bin',
-                    size=n_shots*n_receivers_per_shot*nt)
-    .reshape(n_shots, n_receivers_per_shot, nt)
-)
+observed_data = torch.from_file(
+    "marmousi_data.bin",
+    size=n_shots * n_receivers_per_shot * nt,
+).reshape(n_shots, n_receivers_per_shot, nt)
 
 # Select portion of data for inversion
-n_shots = 20
-n_receivers_per_shot = 100
-nt = 300
-observed_data = (
-    observed_data[:n_shots, :n_receivers_per_shot, :nt].to(device)
-)
+n_shots_subset = 20
+n_receivers_per_shot_subset = 100
+nt_subset = 300
+observed_data = observed_data[
+    :n_shots_subset,
+    :n_receivers_per_shot_subset,
+    :nt_subset,
+].to(device)
 
 # source_locations
-source_locations = torch.zeros(n_shots, n_sources_per_shot, 2,
-                               dtype=torch.long, device=device)
+source_locations = torch.zeros(
+    n_shots,
+    n_sources_per_shot,
+    2,
+    dtype=torch.long,
+    device=device,
+)
 source_locations[..., 1] = source_depth
-source_locations[:, 0, 0] = (torch.arange(n_shots) * d_source +
-                             first_source)
+source_locations[:, 0, 0] = torch.arange(n_shots) * d_source + first_source
 
 # receiver_locations
-receiver_locations = torch.zeros(n_shots, n_receivers_per_shot, 2,
-                                 dtype=torch.long, device=device)
+receiver_locations = torch.zeros(
+    n_shots,
+    n_receivers_per_shot,
+    2,
+    dtype=torch.long,
+    device=device,
+)
 receiver_locations[..., 1] = receiver_depth
 receiver_locations[:, :, 0] = (
-    (torch.arange(n_receivers_per_shot) * d_receiver +
-     first_receiver)
-    .repeat(n_shots, 1)
-)
+    torch.arange(n_receivers_per_shot) * d_receiver + first_receiver
+).repeat(n_shots, 1)
 
 # source_amplitudes
 source_amplitudes = (
     (deepwave.wavelets.ricker(freq, nt, dt, peak_time))
-    .repeat(n_shots, n_sources_per_shot, 1).to(device)
+    .repeat(n_shots, n_sources_per_shot, 1)
+    .to(device)
 )
 
 # Estimate direct arrival by forward modelling through
@@ -82,7 +94,9 @@ source_amplitudes = (
 # internal time step size will be the same as when the
 # observed dataset was created, to get a better match.
 out = scalar(
-    v_mig, dx, dt,
+    v_mig,
+    dx,
+    dt,
     source_amplitudes=source_amplitudes,
     source_locations=source_locations,
     receiver_locations=receiver_locations,
@@ -92,17 +106,15 @@ out = scalar(
 )
 observed_scattered_data = observed_data - out[-1]
 
-_, ax = plt.subplots(1, 3, figsize=(10.5, 3.5), sharex=True,
-                     sharey=True)
-ax[0].imshow(observed_data[0].cpu().T, aspect='auto', cmap='gray')
+_, ax = plt.subplots(1, 3, figsize=(10.5, 3.5), sharex=True, sharey=True)
+ax[0].imshow(observed_data[0].cpu().T, aspect="auto", cmap="gray")
 ax[0].set_title("Observed")
-ax[1].imshow(out[-1][0].cpu().T, aspect='auto', cmap='gray')
+ax[1].imshow(out[-1][0].cpu().T, aspect="auto", cmap="gray")
 ax[1].set_title("Predicted")
-ax[2].imshow(observed_scattered_data[0].cpu().T, aspect='auto',
-             cmap='gray')
+ax[2].imshow(observed_scattered_data[0].cpu().T, aspect="auto", cmap="gray")
 ax[2].set_title("Observed - Predicted")
 plt.tight_layout()
-plt.savefig('example_lsrtm_scattered.jpg')
+plt.savefig("example_lsrtm_scattered.jpg")
 
 # Create scattering amplitude that we will invert for
 scatter = torch.zeros_like(v_mig)
@@ -116,10 +128,14 @@ loss_fn = torch.nn.MSELoss()
 n_epochs = 3
 
 for epoch in range(n_epochs):
+
     def closure():
         optimiser.zero_grad()
         out = scalar_born(
-            v_mig, scatter, dx, dt,
+            v_mig,
+            scatter,
+            dx,
+            dt,
             source_amplitudes=source_amplitudes,
             source_locations=source_locations,
             receiver_locations=receiver_locations,
@@ -132,9 +148,7 @@ for epoch in range(n_epochs):
     optimiser.step(closure)
 
 # Plot
-vmin, vmax = torch.quantile(scatter.detach(),
-                            torch.tensor([0.05, 0.95]).to(device))
+vmin, vmax = torch.quantile(scatter.detach(), torch.tensor([0.05, 0.95]).to(device))
 plt.figure(figsize=(10.5, 3.5))
-plt.imshow(scatter.detach().cpu().T, aspect='auto', cmap='gray',
-           vmin=vmin, vmax=vmax)
-plt.savefig('example_lsrtm.jpg')
+plt.imshow(scatter.detach().cpu().T, aspect="auto", cmap="gray", vmin=vmin, vmax=vmax)
+plt.savefig("example_lsrtm.jpg")

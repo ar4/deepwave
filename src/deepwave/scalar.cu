@@ -1,7 +1,31 @@
 /*
- * Scalar wave equation propagator
+ * Scalar wave equation propagator (CUDA implementation)
+ */
+
+/*
+ * This file contains the CUDA implementation of the scalar wave equation
+ * propagator. It is compiled multiple times with different options
+ * to generate a set of functions that can be called from Python.
+ * The options are specified by the following macros:
+ *  * DW_ACCURACY: The order of accuracy of the spatial finite difference
+ *    stencil. Possible values are 2, 4, 6, and 8.
+ *  * DW_DTYPE: The floating point type to use for calculations. Possible
+ *    values are float and double.
+ */
+
+/*
+ * For a description of the method, see the C implementation in scalar.c.
+ * This file implements the same functionality, but for execution on a GPU
+ * using CUDA.
  *
- * See scalar.c
+ * The CUDA kernels are launched with a 3D grid of threads. The slowest
+ * varying dimension corresponds to the shot number, while the other two
+ * correspond to the spatial dimensions of the model. This allows multiple
+ * shots to be propagated simultaneously.
+ *
+ * Constant memory is used to store the configuration parameters of the
+ * propagator, which are the same for all threads. This is more efficient
+ * than passing them as arguments to the kernels.
  */
 
 #include <stdio.h>
@@ -10,35 +34,65 @@
 
 #include "common.h"
 
-#define CAT_I(name, accuracy, dtype) scalar_iso_##accuracy##_##dtype##_##name
-#define CAT(name, accuracy, dtype) CAT_I(name, accuracy, dtype)
-#define FUNC(name) CAT(name, DW_ACCURACY, DW_DTYPE)
+#define CAT_I(name, accuracy, dtype, device) \
+  scalar_iso_##accuracy##_##dtype##_##name##_##device
+#define CAT(name, accuracy, dtype, device) CAT_I(name, accuracy, dtype, device)
+#define FUNC(name) CAT(name, DW_ACCURACY, DW_DTYPE, DW_DEVICE)
 
-#define WFC(dy, dx) wfc[i + dy * nx + dx]
-#define AY_PSIY(dy, dx) ay[y + dy] * psiy[i + dy * nx + dx]
-#define AX_PSIX(dy, dx) ax[x + dx] * psix[i + dy * nx + dx]
-#define V2DT2_WFC(dy, dx) v2dt2_shot[j + dy * nx + dx] * wfc[i + dy * nx + dx]
-#define UT_TERMY1(dy, dx)                                           \
-  ((dbydy[y + dy] *                                                 \
-        ((1 + by[y + dy]) * v2dt2_shot[j + dy * nx] * wfc[i + dy * nx] + \
-         by[y + dy] * zetay[i + dy * nx]) +                         \
-    by[y + dy] * psiy[i + dy * nx]))
-#define UT_TERMX1(dy, dx)                                             \
-  ((dbxdx[x + dx] * ((1 + bx[x + dx]) * v2dt2_shot[j + dx] * wfc[i + dx] + \
-                     bx[x + dx] * zetax[i + dx]) +                    \
-    bx[x + dx] * psix[i + dx]))
-#define UT_TERMY2(dy, dx)                                      \
-  ((1 + by[y + dy]) *                                          \
+#define WFC(dy, dx) \
+  wfc[i + dy * nx + dx]  // Access wavefield at offset (dy, dx) from i
+#define AY_PSIY(dy, dx) \
+  ay[y + dy] *          \
+      psiy[i + dy * nx + dx]  // PML profile ay times auxiliary field psiy
+#define AX_PSIX(dy, dx) \
+  ax[x + dx] *          \
+      psix[i + dy * nx + dx]  // PML profile ax times auxiliary field psix
+#define V2DT2_WFC(dy, dx)        \
+  v2dt2_shot[j + dy * nx + dx] * \
+      wfc[i + dy * nx + dx]  // v^2 * dt^2 * wfc at offset
+
+// --- PML Update Terms ---
+
+// Update term for the y-derivative of the wavefield in the PML region (backward
+// pass). This corresponds to the first derivative term in the update equation
+// for the auxiliary wavefield psi (y-direction).
+#define UT_TERMY1(dy, dx)                                               \
+  (dbydy[y + dy] *                                                      \
+       ((1 + by[y + dy]) * v2dt2_shot[j + dy * nx] * wfc[i + dy * nx] + \
+        by[y + dy] * zetay[i + dy * nx]) +                              \
+   by[y + dy] * psiy[i + dy * nx])
+
+// Update term for the x-derivative of the wavefield in the PML region (backward
+// pass). This corresponds to the first derivative term in the update equation
+// for the auxiliary wavefield psi (x-direction).
+#define UT_TERMX1(dy, dx)                                                 \
+  (dbxdx[x + dx] * ((1 + bx[x + dx]) * v2dt2_shot[j + dx] * wfc[i + dx] + \
+                    bx[x + dx] * zetax[i + dx]) +                         \
+   bx[x + dx] * psix[i + dx])
+
+// Update term for the y-derivative of the wavefield in the PML region (backward
+// pass). This corresponds to the second derivative term in the update equation
+// for the auxiliary wavefield psi (y-direction).
+#define UT_TERMY2(dy, dx)                                           \
+  ((1 + by[y + dy]) *                                               \
    ((1 + by[y + dy]) * v2dt2_shot[j + dy * nx] * wfc[i + dy * nx] + \
     by[y + dy] * zetay[i + dy * nx]))
-#define UT_TERMX2(dy, dx)                                               \
+
+// Update term for the x-derivative of the wavefield in the PML region (backward
+// pass). This corresponds to the second derivative term in the update equation
+// for the auxiliary wavefield psi (x-direction).
+#define UT_TERMX2(dy, dx)                                                    \
   ((1 + bx[x + dx]) * ((1 + bx[x + dx]) * v2dt2_shot[j + dx] * wfc[i + dx] + \
                        bx[x + dx] * zetax[i + dx]))
-#define PSIY_TERM(dy, dx)                                     \
+#define PSIY_TERM(dy, dx)                                          \
   ((1 + by[y + dy]) * v2dt2_shot[j + dy * nx] * wfc[i + dy * nx] + \
-   by[y + dy] * zetay[i + dy * nx])
-#define PSIX_TERM(dy, dx) \
-  ((1 + bx[x + dx]) * v2dt2_shot[j + dx] * wfc[i + dx] + bx[x + dx] * zetax[i + dx])
+   by[y + dy] *                                                    \
+       zetay[i + dy * nx])  // Term for auxiliary psi update (y-derivative)
+
+#define PSIX_TERM(dy, dx)                                \
+  ((1 + bx[x + dx]) * v2dt2_shot[j + dx] * wfc[i + dx] + \
+   bx[x + dx] *                                          \
+       zetax[i + dx])  // Term for auxiliary psi update (x-derivative)
 
 #define gpuErrchk(ans) \
   { gpuAssert((ans), __FILE__, __LINE__); }
@@ -113,10 +167,12 @@ __global__ void forward_kernel(
     int64_t shot_idx = blockIdx.z * blockDim.z + threadIdx.z;
     int64_t j = y * nx + x;
     int64_t i = shot_idx * nynx + j;
+    // Select velocity for this shot/grid point
     DW_DTYPE const v_shot = v_batched ? v[i] : v[j];
     bool pml_y = y < pml_y0 || y >= pml_y1;
     bool pml_x = x < pml_x0 || x >= pml_x1;
     DW_DTYPE w_sum;
+    // y dimension
     if (!pml_y) {
       w_sum = DIFFY2(WFC);
     } else {
@@ -127,6 +183,7 @@ __global__ void forward_kernel(
       psiyn[i] = by[y] * dwfcdy + ay[y] * psiy[i];
       zetay[i] = by[y] * tmpy + ay[y] * zetay[i];
     }
+    // x dimension
     if (!pml_x) {
       w_sum += DIFFX2(WFC);
     } else {
@@ -137,9 +194,11 @@ __global__ void forward_kernel(
       psixn[i] = bx[x] * dwfcdx + ax[x] * psix[i];
       zetax[i] = bx[x] * tmpx + ax[x] * zetax[i];
     }
+    // If gradients are required, store snapshot for backward
     if (v_requires_grad) {
       dwdv[i] = 2 * v_shot * dt2 * w_sum;
     }
+    // Main wavefield update: finite difference time stepping
     wfp[i] = v_shot * v_shot * dt2 * w_sum + 2 * wfc[i] - wfp[i];
   }
 }
@@ -162,21 +221,27 @@ __global__ void backward_kernel(
     int64_t shot_idx = blockIdx.z * blockDim.z + threadIdx.z;
     int64_t j = y * nx + x;
     int64_t i = shot_idx * nynx + j;
-    DW_DTYPE const *__restrict const v2dt2_shot = v_batched ? v2dt2 + shot_idx * nynx : v2dt2;
+    // Select v^2*dt^2 for this shot/grid point
+    DW_DTYPE const *__restrict const v2dt2_shot =
+        v_batched ? v2dt2 + shot_idx * nynx : v2dt2;
     bool pml_y = y < pml_y0 || y >= pml_y1;
     bool pml_x = x < pml_x0 || x >= pml_x1;
+    // Main adjoint wavefield update
     wfp[i] =
         (pml_y ? -DIFFY1(UT_TERMY1) + DIFFY2(UT_TERMY2) : DIFFY2(V2DT2_WFC)) +
         (pml_x ? -DIFFX1(UT_TERMX1) + DIFFX2(UT_TERMX2) : DIFFX2(V2DT2_WFC)) +
         2 * wfc[i] - wfp[i];
+    // Update PML auxiliary fields in y
     if (pml_y) {
       psiyn[i] = -ay[y] * DIFFY1(PSIY_TERM) + ay[y] * psiy[i];
       zetayn[i] = ay[y] * v2dt2_shot[j] * wfc[i] + ay[y] * zetay[i];
     }
+    // Update PML auxiliary fields in x
     if (pml_x) {
       psixn[i] = -ax[x] * DIFFX1(PSIX_TERM) + ax[x] * psix[i];
       zetaxn[i] = ax[x] * v2dt2_shot[j] * wfc[i] + ax[x] * zetax[i];
     }
+    // If gradients are required, accumulate gradient for velocity
     if (v_requires_grad) {
       grad_v[i] += wfc[i] * dwdv[i] * step_ratio;
     }
@@ -253,8 +318,8 @@ extern "C"
             int64_t const ny_h, int64_t const nx_h,
             int64_t const n_sources_per_shot_h,
             int64_t const n_receivers_per_shot_h, int64_t const step_ratio_h,
-            bool const v_requires_grad, bool const v_batched_h, int64_t const start_t,
-	    int64_t const pml_y0_h,
+            bool const v_requires_grad, bool const v_batched_h,
+            int64_t const start_t, int64_t const pml_y0_h,
             int64_t const pml_y1_h, int64_t const pml_x0_h,
             int64_t const pml_x1_h, int64_t const device) {
   dim3 dimBlock(32, 32, 1);
@@ -284,7 +349,8 @@ extern "C"
       forward_kernel<<<dimGrid, dimBlock>>>(
           v, wfp, wfc, psiyn, psixn, psiy, psix, zetay, zetax,
           dwdv + (t / step_ratio_h) * ny_h * nx_h * n_shots_h, ay, ax, by, bx,
-          dbydy, dbxdx, v_requires_grad && (((t + start_t) % step_ratio_h) == 0));
+          dbydy, dbxdx,
+          v_requires_grad && (((t + start_t) % step_ratio_h) == 0));
       CHECK_KERNEL_ERROR
       if (n_sources_per_shot_h > 0) {
         add_sources<<<dimGrid_sources, dimBlock_sources>>>(
@@ -300,7 +366,8 @@ extern "C"
       forward_kernel<<<dimGrid, dimBlock>>>(
           v, wfc, wfp, psiy, psix, psiyn, psixn, zetay, zetax,
           dwdv + (t / step_ratio_h) * ny_h * nx_h * n_shots_h, ay, ax, by, bx,
-          dbydy, dbxdx, v_requires_grad && (((t + start_t) % step_ratio_h) == 0));
+          dbydy, dbxdx,
+          v_requires_grad && (((t + start_t) % step_ratio_h) == 0));
       CHECK_KERNEL_ERROR
       if (n_sources_per_shot_h > 0) {
         add_sources<<<dimGrid_sources, dimBlock_sources>>>(
@@ -345,10 +412,11 @@ extern "C"
             int64_t const nt, int64_t const n_shots_h, int64_t const ny_h,
             int64_t const nx_h, int64_t const n_sources_per_shot_h,
             int64_t const n_receivers_per_shot_h, int64_t const step_ratio_h,
-            bool const v_requires_grad, bool const v_batched_h, int64_t start_t, int64_t const pml_y0_h,
-            int64_t const pml_y1_h, int64_t const pml_x0_h,
-            int64_t const pml_x1_h, int64_t const device) {
-  dim3 dimBlock(32, 16, 1);
+            bool const v_requires_grad, bool const v_batched_h, int64_t start_t,
+            int64_t const pml_y0_h, int64_t const pml_y1_h,
+            int64_t const pml_x0_h, int64_t const pml_x1_h,
+            int64_t const device) {
+  dim3 dimBlock(32, 8, 1);
   unsigned int gridx = ceil_div(nx_h - 2 * FD_PAD, dimBlock.x);
   unsigned int gridy = ceil_div(ny_h - 2 * FD_PAD, dimBlock.y);
   unsigned int gridz = ceil_div(n_shots_h, dimBlock.z);

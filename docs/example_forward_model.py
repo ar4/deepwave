@@ -1,15 +1,20 @@
-import torch
+"""This script demonstrates forward modeling using Deepwave with the Marmousi velocity model.
+It loads the Marmousi Vp model, sets up source and receiver locations,
+propagates seismic waves, and generates synthetic receiver data.
+The results are then plotted and saved to a file.
+"""
+
 import matplotlib.pyplot as plt
+import torch
+
 import deepwave
 from deepwave import scalar
 
-device = torch.device('cuda' if torch.cuda.is_available()
-                      else 'cpu')
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 ny = 2301
 nx = 751
 dx = 4.0
-v = torch.from_file('marmousi_vp.bin',
-                    size=ny*nx).reshape(ny, nx).to(device)
+v = torch.from_file("marmousi_vp.bin", size=ny * nx).reshape(ny, nx).to(device)
 
 n_shots = 115
 
@@ -29,21 +34,28 @@ dt = 0.004
 peak_time = 1.5 / freq
 
 # source_locations
-source_locations = torch.zeros(n_shots, n_sources_per_shot, 2,
-                               dtype=torch.long, device=device)
+source_locations = torch.zeros(
+    n_shots,
+    n_sources_per_shot,
+    2,
+    dtype=torch.long,
+    device=device,
+)
 source_locations[..., 1] = source_depth
-source_locations[:, 0, 0] = (torch.arange(n_shots) * d_source +
-                             first_source)
+source_locations[:, 0, 0] = torch.arange(n_shots) * d_source + first_source
 
 # receiver_locations
-receiver_locations = torch.zeros(n_shots, n_receivers_per_shot, 2,
-                                 dtype=torch.long, device=device)
+receiver_locations = torch.zeros(
+    n_shots,
+    n_receivers_per_shot,
+    2,
+    dtype=torch.long,
+    device=device,
+)
 receiver_locations[..., 1] = receiver_depth
 receiver_locations[:, :, 0] = (
-    (torch.arange(n_receivers_per_shot) * d_receiver +
-     first_receiver)
-    .repeat(n_shots, 1)
-)
+    torch.arange(n_receivers_per_shot) * d_receiver + first_receiver
+).repeat(n_shots, 1)
 
 # source_amplitudes
 source_amplitudes = (
@@ -53,25 +65,42 @@ source_amplitudes = (
 )
 
 # Propagate
-out = scalar(v, dx, dt, source_amplitudes=source_amplitudes,
-             source_locations=source_locations,
-             receiver_locations=receiver_locations,
-             accuracy=8,
-             pml_freq=freq)
+out = scalar(
+    v,
+    dx,
+    dt,
+    source_amplitudes=source_amplitudes,
+    source_locations=source_locations,
+    receiver_locations=receiver_locations,
+    accuracy=8,
+    pml_freq=freq,
+)
 
 # Plot
 receiver_amplitudes = out[-1]
-vmin, vmax = torch.quantile(receiver_amplitudes[0],
-                            torch.tensor([0.05, 0.95]).to(device))
+vmin, vmax = torch.quantile(
+    receiver_amplitudes[0],
+    torch.tensor([0.05, 0.95]).to(device),
+)
 _, ax = plt.subplots(1, 2, figsize=(10.5, 7), sharey=True)
-ax[0].imshow(receiver_amplitudes[57].cpu().T, aspect='auto',
-             cmap='gray', vmin=vmin, vmax=vmax)
-ax[1].imshow(receiver_amplitudes[:, 192].cpu().T, aspect='auto',
-             cmap='gray', vmin=vmin, vmax=vmax)
+ax[0].imshow(
+    receiver_amplitudes[57].cpu().T,
+    aspect="auto",
+    cmap="gray",
+    vmin=vmin,
+    vmax=vmax,
+)
+ax[1].imshow(
+    receiver_amplitudes[:, 192].cpu().T,
+    aspect="auto",
+    cmap="gray",
+    vmin=vmin,
+    vmax=vmax,
+)
 ax[0].set_xlabel("Channel")
 ax[0].set_ylabel("Time Sample")
 ax[1].set_xlabel("Shot")
 plt.tight_layout()
-plt.savefig('example_forward_model.jpg')
+plt.savefig("example_forward_model.jpg")
 
-receiver_amplitudes.cpu().numpy().tofile('marmousi_data.bin')
+receiver_amplitudes.cpu().numpy().tofile("marmousi_data.bin")

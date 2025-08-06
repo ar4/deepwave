@@ -1,6 +1,12 @@
 #ifndef DW_COMMON_H
 #define DW_COMMON_H
 
+/* common.h
+ * Small collection of finite-difference helper macros used by CPU and GPU
+ * implementations. DIFF* macros implement spatial FD operators; FD_PAD is
+ * the stencil 'radius' (number of guard cells required to evaluate stencils).
+ */
+
 #if DW_ACCURACY == 2
 
 #define DIFFY1(a) (((DW_DTYPE)(1.0 / 2.0) * (a(1, 0) - a(-1, 0))) * rdy)
@@ -85,7 +91,7 @@
     (DW_DTYPE)(8.0 / 315.0) * (a(0, 3) + a(0, -3)) +   \
     (DW_DTYPE)(-1.0 / 560.0) * (a(0, 4) + a(0, -4))) * \
    rdx2)
-#define FD_PAD 4
+#define FD_PAD 4  // Number of grid points padded for finite difference stencils
 
 #else
 
@@ -94,10 +100,11 @@
 #endif /* DW_ACCURACY */
 
 #ifdef DW_DEBUG
-#define CHECK_KERNEL_ERROR { \
-    gpuErrchk(cudaPeekAtLastError()); \
+#define CHECK_KERNEL_ERROR              \
+  {                                     \
+    gpuErrchk(cudaPeekAtLastError());   \
     gpuErrchk(cudaDeviceSynchronize()); \
-}
+  }
 #else
 #define CHECK_KERNEL_ERROR gpuErrchk(cudaPeekAtLastError());
 #endif /* DW_DEBUG */

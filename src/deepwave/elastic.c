@@ -1,13 +1,47 @@
 /*
-vx  sii | vx  sii | vx  sii
-SXY-VY--|-SXY-VY--|-SXY vy
-[-------------------]------
-VX  SII | VX  SII | VX  sii
-SXY VY  | SXY VY  | SXY vy
-[-------------------]------
-VX  SII | VX  SII | VX  sii
-SXY-VY--|-SXY-VY--|-SXY vy
-*/
+ * Elastic wave equation propagator
+ */
+
+/*
+ * This file contains the C implementation of the elastic wave equation
+ * propagator. It is compiled multiple times with different options
+ * to generate a set of functions that can be called from Python.
+ * The options are specified by the following macros:
+ *  * DW_ACCURACY: The order of accuracy of the spatial finite difference
+ *    stencil. Possible values are 2 and 4.
+ *  * DW_DTYPE: The floating point type to use for calculations. Possible
+ *    values are float and double.
+ */
+
+/*
+ * The propagator solves the 2D elastic wave equation using a velocity-stress
+ * formulation on a staggered grid. The free surface boundary condition is
+ * implemented using the W-AFDA method of Kristek et al. (2002), and the
+ * PML implementation is based on the C-PML method of Komatitsch and
+ * Martin (2007).
+ *
+ * The code is structured to maximize performance by using macros to
+ * generate the code for each of the nine regions of the computational
+ * domain (a central region, four edge regions, and four corner regions),
+ * and by using OpenMP to parallelize the loops over shots.
+ */
+
+/*
+ * The staggered grid used in this propagator is shown below.
+ * Lowercase letters indicate that the component is not used.
+ * The model parameters (lambda, mu, and buoyancy) are at the same
+ * locations as vx.
+ *
+ * o--------->x
+ * | vx  sii | vx  sii | vx  sii
+ * | SXY=VY==|=SXY=VY==|=SXY vy
+ * v [-------------------]------
+ * y VX  SII | VX  SII | VX  sii
+ *   SXY VY  | SXY VY  | SXY vy
+ *   [-------------------]------
+ *   VX  SII | VX  SII | VX  sii
+ *   SXY=VY==|=SXY=VY==|=SXY vy
+ */
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -18,9 +52,10 @@ SXY-VY--|-SXY-VY--|-SXY vy
 #include "common.h"
 #include "common_cpu.h"
 
-#define CAT_I(name, accuracy, dtype) elastic_iso_##accuracy##_##dtype##_##name
-#define CAT(name, accuracy, dtype) CAT_I(name, accuracy, dtype)
-#define FUNC(name) CAT(name, DW_ACCURACY, DW_DTYPE)
+#define CAT_I(name, accuracy, dtype, device) \
+  elastic_iso_##accuracy##_##dtype##_##name##_##device
+#define CAT(name, accuracy, dtype, device) CAT_I(name, accuracy, dtype, device)
+#define FUNC(name) CAT(name, DW_ACCURACY, DW_DTYPE, DW_DEVICE)
 
 #if DW_ACCURACY == 2
 #elif DW_ACCURACY == 4
@@ -28,7 +63,7 @@ SXY-VY--|-SXY-VY--|-SXY vy
 #error DW_ACCURACY must be specified and either 2 or 4
 #endif /* DW_ACCURACY */
 
-#define A DW_ACCURACY
+#define A DW_ACCURACY  // Macro for finite difference accuracy order
 
 #define FORWARD_KERNEL_V(pml_y, pml_x, buoyancy_requires_grad)                 \
   {                                                                            \
@@ -1175,14 +1210,16 @@ static void add_pressure(DW_DTYPE *__restrict const sigmayy,
   }
 }
 
-static inline void record_pressure(DW_DTYPE const* __restrict sigmayy,
-				   DW_DTYPE const* __restrict sigmaxx,
-                                  int64_t const* __restrict locations,
-                                  DW_DTYPE* __restrict amplitudes, int64_t n) {
+static inline void record_pressure(DW_DTYPE const *__restrict sigmayy,
+                                   DW_DTYPE const *__restrict sigmaxx,
+                                   int64_t const *__restrict locations,
+                                   DW_DTYPE *__restrict amplitudes, int64_t n) {
   int64_t i;
 #pragma omp simd
   for (i = 0; i < n; ++i) {
-    if (0 <= locations[i]) amplitudes[i] = -(sigmayy[locations[i]] + sigmaxx[locations[i]]) / (DW_DTYPE)2;
+    if (0 <= locations[i])
+      amplitudes[i] =
+          -(sigmayy[locations[i]] + sigmaxx[locations[i]]) / (DW_DTYPE)2;
   }
 }
 
@@ -1452,7 +1489,9 @@ __attribute__ ((noinline))
                                int64_t const pml_x0, int64_t const pml_x1) {
   int64_t y, x, y_begin_y, y_end_y, x_begin_y, x_end_y, y_begin_x, y_end_x,
       x_begin_x, x_end_x;
+  // Check if gradients are required for buoyancy (density)
   if (buoyancy_requires_grad) {
+    // Execute forward kernel for all PML configurations with gradients
     FORWARD_KERNEL_V(0, 0, 1)
     FORWARD_KERNEL_V(0, 1, 1)
     FORWARD_KERNEL_V(0, 2, 1)
@@ -1463,6 +1502,7 @@ __attribute__ ((noinline))
     FORWARD_KERNEL_V(2, 1, 1)
     FORWARD_KERNEL_V(2, 2, 1)
   } else {
+    // Execute forward kernel for all PML configurations without gradients
     FORWARD_KERNEL_V(0, 0, 0)
     FORWARD_KERNEL_V(0, 1, 0)
     FORWARD_KERNEL_V(0, 2, 0)
@@ -1775,10 +1815,9 @@ __declspec(dllexport)
         int64_t const n_receivers_p_per_shot, int64_t const step_ratio,
         bool const lamb_requires_grad, bool const mu_requires_grad,
         bool const buoyancy_requires_grad, bool const lamb_batched,
-	bool const mu_batched, bool const buoyancy_batched, int64_t start_t,
-	int64_t const pml_y0,
-        int64_t const pml_y1, int64_t const pml_x0, int64_t const pml_x1,
-        int64_t const n_threads) {
+        bool const mu_batched, bool const buoyancy_batched, int64_t start_t,
+        int64_t const pml_y0, int64_t const pml_y1, int64_t const pml_x0,
+        int64_t const pml_x1, int64_t const n_threads) {
   int64_t shot;
   set_fd_coeffs_y(dy);
   set_fd_coeffs_x(dx);
@@ -1792,9 +1831,11 @@ __declspec(dllexport)
     int64_t const riy = shot * n_receivers_y_per_shot;
     int64_t const rix = shot * n_receivers_x_per_shot;
     int64_t const rip = shot * n_receivers_p_per_shot;
-    DW_DTYPE const* __restrict const lamb_shot = lamb_batched ? lamb + si : lamb;
-    DW_DTYPE const* __restrict const mu_shot = mu_batched ? mu + si : mu;
-    DW_DTYPE const* __restrict const buoyancy_shot = buoyancy_batched ? buoyancy + si : buoyancy;
+    DW_DTYPE const *__restrict const lamb_shot =
+        lamb_batched ? lamb + si : lamb;
+    DW_DTYPE const *__restrict const mu_shot = mu_batched ? mu + si : mu;
+    DW_DTYPE const *__restrict const buoyancy_shot =
+        buoyancy_batched ? buoyancy + si : buoyancy;
     int64_t t;
 
     for (t = 0; t < nt; ++t) {
@@ -1811,16 +1852,16 @@ __declspec(dllexport)
       }
       if (n_receivers_p_per_shot > 0) {
         record_pressure(sigmayy + si, sigmaxx + si, receivers_p_i + rip,
-                              r_p + t * n_shots * n_receivers_p_per_shot + rip,
-                              n_receivers_p_per_shot);
+                        r_p + t * n_shots * n_receivers_p_per_shot + rip,
+                        n_receivers_p_per_shot);
       }
-      forward_shot_v(buoyancy_shot, vy + si, vx + si, sigmayy + si, sigmaxy + si,
-                     sigmaxx + si, m_sigmayyy + si, m_sigmaxyy + si,
-                     m_sigmaxyx + si, m_sigmaxxx + si, dvydbuoyancy + store_i,
-                     dvxdbuoyancy + store_i, ay, ayh, ax, axh, by, byh, bx, bxh,
-                     dt, ny, nx,
-                     buoyancy_requires_grad && (((t + start_t) % step_ratio) == 0), pml_y0,
-                     pml_y1, pml_x0, pml_x1);
+      forward_shot_v(
+          buoyancy_shot, vy + si, vx + si, sigmayy + si, sigmaxy + si,
+          sigmaxx + si, m_sigmayyy + si, m_sigmaxyy + si, m_sigmaxyx + si,
+          m_sigmaxxx + si, dvydbuoyancy + store_i, dvxdbuoyancy + store_i, ay,
+          ayh, ax, axh, by, byh, bx, bxh, dt, ny, nx,
+          buoyancy_requires_grad && (((t + start_t) % step_ratio) == 0), pml_y0,
+          pml_y1, pml_x0, pml_x1);
 
       if (n_sources_y_per_shot > 0) {
         add_to_wavefield(vy + si, sources_y_i + siy,
@@ -1832,14 +1873,14 @@ __declspec(dllexport)
                          f_x + t * n_shots * n_sources_x_per_shot + six,
                          n_sources_x_per_shot);
       }
-      forward_shot_sigma(lamb_shot, mu_shot, vy + si, vx + si, sigmayy + si, sigmaxy + si,
-                         sigmaxx + si, m_vyy + si, m_vyx + si, m_vxy + si,
-                         m_vxx + si, dvydy_store + store_i,
-                         dvxdx_store + store_i, dvydxdvxdy_store + store_i, ay,
-                         ayh, ax, axh, by, byh, bx, bxh, dt, ny, nx,
-                         lamb_requires_grad && (((t + start_t) % step_ratio) == 0),
-                         mu_requires_grad && (((t + start_t) % step_ratio) == 0), pml_y0,
-                         pml_y1, pml_x0, pml_x1);
+      forward_shot_sigma(
+          lamb_shot, mu_shot, vy + si, vx + si, sigmayy + si, sigmaxy + si,
+          sigmaxx + si, m_vyy + si, m_vyx + si, m_vxy + si, m_vxx + si,
+          dvydy_store + store_i, dvxdx_store + store_i,
+          dvydxdvxdy_store + store_i, ay, ayh, ax, axh, by, byh, bx, bxh, dt,
+          ny, nx, lamb_requires_grad && (((t + start_t) % step_ratio) == 0),
+          mu_requires_grad && (((t + start_t) % step_ratio) == 0), pml_y0,
+          pml_y1, pml_x0, pml_x1);
     }
     if (n_receivers_y_per_shot > 0) {
       record_from_wavefield(vy + si, receivers_y_i + riy,
@@ -1909,11 +1950,10 @@ __declspec(dllexport)
         int64_t const n_receivers_p_per_shot, int64_t const step_ratio,
         bool const lamb_requires_grad, bool const mu_requires_grad,
         bool const buoyancy_requires_grad, bool const lamb_batched,
-	bool const mu_batched, bool const buoyancy_batched, int64_t start_t,
-	int64_t const spml_y0,
-        int64_t const spml_y1, int64_t const spml_x0, int64_t const spml_x1,
-        int64_t const vpml_y0, int64_t const vpml_y1, int64_t const vpml_x0,
-        int64_t const vpml_x1, int64_t const n_threads) {
+        bool const mu_batched, bool const buoyancy_batched, int64_t start_t,
+        int64_t const spml_y0, int64_t const spml_y1, int64_t const spml_x0,
+        int64_t const spml_x1, int64_t const vpml_y0, int64_t const vpml_y1,
+        int64_t const vpml_x0, int64_t const vpml_x1, int64_t const n_threads) {
   int64_t shot;
   set_fd_coeffs_y(dy);
   set_fd_coeffs_x(dx);
@@ -1935,21 +1975,23 @@ __declspec(dllexport)
     int64_t const grad_lamb_i = lamb_batched ? si : threadi;
     int64_t const grad_mu_i = mu_batched ? si : threadi;
     int64_t const grad_buoyancy_i = buoyancy_batched ? si : threadi;
-    DW_DTYPE const* __restrict const lamb_shot = lamb_batched ? lamb + si : lamb;
-    DW_DTYPE const* __restrict const mu_shot = mu_batched ? mu + si : mu;
-    DW_DTYPE const* __restrict const buoyancy_shot = buoyancy_batched ? buoyancy + si : buoyancy;
+    DW_DTYPE const *__restrict const lamb_shot =
+        lamb_batched ? lamb + si : lamb;
+    DW_DTYPE const *__restrict const mu_shot = mu_batched ? mu + si : mu;
+    DW_DTYPE const *__restrict const buoyancy_shot =
+        buoyancy_batched ? buoyancy + si : buoyancy;
     int64_t t = nt;
 
-      if (n_receivers_y_per_shot > 0 && nt > 0) {
-        add_to_wavefield(vy + si, receivers_y_i + riy,
-                         grad_r_y + t * n_shots * n_receivers_y_per_shot + riy,
-                         n_receivers_y_per_shot);
-      }
-      if (n_receivers_x_per_shot > 0 && nt > 0) {
-        add_to_wavefield(vx + si, receivers_x_i + rix,
-                         grad_r_x + t * n_shots * n_receivers_x_per_shot + rix,
-                         n_receivers_x_per_shot);
-      }
+    if (n_receivers_y_per_shot > 0 && nt > 0) {
+      add_to_wavefield(vy + si, receivers_y_i + riy,
+                       grad_r_y + t * n_shots * n_receivers_y_per_shot + riy,
+                       n_receivers_y_per_shot);
+    }
+    if (n_receivers_x_per_shot > 0 && nt > 0) {
+      add_to_wavefield(vx + si, receivers_x_i + rix,
+                       grad_r_x + t * n_shots * n_receivers_x_per_shot + rix,
+                       n_receivers_x_per_shot);
+    }
     for (t = nt - 1; t >= 0; --t) {
       int64_t store_i = (t / step_ratio) * n_shots * ny * nx + shot * ny * nx;
       if ((nt - 1 - t) & 1) {
@@ -1957,37 +1999,36 @@ __declspec(dllexport)
             lamb_shot, mu_shot, buoyancy_shot,
             grad_r_y + t * n_shots * n_receivers_y_per_shot + riy,
             grad_r_x + t * n_shots * n_receivers_x_per_shot + rix,
-            grad_r_p + t * n_shots * n_receivers_p_per_shot + rip,
-	    vy + si, vx + si,
-            sigmayy + si, sigmaxy + si, sigmaxx + si, m_vyy + si, m_vyx + si,
-            m_vxy + si, m_vxx + si, m_sigmayyyn + si, m_sigmaxyyn + si,
-            m_sigmaxyxn + si, m_sigmaxxxn + si, m_sigmayyy + si,
-            m_sigmaxyy + si, m_sigmaxyx + si, m_sigmaxxx + si,
+            grad_r_p + t * n_shots * n_receivers_p_per_shot + rip, vy + si,
+            vx + si, sigmayy + si, sigmaxy + si, sigmaxx + si, m_vyy + si,
+            m_vyx + si, m_vxy + si, m_vxx + si, m_sigmayyyn + si,
+            m_sigmaxyyn + si, m_sigmaxyxn + si, m_sigmaxxxn + si,
+            m_sigmayyy + si, m_sigmaxyy + si, m_sigmaxyx + si, m_sigmaxxx + si,
             dvydbuoyancy + store_i, dvxdbuoyancy + store_i,
             dvydy_store + store_i, dvxdx_store + store_i,
             dvydxdvxdy_store + store_i,
             grad_f_y + t * n_shots * n_sources_y_per_shot + siy,
             grad_f_x + t * n_shots * n_sources_x_per_shot + six,
             grad_lamb_thread + grad_lamb_i, grad_mu_thread + grad_mu_i,
-            grad_buoyancy_thread + grad_buoyancy_i, ay, ayh, ax, axh, by, byh, bx, bxh,
-            sources_y_i + siy, sources_x_i + six, receivers_y_i + riy,
+            grad_buoyancy_thread + grad_buoyancy_i, ay, ayh, ax, axh, by, byh,
+            bx, bxh, sources_y_i + siy, sources_x_i + six, receivers_y_i + riy,
             receivers_x_i + rix, receivers_p_i + rip, dt, ny, nx,
             n_sources_y_per_shot, n_sources_x_per_shot, n_receivers_y_per_shot,
             n_receivers_x_per_shot, n_receivers_p_per_shot, step_ratio,
             lamb_requires_grad && (((t + start_t) % step_ratio) == 0),
             mu_requires_grad && (((t + start_t) % step_ratio) == 0),
-            buoyancy_requires_grad && (((t + start_t) % step_ratio) == 0), spml_y0, spml_y1,
-            spml_x0, spml_x1, vpml_y0, vpml_y1, vpml_x0, vpml_x1);
+            buoyancy_requires_grad && (((t + start_t) % step_ratio) == 0),
+            spml_y0, spml_y1, spml_x0, spml_x1, vpml_y0, vpml_y1, vpml_x0,
+            vpml_x1);
       } else {
         backward_shot(
             lamb_shot, mu_shot, buoyancy_shot,
             grad_r_y + t * n_shots * n_receivers_y_per_shot + riy,
             grad_r_x + t * n_shots * n_receivers_x_per_shot + rix,
-            grad_r_p + t * n_shots * n_receivers_p_per_shot + rip,
-            vy + si, vx + si,
-            sigmayy + si, sigmaxy + si, sigmaxx + si, m_vyy + si, m_vyx + si,
-            m_vxy + si, m_vxx + si, m_sigmayyy + si, m_sigmaxyy + si,
-            m_sigmaxyx + si, m_sigmaxxx + si, m_sigmayyyn + si,
+            grad_r_p + t * n_shots * n_receivers_p_per_shot + rip, vy + si,
+            vx + si, sigmayy + si, sigmaxy + si, sigmaxx + si, m_vyy + si,
+            m_vyx + si, m_vxy + si, m_vxx + si, m_sigmayyy + si,
+            m_sigmaxyy + si, m_sigmaxyx + si, m_sigmaxxx + si, m_sigmayyyn + si,
             m_sigmaxyyn + si, m_sigmaxyxn + si, m_sigmaxxxn + si,
             dvydbuoyancy + store_i, dvxdbuoyancy + store_i,
             dvydy_store + store_i, dvxdx_store + store_i,
@@ -1995,15 +2036,16 @@ __declspec(dllexport)
             grad_f_y + t * n_shots * n_sources_y_per_shot + siy,
             grad_f_x + t * n_shots * n_sources_x_per_shot + six,
             grad_lamb_thread + grad_lamb_i, grad_mu_thread + grad_mu_i,
-            grad_buoyancy_thread + grad_buoyancy_i, ay, ayh, ax, axh, by, byh, bx, bxh,
-            sources_y_i + siy, sources_x_i + six, receivers_y_i + riy,
+            grad_buoyancy_thread + grad_buoyancy_i, ay, ayh, ax, axh, by, byh,
+            bx, bxh, sources_y_i + siy, sources_x_i + six, receivers_y_i + riy,
             receivers_x_i + rix, receivers_p_i + rip, dt, ny, nx,
             n_sources_y_per_shot, n_sources_x_per_shot, n_receivers_y_per_shot,
             n_receivers_x_per_shot, n_receivers_p_per_shot, step_ratio,
             lamb_requires_grad && (((t + start_t) % step_ratio) == 0),
             mu_requires_grad && (((t + start_t) % step_ratio) == 0),
-            buoyancy_requires_grad && (((t + start_t) % step_ratio) == 0), spml_y0, spml_y1,
-            spml_x0, spml_x1, vpml_y0, vpml_y1, vpml_x0, vpml_x1);
+            buoyancy_requires_grad && (((t + start_t) % step_ratio) == 0),
+            spml_y0, spml_y1, spml_x0, spml_x1, vpml_y0, vpml_y1, vpml_x0,
+            vpml_x1);
       }
     }
   }
