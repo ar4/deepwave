@@ -399,22 +399,22 @@ class ScalarBornForwardFunc(torch.autograd.Function):
             aux = v.get_device()
             if dtype == torch.float32:
                 if accuracy == 2:
-                    forward = deepwave.dll_cuda.scalar_born_iso_2_float_forward
+                    forward = deepwave.dll.scalar_born_iso_2_float_forward_cuda
                 elif accuracy == 4:
-                    forward = deepwave.dll_cuda.scalar_born_iso_4_float_forward
+                    forward = deepwave.dll.scalar_born_iso_4_float_forward_cuda
                 elif accuracy == 6:
-                    forward = deepwave.dll_cuda.scalar_born_iso_6_float_forward
+                    forward = deepwave.dll.scalar_born_iso_6_float_forward_cuda
                 else:
-                    forward = deepwave.dll_cuda.scalar_born_iso_8_float_forward
+                    forward = deepwave.dll.scalar_born_iso_8_float_forward_cuda
             else:
                 if accuracy == 2:
-                    forward = deepwave.dll_cuda.scalar_born_iso_2_double_forward
+                    forward = deepwave.dll.scalar_born_iso_2_double_forward_cuda
                 elif accuracy == 4:
-                    forward = deepwave.dll_cuda.scalar_born_iso_4_double_forward
+                    forward = deepwave.dll.scalar_born_iso_4_double_forward_cuda
                 elif accuracy == 6:
-                    forward = deepwave.dll_cuda.scalar_born_iso_6_double_forward
+                    forward = deepwave.dll.scalar_born_iso_6_double_forward_cuda
                 else:
-                    forward = deepwave.dll_cuda.scalar_born_iso_8_double_forward
+                    forward = deepwave.dll.scalar_born_iso_8_double_forward_cuda
         else:
             if deepwave.use_openmp:
                 aux = min(n_shots, torch.get_num_threads())
@@ -422,22 +422,22 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                 aux = 1
             if dtype == torch.float32:
                 if accuracy == 2:
-                    forward = deepwave.dll_cpu.scalar_born_iso_2_float_forward
+                    forward = deepwave.dll.scalar_born_iso_2_float_forward_cpu
                 elif accuracy == 4:
-                    forward = deepwave.dll_cpu.scalar_born_iso_4_float_forward
+                    forward = deepwave.dll.scalar_born_iso_4_float_forward_cpu
                 elif accuracy == 6:
-                    forward = deepwave.dll_cpu.scalar_born_iso_6_float_forward
+                    forward = deepwave.dll.scalar_born_iso_6_float_forward_cpu
                 else:
-                    forward = deepwave.dll_cpu.scalar_born_iso_8_float_forward
+                    forward = deepwave.dll.scalar_born_iso_8_float_forward_cpu
             else:
                 if accuracy == 2:
-                    forward = deepwave.dll_cpu.scalar_born_iso_2_double_forward
+                    forward = deepwave.dll.scalar_born_iso_2_double_forward_cpu
                 elif accuracy == 4:
-                    forward = deepwave.dll_cpu.scalar_born_iso_4_double_forward
+                    forward = deepwave.dll.scalar_born_iso_4_double_forward_cpu
                 elif accuracy == 6:
-                    forward = deepwave.dll_cpu.scalar_born_iso_6_double_forward
+                    forward = deepwave.dll.scalar_born_iso_6_double_forward_cpu
                 else:
-                    forward = deepwave.dll_cpu.scalar_born_iso_8_double_forward
+                    forward = deepwave.dll.scalar_born_iso_8_double_forward_cpu
 
         if wfc.numel() > 0 and nt > 0:
             start_t = 0
@@ -624,30 +624,30 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                 grad_scatter_tmp_ptr = grad_scatter_tmp.data_ptr()
             if dtype == torch.float32:
                 if accuracy == 2:
-                    backward = deepwave.dll_cuda.scalar_born_iso_2_float_backward
-                    backward_sc = deepwave.dll_cuda.scalar_born_iso_2_float_backward_sc
+                    backward = deepwave.dll.scalar_born_iso_2_float_backward_cuda
+                    backward_sc = deepwave.dll.scalar_born_iso_2_float_backward_sc_cuda
                 elif accuracy == 4:
-                    backward = deepwave.dll_cuda.scalar_born_iso_4_float_backward
-                    backward_sc = deepwave.dll_cuda.scalar_born_iso_4_float_backward_sc
+                    backward = deepwave.dll.scalar_born_iso_4_float_backward_cuda
+                    backward_sc = deepwave.dll.scalar_born_iso_4_float_backward_sc_cuda
                 elif accuracy == 6:
-                    backward = deepwave.dll_cuda.scalar_born_iso_6_float_backward
-                    backward_sc = deepwave.dll_cuda.scalar_born_iso_6_float_backward_sc
+                    backward = deepwave.dll.scalar_born_iso_6_float_backward_cuda
+                    backward_sc = deepwave.dll.scalar_born_iso_6_float_backward_sc_cuda
                 else:
-                    backward = deepwave.dll_cuda.scalar_born_iso_8_float_backward
-                    backward_sc = deepwave.dll_cuda.scalar_born_iso_8_float_backward_sc
+                    backward = deepwave.dll.scalar_born_iso_8_float_backward_cuda
+                    backward_sc = deepwave.dll.scalar_born_iso_8_float_backward_sc_cuda
             else:
                 if accuracy == 2:
-                    backward = deepwave.dll_cuda.scalar_born_iso_2_double_backward
-                    backward_sc = deepwave.dll_cuda.scalar_born_iso_2_double_backward_sc
+                    backward = deepwave.dll.scalar_born_iso_2_double_backward_cuda
+                    backward_sc = deepwave.dll.scalar_born_iso_2_double_backward_sc_cuda
                 elif accuracy == 4:
-                    backward = deepwave.dll_cuda.scalar_born_iso_4_double_backward
-                    backward_sc = deepwave.dll_cuda.scalar_born_iso_4_double_backward_sc
+                    backward = deepwave.dll.scalar_born_iso_4_double_backward_cuda
+                    backward_sc = deepwave.dll.scalar_born_iso_4_double_backward_sc_cuda
                 elif accuracy == 6:
-                    backward = deepwave.dll_cuda.scalar_born_iso_6_double_backward
-                    backward_sc = deepwave.dll_cuda.scalar_born_iso_6_double_backward_sc
+                    backward = deepwave.dll.scalar_born_iso_6_double_backward_cuda
+                    backward_sc = deepwave.dll.scalar_born_iso_6_double_backward_sc_cuda
                 else:
-                    backward = deepwave.dll_cuda.scalar_born_iso_8_double_backward
-                    backward_sc = deepwave.dll_cuda.scalar_born_iso_8_double_backward_sc
+                    backward = deepwave.dll.scalar_born_iso_8_double_backward_cuda
+                    backward_sc = deepwave.dll.scalar_born_iso_8_double_backward_sc_cuda
         else:
             if deepwave.use_openmp:
                 aux = min(n_shots, torch.get_num_threads())
@@ -663,30 +663,30 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                 grad_scatter_tmp_ptr = grad_scatter_tmp.data_ptr()
             if dtype == torch.float32:
                 if accuracy == 2:
-                    backward = deepwave.dll_cpu.scalar_born_iso_2_float_backward
-                    backward_sc = deepwave.dll_cpu.scalar_born_iso_2_float_backward_sc
+                    backward = deepwave.dll.scalar_born_iso_2_float_backward_cpu
+                    backward_sc = deepwave.dll.scalar_born_iso_2_float_backward_sc_cpu
                 elif accuracy == 4:
-                    backward = deepwave.dll_cpu.scalar_born_iso_4_float_backward
-                    backward_sc = deepwave.dll_cpu.scalar_born_iso_4_float_backward_sc
+                    backward = deepwave.dll.scalar_born_iso_4_float_backward_cpu
+                    backward_sc = deepwave.dll.scalar_born_iso_4_float_backward_sc_cpu
                 elif accuracy == 6:
-                    backward = deepwave.dll_cpu.scalar_born_iso_6_float_backward
-                    backward_sc = deepwave.dll_cpu.scalar_born_iso_6_float_backward_sc
+                    backward = deepwave.dll.scalar_born_iso_6_float_backward_cpu
+                    backward_sc = deepwave.dll.scalar_born_iso_6_float_backward_sc_cpu
                 else:
-                    backward = deepwave.dll_cpu.scalar_born_iso_8_float_backward
-                    backward_sc = deepwave.dll_cpu.scalar_born_iso_8_float_backward_sc
+                    backward = deepwave.dll.scalar_born_iso_8_float_backward_cpu
+                    backward_sc = deepwave.dll.scalar_born_iso_8_float_backward_sc_cpu
             else:
                 if accuracy == 2:
-                    backward = deepwave.dll_cpu.scalar_born_iso_2_double_backward
-                    backward_sc = deepwave.dll_cpu.scalar_born_iso_2_double_backward_sc
+                    backward = deepwave.dll.scalar_born_iso_2_double_backward_cpu
+                    backward_sc = deepwave.dll.scalar_born_iso_2_double_backward_sc_cpu
                 elif accuracy == 4:
-                    backward = deepwave.dll_cpu.scalar_born_iso_4_double_backward
-                    backward_sc = deepwave.dll_cpu.scalar_born_iso_4_double_backward_sc
+                    backward = deepwave.dll.scalar_born_iso_4_double_backward_cpu
+                    backward_sc = deepwave.dll.scalar_born_iso_4_double_backward_sc_cpu
                 elif accuracy == 6:
-                    backward = deepwave.dll_cpu.scalar_born_iso_6_double_backward
-                    backward_sc = deepwave.dll_cpu.scalar_born_iso_6_double_backward_sc
+                    backward = deepwave.dll.scalar_born_iso_6_double_backward_cpu
+                    backward_sc = deepwave.dll.scalar_born_iso_6_double_backward_sc_cpu
                 else:
-                    backward = deepwave.dll_cpu.scalar_born_iso_8_double_backward
-                    backward_sc = deepwave.dll_cpu.scalar_born_iso_8_double_backward_sc
+                    backward = deepwave.dll.scalar_born_iso_8_double_backward_cpu
+                    backward_sc = deepwave.dll.scalar_born_iso_8_double_backward_sc_cpu
 
         wfp = -wfp
         wfpsc = -wfpsc

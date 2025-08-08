@@ -742,14 +742,14 @@ class ElasticForwardFunc(torch.autograd.Function):
             aux = lamb.get_device()
             if dtype == torch.float32:
                 if accuracy == 2:
-                    forward = deepwave.dll_cuda.elastic_iso_2_float_forward
+                    forward = deepwave.dll.elastic_iso_2_float_forward_cuda
                 elif accuracy == 4:
-                    forward = deepwave.dll_cuda.elastic_iso_4_float_forward
+                    forward = deepwave.dll.elastic_iso_4_float_forward_cuda
             else:
                 if accuracy == 2:
-                    forward = deepwave.dll_cuda.elastic_iso_2_double_forward
+                    forward = deepwave.dll.elastic_iso_2_double_forward_cuda
                 elif accuracy == 4:
-                    forward = deepwave.dll_cuda.elastic_iso_4_double_forward
+                    forward = deepwave.dll.elastic_iso_4_double_forward_cuda
         else:
             if deepwave.use_openmp:
                 aux = min(n_shots, torch.get_num_threads())
@@ -757,14 +757,14 @@ class ElasticForwardFunc(torch.autograd.Function):
                 aux = 1
             if dtype == torch.float32:
                 if accuracy == 2:
-                    forward = deepwave.dll_cpu.elastic_iso_2_float_forward
+                    forward = deepwave.dll.elastic_iso_2_float_forward_cpu
                 elif accuracy == 4:
-                    forward = deepwave.dll_cpu.elastic_iso_4_float_forward
+                    forward = deepwave.dll.elastic_iso_4_float_forward_cpu
             else:
                 if accuracy == 2:
-                    forward = deepwave.dll_cpu.elastic_iso_2_double_forward
+                    forward = deepwave.dll.elastic_iso_2_double_forward_cpu
                 elif accuracy == 4:
-                    forward = deepwave.dll_cpu.elastic_iso_4_double_forward
+                    forward = deepwave.dll.elastic_iso_4_double_forward_cpu
 
         if vy.numel() > 0 and nt > 0:
             start_t = 0
@@ -993,14 +993,14 @@ class ElasticForwardFunc(torch.autograd.Function):
                 grad_buoyancy_tmp_ptr = grad_buoyancy_tmp.data_ptr()
             if dtype == torch.float32:
                 if accuracy == 2:
-                    backward = deepwave.dll_cuda.elastic_iso_2_float_backward
+                    backward = deepwave.dll.elastic_iso_2_float_backward_cuda
                 elif accuracy == 4:
-                    backward = deepwave.dll_cuda.elastic_iso_4_float_backward
+                    backward = deepwave.dll.elastic_iso_4_float_backward_cuda
             else:
                 if accuracy == 2:
-                    backward = deepwave.dll_cuda.elastic_iso_2_double_backward
+                    backward = deepwave.dll.elastic_iso_2_double_backward_cuda
                 elif accuracy == 4:
-                    backward = deepwave.dll_cuda.elastic_iso_4_double_backward
+                    backward = deepwave.dll.elastic_iso_4_double_backward_cuda
         else:
             if deepwave.use_openmp:
                 aux = min(n_shots, torch.get_num_threads())
@@ -1020,14 +1020,14 @@ class ElasticForwardFunc(torch.autograd.Function):
                 grad_buoyancy_tmp_ptr = grad_buoyancy_tmp.data_ptr()
             if dtype == torch.float32:
                 if accuracy == 2:
-                    backward = deepwave.dll_cpu.elastic_iso_2_float_backward
+                    backward = deepwave.dll.elastic_iso_2_float_backward_cpu
                 elif accuracy == 4:
-                    backward = deepwave.dll_cpu.elastic_iso_4_float_backward
+                    backward = deepwave.dll.elastic_iso_4_float_backward_cpu
             else:
                 if accuracy == 2:
-                    backward = deepwave.dll_cpu.elastic_iso_2_double_backward
+                    backward = deepwave.dll.elastic_iso_2_double_backward_cpu
                 elif accuracy == 4:
-                    backward = deepwave.dll_cpu.elastic_iso_4_double_backward
+                    backward = deepwave.dll.elastic_iso_4_double_backward_cpu
 
         if vy.numel() > 0 and nt > 0:
             start_t = 0

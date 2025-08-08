@@ -10,7 +10,7 @@ The key components are:
 
 1.  **Python Layer**: Provides the public API (`deepwave.scalar`, `deepwave.elastic`, etc.). It handles input validation, setup, and wrapping the core logic in `torch.autograd.Function` to enable backpropagation.
 2.  **Ctypes Interface**: A thin layer in `src/deepwave/__init__.py` that uses Python's `ctypes` library to load the compiled C/CUDA shared library and define the function signatures. This avoids a direct dependency on the Python C API, making the build process simpler and more robust against Python version changes.
-3.  **C/CUDA Layer**: Contains the high-performance implementations of the wave propagators. This code is compiled into a single shared library (`libdeepwave.so` on Linux) that the Python layer calls into.
+3.  **C/CUDA Layer**: Contains the high-performance implementations of the wave propagators. This code is compiled into a single shared library (`libdeepwave_C.so` on Linux) that the Python layer calls into.
 
 ## 2. Code Organization
 
@@ -21,16 +21,16 @@ The key components are:
     -   `scalar.py`, `elastic.py`, etc.: The public-facing Python modules for each propagator. They define the `torch.nn.Module` and functional interfaces.
     -   `*.c`, `*.cu`: The low-level C and CUDA implementations of the propagators.
     -   `*.h`: C header files, primarily for defining shared macros and function prototypes.
-    -   `build_*.sh`: Shell scripts responsible for compiling the C/CUDA code into a shared library.
 -   `tests/`: Unit and integration tests.
 
 ## 3. The Build System
 
-The C/CUDA code is compiled into a shared library by the shell scripts in `src/deepwave/` (e.g., `build_linux.sh`). This process is designed for performance and portability.
+The C/CUDA code is compiled into a shared library using `scikit-build-core` and CMake. This process is designed for performance and portability.
 
--   **Compile-Time Permutations**: To avoid runtime conditionals in the performance-critical loops, the C/CUDA source files are compiled multiple times, each with a different set of preprocessor macros. These macros, such as `DW_ACCURACY` and `DW_DTYPE`, create specialized versions of each function for different numerical accuracies (e.g., 2, 4, 6, 8) and data types (`float`, `double`).
--   **Function Naming**: The macros also control the function names in the compiled library, creating a unique name for each permutation. For example, the forward scalar propagator for 4th-order accuracy and `float` data type is named `scalar_iso_4_float_forward`.
--   **Output**: The build scripts produce a single shared library (e.g., `libdeepwave.so`) containing all the compiled function permutations.
+-   **CMake Configuration**: The `CMakeLists.txt` file orchestrates the compilation. It defines how C and CUDA source files are compiled and linked.
+-   **Compile-Time Permutations**: To avoid runtime conditionals in the performance-critical loops, the C/CUDA source files are compiled multiple times, each with a different set of preprocessor macros. These macros, such as `DW_ACCURACY`, `DW_DTYPE`, and `DW_DEVICE`, are passed by CMake to the compiler, creating specialized versions of each function for different numerical accuracies (e.g., 2, 4, 6, 8), data types (`float`, `double`), and devices (CPU, CUDA).
+-   **Function Naming**: CMake controls the function names in the compiled library, creating a unique name for each permutation. For example, the forward scalar propagator for 4th-order accuracy and `float` data type on the CPU is named `scalar_iso_4_float_forward_cpu`. For CUDA, the functions are suffixed with `_cuda` (e.g., `scalar_iso_4_float_forward_cuda`).
+-   **Output**: The build system produces a single shared library (e.g., `libdeepwave_C.so` on Linux) containing all the compiled function permutations.
 
 ## 4. The Python/C Interface (`__init__.py`)
 
@@ -55,7 +55,7 @@ Each propagator (e.g., scalar) consists of several connected parts:
     -   The `backward` method is responsible for computing the gradient. It calls the corresponding `backward` function from the C/CUDA library.
 
 3.  **C/CUDA Implementation (`scalar.c`, `scalar.cu`)**:
-    -   Contains the main entry-point functions (e.g., `scalar_iso_4_float_forward`) that are called from Python.
+    -   Contains the main entry-point functions (e.g., `scalar_iso_4_float_forward_cpu`) that are called from Python.
     -   These functions typically contain the main time-stepping loop.
     -   Inside the loop, they call a `_kernel` function (e.g., `forward_kernel`) that computes one time step of the wave equation.
     -   The kernels are heavily optimized and use macros to handle different boundary conditions (PML regions) without `if` statements in the inner loops.
@@ -81,12 +81,11 @@ To add a new propagator (e.g., `new_prop`), follow these steps:
     -   Write the core numerical logic for the forward and backward propagation. Follow the existing pattern of a main function containing the time loop, which in turn calls a kernel function for the core calculations.
     -   Use the `DW_ACCURACY` and `DW_DTYPE` macros to support compile-time permutations.
 
-3.  **Update the Build Scripts (`src/deepwave/build_*.sh`)**:
+3.  **Update the Build Scripts (`CMakeLists.txt`)**:
     -   Add your new `.c` and `.cu` files to the list of source files to be compiled.
-    -   Ensure they are included in the final link command that creates the shared library.
 
 4.  **Update the `ctypes` Interface (`src/deepwave/__init__.py`)**:
-    -   In the section that loads functions, add logic to load all permutations of your new propagator's functions (e.g., `new_prop_iso_2_float_forward`, etc.).
+    -   In the section that loads functions, add logic to load all permutations of your new propagator's functions (e.g., `new_prop_iso_2_float_forward_cpu`, etc.).
     -   For each loaded function, define its `argtypes` and `restype` to ensure correct data marshalling.
     -   Add the new propagator to the dispatch mechanism so the Python layer can find and call your compiled functions.
 

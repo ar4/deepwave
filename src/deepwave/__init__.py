@@ -12,7 +12,6 @@ For better computational performance, the code is written in C++ and
 CUDA.
 """
 
-import platform
 import ctypes
 from ctypes import c_void_p, c_int64, c_float, c_double, c_bool
 import pathlib
@@ -21,140 +20,18 @@ from deepwave.scalar_born import ScalarBorn, scalar_born
 from deepwave.elastic import Elastic, elastic
 import deepwave.wavelets
 import deepwave.location_interpolation
-if platform.system() == 'Linux':
-    dll_cpu = ctypes.CDLL(
-        str(
-            pathlib.Path(__file__).resolve().parent /
-            "libdeepwave_cpu_linux_x86_64.so"))
-    dll_cuda = ctypes.CDLL(
-        str(
-            pathlib.Path(__file__).resolve().parent /
-            "libdeepwave_cuda_linux_x86_64.so"))
-elif platform.system() == 'Darwin':
-    if platform.machine() == 'arm64':
-        dll_cpu = ctypes.CDLL(
-            str(
-                pathlib.Path(__file__).resolve().parent /
-                "libdeepwave_cpu_macos_arm64.dylib"))
-    else:
-        dll_cpu = ctypes.CDLL(
-            str(
-                pathlib.Path(__file__).resolve().parent /
-                "libdeepwave_cpu_macos_x86_64.dylib"))
-elif platform.system() == 'Windows':
-    dll_cpu = ctypes.CDLL(
-        str(
-            pathlib.Path(__file__).resolve().parent /
-            "libdeepwave_cpu_windows_x86_64.dll"))
-    dll_cuda = ctypes.CDLL(
-        str(
-            pathlib.Path(__file__).resolve().parent /
-            "libdeepwave_cuda_windows_x86_64.dll"))
-else:
-    raise RuntimeError("Unsupported OS or platform type")
+from ._version import __version__
+
+
+dll = ctypes.CDLL(str(pathlib.Path(__file__).resolve().parent / "libdeepwave_C.so"))
+
 # Check if was compiled with OpenMP support
 try:
-    dll_cpu.omp_get_num_threads
+    dll.omp_get_num_threads
     use_openmp = True
 except AttributeError:
     use_openmp = False
-dll_cpu.scalar_iso_2_float_forward.restype = None
-dll_cpu.scalar_iso_4_float_forward.restype = None
-dll_cpu.scalar_iso_6_float_forward.restype = None
-dll_cpu.scalar_iso_8_float_forward.restype = None
-dll_cpu.scalar_iso_2_double_forward.restype = None
-dll_cpu.scalar_iso_4_double_forward.restype = None
-dll_cpu.scalar_iso_6_double_forward.restype = None
-dll_cpu.scalar_iso_8_double_forward.restype = None
-dll_cpu.scalar_iso_2_float_backward.restype = None
-dll_cpu.scalar_iso_4_float_backward.restype = None
-dll_cpu.scalar_iso_6_float_backward.restype = None
-dll_cpu.scalar_iso_8_float_backward.restype = None
-dll_cpu.scalar_iso_2_double_backward.restype = None
-dll_cpu.scalar_iso_4_double_backward.restype = None
-dll_cpu.scalar_iso_6_double_backward.restype = None
-dll_cpu.scalar_iso_8_double_backward.restype = None
-dll_cpu.scalar_born_iso_2_float_forward.restype = None
-dll_cpu.scalar_born_iso_4_float_forward.restype = None
-dll_cpu.scalar_born_iso_6_float_forward.restype = None
-dll_cpu.scalar_born_iso_8_float_forward.restype = None
-dll_cpu.scalar_born_iso_2_double_forward.restype = None
-dll_cpu.scalar_born_iso_4_double_forward.restype = None
-dll_cpu.scalar_born_iso_6_double_forward.restype = None
-dll_cpu.scalar_born_iso_8_double_forward.restype = None
-dll_cpu.scalar_born_iso_2_float_backward.restype = None
-dll_cpu.scalar_born_iso_4_float_backward.restype = None
-dll_cpu.scalar_born_iso_6_float_backward.restype = None
-dll_cpu.scalar_born_iso_8_float_backward.restype = None
-dll_cpu.scalar_born_iso_2_double_backward.restype = None
-dll_cpu.scalar_born_iso_4_double_backward.restype = None
-dll_cpu.scalar_born_iso_6_double_backward.restype = None
-dll_cpu.scalar_born_iso_8_double_backward.restype = None
-dll_cpu.scalar_born_iso_2_float_backward_sc.restype = None
-dll_cpu.scalar_born_iso_4_float_backward_sc.restype = None
-dll_cpu.scalar_born_iso_6_float_backward_sc.restype = None
-dll_cpu.scalar_born_iso_8_float_backward_sc.restype = None
-dll_cpu.scalar_born_iso_2_double_backward_sc.restype = None
-dll_cpu.scalar_born_iso_4_double_backward_sc.restype = None
-dll_cpu.scalar_born_iso_6_double_backward_sc.restype = None
-dll_cpu.scalar_born_iso_8_double_backward_sc.restype = None
-dll_cpu.elastic_iso_2_float_forward.restype = None
-dll_cpu.elastic_iso_4_float_forward.restype = None
-dll_cpu.elastic_iso_2_double_forward.restype = None
-dll_cpu.elastic_iso_4_double_forward.restype = None
-dll_cpu.elastic_iso_2_float_backward.restype = None
-dll_cpu.elastic_iso_4_float_backward.restype = None
-dll_cpu.elastic_iso_2_double_backward.restype = None
-dll_cpu.elastic_iso_4_double_backward.restype = None
-if platform.system() != 'Darwin':
-    dll_cuda.scalar_iso_2_float_forward.restype = None
-    dll_cuda.scalar_iso_4_float_forward.restype = None
-    dll_cuda.scalar_iso_6_float_forward.restype = None
-    dll_cuda.scalar_iso_8_float_forward.restype = None
-    dll_cuda.scalar_iso_2_double_forward.restype = None
-    dll_cuda.scalar_iso_4_double_forward.restype = None
-    dll_cuda.scalar_iso_6_double_forward.restype = None
-    dll_cuda.scalar_iso_8_double_forward.restype = None
-    dll_cuda.scalar_iso_2_float_backward.restype = None
-    dll_cuda.scalar_iso_4_float_backward.restype = None
-    dll_cuda.scalar_iso_6_float_backward.restype = None
-    dll_cuda.scalar_iso_8_float_backward.restype = None
-    dll_cuda.scalar_iso_2_double_backward.restype = None
-    dll_cuda.scalar_iso_4_double_backward.restype = None
-    dll_cuda.scalar_iso_6_double_backward.restype = None
-    dll_cuda.scalar_iso_8_double_backward.restype = None
-    dll_cuda.scalar_born_iso_2_float_forward.restype = None
-    dll_cuda.scalar_born_iso_4_float_forward.restype = None
-    dll_cuda.scalar_born_iso_6_float_forward.restype = None
-    dll_cuda.scalar_born_iso_8_float_forward.restype = None
-    dll_cuda.scalar_born_iso_2_double_forward.restype = None
-    dll_cuda.scalar_born_iso_4_double_forward.restype = None
-    dll_cuda.scalar_born_iso_6_double_forward.restype = None
-    dll_cuda.scalar_born_iso_8_double_forward.restype = None
-    dll_cuda.scalar_born_iso_2_float_backward.restype = None
-    dll_cuda.scalar_born_iso_4_float_backward.restype = None
-    dll_cuda.scalar_born_iso_6_float_backward.restype = None
-    dll_cuda.scalar_born_iso_8_float_backward.restype = None
-    dll_cuda.scalar_born_iso_2_double_backward.restype = None
-    dll_cuda.scalar_born_iso_4_double_backward.restype = None
-    dll_cuda.scalar_born_iso_6_double_backward.restype = None
-    dll_cuda.scalar_born_iso_8_double_backward.restype = None
-    dll_cuda.scalar_born_iso_2_float_backward_sc.restype = None
-    dll_cuda.scalar_born_iso_4_float_backward_sc.restype = None
-    dll_cuda.scalar_born_iso_6_float_backward_sc.restype = None
-    dll_cuda.scalar_born_iso_8_float_backward_sc.restype = None
-    dll_cuda.scalar_born_iso_2_double_backward_sc.restype = None
-    dll_cuda.scalar_born_iso_4_double_backward_sc.restype = None
-    dll_cuda.scalar_born_iso_6_double_backward_sc.restype = None
-    dll_cuda.scalar_born_iso_8_double_backward_sc.restype = None
-    dll_cuda.elastic_iso_2_float_forward.restype = None
-    dll_cuda.elastic_iso_4_float_forward.restype = None
-    dll_cuda.elastic_iso_2_double_forward.restype = None
-    dll_cuda.elastic_iso_4_double_forward.restype = None
-    dll_cuda.elastic_iso_2_float_backward.restype = None
-    dll_cuda.elastic_iso_4_float_backward.restype = None
-    dll_cuda.elastic_iso_2_double_backward.restype = None
-    dll_cuda.elastic_iso_4_double_backward.restype = None
+
 scalar_iso_float_forward_argtypes = [
     c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
     c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
@@ -293,100 +170,43 @@ elastic_iso_double_backward_argtypes = [
     c_bool, c_bool, c_bool, c_int64, c_int64, c_int64, c_int64, c_int64, c_int64, c_int64, c_int64, c_int64,
     c_int64
 ]
-dll_cpu.scalar_iso_2_float_forward.argtypes = scalar_iso_float_forward_argtypes
-dll_cpu.scalar_iso_4_float_forward.argtypes = scalar_iso_float_forward_argtypes
-dll_cpu.scalar_iso_6_float_forward.argtypes = scalar_iso_float_forward_argtypes
-dll_cpu.scalar_iso_8_float_forward.argtypes = scalar_iso_float_forward_argtypes
-dll_cpu.scalar_iso_2_double_forward.argtypes = scalar_iso_double_forward_argtypes
-dll_cpu.scalar_iso_4_double_forward.argtypes = scalar_iso_double_forward_argtypes
-dll_cpu.scalar_iso_6_double_forward.argtypes = scalar_iso_double_forward_argtypes
-dll_cpu.scalar_iso_8_double_forward.argtypes = scalar_iso_double_forward_argtypes
-dll_cpu.scalar_iso_2_float_backward.argtypes = scalar_iso_float_backward_argtypes
-dll_cpu.scalar_iso_4_float_backward.argtypes = scalar_iso_float_backward_argtypes
-dll_cpu.scalar_iso_6_float_backward.argtypes = scalar_iso_float_backward_argtypes
-dll_cpu.scalar_iso_8_float_backward.argtypes = scalar_iso_float_backward_argtypes
-dll_cpu.scalar_iso_2_double_backward.argtypes = scalar_iso_double_backward_argtypes
-dll_cpu.scalar_iso_4_double_backward.argtypes = scalar_iso_double_backward_argtypes
-dll_cpu.scalar_iso_6_double_backward.argtypes = scalar_iso_double_backward_argtypes
-dll_cpu.scalar_iso_8_double_backward.argtypes = scalar_iso_double_backward_argtypes
-dll_cpu.scalar_born_iso_2_float_forward.argtypes = scalar_born_iso_float_forward_argtypes
-dll_cpu.scalar_born_iso_4_float_forward.argtypes = scalar_born_iso_float_forward_argtypes
-dll_cpu.scalar_born_iso_6_float_forward.argtypes = scalar_born_iso_float_forward_argtypes
-dll_cpu.scalar_born_iso_8_float_forward.argtypes = scalar_born_iso_float_forward_argtypes
-dll_cpu.scalar_born_iso_2_double_forward.argtypes = scalar_born_iso_double_forward_argtypes
-dll_cpu.scalar_born_iso_4_double_forward.argtypes = scalar_born_iso_double_forward_argtypes
-dll_cpu.scalar_born_iso_6_double_forward.argtypes = scalar_born_iso_double_forward_argtypes
-dll_cpu.scalar_born_iso_8_double_forward.argtypes = scalar_born_iso_double_forward_argtypes
-dll_cpu.scalar_born_iso_2_float_backward.argtypes = scalar_born_iso_float_backward_argtypes
-dll_cpu.scalar_born_iso_4_float_backward.argtypes = scalar_born_iso_float_backward_argtypes
-dll_cpu.scalar_born_iso_6_float_backward.argtypes = scalar_born_iso_float_backward_argtypes
-dll_cpu.scalar_born_iso_8_float_backward.argtypes = scalar_born_iso_float_backward_argtypes
-dll_cpu.scalar_born_iso_2_double_backward.argtypes = scalar_born_iso_double_backward_argtypes
-dll_cpu.scalar_born_iso_4_double_backward.argtypes = scalar_born_iso_double_backward_argtypes
-dll_cpu.scalar_born_iso_6_double_backward.argtypes = scalar_born_iso_double_backward_argtypes
-dll_cpu.scalar_born_iso_8_double_backward.argtypes = scalar_born_iso_double_backward_argtypes
-dll_cpu.scalar_born_iso_2_float_backward_sc.argtypes = scalar_born_iso_float_backward_sc_argtypes
-dll_cpu.scalar_born_iso_4_float_backward_sc.argtypes = scalar_born_iso_float_backward_sc_argtypes
-dll_cpu.scalar_born_iso_6_float_backward_sc.argtypes = scalar_born_iso_float_backward_sc_argtypes
-dll_cpu.scalar_born_iso_8_float_backward_sc.argtypes = scalar_born_iso_float_backward_sc_argtypes
-dll_cpu.scalar_born_iso_2_double_backward_sc.argtypes = scalar_born_iso_double_backward_sc_argtypes
-dll_cpu.scalar_born_iso_4_double_backward_sc.argtypes = scalar_born_iso_double_backward_sc_argtypes
-dll_cpu.scalar_born_iso_6_double_backward_sc.argtypes = scalar_born_iso_double_backward_sc_argtypes
-dll_cpu.scalar_born_iso_8_double_backward_sc.argtypes = scalar_born_iso_double_backward_sc_argtypes
-dll_cpu.elastic_iso_2_float_forward.argtypes = elastic_iso_float_forward_argtypes
-dll_cpu.elastic_iso_4_float_forward.argtypes = elastic_iso_float_forward_argtypes
-dll_cpu.elastic_iso_2_double_forward.argtypes = elastic_iso_double_forward_argtypes
-dll_cpu.elastic_iso_4_double_forward.argtypes = elastic_iso_double_forward_argtypes
-dll_cpu.elastic_iso_2_float_backward.argtypes = elastic_iso_float_backward_argtypes
-dll_cpu.elastic_iso_4_float_backward.argtypes = elastic_iso_float_backward_argtypes
-dll_cpu.elastic_iso_2_double_backward.argtypes = elastic_iso_double_backward_argtypes
-dll_cpu.elastic_iso_4_double_backward.argtypes = elastic_iso_double_backward_argtypes
-if platform.system() != 'Darwin':
-    dll_cuda.scalar_iso_2_float_forward.argtypes = scalar_iso_float_forward_argtypes
-    dll_cuda.scalar_iso_4_float_forward.argtypes = scalar_iso_float_forward_argtypes
-    dll_cuda.scalar_iso_6_float_forward.argtypes = scalar_iso_float_forward_argtypes
-    dll_cuda.scalar_iso_8_float_forward.argtypes = scalar_iso_float_forward_argtypes
-    dll_cuda.scalar_iso_2_double_forward.argtypes = scalar_iso_double_forward_argtypes
-    dll_cuda.scalar_iso_4_double_forward.argtypes = scalar_iso_double_forward_argtypes
-    dll_cuda.scalar_iso_6_double_forward.argtypes = scalar_iso_double_forward_argtypes
-    dll_cuda.scalar_iso_8_double_forward.argtypes = scalar_iso_double_forward_argtypes
-    dll_cuda.scalar_iso_2_float_backward.argtypes = scalar_iso_float_backward_argtypes
-    dll_cuda.scalar_iso_4_float_backward.argtypes = scalar_iso_float_backward_argtypes
-    dll_cuda.scalar_iso_6_float_backward.argtypes = scalar_iso_float_backward_argtypes
-    dll_cuda.scalar_iso_8_float_backward.argtypes = scalar_iso_float_backward_argtypes
-    dll_cuda.scalar_iso_2_double_backward.argtypes = scalar_iso_double_backward_argtypes
-    dll_cuda.scalar_iso_4_double_backward.argtypes = scalar_iso_double_backward_argtypes
-    dll_cuda.scalar_iso_6_double_backward.argtypes = scalar_iso_double_backward_argtypes
-    dll_cuda.scalar_iso_8_double_backward.argtypes = scalar_iso_double_backward_argtypes
-    dll_cuda.scalar_born_iso_2_float_forward.argtypes = scalar_born_iso_float_forward_argtypes
-    dll_cuda.scalar_born_iso_4_float_forward.argtypes = scalar_born_iso_float_forward_argtypes
-    dll_cuda.scalar_born_iso_6_float_forward.argtypes = scalar_born_iso_float_forward_argtypes
-    dll_cuda.scalar_born_iso_8_float_forward.argtypes = scalar_born_iso_float_forward_argtypes
-    dll_cuda.scalar_born_iso_2_double_forward.argtypes = scalar_born_iso_double_forward_argtypes
-    dll_cuda.scalar_born_iso_4_double_forward.argtypes = scalar_born_iso_double_forward_argtypes
-    dll_cuda.scalar_born_iso_6_double_forward.argtypes = scalar_born_iso_double_forward_argtypes
-    dll_cuda.scalar_born_iso_8_double_forward.argtypes = scalar_born_iso_double_forward_argtypes
-    dll_cuda.scalar_born_iso_2_float_backward.argtypes = scalar_born_iso_float_backward_argtypes
-    dll_cuda.scalar_born_iso_4_float_backward.argtypes = scalar_born_iso_float_backward_argtypes
-    dll_cuda.scalar_born_iso_6_float_backward.argtypes = scalar_born_iso_float_backward_argtypes
-    dll_cuda.scalar_born_iso_8_float_backward.argtypes = scalar_born_iso_float_backward_argtypes
-    dll_cuda.scalar_born_iso_2_double_backward.argtypes = scalar_born_iso_double_backward_argtypes
-    dll_cuda.scalar_born_iso_4_double_backward.argtypes = scalar_born_iso_double_backward_argtypes
-    dll_cuda.scalar_born_iso_6_double_backward.argtypes = scalar_born_iso_double_backward_argtypes
-    dll_cuda.scalar_born_iso_8_double_backward.argtypes = scalar_born_iso_double_backward_argtypes
-    dll_cuda.scalar_born_iso_2_float_backward_sc.argtypes = scalar_born_iso_float_backward_sc_argtypes
-    dll_cuda.scalar_born_iso_4_float_backward_sc.argtypes = scalar_born_iso_float_backward_sc_argtypes
-    dll_cuda.scalar_born_iso_6_float_backward_sc.argtypes = scalar_born_iso_float_backward_sc_argtypes
-    dll_cuda.scalar_born_iso_8_float_backward_sc.argtypes = scalar_born_iso_float_backward_sc_argtypes
-    dll_cuda.scalar_born_iso_2_double_backward_sc.argtypes = scalar_born_iso_double_backward_sc_argtypes
-    dll_cuda.scalar_born_iso_4_double_backward_sc.argtypes = scalar_born_iso_double_backward_sc_argtypes
-    dll_cuda.scalar_born_iso_6_double_backward_sc.argtypes = scalar_born_iso_double_backward_sc_argtypes
-    dll_cuda.scalar_born_iso_8_double_backward_sc.argtypes = scalar_born_iso_double_backward_sc_argtypes
-    dll_cuda.elastic_iso_2_float_forward.argtypes = elastic_iso_float_forward_argtypes
-    dll_cuda.elastic_iso_4_float_forward.argtypes = elastic_iso_float_forward_argtypes
-    dll_cuda.elastic_iso_2_double_forward.argtypes = elastic_iso_double_forward_argtypes
-    dll_cuda.elastic_iso_4_double_forward.argtypes = elastic_iso_double_forward_argtypes
-    dll_cuda.elastic_iso_2_float_backward.argtypes = elastic_iso_float_backward_argtypes
-    dll_cuda.elastic_iso_4_float_backward.argtypes = elastic_iso_float_backward_argtypes
-    dll_cuda.elastic_iso_2_double_backward.argtypes = elastic_iso_double_backward_argtypes
-    dll_cuda.elastic_iso_4_double_backward.argtypes = elastic_iso_double_backward_argtypes
+
+for accuracy in [2, 4, 6, 8]:
+    for dtype in ["float", "double"]:
+        getattr(dll, f"scalar_iso_{accuracy}_{dtype}_forward_cpu").argtypes = \
+            globals()[f"scalar_iso_{dtype}_forward_argtypes"]
+        getattr(dll, f"scalar_iso_{accuracy}_{dtype}_backward_cpu").argtypes = \
+            globals()[f"scalar_iso_{dtype}_backward_argtypes"]
+        getattr(dll, f"scalar_born_iso_{accuracy}_{dtype}_forward_cpu").argtypes = \
+            globals()[f"scalar_born_iso_{dtype}_forward_argtypes"]
+        getattr(dll, f"scalar_born_iso_{accuracy}_{dtype}_backward_cpu").argtypes = \
+            globals()[f"scalar_born_iso_{dtype}_backward_argtypes"]
+        getattr(dll, f"scalar_born_iso_{accuracy}_{dtype}_backward_sc_cpu").argtypes = \
+            globals()[f"scalar_born_iso_{dtype}_backward_sc_argtypes"]
+        try:
+            getattr(dll, f"scalar_iso_{accuracy}_{dtype}_forward_cuda").argtypes = \
+                globals()[f"scalar_iso_{dtype}_forward_argtypes"]
+            getattr(dll, f"scalar_iso_{accuracy}_{dtype}_backward_cuda").argtypes = \
+                globals()[f"scalar_iso_{dtype}_backward_argtypes"]
+            getattr(dll, f"scalar_born_iso_{accuracy}_{dtype}_forward_cuda").argtypes = \
+                globals()[f"scalar_born_iso_{dtype}_forward_argtypes"]
+            getattr(dll, f"scalar_born_iso_{accuracy}_{dtype}_backward_cuda").argtypes = \
+                globals()[f"scalar_born_iso_{dtype}_backward_argtypes"]
+            getattr(dll, f"scalar_born_iso_{accuracy}_{dtype}_backward_sc_cuda").argtypes = \
+                globals()[f"scalar_born_iso_{dtype}_backward_sc_argtypes"]
+        except AttributeError:
+            pass
+
+for accuracy in [2, 4]:
+    for dtype in ["float", "double"]:
+        getattr(dll, f"elastic_iso_{accuracy}_{dtype}_forward_cpu").argtypes = \
+            globals()[f"elastic_iso_{dtype}_forward_argtypes"]
+        getattr(dll, f"elastic_iso_{accuracy}_{dtype}_backward_cpu").argtypes = \
+            globals()[f"elastic_iso_{dtype}_backward_argtypes"]
+        try:
+            getattr(dll, f"elastic_iso_{accuracy}_{dtype}_forward_cuda").argtypes = \
+                globals()[f"elastic_iso_{dtype}_forward_argtypes"]
+            getattr(dll, f"elastic_iso_{accuracy}_{dtype}_backward_cuda").argtypes = \
+                globals()[f"elastic_iso_{dtype}_backward_argtypes"]
+        except AttributeError:
+            pass

@@ -25,9 +25,9 @@
 
 #include "common.h"
 
-#define CAT_I(name, accuracy, dtype) elastic_iso_##accuracy##_##dtype##_##name
-#define CAT(name, accuracy, dtype) CAT_I(name, accuracy, dtype)
-#define FUNC(name) CAT(name, DW_ACCURACY, DW_DTYPE)
+#define CAT_I(name, accuracy, dtype, device) elastic_iso_##accuracy##_##dtype##_##name##_##device
+#define CAT(name, accuracy, dtype, device) CAT_I(name, accuracy, dtype, device)
+#define FUNC(name) CAT(name, DW_ACCURACY, DW_DTYPE, DW_DEVICE)
 
 #if DW_ACCURACY == 2
 #elif DW_ACCURACY == 4

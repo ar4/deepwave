@@ -34,9 +34,9 @@
 
 #include "common.h"
 
-#define CAT_I(name, accuracy, dtype) scalar_iso_##accuracy##_##dtype##_##name
-#define CAT(name, accuracy, dtype) CAT_I(name, accuracy, dtype)
-#define FUNC(name) CAT(name, DW_ACCURACY, DW_DTYPE)
+#define CAT_I(name, accuracy, dtype, device) scalar_iso_##accuracy##_##dtype##_##name##_##device
+#define CAT(name, accuracy, dtype, device) CAT_I(name, accuracy, dtype, device)
+#define FUNC(name) CAT(name, DW_ACCURACY, DW_DTYPE, DW_DEVICE)
 
 #define WFC(dy, dx) wfc[i + dy * nx + dx]
 #define AY_PSIY(dy, dx) ay[y + dy] * psiy[i + dy * nx + dx]
