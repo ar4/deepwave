@@ -12,6 +12,7 @@ For better computational performance, the code is written in C++ and
 CUDA.
 """
 
+import platform
 import ctypes
 from ctypes import c_void_p, c_int64, c_float, c_double, c_bool
 import pathlib
@@ -22,8 +23,16 @@ import deepwave.wavelets
 import deepwave.location_interpolation
 from ._version import __version__
 
+if platform.system() == 'Linux':
+    so_ext = "so"
+elif platform.system() == 'Darwin':
+    so_ext = "dylib"
+elif platform.system() == 'Windows':
+    so_ext = "dll"
+else:
+    raise RuntimeError("Unsupported OS or platform type")
 
-dll = ctypes.CDLL(str(pathlib.Path(__file__).resolve().parent / "libdeepwave_C.so"))
+dll = ctypes.CDLL(str(pathlib.Path(__file__).resolve().parent / ("libdeepwave_C." + so_ext)))
 
 # Check if was compiled with OpenMP support
 try:

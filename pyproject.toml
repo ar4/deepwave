@@ -2,6 +2,9 @@
 requires = ["scikit-build-core"]
 build-backend = "scikit_build_core.build"
 
+[tool.scikit-build]
+wheel.py-api = "py3"
+
 [project]
 name = "deepwave"
 version = "0.0.21"
