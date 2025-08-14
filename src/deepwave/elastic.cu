@@ -51,6 +51,9 @@ __constant__ int64_t vpml_y0;
 __constant__ int64_t vpml_y1;
 __constant__ int64_t vpml_x0;
 __constant__ int64_t vpml_x1;
+__constant__ bool lamb_batched;
+__constant__ bool mu_batched;
+__constant__ bool buoyancy_batched;
 
 __global__ void add_sources_y(DW_DTYPE *__restrict const wf,
                               DW_DTYPE const *__restrict const f,
@@ -59,7 +62,7 @@ __global__ void add_sources_y(DW_DTYPE *__restrict const wf,
   int64_t shot_idx = blockIdx.y * blockDim.y + threadIdx.y;
   if (source_idx < n_sources_y_per_shot && shot_idx < n_shots) {
     int64_t k = shot_idx * n_sources_y_per_shot + source_idx;
-    wf[shot_idx * nynx + sources_i[k]] += f[k];
+    if (0 <= sources_i[k]) wf[shot_idx * nynx + sources_i[k]] += f[k];
   }
 }
 
@@ -70,7 +73,7 @@ __global__ void add_sources_x(DW_DTYPE *__restrict const wf,
   int64_t shot_idx = blockIdx.y * blockDim.y + threadIdx.y;
   if (source_idx < n_sources_x_per_shot && shot_idx < n_shots) {
     int64_t k = shot_idx * n_sources_x_per_shot + source_idx;
-    wf[shot_idx * nynx + sources_i[k]] += f[k];
+    if (0 <= sources_i[k]) wf[shot_idx * nynx + sources_i[k]] += f[k];
   }
 }
 
@@ -81,7 +84,7 @@ __global__ void add_adjoint_sources_y(
   int64_t shot_idx = blockIdx.y * blockDim.y + threadIdx.y;
   if (source_idx < n_receivers_y_per_shot && shot_idx < n_shots) {
     int64_t k = shot_idx * n_receivers_y_per_shot + source_idx;
-    wf[shot_idx * nynx + sources_i[k]] += f[k];
+    if (0 <= sources_i[k]) wf[shot_idx * nynx + sources_i[k]] += f[k];
   }
 }
 
@@ -92,7 +95,7 @@ __global__ void add_adjoint_sources_x(
   int64_t shot_idx = blockIdx.y * blockDim.y + threadIdx.y;
   if (source_idx < n_receivers_x_per_shot && shot_idx < n_shots) {
     int64_t k = shot_idx * n_receivers_x_per_shot + source_idx;
-    wf[shot_idx * nynx + sources_i[k]] += f[k];
+    if (0 <= sources_i[k]) wf[shot_idx * nynx + sources_i[k]] += f[k];
   }
 }
 
@@ -104,8 +107,10 @@ __global__ void add_adjoint_pressure_sources(
   int64_t shot_idx = blockIdx.y * blockDim.y + threadIdx.y;
   if (source_idx < n_receivers_p_per_shot && shot_idx < n_shots) {
     int64_t k = shot_idx * n_receivers_p_per_shot + source_idx;
-    sigmayy[shot_idx * nynx + sources_i[k]] -= f[k];
-    sigmaxx[shot_idx * nynx + sources_i[k]] -= f[k];
+    if (0 <= sources_i[k]) {
+      sigmayy[shot_idx * nynx + sources_i[k]] -= f[k] / (DW_DTYPE)2;
+      sigmaxx[shot_idx * nynx + sources_i[k]] -= f[k] / (DW_DTYPE)2;
+    }
   }
 }
 
@@ -116,7 +121,7 @@ __global__ void record_receivers_y(DW_DTYPE *__restrict const r,
   int64_t shot_idx = blockIdx.y * blockDim.y + threadIdx.y;
   if (receiver_idx < n_receivers_y_per_shot && shot_idx < n_shots) {
     int64_t k = shot_idx * n_receivers_y_per_shot + receiver_idx;
-    r[k] = wf[shot_idx * nynx + receivers_i[k]];
+    if (0 <= receivers_i[k]) r[k] = wf[shot_idx * nynx + receivers_i[k]];
   }
 }
 
@@ -127,7 +132,7 @@ __global__ void record_receivers_x(DW_DTYPE *__restrict const r,
   int64_t shot_idx = blockIdx.y * blockDim.y + threadIdx.y;
   if (receiver_idx < n_receivers_x_per_shot && shot_idx < n_shots) {
     int64_t k = shot_idx * n_receivers_x_per_shot + receiver_idx;
-    r[k] = wf[shot_idx * nynx + receivers_i[k]];
+    if (0 <= receivers_i[k]) r[k] = wf[shot_idx * nynx + receivers_i[k]];
   }
 }
 
@@ -139,8 +144,8 @@ __global__ void record_pressure_receivers(
   int64_t shot_idx = blockIdx.y * blockDim.y + threadIdx.y;
   if (receiver_idx < n_receivers_p_per_shot && shot_idx < n_shots) {
     int64_t k = shot_idx * n_receivers_p_per_shot + receiver_idx;
-    r[k] = -(sigmayy[shot_idx * nynx + receivers_i[k]] +
-             sigmaxx[shot_idx * nynx + receivers_i[k]]);
+    if (0 <= receivers_i[k]) r[k] = -(sigmayy[shot_idx * nynx + receivers_i[k]] +
+             sigmaxx[shot_idx * nynx + receivers_i[k]]) / (DW_DTYPE)2;
   }
 }
 
@@ -151,7 +156,7 @@ __global__ void record_adjoint_receivers_y(
   int64_t shot_idx = blockIdx.y * blockDim.y + threadIdx.y;
   if (receiver_idx < n_sources_y_per_shot && shot_idx < n_shots) {
     int64_t k = shot_idx * n_sources_y_per_shot + receiver_idx;
-    r[k] = wf[shot_idx * nynx + receivers_i[k]];
+    if (0 <= receivers_i[k]) r[k] = wf[shot_idx * nynx + receivers_i[k]];
   }
 }
 
@@ -162,7 +167,7 @@ __global__ void record_adjoint_receivers_x(
   int64_t shot_idx = blockIdx.y * blockDim.y + threadIdx.y;
   if (receiver_idx < n_sources_x_per_shot && shot_idx < n_shots) {
     int64_t k = shot_idx * n_sources_x_per_shot + receiver_idx;
-    r[k] = wf[shot_idx * nynx + receivers_i[k]];
+    if (0 <= receivers_i[k]) r[k] = wf[shot_idx * nynx + receivers_i[k]];
   }
 }
 
@@ -357,6 +362,7 @@ __global__ void forward_kernel_v(
   int64_t i_noshot = y * nx + x;
   int64_t i = batch * nynx + i_noshot;
   int64_t j, k;
+  DW_DTYPE const *__restrict const buoyancy_shot = buoyancy_batched ? buoyancy + batch * nynx : buoyancy;
 
   if (y < ny && x < nx - 1) {
     bool pml_y = y < pml_y0 || y >= pml_y1;
@@ -412,10 +418,10 @@ __global__ void forward_kernel_v(
     {
       DW_DTYPE buoyancyyhxh;
       if (y == ny - 1) {
-        buoyancyyhxh = (buoyancy[i_noshot] + buoyancy[i_noshot + 1]) / 2;
+        buoyancyyhxh = (buoyancy_shot[i_noshot] + buoyancy_shot[i_noshot + 1]) / 2;
       } else {
-        buoyancyyhxh = (buoyancy[i_noshot] + buoyancy[i_noshot + 1] +
-                        buoyancy[i_noshot + nx] + buoyancy[i_noshot + nx + 1]) /
+        buoyancyyhxh = (buoyancy_shot[i_noshot] + buoyancy_shot[i_noshot + 1] +
+                        buoyancy_shot[i_noshot + nx] + buoyancy_shot[i_noshot + nx + 1]) /
                        4;
       }
       vy[i] += buoyancyyhxh * dt * (dsigmayydy + dsigmaxydx);
@@ -476,7 +482,7 @@ __global__ void forward_kernel_v(
       m_sigmaxxx[i] = ax[x] * m_sigmaxxx[i] + bx[x] * dsigmaxxdx;
       dsigmaxxdx += m_sigmaxxx[i];
     }
-    vx[i] += buoyancy[i_noshot] * dt * (dsigmaxxdx + dsigmaxydy);
+    vx[i] += buoyancy_shot[i_noshot] * dt * (dsigmaxxdx + dsigmaxydy);
     if (buoyancy_requires_grad) {
       dvxdbuoyancy[i] = dt * (dsigmaxxdx + dsigmaxydy);
     }
@@ -503,6 +509,8 @@ __global__ void forward_kernel_sigma(
   int64_t i_noshot = y * nx + x;
   int64_t i = batch * nynx + i_noshot;
   int64_t j, jp, k;
+  DW_DTYPE const *__restrict const lamb_shot = lamb_batched ? lamb + batch * nynx : lamb;
+  DW_DTYPE const *__restrict const mu_shot = mu_batched ? mu + batch * nynx : mu;
 
   if (y < ny && x < nx - 1) {
     bool pml_y = y < pml_y0 + 1 || y >= pml_y1;
@@ -555,8 +563,8 @@ __global__ void forward_kernel_sigma(
       dvxdx += m_vxx[i];
     }
     {
-      DW_DTYPE lambyxh = (lamb[i_noshot] + lamb[i_noshot + 1]) / 2;
-      DW_DTYPE muyxh = (mu[i_noshot] + mu[i_noshot + 1]) / 2;
+      DW_DTYPE lambyxh = (lamb_shot[i_noshot] + lamb_shot[i_noshot + 1]) / 2;
+      DW_DTYPE muyxh = (mu_shot[i_noshot] + mu_shot[i_noshot + 1]) / 2;
       sigmayy[i] += dt * ((lambyxh + 2 * muyxh) * dvydy + lambyxh * dvxdx);
       sigmaxx[i] += dt * ((lambyxh + 2 * muyxh) * dvxdx + lambyxh * dvydy);
       if (lamb_requires_grad || mu_requires_grad) {
@@ -693,7 +701,7 @@ __global__ void forward_kernel_sigma(
       dvydx += m_vyx[i];
     }
     {
-      DW_DTYPE muyhx = (mu[i_noshot] + mu[i_noshot + nx]) / 2;
+      DW_DTYPE muyhx = (mu_shot[i_noshot] + mu_shot[i_noshot + nx]) / 2;
       sigmaxy[i] += dt * muyhx * (dvydx + dvxdy);
       if (mu_requires_grad) {
         dvydxdvxdy_store[i] = dt * (dvydx + dvxdy);
@@ -730,6 +738,9 @@ __global__ void backward_kernel_sigma(
   int64_t i_noshot = y * nx + x;
   int64_t i = batch * nynx + i_noshot;
   int64_t j, jp, k;
+  DW_DTYPE const *__restrict const lamb_shot = lamb_batched ? lamb + batch * nynx : lamb;
+  DW_DTYPE const *__restrict const mu_shot = mu_batched ? mu + batch * nynx : mu;
+  DW_DTYPE const *__restrict const buoyancy_shot = buoyancy_batched ? buoyancy + batch * nynx : buoyancy;
   if (y < ny && x < nx - 1) {
     bool pml_y = y < spml_y0 || y >= spml_y1;
     bool pml_x = x < spml_x0 || x >= spml_x1 - 1;
@@ -737,11 +748,11 @@ __global__ void backward_kernel_sigma(
     for (k = 0; k <= A; ++k) {
       for (j = 0; j < A / 2 - 1; ++j) {
         if (y == 1 + j + (-j + k - 1)) {
-          DW_DTYPE lambyxh = (lamb[i_noshot - (-j + k - 1) * nx] +
-                              lamb[i_noshot + 1 - (-j + k - 1) * nx]) /
+          DW_DTYPE lambyxh = (lamb_shot[i_noshot - (-j + k - 1) * nx] +
+                              lamb_shot[i_noshot + 1 - (-j + k - 1) * nx]) /
                              2;
-          DW_DTYPE muyxh = (mu[i_noshot - (-j + k - 1) * nx] +
-                            mu[i_noshot + 1 - (-j + k - 1) * nx]) /
+          DW_DTYPE muyxh = (mu_shot[i_noshot - (-j + k - 1) * nx] +
+                            mu_shot[i_noshot + 1 - (-j + k - 1) * nx]) /
                            2;
           vy[i] +=
               fd_coeffs2y[k] *
@@ -750,11 +761,11 @@ __global__ void backward_kernel_sigma(
                     lambyxh * sigmaxx[i - (-j + k - 1) * nx]) +
                by[y - (-j + k - 1)] * m_vyy[i - (-j + k - 1) * nx]);
         } else if (y == ny - 1 - j + (j - k)) {
-          DW_DTYPE lambyxh = (lamb[i_noshot - (j - k) * nx] +
-                              lamb[i_noshot + 1 - (j - k) * nx]) /
+          DW_DTYPE lambyxh = (lamb_shot[i_noshot - (j - k) * nx] +
+                              lamb_shot[i_noshot + 1 - (j - k) * nx]) /
                              2;
           DW_DTYPE muyxh =
-              (mu[i_noshot - (j - k) * nx] + mu[i_noshot + 1 - (j - k) * nx]) /
+              (mu_shot[i_noshot - (j - k) * nx] + mu_shot[i_noshot + 1 - (j - k) * nx]) /
               2;
           vy[i] -= fd_coeffs2y[k] *
                    (dt * (1 + by[y - (j - k)]) *
@@ -769,9 +780,9 @@ __global__ void backward_kernel_sigma(
     for (k = 0; k < A / 2; ++k) {
       if (y > 1 + A / 2 - 2 + k && y < ny - 1 - A / 2 + 2 + k) {
         DW_DTYPE lambyxh =
-            (lamb[i_noshot - k * nx] + lamb[i_noshot + 1 - k * nx]) / 2;
+            (lamb_shot[i_noshot - k * nx] + lamb_shot[i_noshot + 1 - k * nx]) / 2;
         DW_DTYPE muyxh =
-            (mu[i_noshot - k * nx] + mu[i_noshot + 1 - k * nx]) / 2;
+            (mu_shot[i_noshot - k * nx] + mu_shot[i_noshot + 1 - k * nx]) / 2;
         vy[i] +=
             fd_coeffsy[k] * (dt * (1 + by[y - k]) *
                                  ((lambyxh + 2 * muyxh) * sigmayy[i - k * nx] +
@@ -779,11 +790,11 @@ __global__ void backward_kernel_sigma(
                              by[y - k] * m_vyy[i - k * nx]);
       }
       if (y > 1 + A / 2 - 2 - (k + 1) && y < ny - 1 - A / 2 + 2 - (k + 1)) {
-        DW_DTYPE lambyxh = (lamb[i_noshot + (k + 1) * nx] +
-                            lamb[i_noshot + 1 + (k + 1) * nx]) /
+        DW_DTYPE lambyxh = (lamb_shot[i_noshot + (k + 1) * nx] +
+                            lamb_shot[i_noshot + 1 + (k + 1) * nx]) /
                            2;
         DW_DTYPE muyxh =
-            (mu[i_noshot + (k + 1) * nx] + mu[i_noshot + 1 + (k + 1) * nx]) / 2;
+            (mu_shot[i_noshot + (k + 1) * nx] + mu_shot[i_noshot + 1 + (k + 1) * nx]) / 2;
         vy[i] -= fd_coeffsy[k] *
                  (dt * (1 + by[y + k + 1]) *
                       ((lambyxh + 2 * muyxh) * sigmayy[i + (k + 1) * nx] +
@@ -801,14 +812,14 @@ __global__ void backward_kernel_sigma(
             if (x == 1 + jp - (jp + 1) + k) {
               int64_t i2 = i - (-(j + 1) * nx - (jp + 1) + k);
               int64_t i2_noshot = i_noshot - (-(j + 1) * nx - (jp + 1) + k);
-              DW_DTYPE muyhx = (mu[i2_noshot] + mu[i2_noshot + nx]) / 2;
+              DW_DTYPE muyhx = (mu_shot[i2_noshot] + mu_shot[i2_noshot + nx]) / 2;
               vy[i] += fd_coeffs2x[k] * (-fd_coeffs3y[0]) *
                        (muyhx * dt * (1 + byh[y2]) * sigmaxy[i2] +
                         byh[y2] * m_vxy[i2]);
             } else if (x == nx - 2 - jp + jp - k) {
               int64_t i2 = i - (-(j + 1) * nx + jp - k);
               int64_t i2_noshot = i_noshot - (-(j + 1) * nx + jp - k);
-              DW_DTYPE muyhx = (mu[i2_noshot] + mu[i2_noshot + nx]) / 2;
+              DW_DTYPE muyhx = (mu_shot[i2_noshot] + mu_shot[i2_noshot + nx]) / 2;
               vy[i] -= fd_coeffs2x[k] * (-fd_coeffs3y[0]) *
                        (muyhx * dt * (1 + byh[y2]) * sigmaxy[i2] +
                         byh[y2] * m_vxy[i2]);
@@ -819,7 +830,7 @@ __global__ void backward_kernel_sigma(
           if (x > 1 + A / 2 - 2 + k && x < nx - 2 - A / 2 + 2 + k) {
             int64_t i2 = i - (-(j + 1) * nx + k);
             int64_t i2_noshot = i_noshot - (-(j + 1) * nx + k);
-            DW_DTYPE muyhx = (mu[i2_noshot] + mu[i2_noshot + nx]) / 2;
+            DW_DTYPE muyhx = (mu_shot[i2_noshot] + mu_shot[i2_noshot + nx]) / 2;
             vy[i] += fd_coeffsx[k] * (-fd_coeffs3y[0]) *
                      (muyhx * dt * (1 + byh[y2]) * sigmaxy[i2] +
                       byh[y2] * m_vxy[i2]);
@@ -827,7 +838,7 @@ __global__ void backward_kernel_sigma(
           if (x > 1 + A / 2 - 2 - k - 1 && x < nx - 2 - A / 2 + 2 - k - 1) {
             int64_t i2 = i - (-(j + 1) * nx - k - 1);
             int64_t i2_noshot = i_noshot - (-(j + 1) * nx - k - 1);
-            DW_DTYPE muyhx = (mu[i2_noshot] + mu[i2_noshot + nx]) / 2;
+            DW_DTYPE muyhx = (mu_shot[i2_noshot] + mu_shot[i2_noshot + nx]) / 2;
             vy[i] -= fd_coeffsx[k] * (-fd_coeffs3y[0]) *
                      (muyhx * dt * (1 + byh[y2]) * sigmaxy[i2] +
                       byh[y2] * m_vxy[i2]);
@@ -841,14 +852,14 @@ __global__ void backward_kernel_sigma(
             if (x == 1 + jp - (jp + 1) + k) {
               int64_t i2 = i - ((j + 1) * nx - (jp + 1) + k);
               int64_t i2_noshot = i_noshot - ((j + 1) * nx - (jp + 1) + k);
-              DW_DTYPE muyhx = (mu[i2_noshot] + mu[i2_noshot + nx]) / 2;
+              DW_DTYPE muyhx = (mu_shot[i2_noshot] + mu_shot[i2_noshot + nx]) / 2;
               vy[i] += fd_coeffs2x[k] * (fd_coeffs3y[0]) *
                        (muyhx * dt * (1 + byh[y2]) * sigmaxy[i2] +
                         byh[y2] * m_vxy[i2]);
             } else if (x == nx - 2 - jp + jp - k) {
               int64_t i2 = i - ((j + 1) * nx + jp - k);
               int64_t i2_noshot = i_noshot - ((j + 1) * nx + jp - k);
-              DW_DTYPE muyhx = (mu[i2_noshot] + mu[i2_noshot + nx]) / 2;
+              DW_DTYPE muyhx = (mu_shot[i2_noshot] + mu_shot[i2_noshot + nx]) / 2;
               vy[i] -= fd_coeffs2x[k] * (fd_coeffs3y[0]) *
                        (muyhx * dt * (1 + byh[y2]) * sigmaxy[i2] +
                         byh[y2] * m_vxy[i2]);
@@ -859,7 +870,7 @@ __global__ void backward_kernel_sigma(
           if (x > 1 + A / 2 - 2 + k && x < nx - 2 - A / 2 + 2 + k) {
             int64_t i2 = i - ((j + 1) * nx + k);
             int64_t i2_noshot = i_noshot - ((j + 1) * nx + k);
-            DW_DTYPE muyhx = (mu[i2_noshot] + mu[i2_noshot + nx]) / 2;
+            DW_DTYPE muyhx = (mu_shot[i2_noshot] + mu_shot[i2_noshot + nx]) / 2;
             vy[i] += fd_coeffsx[k] * (fd_coeffs3y[0]) *
                      (muyhx * dt * (1 + byh[y2]) * sigmaxy[i2] +
                       byh[y2] * m_vxy[i2]);
@@ -867,7 +878,7 @@ __global__ void backward_kernel_sigma(
           if (x > 1 + A / 2 - 2 - k - 1 && x < nx - 2 - A / 2 + 2 - k - 1) {
             int64_t i2 = i - ((j + 1) * nx - k - 1);
             int64_t i2_noshot = i_noshot - ((j + 1) * nx - k - 1);
-            DW_DTYPE muyhx = (mu[i2_noshot] + mu[i2_noshot + nx]) / 2;
+            DW_DTYPE muyhx = (mu_shot[i2_noshot] + mu_shot[i2_noshot + nx]) / 2;
             vy[i] -= fd_coeffsx[k] * (fd_coeffs3y[0]) *
                      (muyhx * dt * (1 + byh[y2]) * sigmaxy[i2] +
                       byh[y2] * m_vxy[i2]);
@@ -884,14 +895,14 @@ __global__ void backward_kernel_sigma(
             int64_t x2 = x - (-j + k - 2);
             int64_t i2 = i - (-j + k - 2);
             int64_t i2_noshot = i_noshot - (-j + k - 2);
-            DW_DTYPE muyhx = (mu[i2_noshot] + mu[i2_noshot + nx]) / 2;
+            DW_DTYPE muyhx = (mu_shot[i2_noshot] + mu_shot[i2_noshot + nx]) / 2;
             vy[i] += fd_coeffs3x[k] * (muyhx * dt * (1 + bx[x2]) * sigmaxy[i2] +
                                        bx[x2] * m_vyx[i2]);
           } else if (x == nx - 2 - j + (j - k + 1)) {
             int64_t x2 = x - (j - k + 1);
             int64_t i2 = i - (j - k + 1);
             int64_t i2_noshot = i_noshot - (j - k + 1);
-            DW_DTYPE muyhx = (mu[i2_noshot] + mu[i2_noshot + nx]) / 2;
+            DW_DTYPE muyhx = (mu_shot[i2_noshot] + mu_shot[i2_noshot + nx]) / 2;
             vy[i] -= fd_coeffs3x[k] * (muyhx * dt * (1 + bx[x2]) * sigmaxy[i2] +
                                        bx[x2] * m_vyx[i2]);
           }
@@ -902,7 +913,7 @@ __global__ void backward_kernel_sigma(
           int64_t x2 = x - k;
           int64_t i2 = i - k;
           int64_t i2_noshot = i_noshot - k;
-          DW_DTYPE muyhx = (mu[i2_noshot] + mu[i2_noshot + nx]) / 2;
+          DW_DTYPE muyhx = (mu_shot[i2_noshot] + mu_shot[i2_noshot + nx]) / 2;
           vy[i] += fd_coeffsx[k] * (muyhx * dt * (1 + bx[x2]) * sigmaxy[i2] +
                                     bx[x2] * m_vyx[i2]);
         }
@@ -910,7 +921,7 @@ __global__ void backward_kernel_sigma(
           int64_t x2 = x + k + 1;
           int64_t i2 = i + k + 1;
           int64_t i2_noshot = i_noshot + k + 1;
-          DW_DTYPE muyhx = (mu[i2_noshot] + mu[i2_noshot + nx]) / 2;
+          DW_DTYPE muyhx = (mu_shot[i2_noshot] + mu_shot[i2_noshot + nx]) / 2;
           vy[i] -= fd_coeffsx[k] * (muyhx * dt * (1 + bx[x2]) * sigmaxy[i2] +
                                     bx[x2] * m_vyx[i2]);
         }
@@ -920,10 +931,10 @@ __global__ void backward_kernel_sigma(
     {
       DW_DTYPE buoyancyyhxh;
       if (y == ny - 1) {
-        buoyancyyhxh = (buoyancy[i_noshot] + buoyancy[i_noshot + 1]) / 2;
+        buoyancyyhxh = (buoyancy_shot[i_noshot] + buoyancy_shot[i_noshot + 1]) / 2;
       } else {
-        buoyancyyhxh = (buoyancy[i_noshot] + buoyancy[i_noshot + 1] +
-                        buoyancy[i_noshot + nx] + buoyancy[i_noshot + nx + 1]) /
+        buoyancyyhxh = (buoyancy_shot[i_noshot] + buoyancy_shot[i_noshot + 1] +
+                        buoyancy_shot[i_noshot + nx] + buoyancy_shot[i_noshot + nx + 1]) /
                        4;
       }
 
@@ -948,8 +959,8 @@ __global__ void backward_kernel_sigma(
           int64_t i2 = i - (-j + k);
           int64_t i2_noshot = i_noshot - (-j + k);
           int64_t x2 = x - (-j + k);
-          DW_DTYPE lambyxh = (lamb[i2_noshot] + lamb[i2_noshot + 1]) / 2;
-          DW_DTYPE muyxh = (mu[i2_noshot] + mu[i2_noshot + 1]) / 2;
+          DW_DTYPE lambyxh = (lamb_shot[i2_noshot] + lamb_shot[i2_noshot + 1]) / 2;
+          DW_DTYPE muyxh = (mu_shot[i2_noshot] + mu_shot[i2_noshot + 1]) / 2;
           vx[i] += fd_coeffs2x[k] * (dt * (1 + bxh[x2]) *
                                          ((lambyxh + 2 * muyxh) * sigmaxx[i2] +
                                           lambyxh * sigmayy[i2]) +
@@ -958,8 +969,8 @@ __global__ void backward_kernel_sigma(
           int64_t i2 = i - (j - k + 1);
           int64_t i2_noshot = i_noshot - (j - k + 1);
           int64_t x2 = x - (j - k + 1);
-          DW_DTYPE lambyxh = (lamb[i2_noshot] + lamb[i2_noshot + 1]) / 2;
-          DW_DTYPE muyxh = (mu[i2_noshot] + mu[i2_noshot + 1]) / 2;
+          DW_DTYPE lambyxh = (lamb_shot[i2_noshot] + lamb_shot[i2_noshot + 1]) / 2;
+          DW_DTYPE muyxh = (mu_shot[i2_noshot] + mu_shot[i2_noshot + 1]) / 2;
           vx[i] -= fd_coeffs2x[k] * (dt * (1 + bxh[x2]) *
                                          ((lambyxh + 2 * muyxh) * sigmaxx[i2] +
                                           lambyxh * sigmayy[i2]) +
@@ -974,8 +985,8 @@ __global__ void backward_kernel_sigma(
         int64_t i2 = i - (1 + k);
         int64_t i2_noshot = i_noshot - (1 + k);
         int64_t x2 = x - (1 + k);
-        DW_DTYPE lambyxh = (lamb[i2_noshot] + lamb[i2_noshot + 1]) / 2;
-        DW_DTYPE muyxh = (mu[i2_noshot] + mu[i2_noshot + 1]) / 2;
+        DW_DTYPE lambyxh = (lamb_shot[i2_noshot] + lamb_shot[i2_noshot + 1]) / 2;
+        DW_DTYPE muyxh = (mu_shot[i2_noshot] + mu_shot[i2_noshot + 1]) / 2;
         vx[i] +=
             fd_coeffsx[k] *
             (dt * (1 + bxh[x2]) *
@@ -986,8 +997,8 @@ __global__ void backward_kernel_sigma(
         int64_t i2 = i + k;
         int64_t i2_noshot = i_noshot + k;
         int64_t x2 = x + k;
-        DW_DTYPE lambyxh = (lamb[i2_noshot] + lamb[i2_noshot + 1]) / 2;
-        DW_DTYPE muyxh = (mu[i2_noshot] + mu[i2_noshot + 1]) / 2;
+        DW_DTYPE lambyxh = (lamb_shot[i2_noshot] + lamb_shot[i2_noshot + 1]) / 2;
+        DW_DTYPE muyxh = (mu_shot[i2_noshot] + mu_shot[i2_noshot + 1]) / 2;
         vx[i] -=
             fd_coeffsx[k] *
             (dt * (1 + bxh[x2]) *
@@ -1005,14 +1016,14 @@ __global__ void backward_kernel_sigma(
             if (y == 1 + jp - jp + k) {
               int64_t i2 = i - (-(j + 1) + (-jp + k) * nx);
               int64_t i2_noshot = i_noshot - (-(j + 1) + (-jp + k) * nx);
-              DW_DTYPE muyhx = (mu[i2_noshot] + mu[i2_noshot + nx]) / 2;
+              DW_DTYPE muyhx = (mu_shot[i2_noshot] + mu_shot[i2_noshot + nx]) / 2;
               vx[i] += fd_coeffs2y[k] * (-fd_coeffs3x[0]) *
                        (muyhx * dt * (1 + bx[x2]) * sigmaxy[i2] +
                         bx[x2] * m_vyx[i2]);
             } else if (y == ny - 2 - jp + (jp + 1) - k) {
               int64_t i2 = i - (-(j + 1) + ((jp + 1) - k) * nx);
               int64_t i2_noshot = i_noshot - (-(j + 1) + ((jp + 1) - k) * nx);
-              DW_DTYPE muyhx = (mu[i2_noshot] + mu[i2_noshot + nx]) / 2;
+              DW_DTYPE muyhx = (mu_shot[i2_noshot] + mu_shot[i2_noshot + nx]) / 2;
               vx[i] -= fd_coeffs2y[k] * (-fd_coeffs3x[0]) *
                        (muyhx * dt * (1 + bx[x2]) * sigmaxy[i2] +
                         bx[x2] * m_vyx[i2]);
@@ -1023,7 +1034,7 @@ __global__ void backward_kernel_sigma(
           if (y > 1 + A / 2 - 2 + k + 1 && y < ny - 2 - A / 2 + 2 + k + 1) {
             int64_t i2 = i - (-(j + 1) + (k + 1) * nx);
             int64_t i2_noshot = i_noshot - (-(j + 1) + (k + 1) * nx);
-            DW_DTYPE muyhx = (mu[i2_noshot] + mu[i2_noshot + nx]) / 2;
+            DW_DTYPE muyhx = (mu_shot[i2_noshot] + mu_shot[i2_noshot + nx]) / 2;
             vx[i] +=
                 fd_coeffsy[k] * (-fd_coeffs3x[0]) *
                 (muyhx * dt * (1 + bx[x2]) * sigmaxy[i2] + bx[x2] * m_vyx[i2]);
@@ -1031,7 +1042,7 @@ __global__ void backward_kernel_sigma(
           if (y > 1 + A / 2 - 2 - k && y < ny - 2 - A / 2 + 2 - k) {
             int64_t i2 = i - (-(j + 1) - k * nx);
             int64_t i2_noshot = i_noshot - (-(j + 1) - k * nx);
-            DW_DTYPE muyhx = (mu[i2_noshot] + mu[i2_noshot + nx]) / 2;
+            DW_DTYPE muyhx = (mu_shot[i2_noshot] + mu_shot[i2_noshot + nx]) / 2;
             vx[i] -=
                 fd_coeffsy[k] * (-fd_coeffs3x[0]) *
                 (muyhx * dt * (1 + bx[x2]) * sigmaxy[i2] + bx[x2] * m_vyx[i2]);
@@ -1045,14 +1056,14 @@ __global__ void backward_kernel_sigma(
             if (y == 1 + jp - jp + k) {
               int64_t i2 = i - ((j + 1) + (-jp + k) * nx);
               int64_t i2_noshot = i_noshot - ((j + 1) + (-jp + k) * nx);
-              DW_DTYPE muyhx = (mu[i2_noshot] + mu[i2_noshot + nx]) / 2;
+              DW_DTYPE muyhx = (mu_shot[i2_noshot] + mu_shot[i2_noshot + nx]) / 2;
               vx[i] += fd_coeffs2y[k] * (fd_coeffs3x[0]) *
                        (muyhx * dt * (1 + bx[x2]) * sigmaxy[i2] +
                         bx[x2] * m_vyx[i2]);
             } else if (y == ny - 2 - jp + jp - k + 1) {
               int64_t i2 = i - ((j + 1) + (jp - k + 1) * nx);
               int64_t i2_noshot = i_noshot - ((j + 1) + (jp - k + 1) * nx);
-              DW_DTYPE muyhx = (mu[i2_noshot] + mu[i2_noshot + nx]) / 2;
+              DW_DTYPE muyhx = (mu_shot[i2_noshot] + mu_shot[i2_noshot + nx]) / 2;
               vx[i] -= fd_coeffs2y[k] * (fd_coeffs3x[0]) *
                        (muyhx * dt * (1 + bx[x2]) * sigmaxy[i2] +
                         bx[x2] * m_vyx[i2]);
@@ -1063,7 +1074,7 @@ __global__ void backward_kernel_sigma(
           if (y > 1 + A / 2 - 2 + k + 1 && y < ny - 2 - A / 2 + 2 + k + 1) {
             int64_t i2 = i - ((j + 1) + (k + 1) * nx);
             int64_t i2_noshot = i_noshot - ((j + 1) + (k + 1) * nx);
-            DW_DTYPE muyhx = (mu[i2_noshot] + mu[i2_noshot + nx]) / 2;
+            DW_DTYPE muyhx = (mu_shot[i2_noshot] + mu_shot[i2_noshot + nx]) / 2;
             vx[i] +=
                 fd_coeffsy[k] * (fd_coeffs3x[0]) *
                 (muyhx * dt * (1 + bx[x2]) * sigmaxy[i2] + bx[x2] * m_vyx[i2]);
@@ -1071,7 +1082,7 @@ __global__ void backward_kernel_sigma(
           if (y > 1 + A / 2 - 2 - k && y < ny - 2 - A / 2 + 2 - k) {
             int64_t i2 = i - ((j + 1) + (-k) * nx);
             int64_t i2_noshot = i_noshot - ((j + 1) + (-k) * nx);
-            DW_DTYPE muyhx = (mu[i2_noshot] + mu[i2_noshot + nx]) / 2;
+            DW_DTYPE muyhx = (mu_shot[i2_noshot] + mu_shot[i2_noshot + nx]) / 2;
             vx[i] -=
                 fd_coeffsy[k] * (fd_coeffs3x[0]) *
                 (muyhx * dt * (1 + bx[x2]) * sigmaxy[i2] + bx[x2] * m_vyx[i2]);
@@ -1088,7 +1099,7 @@ __global__ void backward_kernel_sigma(
             int64_t y2 = y - (-j + k - 1);
             int64_t i2 = i - (-j + k - 1) * nx;
             int64_t i2_noshot = i_noshot - (-j + k - 1) * nx;
-            DW_DTYPE muyhx = (mu[i2_noshot] + mu[i2_noshot + nx]) / 2;
+            DW_DTYPE muyhx = (mu_shot[i2_noshot] + mu_shot[i2_noshot + nx]) / 2;
             vx[i] +=
                 fd_coeffs3y[k] * (muyhx * dt * (1 + byh[y2]) * sigmaxy[i2] +
                                   byh[y2] * m_vxy[i2]);
@@ -1096,7 +1107,7 @@ __global__ void backward_kernel_sigma(
             int64_t y2 = y - (j - k + 2);
             int64_t i2 = i - (j - k + 2) * nx;
             int64_t i2_noshot = i_noshot - (j - k + 2) * nx;
-            DW_DTYPE muyhx = (mu[i2_noshot] + mu[i2_noshot + nx]) / 2;
+            DW_DTYPE muyhx = (mu_shot[i2_noshot] + mu_shot[i2_noshot + nx]) / 2;
             vx[i] -=
                 fd_coeffs3y[k] * (muyhx * dt * (1 + byh[y2]) * sigmaxy[i2] +
                                   byh[y2] * m_vxy[i2]);
@@ -1108,7 +1119,7 @@ __global__ void backward_kernel_sigma(
           int64_t y2 = y - (k + 1);
           int64_t i2 = i - (k + 1) * nx;
           int64_t i2_noshot = i_noshot - (k + 1) * nx;
-          DW_DTYPE muyhx = (mu[i2_noshot] + mu[i2_noshot + nx]) / 2;
+          DW_DTYPE muyhx = (mu_shot[i2_noshot] + mu_shot[i2_noshot + nx]) / 2;
           vx[i] += fd_coeffsy[k] * (muyhx * dt * (1 + byh[y2]) * sigmaxy[i2] +
                                     byh[y2] * m_vxy[i2]);
         }
@@ -1116,7 +1127,7 @@ __global__ void backward_kernel_sigma(
           int64_t y2 = y + k;
           int64_t i2 = i + k * nx;
           int64_t i2_noshot = i_noshot + k * nx;
-          DW_DTYPE muyhx = (mu[i2_noshot] + mu[i2_noshot + nx]) / 2;
+          DW_DTYPE muyhx = (mu_shot[i2_noshot] + mu_shot[i2_noshot + nx]) / 2;
           vx[i] -= fd_coeffsy[k] * (muyhx * dt * (1 + byh[y2]) * sigmaxy[i2] +
                                     byh[y2] * m_vxy[i2]);
         }
@@ -1125,11 +1136,11 @@ __global__ void backward_kernel_sigma(
 
     if (pml_y) {
       m_sigmaxyyn[i] =
-          buoyancy[i_noshot] * dt * ay[y] * vx[i] + ay[y] * m_sigmaxyy[i];
+          buoyancy_shot[i_noshot] * dt * ay[y] * vx[i] + ay[y] * m_sigmaxyy[i];
     }
     if (pml_x) {
       m_sigmaxxxn[i] =
-          buoyancy[i_noshot] * dt * ax[x] * vx[i] + ax[x] * m_sigmaxxx[i];
+          buoyancy_shot[i_noshot] * dt * ax[x] * vx[i] + ax[x] * m_sigmaxxx[i];
     }
   }
 }
@@ -1156,11 +1167,14 @@ __global__ void backward_kernel_v(
   int64_t i_noshot = y * nx + x;
   int64_t i = batch * nynx + i_noshot;
   int64_t j, k;
+  DW_DTYPE const *__restrict const lamb_shot = lamb_batched ? lamb + batch * nynx : lamb;
+  DW_DTYPE const *__restrict const mu_shot = mu_batched ? mu + batch * nynx : mu;
+  DW_DTYPE const *__restrict const buoyancy_shot = buoyancy_batched ? buoyancy + batch * nynx : buoyancy;
   if (y < ny && x < nx - 1) {
     bool pml_y = y < vpml_y0 + 1 || y >= vpml_y1;
     bool pml_x = x < vpml_x0 || x >= vpml_x1 - 1;
-    DW_DTYPE lambyxh = (lamb[i_noshot] + lamb[i_noshot + 1]) / 2;
-    DW_DTYPE muyxh = (mu[i_noshot] + mu[i_noshot + 1]) / 2;
+    DW_DTYPE lambyxh = (lamb_shot[i_noshot] + lamb_shot[i_noshot + 1]) / 2;
+    DW_DTYPE muyxh = (mu_shot[i_noshot] + mu_shot[i_noshot + 1]) / 2;
 
     if (pml_y) {
       m_vyy[i] = (lambyxh + 2 * muyxh) * dt * ay[y] * sigmayy[i] +
@@ -1180,11 +1194,11 @@ __global__ void backward_kernel_v(
           int64_t y2 = y - (1 - j + k);
           DW_DTYPE buoyancyyhxh;
           if (y2 == ny - 1) {
-            buoyancyyhxh = (buoyancy[i2_noshot] + buoyancy[i2_noshot + 1]) / 2;
+            buoyancyyhxh = (buoyancy_shot[i2_noshot] + buoyancy_shot[i2_noshot + 1]) / 2;
           } else {
             buoyancyyhxh =
-                (buoyancy[i2_noshot] + buoyancy[i2_noshot + 1] +
-                 buoyancy[i2_noshot + nx] + buoyancy[i2_noshot + nx + 1]) /
+                (buoyancy_shot[i2_noshot] + buoyancy_shot[i2_noshot + 1] +
+                 buoyancy_shot[i2_noshot + nx] + buoyancy_shot[i2_noshot + nx + 1]) /
                 4;
           }
           sigmayy[i] += fd_coeffs1y[j][1 + k] *
@@ -1196,11 +1210,11 @@ __global__ void backward_kernel_v(
           int64_t y2 = y - (j - k);
           DW_DTYPE buoyancyyhxh;
           if (y2 == ny - 1) {
-            buoyancyyhxh = (buoyancy[i2_noshot] + buoyancy[i2_noshot + 1]) / 2;
+            buoyancyyhxh = (buoyancy_shot[i2_noshot] + buoyancy_shot[i2_noshot + 1]) / 2;
           } else {
             buoyancyyhxh =
-                (buoyancy[i2_noshot] + buoyancy[i2_noshot + 1] +
-                 buoyancy[i2_noshot + nx] + buoyancy[i2_noshot + nx + 1]) /
+                (buoyancy_shot[i2_noshot] + buoyancy_shot[i2_noshot + 1] +
+                 buoyancy_shot[i2_noshot + nx] + buoyancy_shot[i2_noshot + nx + 1]) /
                 4;
           }
           sigmayy[i] -= fd_coeffs1y[j][1 + k] *
@@ -1216,11 +1230,11 @@ __global__ void backward_kernel_v(
         int64_t y2 = y - (1 + k);
         DW_DTYPE buoyancyyhxh;
         if (y2 == ny - 1) {
-          buoyancyyhxh = (buoyancy[i2_noshot] + buoyancy[i2_noshot + 1]) / 2;
+          buoyancyyhxh = (buoyancy_shot[i2_noshot] + buoyancy_shot[i2_noshot + 1]) / 2;
         } else {
           buoyancyyhxh =
-              (buoyancy[i2_noshot] + buoyancy[i2_noshot + 1] +
-               buoyancy[i2_noshot + nx] + buoyancy[i2_noshot + nx + 1]) /
+              (buoyancy_shot[i2_noshot] + buoyancy_shot[i2_noshot + 1] +
+               buoyancy_shot[i2_noshot + nx] + buoyancy_shot[i2_noshot + nx + 1]) /
               4;
         }
         sigmayy[i] +=
@@ -1233,11 +1247,11 @@ __global__ void backward_kernel_v(
         int64_t y2 = y - (-k);
         DW_DTYPE buoyancyyhxh;
         if (y2 == ny - 1) {
-          buoyancyyhxh = (buoyancy[i2_noshot] + buoyancy[i2_noshot + 1]) / 2;
+          buoyancyyhxh = (buoyancy_shot[i2_noshot] + buoyancy_shot[i2_noshot + 1]) / 2;
         } else {
           buoyancyyhxh =
-              (buoyancy[i2_noshot] + buoyancy[i2_noshot + 1] +
-               buoyancy[i2_noshot + nx] + buoyancy[i2_noshot + nx + 1]) /
+              (buoyancy_shot[i2_noshot] + buoyancy_shot[i2_noshot + 1] +
+               buoyancy_shot[i2_noshot + nx] + buoyancy_shot[i2_noshot + nx + 1]) /
               4;
         }
         sigmayy[i] -=
@@ -1254,14 +1268,14 @@ __global__ void backward_kernel_v(
           int64_t i2_noshot = i_noshot - (-j + k);
           int64_t x2 = x - (-j + k);
           sigmaxx[i] += fd_coeffs1x[j][1 + k] *
-                        (buoyancy[i2_noshot] * dt * (1 + bx[x2]) * vx[i2] +
+                        (buoyancy_shot[i2_noshot] * dt * (1 + bx[x2]) * vx[i2] +
                          bx[x2] * m_sigmaxxx[i2]);
         } else if (x == nx - 1 - j + (j - k - 1)) {
           int64_t i2 = i - (j - k - 1);
           int64_t i2_noshot = i_noshot - (j - k - 1);
           int64_t x2 = x - (j - k - 1);
           sigmaxx[i] -= fd_coeffs1x[j][1 + k] *
-                        (buoyancy[i2_noshot] * dt * (1 + bx[x2]) * vx[i2] +
+                        (buoyancy_shot[i2_noshot] * dt * (1 + bx[x2]) * vx[i2] +
                          bx[x2] * m_sigmaxxx[i2]);
         }
       }
@@ -1272,7 +1286,7 @@ __global__ void backward_kernel_v(
         int64_t i2_noshot = i_noshot - (k);
         int64_t x2 = x - (k);
         sigmaxx[i] +=
-            fd_coeffsx[k] * (buoyancy[i2_noshot] * dt * (1 + bx[x2]) * vx[i2] +
+            fd_coeffsx[k] * (buoyancy_shot[i2_noshot] * dt * (1 + bx[x2]) * vx[i2] +
                              bx[x2] * m_sigmaxxx[i2]);
       }
       if (x > A / 2 - 1 - (1 + k) && x < nx - 1 - A / 2 + 1 - (1 + k)) {
@@ -1280,7 +1294,7 @@ __global__ void backward_kernel_v(
         int64_t i2_noshot = i_noshot + (1 + k);
         int64_t x2 = x + (1 + k);
         sigmaxx[i] -=
-            fd_coeffsx[k] * (buoyancy[i2_noshot] * dt * (1 + bx[x2]) * vx[i2] +
+            fd_coeffsx[k] * (buoyancy_shot[i2_noshot] * dt * (1 + bx[x2]) * vx[i2] +
                              bx[x2] * m_sigmaxxx[i2]);
       }
     }
@@ -1290,7 +1304,7 @@ __global__ void backward_kernel_v(
     bool pml_y = y < vpml_y0 + 1 || y >= vpml_y1 - 1;
     bool pml_x = x < vpml_x0 + 1 || x >= vpml_x1 - 1;
 
-    DW_DTYPE muyhx = (mu[i_noshot] + mu[i_noshot + nx]) / 2;
+    DW_DTYPE muyhx = (mu_shot[i_noshot] + mu_shot[i_noshot + nx]) / 2;
 
     if (pml_y) {
       m_vxy[i] = muyhx * dt * ayh[y] * sigmaxy[i] + ayh[y] * m_vxy[i];
@@ -1308,11 +1322,11 @@ __global__ void backward_kernel_v(
           int64_t x2 = x - (-j + 1 + k);
           DW_DTYPE buoyancyyhxh;
           if (y == ny - 1) {
-            buoyancyyhxh = (buoyancy[i2_noshot] + buoyancy[i2_noshot + 1]) / 2;
+            buoyancyyhxh = (buoyancy_shot[i2_noshot] + buoyancy_shot[i2_noshot + 1]) / 2;
           } else {
             buoyancyyhxh =
-                (buoyancy[i2_noshot] + buoyancy[i2_noshot + 1] +
-                 buoyancy[i2_noshot + nx] + buoyancy[i2_noshot + nx + 1]) /
+                (buoyancy_shot[i2_noshot] + buoyancy_shot[i2_noshot + 1] +
+                 buoyancy_shot[i2_noshot + nx] + buoyancy_shot[i2_noshot + nx + 1]) /
                 4;
           }
           sigmaxy[i] +=
@@ -1324,11 +1338,11 @@ __global__ void backward_kernel_v(
           int64_t x2 = x - (j - k);
           DW_DTYPE buoyancyyhxh;
           if (y == ny - 1) {
-            buoyancyyhxh = (buoyancy[i2_noshot] + buoyancy[i2_noshot + 1]) / 2;
+            buoyancyyhxh = (buoyancy_shot[i2_noshot] + buoyancy_shot[i2_noshot + 1]) / 2;
           } else {
             buoyancyyhxh =
-                (buoyancy[i2_noshot] + buoyancy[i2_noshot + 1] +
-                 buoyancy[i2_noshot + nx] + buoyancy[i2_noshot + nx + 1]) /
+                (buoyancy_shot[i2_noshot] + buoyancy_shot[i2_noshot + 1] +
+                 buoyancy_shot[i2_noshot + nx] + buoyancy_shot[i2_noshot + nx + 1]) /
                 4;
           }
           sigmaxy[i] -=
@@ -1344,11 +1358,11 @@ __global__ void backward_kernel_v(
         int64_t x2 = x - (1 + k);
         DW_DTYPE buoyancyyhxh;
         if (y == ny - 1) {
-          buoyancyyhxh = (buoyancy[i2_noshot] + buoyancy[i2_noshot + 1]) / 2;
+          buoyancyyhxh = (buoyancy_shot[i2_noshot] + buoyancy_shot[i2_noshot + 1]) / 2;
         } else {
           buoyancyyhxh =
-              (buoyancy[i2_noshot] + buoyancy[i2_noshot + 1] +
-               buoyancy[i2_noshot + nx] + buoyancy[i2_noshot + nx + 1]) /
+              (buoyancy_shot[i2_noshot] + buoyancy_shot[i2_noshot + 1] +
+               buoyancy_shot[i2_noshot + nx] + buoyancy_shot[i2_noshot + nx + 1]) /
               4;
         }
         sigmaxy[i] +=
@@ -1361,11 +1375,11 @@ __global__ void backward_kernel_v(
         int64_t x2 = x - (-k);
         DW_DTYPE buoyancyyhxh;
         if (y == ny - 1) {
-          buoyancyyhxh = (buoyancy[i2_noshot] + buoyancy[i2_noshot + 1]) / 2;
+          buoyancyyhxh = (buoyancy_shot[i2_noshot] + buoyancy_shot[i2_noshot + 1]) / 2;
         } else {
           buoyancyyhxh =
-              (buoyancy[i2_noshot] + buoyancy[i2_noshot + 1] +
-               buoyancy[i2_noshot + nx] + buoyancy[i2_noshot + nx + 1]) /
+              (buoyancy_shot[i2_noshot] + buoyancy_shot[i2_noshot + 1] +
+               buoyancy_shot[i2_noshot + nx] + buoyancy_shot[i2_noshot + nx + 1]) /
               4;
         }
         sigmaxy[i] -=
@@ -1382,14 +1396,14 @@ __global__ void backward_kernel_v(
           int64_t i2_noshot = i_noshot - (-j + k) * nx;
           int64_t y2 = y - (-j + k);
           sigmaxy[i] += fd_coeffs2y[1 + k] *
-                        (buoyancy[i2_noshot] * dt * (1 + by[y2]) * vx[i2] +
+                        (buoyancy_shot[i2_noshot] * dt * (1 + by[y2]) * vx[i2] +
                          by[y2] * m_sigmaxyy[i2]);
         } else if (y == ny - 1 - j + j - k - 1) {
           int64_t i2 = i - (j - k - 1) * nx;
           int64_t i2_noshot = i_noshot - (j - k - 1) * nx;
           int64_t y2 = y - (j - k - 1);
           sigmaxy[i] -= fd_coeffs2y[1 + k] *
-                        (buoyancy[i2_noshot] * dt * (1 + by[y2]) * vx[i2] +
+                        (buoyancy_shot[i2_noshot] * dt * (1 + by[y2]) * vx[i2] +
                          by[y2] * m_sigmaxyy[i2]);
         }
       }
@@ -1400,7 +1414,7 @@ __global__ void backward_kernel_v(
         int64_t i2_noshot = i_noshot - (k)*nx;
         int64_t y2 = y - (k);
         sigmaxy[i] +=
-            fd_coeffsy[k] * (buoyancy[i2_noshot] * dt * (1 + by[y2]) * vx[i2] +
+            fd_coeffsy[k] * (buoyancy_shot[i2_noshot] * dt * (1 + by[y2]) * vx[i2] +
                              by[y2] * m_sigmaxyy[i2]);
       }
       if (y > 1 + A / 2 - 2 - (k + 1) && y < ny - 1 - A / 2 + 2 - (k + 1)) {
@@ -1408,7 +1422,7 @@ __global__ void backward_kernel_v(
         int64_t i2_noshot = i_noshot - (-(k + 1)) * nx;
         int64_t y2 = y - (-(k + 1));
         sigmaxy[i] -=
-            fd_coeffsy[k] * (buoyancy[i2_noshot] * dt * (1 + by[y2]) * vx[i2] +
+            fd_coeffsy[k] * (buoyancy_shot[i2_noshot] * dt * (1 + by[y2]) * vx[i2] +
                              by[y2] * m_sigmaxyy[i2]);
       }
     }
@@ -1473,7 +1487,9 @@ void set_config(
     int64_t const pml_y0_h, int64_t const pml_y1_h, int64_t const pml_x0_h,
     int64_t const pml_x1_h, int64_t const spml_y0_h, int64_t const spml_y1_h,
     int64_t const spml_x0_h, int64_t const spml_x1_h, int64_t const vpml_y0_h,
-    int64_t const vpml_y1_h, int64_t const vpml_x0_h, int64_t const vpml_x1_h) {
+    int64_t const vpml_y1_h, int64_t const vpml_x0_h, int64_t const vpml_x1_h,
+    bool const lamb_batched_h, bool const mu_batched_h,
+    bool const buoyancy_batched_h) {
   int64_t const nynx_h = ny_h * nx_h;
   DW_DTYPE fd_coeffsy_h[2], fd_coeffsx_h[2], fd_coeffs1y_h[2][5],
       fd_coeffs1x_h[2][5], fd_coeffs2y_h[5], fd_coeffs2x_h[5], fd_coeffs3y_h[6],
@@ -1528,6 +1544,9 @@ void set_config(
   gpuErrchk(cudaMemcpyToSymbol(vpml_y1, &vpml_y1_h, sizeof(int64_t)));
   gpuErrchk(cudaMemcpyToSymbol(vpml_x0, &vpml_x0_h, sizeof(int64_t)));
   gpuErrchk(cudaMemcpyToSymbol(vpml_x1, &vpml_x1_h, sizeof(int64_t)));
+  gpuErrchk(cudaMemcpyToSymbol(lamb_batched, &lamb_batched_h, sizeof(bool)));
+  gpuErrchk(cudaMemcpyToSymbol(mu_batched, &mu_batched_h, sizeof(bool)));
+  gpuErrchk(cudaMemcpyToSymbol(buoyancy_batched, &buoyancy_batched_h, sizeof(bool)));
 }
 
 void backward_batch(
@@ -1698,7 +1717,10 @@ extern "C"
             int64_t n_receivers_x_per_shot_h,
             int64_t const n_receivers_p_per_shot_h, int64_t const step_ratio_h,
             bool const lamb_requires_grad, bool const mu_requires_grad,
-            bool const buoyancy_requires_grad, int64_t const pml_y0_h,
+            bool const buoyancy_requires_grad,
+	    bool const lamb_batched_h, bool const mu_batched_h,
+	    bool const buoyancy_batched_h, int64_t const start_t,
+	    int64_t const pml_y0_h,
             int64_t const pml_y1_h, int64_t const pml_x0_h,
             int64_t const pml_x1_h, int64_t const device) {
 
@@ -1734,7 +1756,8 @@ extern "C"
   set_config(dt_h, dy, dx, n_shots_h, ny_h, nx_h, n_sources_y_per_shot_h,
              n_sources_x_per_shot_h, n_receivers_y_per_shot_h,
              n_receivers_x_per_shot_h, n_receivers_p_per_shot_h, step_ratio_h,
-             pml_y0_h, pml_y1_h, pml_x0_h, pml_x1_h, 0, 0, 0, 0, 0, 0, 0, 0);
+             pml_y0_h, pml_y1_h, pml_x0_h, pml_x1_h, 0, 0, 0, 0, 0, 0, 0, 0,
+	     lamb_batched_h, mu_batched_h, buoyancy_batched_h);
 
   for (t = 0; t < nt; ++t) {
     if (n_receivers_y_per_shot_h > 0) {
@@ -1759,7 +1782,7 @@ extern "C"
         dvydbuoyancy + (t / step_ratio_h) * ny_h * nx_h * n_shots_h,
         dvxdbuoyancy + (t / step_ratio_h) * ny_h * nx_h * n_shots_h, ay, ayh,
         ax, axh, by, byh, bx, bxh,
-        buoyancy_requires_grad && ((t % step_ratio_h) == 0));
+        buoyancy_requires_grad && (((t + start_t) % step_ratio_h) == 0));
     CHECK_KERNEL_ERROR
     if (n_sources_y_per_shot_h > 0) {
       add_sources_y<<<dimGrid_sources_y, dimBlock_sources>>>(
@@ -1777,8 +1800,8 @@ extern "C"
         dvxdx_store + (t / step_ratio_h) * ny_h * nx_h * n_shots_h,
         dvydxdvxdy_store + (t / step_ratio_h) * ny_h * nx_h * n_shots_h, ay,
         ayh, ax, axh, by, byh, bx, bxh,
-        lamb_requires_grad && ((t % step_ratio_h) == 0),
-        mu_requires_grad && ((t % step_ratio_h) == 0));
+        lamb_requires_grad && (((t + start_t) % step_ratio_h) == 0),
+        mu_requires_grad && (((t + start_t) % step_ratio_h) == 0));
     CHECK_KERNEL_ERROR
   }
   if (n_receivers_y_per_shot_h > 0) {
@@ -1852,7 +1875,10 @@ extern "C"
             int64_t n_receivers_x_per_shot_h,
             int64_t const n_receivers_p_per_shot_h, int64_t const step_ratio_h,
             bool const lamb_requires_grad, bool const mu_requires_grad,
-            bool const buoyancy_requires_grad, int64_t const spml_y0_h,
+            bool const buoyancy_requires_grad,
+	    bool const lamb_batched_h, bool const mu_batched_h,
+	    bool const buoyancy_batched_h, int64_t const start_t,
+	    int64_t const spml_y0_h,
             int64_t const spml_y1_h, int64_t const spml_x0_h,
             int64_t const spml_x1_h, int64_t const vpml_y0_h,
             int64_t const vpml_y1_h, int64_t const vpml_x0_h,
@@ -1877,7 +1903,8 @@ extern "C"
              n_sources_x_per_shot_h, n_receivers_y_per_shot_h,
              n_receivers_x_per_shot_h, n_receivers_p_per_shot_h, step_ratio_h,
              0, 0, 0, 0, spml_y0_h, spml_y1_h, spml_x0_h, spml_x1_h, vpml_y0_h,
-             vpml_y1_h, vpml_x0_h, vpml_x1_h);
+             vpml_y1_h, vpml_x0_h, vpml_x1_h,
+	     lamb_batched_h, mu_batched_h, buoyancy_batched_h);
   if (n_receivers_y_per_shot_h > 0) {
     add_adjoint_sources_y<<<dimGrid_receivers_y, dimBlock_receivers>>>(
         vy, grad_r_y + nt * n_shots_h * n_receivers_y_per_shot_h,
@@ -1910,9 +1937,9 @@ extern "C"
           n_shots_h, ny_h, nx_h, n_sources_y_per_shot_h, n_sources_x_per_shot_h,
           n_receivers_y_per_shot_h, n_receivers_x_per_shot_h,
           n_receivers_p_per_shot_h,
-          lamb_requires_grad && ((t % step_ratio_h) == 0),
-          mu_requires_grad && ((t % step_ratio_h) == 0),
-          buoyancy_requires_grad && ((t % step_ratio_h) == 0));
+          lamb_requires_grad && (((t + start_t) % step_ratio_h) == 0),
+          mu_requires_grad && (((t + start_t) % step_ratio_h) == 0),
+          buoyancy_requires_grad && (((t + start_t) % step_ratio_h) == 0));
     } else {
       backward_batch(
           lamb, mu, buoyancy,
@@ -1931,21 +1958,21 @@ extern "C"
           n_shots_h, ny_h, nx_h, n_sources_y_per_shot_h, n_sources_x_per_shot_h,
           n_receivers_y_per_shot_h, n_receivers_x_per_shot_h,
           n_receivers_p_per_shot_h,
-          lamb_requires_grad && ((t % step_ratio_h) == 0),
-          mu_requires_grad && ((t % step_ratio_h) == 0),
-          buoyancy_requires_grad && ((t % step_ratio_h) == 0));
+          lamb_requires_grad && (((t + start_t) % step_ratio_h) == 0),
+          mu_requires_grad && (((t + start_t) % step_ratio_h) == 0),
+          buoyancy_requires_grad && (((t + start_t) % step_ratio_h) == 0));
     }
   }
-  if (lamb_requires_grad && n_shots_h > 1) {
+  if (lamb_requires_grad && !lamb_batched_h && n_shots_h > 1) {
     combine_grad<<<dimGrid_combine, dimBlock_combine>>>(grad_lamb,
                                                         grad_lamb_shot);
     CHECK_KERNEL_ERROR
   }
-  if (mu_requires_grad && n_shots_h > 1) {
+  if (mu_requires_grad && !mu_batched_h && n_shots_h > 1) {
     combine_grad<<<dimGrid_combine, dimBlock_combine>>>(grad_mu, grad_mu_shot);
     CHECK_KERNEL_ERROR
   }
-  if (buoyancy_requires_grad && n_shots_h > 1) {
+  if (buoyancy_requires_grad && !buoyancy_batched_h && n_shots_h > 1) {
     combine_grad<<<dimGrid_combine, dimBlock_combine>>>(grad_buoyancy,
                                                         grad_buoyancy_shot);
     CHECK_KERNEL_ERROR

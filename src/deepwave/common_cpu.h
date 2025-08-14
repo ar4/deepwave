@@ -1,23 +1,24 @@
 #ifndef DW_COMMON_CPU_H
 #define DW_COMMON_CPU_H
 
-static void add_sources(DW_DTYPE *__restrict const wf,
-                        DW_DTYPE const *__restrict const f,
-                        int64_t const *__restrict const sources_i,
-                        int64_t const n_sources_per_shot) {
-  int64_t source_idx;
-  for (source_idx = 0; source_idx < n_sources_per_shot; ++source_idx) {
-    wf[sources_i[source_idx]] += f[source_idx];
+
+inline void record_from_wavefield(DW_DTYPE const* __restrict const wavefield,
+                                  int64_t const* __restrict const locations,
+                                  DW_DTYPE* __restrict const amplitudes, int64_t n) {
+  int64_t i;
+#pragma omp simd
+  for (i = 0; i < n; ++i) {
+    if (0 <= locations[i]) amplitudes[i] = wavefield[locations[i]];
   }
 }
 
-static void record_receivers(DW_DTYPE *__restrict const r,
-                             DW_DTYPE const *__restrict const wf,
-                             int64_t const *__restrict const receivers_i,
-                             int64_t const n_receivers_per_shot) {
-  int64_t receiver_idx;
-  for (receiver_idx = 0; receiver_idx < n_receivers_per_shot; ++receiver_idx) {
-    r[receiver_idx] = wf[receivers_i[receiver_idx]];
+inline void add_to_wavefield(DW_DTYPE* __restrict const wavefield,
+                             int64_t const* __restrict const locations,
+                             DW_DTYPE const* __restrict const amplitudes, int64_t n) {
+  int64_t i;
+#pragma omp simd
+  for (i = 0; i < n; ++i) {
+    if (0 <= locations[i]) wavefield[locations[i]] += amplitudes[i];
   }
 }
 

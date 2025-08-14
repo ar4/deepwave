@@ -34,10 +34,10 @@
 #define AX_PSIX(dy, dx) ax[x + dx] * psix[i + dy * nx + dx]
 #define AY_PSIYSC(dy, dx) ay[y + dy] * psiysc[i + dy * nx + dx]
 #define AX_PSIXSC(dy, dx) ax[x + dx] * psixsc[i + dy * nx + dx]
-#define V(dy, dx) v[j + dy * nx + dx]
+#define V(dy, dx) v_shot[j + dy * nx + dx]
 #define VDT2(dy, dx) V(dy, dx) * dt2
 #define V2DT2(dy, dx) V(dy, dx) * V(dy, dx) * dt2
-#define SCATTER(dy, dx) scatter[j + dy * nx + dx]
+#define SCATTER(dy, dx) scatter_shot[j + dy * nx + dx]
 #define V2DT2_WFC(dy, dx)        \
   (V2DT2(dy, dx) * WFC(dy, dx) + \
    2 * VDT2(dy, dx) * SCATTER(dy, dx) * WFCSC(dy, dx))
@@ -115,6 +115,8 @@ __constant__ int64_t pml_y0;
 __constant__ int64_t pml_y1;
 __constant__ int64_t pml_x0;
 __constant__ int64_t pml_x1;
+__constant__ bool v_batched;
+__constant__ bool scatter_batched;
 
 __global__ void add_sources_both(DW_DTYPE *__restrict const wf,
                                  DW_DTYPE *__restrict const wfsc,
@@ -125,8 +127,10 @@ __global__ void add_sources_both(DW_DTYPE *__restrict const wf,
   int64_t shot_idx = blockIdx.y * blockDim.y + threadIdx.y;
   if (source_idx < n_sources_per_shot && shot_idx < n_shots) {
     int64_t k = shot_idx * n_sources_per_shot + source_idx;
-    wf[shot_idx * nynx + sources_i[k]] += f[k];
-    wfsc[shot_idx * nynx + sources_i[k]] += fsc[k];
+    if (0 <= sources_i[k]) {
+      wf[shot_idx * nynx + sources_i[k]] += f[k];
+      wfsc[shot_idx * nynx + sources_i[k]] += fsc[k];
+    }
   }
 }
 
@@ -137,7 +141,7 @@ __global__ void add_adjoint_sources(DW_DTYPE *__restrict const wf,
   int64_t shot_idx = blockIdx.y * blockDim.y + threadIdx.y;
   if (source_idx < n_receivers_per_shot && shot_idx < n_shots) {
     int64_t k = shot_idx * n_receivers_per_shot + source_idx;
-    wf[shot_idx * nynx + sources_i[k]] += f[k];
+    if (0 <= sources_i[k]) wf[shot_idx * nynx + sources_i[k]] += f[k];
   }
 }
 
@@ -148,7 +152,7 @@ __global__ void add_adjoint_sourcessc(
   int64_t shot_idx = blockIdx.y * blockDim.y + threadIdx.y;
   if (source_idx < n_receiverssc_per_shot && shot_idx < n_shots) {
     int64_t k = shot_idx * n_receiverssc_per_shot + source_idx;
-    wf[shot_idx * nynx + sources_i[k]] += f[k];
+    if (0 <= sources_i[k]) wf[shot_idx * nynx + sources_i[k]] += f[k];
   }
 }
 
@@ -159,7 +163,7 @@ __global__ void record_receivers(DW_DTYPE *__restrict const r,
   int64_t shot_idx = blockIdx.y * blockDim.y + threadIdx.y;
   if (receiver_idx < n_receivers_per_shot && shot_idx < n_shots) {
     int64_t k = shot_idx * n_receivers_per_shot + receiver_idx;
-    r[k] = wf[shot_idx * nynx + receivers_i[k]];
+    if (0 <= receivers_i[k]) r[k] = wf[shot_idx * nynx + receivers_i[k]];
   }
 }
 
@@ -170,7 +174,7 @@ __global__ void record_receiverssc(DW_DTYPE *__restrict const r,
   int64_t shot_idx = blockIdx.y * blockDim.y + threadIdx.y;
   if (receiver_idx < n_receiverssc_per_shot && shot_idx < n_shots) {
     int64_t k = shot_idx * n_receiverssc_per_shot + receiver_idx;
-    r[k] = wf[shot_idx * nynx + receivers_i[k]];
+    if (0 <= receivers_i[k]) r[k] = wf[shot_idx * nynx + receivers_i[k]];
   }
 }
 
@@ -181,7 +185,7 @@ __global__ void record_adjoint_receivers(
   int64_t shot_idx = blockIdx.y * blockDim.y + threadIdx.y;
   if (receiver_idx < n_sources_per_shot && shot_idx < n_shots) {
     int64_t k = shot_idx * n_sources_per_shot + receiver_idx;
-    r[k] = wf[shot_idx * nynx + receivers_i[k]];
+    if (0 <= receivers_i[k]) r[k] = wf[shot_idx * nynx + receivers_i[k]];
   }
 }
 
@@ -192,7 +196,7 @@ __global__ void record_adjoint_receiverssc(
   int64_t shot_idx = blockIdx.y * blockDim.y + threadIdx.y;
   if (receiver_idx < n_sourcessc_per_shot && shot_idx < n_shots) {
     int64_t k = shot_idx * n_sourcessc_per_shot + receiver_idx;
-    rsc[k] = wfsc[shot_idx * nynx + receivers_i[k]];
+    if (0 <= receivers_i[k]) rsc[k] = wfsc[shot_idx * nynx + receivers_i[k]];
   }
 }
 
@@ -232,6 +236,8 @@ __global__ void forward_kernel(
     int64_t shot_idx = blockIdx.z * blockDim.z + threadIdx.z;
     int64_t j = y * nx + x;
     int64_t i = shot_idx * nynx + j;
+    DW_DTYPE const *__restrict const v_shot = v_batched ? v + shot_idx * nynx : v;
+    DW_DTYPE const *__restrict const scatter_shot = scatter_batched ? scatter + shot_idx * nynx : scatter;
     bool pml_y = y < pml_y0 || y >= pml_y1;
     bool pml_x = x < pml_x0 || x >= pml_x1;
     DW_DTYPE w_sum, wsc_sum;
@@ -269,9 +275,9 @@ __global__ void forward_kernel(
       psixnsc[i] = bx[x] * dwfcscdx + ax[x] * psixsc[i];
       zetaxsc[i] = bx[x] * tmpxsc + ax[x] * zetaxsc[i];
     }
-    wfp[i] = v[j] * v[j] * dt2 * w_sum + 2 * wfc[i] - wfp[i];
-    wfpsc[i] = v[j] * v[j] * dt2 * wsc_sum + 2 * wfcsc[i] - wfpsc[i] +
-               2 * v[j] * scatter[j] * dt2 * w_sum;
+    wfp[i] = v_shot[j] * v_shot[j] * dt2 * w_sum + 2 * wfc[i] - wfp[i];
+    wfpsc[i] = v_shot[j] * v_shot[j] * dt2 * wsc_sum + 2 * wfcsc[i] - wfpsc[i] +
+               2 * v_shot[j] * scatter_shot[j] * dt2 * w_sum;
     if (v_requires_grad || scatter_requires_grad) {
       w_store[i] = w_sum;
     }
@@ -309,6 +315,8 @@ __global__ void backward_kernel(
     int64_t shot_idx = blockIdx.z * blockDim.z + threadIdx.z;
     int64_t j = y * nx + x;
     int64_t i = shot_idx * nynx + j;
+    DW_DTYPE const *__restrict const v_shot = v_batched ? v + shot_idx * nynx : v;
+    DW_DTYPE const *__restrict const scatter_shot = scatter_batched ? scatter + shot_idx * nynx : scatter;
     bool pml_y = y < pml_y0 || y >= pml_y1;
     bool pml_x = x < pml_x0 || x >= pml_x1;
     wfp[i] =
@@ -337,14 +345,14 @@ __global__ void backward_kernel(
                   ax[x] * zetax[i];
     }
     if (v_requires_grad) {
-      grad_v[i] += wfc[i] * 2 * v[j] * dt2 * w_store[i] * step_ratio +
+      grad_v[i] += wfc[i] * 2 * v_shot[j] * dt2 * w_store[i] * step_ratio +
                    wfcsc[i] *
-                       (2 * dt2 * scatter[j] * w_store[i] +
-                        2 * v[j] * dt2 * wsc_store[i]) *
+                       (2 * dt2 * scatter_shot[j] * w_store[i] +
+                        2 * v_shot[j] * dt2 * wsc_store[i]) *
                        step_ratio;
     }
     if (scatter_requires_grad) {
-      grad_scatter[i] += wfcsc[i] * 2 * v[j] * dt2 * w_store[i] * step_ratio;
+      grad_scatter[i] += wfcsc[i] * 2 * v_shot[j] * dt2 * w_store[i] * step_ratio;
     }
   }
 }
@@ -368,6 +376,7 @@ __global__ void backward_kernel_sc(
     int64_t shot_idx = blockIdx.z * blockDim.z + threadIdx.z;
     int64_t j = y * nx + x;
     int64_t i = shot_idx * nynx + j;
+    DW_DTYPE const *__restrict const v_shot = v_batched ? v + shot_idx * nynx : v;
     bool pml_y = y < pml_y0 || y >= pml_y1;
     bool pml_x = x < pml_x0 || x >= pml_x1;
     wfpsc[i] = (pml_y ? -DIFFY1(UTSC_TERMY1) + DIFFY2(UTSC_TERMY2)
@@ -384,7 +393,7 @@ __global__ void backward_kernel_sc(
       zetaxnsc[i] = ax[x] * V2DT2(0, 0) * wfcsc[i] + ax[x] * zetaxsc[i];
     }
     if (scatter_requires_grad) {
-      grad_scatter[i] += wfcsc[i] * 2 * v[j] * dt2 * w_store[i] * step_ratio;
+      grad_scatter[i] += wfcsc[i] * 2 * v_shot[j] * dt2 * w_store[i] * step_ratio;
     }
   }
 }
@@ -409,7 +418,7 @@ void set_config(
     int64_t const n_sourcessc_per_shot_h, int64_t const n_receivers_per_shot_h,
     int64_t const n_receiverssc_per_shot_h, int64_t const step_ratio_h,
     int64_t const pml_y0_h, int64_t const pml_y1_h, int64_t const pml_x0_h,
-    int64_t const pml_x1_h) {
+    int64_t const pml_x1_h, bool const v_batched_h, bool const scatter_batched_h) {
   int64_t const nynx_h = ny_h * nx_h;
   gpuErrchk(cudaMemcpyToSymbol(dt2, &dt2_h, sizeof(DW_DTYPE)));
   gpuErrchk(cudaMemcpyToSymbol(rdy, &rdy_h, sizeof(DW_DTYPE)));
@@ -433,6 +442,8 @@ void set_config(
   gpuErrchk(cudaMemcpyToSymbol(pml_y1, &pml_y1_h, sizeof(int64_t)));
   gpuErrchk(cudaMemcpyToSymbol(pml_x0, &pml_x0_h, sizeof(int64_t)));
   gpuErrchk(cudaMemcpyToSymbol(pml_x1, &pml_x1_h, sizeof(int64_t)));
+  gpuErrchk(cudaMemcpyToSymbol(v_batched, &v_batched_h, sizeof(bool)));
+  gpuErrchk(cudaMemcpyToSymbol(scatter_batched, &scatter_batched_h, sizeof(bool)));
 }
 
 }  // namespace
@@ -475,6 +486,7 @@ extern "C"
             int64_t const n_receivers_per_shot_h,
             int64_t const n_receiverssc_per_shot_h, int64_t const step_ratio_h,
             bool const v_requires_grad, bool const scatter_requires_grad,
+            bool const v_batched_h, bool const scatter_batched_h, int64_t const start_t,
             int64_t const pml_y0_h, int64_t const pml_y1_h,
             int64_t const pml_x0_h, int64_t const pml_x1_h,
             int64_t const device) {
@@ -509,7 +521,7 @@ extern "C"
   set_config(dt2_h, rdy_h, rdx_h, rdy2_h, rdx2_h, n_shots_h, ny_h, nx_h,
              n_sources_per_shot_h, n_sources_per_shot_h, n_receivers_per_shot_h,
              n_receiverssc_per_shot_h, step_ratio_h, pml_y0_h, pml_y1_h,
-             pml_x0_h, pml_x1_h);
+             pml_x0_h, pml_x1_h, v_batched_h, scatter_batched_h);
   for (t = 0; t < nt; ++t) {
     if (t & 1) {
       forward_kernel<<<dimGrid, dimBlock>>>(
@@ -517,8 +529,8 @@ extern "C"
           wfcsc, psiynsc, psixnsc, psiysc, psixsc, zetaysc, zetaxsc,
           w_store + (t / step_ratio_h) * ny_h * nx_h * n_shots_h,
           wsc_store + (t / step_ratio_h) * ny_h * nx_h * n_shots_h, ay, ax, by,
-          bx, dbydy, dbxdx, v_requires_grad && ((t % step_ratio_h) == 0),
-          scatter_requires_grad && ((t % step_ratio_h) == 0));
+          bx, dbydy, dbxdx, v_requires_grad && (((t + start_t) % step_ratio_h) == 0),
+          scatter_requires_grad && (((t + start_t) % step_ratio_h) == 0));
       CHECK_KERNEL_ERROR
       if (n_sources_per_shot_h > 0) {
         add_sources_both<<<dimGrid_sources, dimBlock_sources>>>(
@@ -544,8 +556,8 @@ extern "C"
           wfpsc, psiysc, psixsc, psiynsc, psixnsc, zetaysc, zetaxsc,
           w_store + (t / step_ratio_h) * ny_h * nx_h * n_shots_h,
           wsc_store + (t / step_ratio_h) * ny_h * nx_h * n_shots_h, ay, ax, by,
-          bx, dbydy, dbxdx, v_requires_grad && ((t % step_ratio_h) == 0),
-          scatter_requires_grad && ((t % step_ratio_h) == 0));
+          bx, dbydy, dbxdx, v_requires_grad && (((t + start_t) % step_ratio_h) == 0),
+          scatter_requires_grad && (((t + start_t) % step_ratio_h) == 0));
       CHECK_KERNEL_ERROR
       if (n_sources_per_shot_h > 0) {
         add_sources_both<<<dimGrid_sources, dimBlock_sources>>>(
@@ -616,6 +628,7 @@ extern "C"
             int64_t const n_receivers_per_shot_h,
             int64_t const n_receiverssc_per_shot_h, int64_t const step_ratio_h,
             bool const v_requires_grad, bool const scatter_requires_grad,
+            bool const v_batched_h, bool const scatter_batched_h, int64_t const start_t,
             int64_t const pml_y0_h, int64_t const pml_y1_h,
             int64_t const pml_x0_h, int64_t const pml_x1_h,
             int64_t const device) {
@@ -660,7 +673,7 @@ extern "C"
   set_config(dt2_h, rdy_h, rdx_h, rdy2_h, rdx2_h, n_shots_h, ny_h, nx_h,
              n_sources_per_shot_h, n_sourcessc_per_shot_h,
              n_receivers_per_shot_h, n_receiverssc_per_shot_h, step_ratio_h,
-             pml_y0_h, pml_y1_h, pml_x0_h, pml_x1_h);
+             pml_y0_h, pml_y1_h, pml_x0_h, pml_x1_h, v_batched_h, scatter_batched_h);
   for (t = nt - 1; t >= 0; --t) {
     if ((nt - 1 - t) & 1) {
       if (n_sources_per_shot_h > 0) {
@@ -681,8 +694,8 @@ extern "C"
           w_store + (t / step_ratio_h) * n_shots_h * ny_h * nx_h,
           wsc_store + (t / step_ratio_h) * n_shots_h * ny_h * nx_h, grad_v_shot,
           grad_scatter_shot, ay, ax, by, bx, dbydy, dbxdx,
-          v_requires_grad && ((t % step_ratio_h) == 0),
-          scatter_requires_grad && ((t % step_ratio_h) == 0));
+          v_requires_grad && (((t + start_t) % step_ratio_h) == 0),
+          scatter_requires_grad && (((t + start_t) % step_ratio_h) == 0));
       CHECK_KERNEL_ERROR
       if (n_receivers_per_shot_h > 0) {
         add_adjoint_sources<<<dimGrid_receivers, dimBlock_receivers>>>(
@@ -714,8 +727,8 @@ extern "C"
           w_store + (t / step_ratio_h) * n_shots_h * ny_h * nx_h,
           wsc_store + (t / step_ratio_h) * n_shots_h * ny_h * nx_h, grad_v_shot,
           grad_scatter_shot, ay, ax, by, bx, dbydy, dbxdx,
-          v_requires_grad && ((t % step_ratio_h) == 0),
-          scatter_requires_grad && ((t % step_ratio_h) == 0));
+          v_requires_grad && (((t + start_t) % step_ratio_h) == 0),
+          scatter_requires_grad && (((t + start_t) % step_ratio_h) == 0));
       CHECK_KERNEL_ERROR
       if (n_receivers_per_shot_h > 0) {
         add_adjoint_sources<<<dimGrid_receivers, dimBlock_receivers>>>(
@@ -730,11 +743,11 @@ extern "C"
       }
     }
   }
-  if (v_requires_grad && n_shots_h > 1) {
+  if (v_requires_grad && !v_batched_h && n_shots_h > 1) {
     combine_grad<<<dimGrid_combine, dimBlock_combine>>>(grad_v, grad_v_shot);
     CHECK_KERNEL_ERROR
   }
-  if (scatter_requires_grad && n_shots_h > 1) {
+  if (scatter_requires_grad && !scatter_batched_h && n_shots_h > 1) {
     combine_grad<<<dimGrid_combine, dimBlock_combine>>>(grad_scatter,
                                                         grad_scatter_shot);
     CHECK_KERNEL_ERROR
@@ -774,7 +787,9 @@ extern "C"
             int64_t const ny_h, int64_t const nx_h,
             int64_t const n_sourcessc_per_shot_h,
             int64_t const n_receiverssc_per_shot_h, int64_t const step_ratio_h,
-            bool const scatter_requires_grad, int64_t const pml_y0_h,
+            bool const scatter_requires_grad,
+            bool const v_batched_h, bool const scatter_batched_h, int64_t const start_t,
+	    int64_t const pml_y0_h,
             int64_t const pml_y1_h, int64_t const pml_x0_h,
             int64_t const pml_x1_h, int64_t const device) {
 
@@ -806,7 +821,7 @@ extern "C"
   set_config(dt2_h, rdy_h, rdx_h, rdy2_h, rdx2_h, n_shots_h, ny_h, nx_h,
              n_sourcessc_per_shot_h, n_sourcessc_per_shot_h,
              n_receiverssc_per_shot_h, n_receiverssc_per_shot_h, step_ratio_h,
-             pml_y0_h, pml_y1_h, pml_x0_h, pml_x1_h);
+             pml_y0_h, pml_y1_h, pml_x0_h, pml_x1_h, v_batched_h, scatter_batched_h);
   for (t = nt - 1; t >= 0; --t) {
     if ((nt - 1 - t) & 1) {
       if (n_sourcessc_per_shot_h > 0) {
@@ -820,7 +835,7 @@ extern "C"
           zetaysc, zetaxsc,
           w_store + (t / step_ratio_h) * n_shots_h * ny_h * nx_h,
           grad_scatter_shot, ay, ax, by, bx, dbydy, dbxdx,
-          scatter_requires_grad && ((t % step_ratio_h) == 0));
+          scatter_requires_grad && (((t + start_t) % step_ratio_h) == 0));
       CHECK_KERNEL_ERROR
       if (n_receiverssc_per_shot_h > 0) {
         add_adjoint_sourcessc<<<dimGrid_receiverssc, dimBlock_receiverssc>>>(
@@ -840,7 +855,7 @@ extern "C"
           zetaynsc, zetaxnsc,
           w_store + (t / step_ratio_h) * n_shots_h * ny_h * nx_h,
           grad_scatter_shot, ay, ax, by, bx, dbydy, dbxdx,
-          scatter_requires_grad && ((t % step_ratio_h) == 0));
+          scatter_requires_grad && (((t + start_t) % step_ratio_h) == 0));
       CHECK_KERNEL_ERROR
       if (n_receiverssc_per_shot_h > 0) {
         add_adjoint_sourcessc<<<dimGrid_receiverssc, dimBlock_receiverssc>>>(
@@ -850,7 +865,7 @@ extern "C"
       }
     }
   }
-  if (scatter_requires_grad && n_shots_h > 1) {
+  if (scatter_requires_grad && !scatter_batched_h && n_shots_h > 1) {
     combine_grad<<<dimGrid_combine, dimBlock_combine>>>(grad_scatter,
                                                         grad_scatter_shot);
     CHECK_KERNEL_ERROR

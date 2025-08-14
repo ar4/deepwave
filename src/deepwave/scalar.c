@@ -83,6 +83,7 @@
 #define FORWARD_KERNEL(pml_y, pml_x, v_requires_grad)                      \
   {                                                                        \
     SET_RANGE(pml_y, pml_x)                                                \
+    _Pragma("omp simd collapse(2)")                                        \
     for (y = y_begin; y < y_end; ++y) {                                    \
       for (x = x_begin; x < x_end; ++x) {                                  \
         int64_t const i = y * nx + x;                                      \
@@ -117,6 +118,7 @@
 #define BACKWARD_KERNEL(pml_y, pml_x, v_requires_grad)                   \
   {                                                                      \
     SET_RANGE(pml_y, pml_x)                                              \
+    _Pragma("omp simd collapse(2)")                                      \
     for (y = y_begin; y < y_end; ++y) {                                  \
       for (x = x_begin; x < x_end; ++x) {                                \
         int64_t const i = y * nx + x;                                    \
@@ -154,6 +156,9 @@ static void forward_kernel(
     DW_DTYPE const dt2, int64_t const ny, int64_t const nx,
     bool const v_requires_grad, int64_t const pml_y0, int64_t const pml_y1,
     int64_t const pml_x0, int64_t const pml_x1) {
+  // wave equation update on 9 regions defined by whether y and/or x PML
+  // calculations are performed. When t is a multiple of step_ratio, we save
+  // snapshot data required during backpropagation, if v requires grads.
   int64_t y, x, y_begin, y_end, x_begin, x_end;
   DW_DTYPE w_sum;
   if (v_requires_grad) {
@@ -195,6 +200,10 @@ static void backward_kernel(
     int64_t const ny, int64_t const nx, int64_t const step_ratio,
     bool const v_requires_grad, int64_t const pml_y0, int64_t const pml_y1,
     int64_t const pml_x0, int64_t const pml_x1) {
+  // wave equation update on 9 regions defined by whether y and/or x PML
+  // calculations are performed. When t is a multiple of step_ratio, we
+  // add a new contribution to the gradient with respect to v,
+  // if v requires grads.
   int64_t y, x, y_begin, y_end, x_begin, x_end;
   if (v_requires_grad) {
     BACKWARD_KERNEL(0, 0, 1)
@@ -241,42 +250,48 @@ __declspec(dllexport)
         DW_DTYPE const dt2, int64_t const nt, int64_t const n_shots,
         int64_t const ny, int64_t const nx, int64_t const n_sources_per_shot,
         int64_t const n_receivers_per_shot, int64_t const step_ratio,
-        bool const v_requires_grad, int64_t const pml_y0, int64_t const pml_y1,
+        bool const v_requires_grad, bool const v_batched, int64_t const start_t, int64_t const pml_y0, int64_t const pml_y1,
         int64_t const pml_x0, int64_t const pml_x1, int64_t const n_threads) {
   int64_t shot;
 #ifdef _OPENMP
 #pragma omp parallel for num_threads(n_threads)
 #endif /* _OPENMP */
   for (shot = 0; shot < n_shots; ++shot) {
+    // Indices pointing to the beginning of this shot's memory
     int64_t const i = shot * ny * nx;
     int64_t const si = shot * n_sources_per_shot;
     int64_t const ri = shot * n_receivers_per_shot;
+    /* Select the appropriate velocity model depending on whether each shot
+     * has its own velocity model (v_batched==True) or not. */
+    DW_DTYPE const* __restrict const v_shot = v_batched ? v + i : v;
     int64_t t;
     for (t = 0; t < nt; ++t) {
       if (t & 1) {
-        forward_kernel(v, wfp + i, wfc + i, psiyn + i, psixn + i, psiy + i,
+        forward_kernel(v_shot, wfp + i, wfc + i, psiyn + i, psixn + i, psiy + i,
                        psix + i, zetay + i, zetax + i,
-                       dwdv + shot * (nt / step_ratio) * ny * nx +
-                           (t / step_ratio) * ny * nx,
+                       dwdv + (t / step_ratio) * n_shots * ny * nx + shot * ny * nx,
                        ay, ax, by, bx, dbydy, dbxdx, rdy, rdx, rdy2, rdx2, dt2,
-                       ny, nx, v_requires_grad && ((t % step_ratio) == 0),
+                       ny, nx, v_requires_grad && (((t + start_t) % step_ratio) == 0),
                        pml_y0, pml_y1, pml_x0, pml_x1);
-        add_sources(wfc + i, f + si * nt + t * n_sources_per_shot,
-                    sources_i + si, n_sources_per_shot);
-        record_receivers(r + ri * nt + t * n_receivers_per_shot, wfp + i,
-                         receivers_i + ri, n_receivers_per_shot);
+        add_to_wavefield(wfc + i, sources_i + si,
+                         f + t * n_shots * n_sources_per_shot + si,
+                         n_sources_per_shot);
+        record_from_wavefield(wfp + i, receivers_i + ri,
+                              r + t * n_shots * n_receivers_per_shot + ri,
+                              n_receivers_per_shot);
       } else {
-        forward_kernel(v, wfc + i, wfp + i, psiy + i, psix + i, psiyn + i,
+        forward_kernel(v_shot, wfc + i, wfp + i, psiy + i, psix + i, psiyn + i,
                        psixn + i, zetay + i, zetax + i,
-                       dwdv + shot * (nt / step_ratio) * ny * nx +
-                           (t / step_ratio) * ny * nx,
+                       dwdv + (t / step_ratio) * n_shots * ny * nx + shot * ny * nx,
                        ay, ax, by, bx, dbydy, dbxdx, rdy, rdx, rdy2, rdx2, dt2,
-                       ny, nx, v_requires_grad && ((t % step_ratio) == 0),
+                       ny, nx, v_requires_grad && (((t + start_t) % step_ratio) == 0),
                        pml_y0, pml_y1, pml_x0, pml_x1);
-        add_sources(wfp + i, f + si * nt + t * n_sources_per_shot,
-                    sources_i + si, n_sources_per_shot);
-        record_receivers(r + ri * nt + t * n_receivers_per_shot, wfc + i,
-                         receivers_i + ri, n_receivers_per_shot);
+        add_to_wavefield(wfp + i, sources_i + si,
+                         f + t * n_shots * n_sources_per_shot + si,
+                         n_sources_per_shot);
+        record_from_wavefield(wfc + i, receivers_i + ri,
+                              r + t * n_shots * n_receivers_per_shot + ri,
+                              n_receivers_per_shot);
       }
     }
   }
@@ -308,7 +323,7 @@ __declspec(dllexport)
         int64_t const nt, int64_t const n_shots, int64_t const ny,
         int64_t const nx, int64_t const n_sources_per_shot,
         int64_t const n_receivers_per_shot, int64_t const step_ratio,
-        bool const v_requires_grad, int64_t const pml_y0, int64_t const pml_y1,
+        bool const v_requires_grad, bool const v_batched, int64_t start_t, int64_t const pml_y0, int64_t const pml_y1,
         int64_t const pml_x0, int64_t const pml_x1, int64_t const n_threads) {
   int64_t shot;
 #ifdef _OPENMP
@@ -323,39 +338,43 @@ __declspec(dllexport)
 #else
     int64_t const threadi = 0;
 #endif /* _OPENMP */
+    int64_t const grad_v_i = v_batched ? i : threadi;
+    DW_DTYPE const* __restrict const v2dt2_shot = v_batched ? v2dt2 + i : v2dt2;
     int64_t t;
     for (t = nt - 1; t >= 0; --t) {
       if ((nt - 1 - t) & 1) {
-        record_receivers(grad_f + si * nt + t * n_sources_per_shot, wfp + i,
-                         sources_i + si, n_sources_per_shot);
-        backward_kernel(v2dt2, wfp + i, wfc + i, psiyn + i, psixn + i, psiy + i,
+        record_from_wavefield(wfp + i, sources_i + si,
+                              grad_f + t * n_shots * n_sources_per_shot + si,
+                              n_sources_per_shot);
+        backward_kernel(v2dt2_shot, wfp + i, wfc + i, psiyn + i, psixn + i, psiy + i,
                         psix + i, zetayn + i, zetaxn + i, zetay + i, zetax + i,
-                        dwdv + shot * (nt / step_ratio) * ny * nx +
-                            (t / step_ratio) * ny * nx,
-                        grad_v_thread + threadi, ay, ax, by, bx, dbydy, dbxdx,
+                        dwdv + (t / step_ratio) * n_shots * ny * nx + shot * ny * nx,
+                        grad_v_thread + grad_v_i, ay, ax, by, bx, dbydy, dbxdx,
                         rdy, rdx, rdy2, rdx2, ny, nx, step_ratio,
-                        v_requires_grad && ((t % step_ratio) == 0), pml_y0,
+                        v_requires_grad && (((t + start_t) % step_ratio) == 0), pml_y0,
                         pml_y1, pml_x0, pml_x1);
-        add_sources(wfc + i, grad_r + ri * nt + t * n_receivers_per_shot,
-                    receivers_i + ri, n_receivers_per_shot);
+        add_to_wavefield(wfc + i, receivers_i + ri,
+                         grad_r + t * n_shots * n_receivers_per_shot + ri,
+                         n_receivers_per_shot);
       } else {
-        record_receivers(grad_f + si * nt + t * n_sources_per_shot, wfc + i,
-                         sources_i + si, n_sources_per_shot);
-        backward_kernel(v2dt2, wfc + i, wfp + i, psiy + i, psix + i, psiyn + i,
+        record_from_wavefield(wfc + i, sources_i + si,
+                              grad_f + t * n_shots * n_sources_per_shot + si,
+                              n_sources_per_shot);
+        backward_kernel(v2dt2_shot, wfc + i, wfp + i, psiy + i, psix + i, psiyn + i,
                         psixn + i, zetay + i, zetax + i, zetayn + i, zetaxn + i,
-                        dwdv + shot * (nt / step_ratio) * ny * nx +
-                            (t / step_ratio) * ny * nx,
-                        grad_v_thread + threadi, ay, ax, by, bx, dbydy, dbxdx,
+                        dwdv + (t / step_ratio) * n_shots * ny * nx + shot * ny * nx,
+                        grad_v_thread + grad_v_i, ay, ax, by, bx, dbydy, dbxdx,
                         rdy, rdx, rdy2, rdx2, ny, nx, step_ratio,
-                        v_requires_grad && ((t % step_ratio) == 0), pml_y0,
+                        v_requires_grad && (((t + start_t) % step_ratio) == 0), pml_y0,
                         pml_y1, pml_x0, pml_x1);
-        add_sources(wfp + i, grad_r + ri * nt + t * n_receivers_per_shot,
-                    receivers_i + ri, n_receivers_per_shot);
+        add_to_wavefield(wfp + i, receivers_i + ri,
+                         grad_r + t * n_shots * n_receivers_per_shot + ri,
+                         n_receivers_per_shot);
       }
     }
   }
 #ifdef _OPENMP
-  if (v_requires_grad && n_threads > 1) {
+  if (v_requires_grad && !v_batched && n_threads > 1) {
     combine_grad(grad_v, grad_v_thread, n_threads, ny, nx);
   }
 #endif /* _OPENMP */

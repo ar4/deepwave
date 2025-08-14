@@ -1,12 +1,32 @@
 import torch
 from deepwave import ScalarBorn, scalar_born
-from deepwave.common import cfl_condition, upsample, downsample
+from deepwave.common import cfl_condition, upsample, downsample, IGNORE_LOCATION
 from test_scalar import (scattered_2d, _set_sources, _set_coords)
 
 
 def test_born_scatter_2d():
     """Test Born propagation in a 2D model with a point scatterer."""
     expected, actual = run_born_scatter_2d(propagator=scalarbornprop,
+                                           dt=0.001,
+                                           prop_kwargs={'pml_width': 30})
+    diff = (expected - actual.cpu()).flatten()
+    assert diff.norm() < 0.0025
+
+
+def test_born_scatter_v_batched_2d():
+    """Test Born propagation in a batched 2D velocity model."""
+    expected, actual = run_born_scatter_2d(c=torch.tensor([[[1500.0]],[[1600.0]]]),
+                                           propagator=scalarbornprop,
+                                           dt=0.001,
+                                           prop_kwargs={'pml_width': 30})
+    diff = (expected - actual.cpu()).flatten()
+    assert diff.norm() < 0.0025
+
+
+def test_born_scatter_scatter_batched_2d():
+    """Test Born propagation in a batched 2D scatter model."""
+    expected, actual = run_born_scatter_2d(dscatter=torch.tensor([[[50.0]], [[100.0]]]),
+                                           propagator=scalarbornprop,
                                            dt=0.001,
                                            prop_kwargs={'pml_width': 30})
     diff = (expected - actual.cpu()).flatten()
@@ -92,6 +112,8 @@ def scalarbornprop(model,
         prop_kwargs = {}
     # For consistency when actual max speed changes
     prop_kwargs['max_vel'] = 2000
+
+    prop_kwargs['pml_freq'] = 25
 
     # Workaround for gradcheck not accepting prop_kwargs dictionary
     if pml_width is not None:
@@ -191,6 +213,8 @@ def scalarbornpropchained(model,
         prop_kwargs = {}
     # For consistency when actual max speed changes
     prop_kwargs['max_vel'] = 2000
+
+    prop_kwargs['pml_freq'] = 25
 
     # Workaround for gradcheck not accepting prop_kwargs dictionary
     if pml_width is not None:
@@ -317,6 +341,7 @@ def scalarbornpropchained(model,
 
 def run_born_scatter(c,
                      dc,
+                     dscatter,
                      freq,
                      dx,
                      dt,
@@ -335,17 +360,33 @@ def run_born_scatter(c,
     torch.manual_seed(1)
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if isinstance(c, torch.Tensor):
+        c = c.to(device)
+        min_c = c.min().item()
+        shot_c = c.flatten().tolist()
+    else:
+        min_c = c
+        shot_c = [c] * num_shots
+    if isinstance(dscatter, torch.Tensor):
+        dscatter = dscatter.to(device)
+        shot_dscatter = dscatter.flatten().tolist()
+    else:
+        shot_dscatter = [dscatter] * num_shots
     model = torch.ones(*nx, device=device, dtype=dtype) * c
 
     nx = torch.Tensor(nx).long()
     dx = torch.Tensor(dx)
 
-    nt = int((2 * torch.norm(nx.float() * dx) / c + 0.35 + 2 / freq) / dt)
+    nt = int((2 * torch.norm(nx.float() * dx) / min_c + 0.35 + 2 / freq) / dt)
     x_s = _set_coords(num_shots, num_sources_per_shot, nx)
     x_r = _set_coords(num_shots, num_receivers_per_shot, nx)
     x_p = _set_coords(1, 1, nx, 'middle')[0, 0]
-    scatter = torch.zeros_like(model)
-    scatter[torch.split((x_p).long(), 1)] = dc
+    scatter = torch.zeros_like(model) * dscatter
+    if isinstance(dscatter, torch.Tensor):
+        scatter[..., x_p[0], x_p[1]] = dscatter.flatten()
+    else:
+        scatter[..., x_p[0], x_p[1]] = dscatter
+    #scatter[torch.split((x_p).long(), 1)] = dc
     sources = _set_sources(x_s, freq, dt, nt, dtype)
 
     if len(nx) == 2:
@@ -359,7 +400,7 @@ def run_born_scatter(c,
             for receiver in range(num_receivers_per_shot):
                 expected[shot, receiver, :] += \
                     scattered(x_r[shot, receiver], x_s[shot, source], x_p,
-                              dx, dt, c, dc,
+                              dx, dt, shot_c[shot], shot_dscatter[shot],
                               -sources['amplitude'][shot, source, :]).to(dtype)
 
     actual = propagator(model,
@@ -378,6 +419,7 @@ def run_born_scatter(c,
 
 def run_born_scatter_2d(c=1500,
                         dc=150,
+                        dscatter=150,
                         freq=25,
                         dx=(5, 5),
                         dt=0.0001,
@@ -392,7 +434,7 @@ def run_born_scatter_2d(c=1500,
                         **kwargs):
     """Runs run_born_scatter with default parameters for 2D."""
 
-    return run_born_scatter(c, dc, freq, dx, dt, nx, num_shots,
+    return run_born_scatter(c, dc, dscatter, freq, dx, dt, nx, num_shots,
                             num_sources_per_shot, num_receivers_per_shot,
                             propagator, prop_kwargs, device, dtype, **kwargs)
 
@@ -471,6 +513,98 @@ def test_forward_cpu_gpu_match():
             assert torch.allclose(cpui, gpui.cpu(), atol=1e-5)
 
 
+def test_unused_source_receiver(c=1500,
+                                dc=100,
+                                freq=25,
+                                dx=(5, 5),
+                                dt=0.005,
+                                nx=(50, 50),
+                                num_shots=2,
+                                num_sources_per_shot=2,
+                                num_receivers_per_shot=2,
+                                num_scatter_receivers_per_shot=3,
+                                propagator=scalarbornprop,
+                                prop_kwargs=None,
+                                device=None,
+                                dtype=None):
+    """Test forward and backward propagation when a source and receiver are unused."""
+    assert num_shots > 1
+    assert num_sources_per_shot > 1
+    assert num_receivers_per_shot > 1
+    assert num_scatter_receivers_per_shot > num_shots
+    torch.manual_seed(1)
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    nx = torch.Tensor(nx).long()
+    dx = torch.Tensor(dx)
+
+    model = (torch.ones(*nx, device=device, dtype=dtype) * c +
+             torch.randn(*nx, device=device, dtype=dtype) * dc)
+    scatter = torch.randn(*nx, dtype=dtype).to(device) * dc
+
+    nt = int((2 * torch.norm(nx.float() * dx) / c + 0.35 + 2 / freq) / dt)
+    x_s = _set_coords(num_shots, num_sources_per_shot, nx)
+    x_r = _set_coords(num_shots, num_receivers_per_shot, nx, 'bottom')
+    x_rsc = _set_coords(num_shots, num_scatter_receivers_per_shot, nx, 'bottom')
+    sources = _set_sources(x_s, freq, dt, nt, dtype)
+
+    # Forward with source and receiver ignored
+    modeli = model.clone()
+    modeli.requires_grad_()
+    scatteri = scatter.clone()
+    scatteri.requires_grad_()
+    for i in range(num_shots):
+        x_s[i, i, :] = IGNORE_LOCATION
+        x_r[i, i, :] = IGNORE_LOCATION
+        x_rsc[i, i+1, :] = IGNORE_LOCATION
+    sources['locations'] = x_s
+    out_ignored = propagator(modeli,
+                             scatteri,
+                              dx,
+                              dt,
+                              sources['amplitude'],
+                              sources['locations'],
+                             x_rsc,
+                              x_r,
+                              prop_kwargs=prop_kwargs)
+
+    ((out_ignored[-1]**2).sum() + (out_ignored[-2]**2).sum()).backward()
+
+    # Forward with amplitudes of sources that will be ignored set to zero
+    modelf = model.clone()
+    modelf.requires_grad_()
+    scatterf = scatter.clone()
+    scatterf.requires_grad_()
+    x_s = _set_coords(num_shots, num_sources_per_shot, nx)
+    x_r = _set_coords(num_shots, num_receivers_per_shot, nx, 'bottom')
+    x_rsc = _set_coords(num_shots, num_scatter_receivers_per_shot, nx, 'bottom')
+    for i in range(num_shots):
+        sources['amplitude'][i, i].fill_(0)
+    sources['locations'] = x_s
+    out_filled = propagator(modelf,
+                            scatterf,
+                              dx,
+                              dt,
+                              sources['amplitude'],
+                              sources['locations'],
+                            x_rsc,
+                              x_r,
+                              prop_kwargs=prop_kwargs)
+    # Set receiver amplitudes of receiver that will be ignored to zero
+    for i in range(num_shots):
+        out_filled[-1][i, i+1].fill_(0)
+        out_filled[-2][i, i].fill_(0)
+
+    ((out_filled[-1]**2).sum() + (out_filled[-2]**2).sum()).backward()
+
+    for ofi, oii in zip(out_filled, out_ignored):
+        assert torch.allclose(ofi, oii)
+
+    assert torch.allclose(modelf.grad, modeli.grad)
+    assert torch.allclose(scatterf.grad, scatteri.grad)
+
+
 def run_scalarbornfunc(nt=3):
     from deepwave.scalar_born import scalar_born_func
     torch.manual_seed(1)
@@ -506,28 +640,16 @@ def run_scalarbornfunc(nt=3):
     psixsc = torch.randn_like(wfc)
     zetaysc = torch.randn_like(wfc)
     zetaxsc = torch.randn_like(wfc)
-    if device == torch.device('cpu'):
-        source_amplitudes = torch.randn(n_batch,
-                                        nt,
-                                        n_sources_per_shot,
-                                        dtype=torch.double,
-                                        device=device)
-        source_amplitudessc = torch.randn(n_batch,
-                                          nt,
-                                          n_sources_per_shot,
-                                          dtype=torch.double,
-                                          device=device)
-    else:
-        source_amplitudes = torch.randn(nt,
-                                        n_batch,
-                                        n_sources_per_shot,
-                                        dtype=torch.double,
-                                        device=device)
-        source_amplitudessc = torch.randn(nt,
-                                          n_batch,
-                                          n_sources_per_shot,
-                                          dtype=torch.double,
-                                          device=device)
+    source_amplitudes = torch.randn(nt,
+                                    n_batch,
+                                    n_sources_per_shot,
+                                    dtype=torch.double,
+                                    device=device)
+    source_amplitudessc = torch.randn(nt,
+                                      n_batch,
+                                      n_sources_per_shot,
+                                      dtype=torch.double,
+                                      device=device)
     sources_i = torch.tensor([[7 * nx + 7, 8 * nx + 8],
                               [9 * nx + 9, 10 * nx + 10]]).long().to(device)
     receivers_i = torch.tensor([[7 * nx + 7, 8 * nx + 8, 9 * nx + 9],
@@ -570,14 +692,14 @@ def run_scalarbornfunc(nt=3):
         scalar_born_func,
         (c, scatter, source_amplitudes, source_amplitudessc, wfc, wfp, psiy,
          psix, zetay, zetax, wfcsc, wfpsc, psiysc, psixsc, zetaysc, zetaxsc,
-         ay, ax, by, bx, dbydy, dbxdx, sources_i, receivers_i, receiverssc_i,
+         ay, ax, by, bx, dbydy, dbxdx, sources_i, None, receivers_i, receiverssc_i,
          dy, dx, dt, nt, step_ratio, accuracy, pml_width, n_batch))
     torch.autograd.gradcheck(
         scalar_born_func,
         (c.detach(), scatter, source_amplitudes.detach(), source_amplitudessc,
          wfc.detach(), wfp.detach(), psiy.detach(), psix.detach(),
          zetay.detach(), zetax.detach(), wfcsc, wfpsc, psiysc, psixsc, zetaysc,
-         zetaxsc, ay, ax, by, bx, dbydy, dbxdx, sources_i, receivers_i,
+         zetaxsc, ay, ax, by, bx, dbydy, dbxdx, sources_i, None, receivers_i,
          receiverssc_i, dy, dx, dt, nt, step_ratio, accuracy, pml_width,
          n_batch))
 
@@ -639,6 +761,10 @@ def test_born_gradcheck_2d_no_receivers():
     run_born_gradcheck_2d(propagator=scalarbornprop, num_receivers_per_shot=0)
 
 
+def test_gradcheck_2d_no_scatter_receivers():
+    """Test gradcheck with no scatter receivers."""
+    run_born_gradcheck_2d(propagator=scalarbornprop, num_scatter_receivers_per_shot=0)
+
 def test_born_gradcheck_2d_survey_pad():
     """Test gradcheck with survey_pad."""
     run_born_gradcheck_2d(propagator=scalarbornprop,
@@ -692,7 +818,8 @@ def test_born_gradcheck_2d_single_cell():
                           nx=(1, 1),
                           num_shots=1,
                           num_sources_per_shot=1,
-                          num_receivers_per_shot=1)
+                          num_receivers_per_shot=1,
+                          num_scatter_receivers_per_shot=1)
 
 
 def test_born_gradcheck_2d_big():
@@ -831,6 +958,7 @@ def test_born_gradcheck_only_source_2d():
         propagator=scalarbornprop,
         v_requires_grad=False,
         scatter_requires_grad=False,
+        source_requires_grad=True,
         wavefield_0_requires_grad=False,
         wavefield_m1_requires_grad=False,
         psiy_m1_requires_grad=False,
@@ -887,9 +1015,17 @@ def test_born_gradcheck_only_wavefieldsc_0_2d():
         zetaxsc_m1_requires_grad=False,
     )
 
+def test_born_gradcheck_v_batched():
+    """Test gradcheck using a different velocity for each shot."""
+    run_born_gradcheck_2d(propagator=scalarbornprop, c=torch.tensor([[[1500.0]],[[1600.0]]]))
+
+def test_born_gradcheck_scatter_batched():
+    """Test gradcheck using a different scatter for each shot."""
+    run_born_gradcheck_2d(propagator=scalarbornprop, dscatter=torch.tensor([[[150.0]],[[100.0]]]))
 
 def run_born_gradcheck(c,
                        dc,
+                       dscatter,
                        freq,
                        dx,
                        dt,
@@ -897,6 +1033,7 @@ def run_born_gradcheck(c,
                        num_shots,
                        num_sources_per_shot,
                        num_receivers_per_shot,
+                       num_scatter_receivers_per_shot,
                        propagator,
                        prop_kwargs,
                        pml_width=3,
@@ -928,16 +1065,21 @@ def run_born_gradcheck(c,
     torch.manual_seed(1)
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = (torch.ones(*nx, device=device, dtype=dtype) * c +
-             torch.rand(*nx, device=device, dtype=dtype) * dc)
-    scatter = torch.rand(*nx, device=device, dtype=dtype) * dc
+    if isinstance(c, torch.Tensor):
+        c = c.to(device)
+    if isinstance(dscatter, torch.Tensor):
+        dscatter = dscatter.to(device)
+    model = torch.ones(*nx, device=device, dtype=dtype) * c
+    model += torch.rand(*model.shape, device=device, dtype=dtype) * dc
+    scatter = torch.rand(*nx, device=device, dtype=dtype) * dscatter
+    min_c = model.abs().min().item()
 
     nx = torch.Tensor(nx).long()
     dx = torch.Tensor(dx)
 
-    if c != 0:
+    if min_c != 0:
         nt = int(
-            (2 * torch.norm(nx.float() * dx) / abs(c) + 0.1 + 2 / freq) / dt)
+            (2 * torch.norm(nx.float() * dx) / min_c + 0.1 + 2 / freq) / dt)
     else:
         nt = int(
             (2 * torch.norm(nx.float() * dx) / 1500 + 0.1 + 2 / freq) / dt)
@@ -953,6 +1095,10 @@ def run_born_gradcheck(c,
         x_r = _set_coords(num_shots, num_receivers_per_shot, nx)
     else:
         x_r = None
+    if num_scatter_receivers_per_shot > 0:
+        x_r_sc = _set_coords(num_shots, num_scatter_receivers_per_shot, nx)
+    else:
+        x_r_sc = None
     if isinstance(pml_width, int):
         pml_width = [pml_width for _ in range(4)]
     if provide_wavefields:
@@ -1006,7 +1152,7 @@ def run_born_gradcheck(c,
     torch.autograd.gradcheck(
         propagator,
         (model, scatter, dx, dt, sources['amplitude'], sources['locations'],
-         x_r, x_r, prop_kwargs, pml_width, survey_pad, origin, wavefield_0,
+         x_r, x_r_sc, prop_kwargs, pml_width, survey_pad, origin, wavefield_0,
          wavefield_m1, psiy_m1, psix_m1, zetay_m1, zetax_m1, wavefield_sc_0,
          wavefield_sc_m1, psiy_sc_m1, psix_sc_m1, zetay_sc_m1, zetax_sc_m1, nt,
          1, True),
@@ -1018,6 +1164,7 @@ def run_born_gradcheck(c,
 
 def run_born_gradcheck_2d(c=1500,
                           dc=100,
+                          dscatter=100,
                           freq=25,
                           dx=(5, 5),
                           dt=0.001,
@@ -1025,6 +1172,7 @@ def run_born_gradcheck_2d(c=1500,
                           num_shots=2,
                           num_sources_per_shot=2,
                           num_receivers_per_shot=2,
+                          num_scatter_receivers_per_shot=2,
                           propagator=None,
                           prop_kwargs=None,
                           pml_width=3,
@@ -1036,6 +1184,7 @@ def run_born_gradcheck_2d(c=1500,
 
     return run_born_gradcheck(c,
                               dc,
+                              dscatter,
                               freq,
                               dx,
                               dt,
@@ -1043,6 +1192,7 @@ def run_born_gradcheck_2d(c=1500,
                               num_shots,
                               num_sources_per_shot,
                               num_receivers_per_shot,
+                              num_scatter_receivers_per_shot,
                               propagator,
                               prop_kwargs,
                               pml_width=pml_width,

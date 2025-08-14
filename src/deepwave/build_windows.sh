@@ -2,7 +2,7 @@
 
 set -e
 
-CFLAGS="-Wall -O2 -fp:fast -arch:AVX2 -openmp"
+CFLAGS="-Wall -O2 -fp:fast -arch:AVX2 -openmp:experimental"
 CUDAFLAGS="--restrict --use_fast_math -O3 -gencode=arch=compute_52,code=sm_52, -gencode=arch=compute_60,code=sm_60 -gencode=arch=compute_70,code=sm_70 -gencode=arch=compute_75,code=sm_75 -gencode=arch=compute_80,code=compute_80"
 cl $CFLAGS -DDW_ACCURACY=2 -DDW_DTYPE=float -c scalar.c -Foscalar_cpu_iso_2_float.obj
 cl $CFLAGS -DDW_ACCURACY=4 -DDW_DTYPE=float -c scalar.c -Foscalar_cpu_iso_4_float.obj

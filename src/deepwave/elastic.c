@@ -1162,27 +1162,27 @@ static DW_DTYPE fd_coeffsy[2], fd_coeffsx[2], fd_coeffs1y[2][5],
     fd_coeffs1x[2][5], fd_coeffs2y[5], fd_coeffs2x[5], fd_coeffs3y[6],
     fd_coeffs3x[6];
 
-static void add_pressure_sources(DW_DTYPE *__restrict const sigmayy,
-                                 DW_DTYPE *__restrict const sigmaxx,
-                                 DW_DTYPE const *__restrict const f,
-                                 int64_t const *__restrict const sources_i,
-                                 int64_t const n_sources_per_shot) {
+static void add_pressure(DW_DTYPE *__restrict const sigmayy,
+                         DW_DTYPE *__restrict const sigmaxx,
+                         int64_t const *__restrict const sources_i,
+                         DW_DTYPE const *__restrict const f,
+                         int64_t const n_sources_per_shot) {
   int64_t source_idx;
   for (source_idx = 0; source_idx < n_sources_per_shot; ++source_idx) {
-    sigmayy[sources_i[source_idx]] -= f[source_idx];
-    sigmaxx[sources_i[source_idx]] -= f[source_idx];
+    if (sources_i[source_idx] < 0) continue;
+    sigmayy[sources_i[source_idx]] -= f[source_idx] / (DW_DTYPE)2;
+    sigmaxx[sources_i[source_idx]] -= f[source_idx] / (DW_DTYPE)2;
   }
 }
 
-static void record_pressure_receivers(
-    DW_DTYPE *__restrict const r, DW_DTYPE const *__restrict const sigmayy,
-    DW_DTYPE const *__restrict const sigmaxx,
-    int64_t const *__restrict const receivers_i,
-    int64_t const n_receivers_per_shot) {
-  int64_t receiver_idx;
-  for (receiver_idx = 0; receiver_idx < n_receivers_per_shot; ++receiver_idx) {
-    r[receiver_idx] = -(sigmayy[receivers_i[receiver_idx]] +
-                        sigmaxx[receivers_i[receiver_idx]]);
+static inline void record_pressure(DW_DTYPE const* __restrict sigmayy,
+				   DW_DTYPE const* __restrict sigmaxx,
+                                  int64_t const* __restrict locations,
+                                  DW_DTYPE* __restrict amplitudes, int64_t n) {
+  int64_t i;
+#pragma omp simd
+  for (i = 0; i < n; ++i) {
+    if (0 <= locations[i]) amplitudes[i] = -(sigmayy[locations[i]] + sigmaxx[locations[i]]) / (DW_DTYPE)2;
   }
 }
 
@@ -1636,10 +1636,10 @@ static void backward_shot(
   BACKWARD_KERNEL_SIGMA(2, 1)
   BACKWARD_KERNEL_SIGMA(2, 2)
   if (n_sources_y_per_shot > 0) {
-    record_receivers(grad_f_y, vy, sources_y_i, n_sources_y_per_shot);
+    record_from_wavefield(vy, sources_y_i, grad_f_y, n_sources_y_per_shot);
   }
   if (n_sources_x_per_shot > 0) {
-    record_receivers(grad_f_x, vx, sources_x_i, n_sources_x_per_shot);
+    record_from_wavefield(vx, sources_x_i, grad_f_x, n_sources_x_per_shot);
   }
   if (buoyancy_requires_grad) {
     add_to_grad_buoyancy(grad_buoyancy, vy, vx, dvydbuoyancy, dvxdbuoyancy,
@@ -1655,14 +1655,14 @@ static void backward_shot(
   BACKWARD_KERNEL_V(2, 1)
   BACKWARD_KERNEL_V(2, 2)
   if (n_receivers_y_per_shot > 0) {
-    add_sources(vy, grad_r_y, receivers_y_i, n_receivers_y_per_shot);
+    add_to_wavefield(vy, receivers_y_i, grad_r_y, n_receivers_y_per_shot);
   }
   if (n_receivers_x_per_shot > 0) {
-    add_sources(vx, grad_r_x, receivers_x_i, n_receivers_x_per_shot);
+    add_to_wavefield(vx, receivers_x_i, grad_r_x, n_receivers_x_per_shot);
   }
   if (n_receivers_p_per_shot > 0) {
-    add_pressure_sources(sigmayy, sigmaxx, grad_r_p, receivers_p_i,
-                         n_receivers_p_per_shot);
+    add_pressure(sigmayy, sigmaxx, receivers_p_i, grad_r_p,
+                 n_receivers_p_per_shot);
   }
 }
 
@@ -1774,7 +1774,9 @@ __declspec(dllexport)
         int64_t const n_receivers_y_per_shot, int64_t n_receivers_x_per_shot,
         int64_t const n_receivers_p_per_shot, int64_t const step_ratio,
         bool const lamb_requires_grad, bool const mu_requires_grad,
-        bool const buoyancy_requires_grad, int64_t const pml_y0,
+        bool const buoyancy_requires_grad, bool const lamb_batched,
+	bool const mu_batched, bool const buoyancy_batched, int64_t start_t,
+	int64_t const pml_y0,
         int64_t const pml_y1, int64_t const pml_x0, int64_t const pml_x1,
         int64_t const n_threads) {
   int64_t shot;
@@ -1790,55 +1792,64 @@ __declspec(dllexport)
     int64_t const riy = shot * n_receivers_y_per_shot;
     int64_t const rix = shot * n_receivers_x_per_shot;
     int64_t const rip = shot * n_receivers_p_per_shot;
+    DW_DTYPE const* __restrict const lamb_shot = lamb_batched ? lamb + si : lamb;
+    DW_DTYPE const* __restrict const mu_shot = mu_batched ? mu + si : mu;
+    DW_DTYPE const* __restrict const buoyancy_shot = buoyancy_batched ? buoyancy + si : buoyancy;
     int64_t t;
 
     for (t = 0; t < nt; ++t) {
-      int64_t store_i =
-          shot * (nt / step_ratio) * ny * nx + (t / step_ratio) * ny * nx;
+      int64_t store_i = (t / step_ratio) * n_shots * ny * nx + shot * ny * nx;
       if (n_receivers_y_per_shot > 0) {
-        record_receivers(r_y + riy * (nt + 1) + t * n_receivers_y_per_shot,
-                         vy + si, receivers_y_i + riy, n_receivers_y_per_shot);
+        record_from_wavefield(vy + si, receivers_y_i + riy,
+                              r_y + t * n_shots * n_receivers_y_per_shot + riy,
+                              n_receivers_y_per_shot);
       }
       if (n_receivers_x_per_shot > 0) {
-        record_receivers(r_x + rix * (nt + 1) + t * n_receivers_x_per_shot,
-                         vx + si, receivers_x_i + rix, n_receivers_x_per_shot);
+        record_from_wavefield(vx + si, receivers_x_i + rix,
+                              r_x + t * n_shots * n_receivers_x_per_shot + rix,
+                              n_receivers_x_per_shot);
       }
       if (n_receivers_p_per_shot > 0) {
-        record_pressure_receivers(r_p + rip * nt + t * n_receivers_p_per_shot,
-                                  sigmayy + si, sigmaxx + si,
-                                  receivers_p_i + rip, n_receivers_p_per_shot);
+        record_pressure(sigmayy + si, sigmaxx + si, receivers_p_i + rip,
+                              r_p + t * n_shots * n_receivers_p_per_shot + rip,
+                              n_receivers_p_per_shot);
       }
-      forward_shot_v(buoyancy, vy + si, vx + si, sigmayy + si, sigmaxy + si,
+      forward_shot_v(buoyancy_shot, vy + si, vx + si, sigmayy + si, sigmaxy + si,
                      sigmaxx + si, m_sigmayyy + si, m_sigmaxyy + si,
                      m_sigmaxyx + si, m_sigmaxxx + si, dvydbuoyancy + store_i,
                      dvxdbuoyancy + store_i, ay, ayh, ax, axh, by, byh, bx, bxh,
                      dt, ny, nx,
-                     buoyancy_requires_grad && ((t % step_ratio) == 0), pml_y0,
+                     buoyancy_requires_grad && (((t + start_t) % step_ratio) == 0), pml_y0,
                      pml_y1, pml_x0, pml_x1);
+
       if (n_sources_y_per_shot > 0) {
-        add_sources(vy + si, f_y + siy * nt + t * n_sources_y_per_shot,
-                    sources_y_i + siy, n_sources_y_per_shot);
+        add_to_wavefield(vy + si, sources_y_i + siy,
+                         f_y + t * n_shots * n_sources_y_per_shot + siy,
+                         n_sources_y_per_shot);
       }
       if (n_sources_x_per_shot > 0) {
-        add_sources(vx + si, f_x + six * nt + t * n_sources_x_per_shot,
-                    sources_x_i + six, n_sources_x_per_shot);
+        add_to_wavefield(vx + si, sources_x_i + six,
+                         f_x + t * n_shots * n_sources_x_per_shot + six,
+                         n_sources_x_per_shot);
       }
-      forward_shot_sigma(lamb, mu, vy + si, vx + si, sigmayy + si, sigmaxy + si,
+      forward_shot_sigma(lamb_shot, mu_shot, vy + si, vx + si, sigmayy + si, sigmaxy + si,
                          sigmaxx + si, m_vyy + si, m_vyx + si, m_vxy + si,
                          m_vxx + si, dvydy_store + store_i,
                          dvxdx_store + store_i, dvydxdvxdy_store + store_i, ay,
                          ayh, ax, axh, by, byh, bx, bxh, dt, ny, nx,
-                         lamb_requires_grad && ((t % step_ratio) == 0),
-                         mu_requires_grad && ((t % step_ratio) == 0), pml_y0,
+                         lamb_requires_grad && (((t + start_t) % step_ratio) == 0),
+                         mu_requires_grad && (((t + start_t) % step_ratio) == 0), pml_y0,
                          pml_y1, pml_x0, pml_x1);
     }
     if (n_receivers_y_per_shot > 0) {
-      record_receivers(r_y + riy * (nt + 1) + t * n_receivers_y_per_shot,
-                       vy + si, receivers_y_i + riy, n_receivers_y_per_shot);
+      record_from_wavefield(vy + si, receivers_y_i + riy,
+                            r_y + t * n_shots * n_receivers_y_per_shot + riy,
+                            n_receivers_y_per_shot);
     }
     if (n_receivers_x_per_shot > 0) {
-      record_receivers(r_x + rix * (nt + 1) + t * n_receivers_x_per_shot,
-                       vx + si, receivers_x_i + rix, n_receivers_x_per_shot);
+      record_from_wavefield(vx + si, receivers_x_i + rix,
+                            r_x + t * n_shots * n_receivers_x_per_shot + rix,
+                            n_receivers_x_per_shot);
     }
   }
 }
@@ -1897,7 +1908,9 @@ __declspec(dllexport)
         int64_t const n_receivers_y_per_shot, int64_t n_receivers_x_per_shot,
         int64_t const n_receivers_p_per_shot, int64_t const step_ratio,
         bool const lamb_requires_grad, bool const mu_requires_grad,
-        bool const buoyancy_requires_grad, int64_t const spml_y0,
+        bool const buoyancy_requires_grad, bool const lamb_batched,
+	bool const mu_batched, bool const buoyancy_batched, int64_t start_t,
+	int64_t const spml_y0,
         int64_t const spml_y1, int64_t const spml_x0, int64_t const spml_x1,
         int64_t const vpml_y0, int64_t const vpml_y1, int64_t const vpml_x0,
         int64_t const vpml_x1, int64_t const n_threads) {
@@ -1919,26 +1932,33 @@ __declspec(dllexport)
 #else
     int64_t const threadi = 0;
 #endif /* _OPENMP */
-    int64_t t;
-    if (n_receivers_y_per_shot > 0 && nt > 0) {
-      add_sources(vy + si,
-                  grad_r_y + riy * (nt + 1) + nt * n_receivers_y_per_shot,
-                  receivers_y_i + riy, n_receivers_y_per_shot);
-    }
-    if (n_receivers_x_per_shot > 0 && nt > 0) {
-      add_sources(vx + si,
-                  grad_r_x + rix * (nt + 1) + nt * n_receivers_x_per_shot,
-                  receivers_x_i + rix, n_receivers_x_per_shot);
-    }
+    int64_t const grad_lamb_i = lamb_batched ? si : threadi;
+    int64_t const grad_mu_i = mu_batched ? si : threadi;
+    int64_t const grad_buoyancy_i = buoyancy_batched ? si : threadi;
+    DW_DTYPE const* __restrict const lamb_shot = lamb_batched ? lamb + si : lamb;
+    DW_DTYPE const* __restrict const mu_shot = mu_batched ? mu + si : mu;
+    DW_DTYPE const* __restrict const buoyancy_shot = buoyancy_batched ? buoyancy + si : buoyancy;
+    int64_t t = nt;
+
+      if (n_receivers_y_per_shot > 0 && nt > 0) {
+        add_to_wavefield(vy + si, receivers_y_i + riy,
+                         grad_r_y + t * n_shots * n_receivers_y_per_shot + riy,
+                         n_receivers_y_per_shot);
+      }
+      if (n_receivers_x_per_shot > 0 && nt > 0) {
+        add_to_wavefield(vx + si, receivers_x_i + rix,
+                         grad_r_x + t * n_shots * n_receivers_x_per_shot + rix,
+                         n_receivers_x_per_shot);
+      }
     for (t = nt - 1; t >= 0; --t) {
-      int64_t store_i =
-          shot * (nt / step_ratio) * ny * nx + (t / step_ratio) * ny * nx;
+      int64_t store_i = (t / step_ratio) * n_shots * ny * nx + shot * ny * nx;
       if ((nt - 1 - t) & 1) {
         backward_shot(
-            lamb, mu, buoyancy,
-            grad_r_y + riy * (nt + 1) + t * n_receivers_y_per_shot,
-            grad_r_x + rix * (nt + 1) + t * n_receivers_x_per_shot,
-            grad_r_p + rip * nt + t * n_receivers_p_per_shot, vy + si, vx + si,
+            lamb_shot, mu_shot, buoyancy_shot,
+            grad_r_y + t * n_shots * n_receivers_y_per_shot + riy,
+            grad_r_x + t * n_shots * n_receivers_x_per_shot + rix,
+            grad_r_p + t * n_shots * n_receivers_p_per_shot + rip,
+	    vy + si, vx + si,
             sigmayy + si, sigmaxy + si, sigmaxx + si, m_vyy + si, m_vyx + si,
             m_vxy + si, m_vxx + si, m_sigmayyyn + si, m_sigmaxyyn + si,
             m_sigmaxyxn + si, m_sigmaxxxn + si, m_sigmayyy + si,
@@ -1946,24 +1966,25 @@ __declspec(dllexport)
             dvydbuoyancy + store_i, dvxdbuoyancy + store_i,
             dvydy_store + store_i, dvxdx_store + store_i,
             dvydxdvxdy_store + store_i,
-            grad_f_y + siy * nt + t * n_sources_y_per_shot,
-            grad_f_x + six * nt + t * n_sources_x_per_shot,
-            grad_lamb_thread + threadi, grad_mu_thread + threadi,
-            grad_buoyancy_thread + threadi, ay, ayh, ax, axh, by, byh, bx, bxh,
+            grad_f_y + t * n_shots * n_sources_y_per_shot + siy,
+            grad_f_x + t * n_shots * n_sources_x_per_shot + six,
+            grad_lamb_thread + grad_lamb_i, grad_mu_thread + grad_mu_i,
+            grad_buoyancy_thread + grad_buoyancy_i, ay, ayh, ax, axh, by, byh, bx, bxh,
             sources_y_i + siy, sources_x_i + six, receivers_y_i + riy,
             receivers_x_i + rix, receivers_p_i + rip, dt, ny, nx,
             n_sources_y_per_shot, n_sources_x_per_shot, n_receivers_y_per_shot,
             n_receivers_x_per_shot, n_receivers_p_per_shot, step_ratio,
-            lamb_requires_grad && ((t % step_ratio) == 0),
-            mu_requires_grad && ((t % step_ratio) == 0),
-            buoyancy_requires_grad && ((t % step_ratio) == 0), spml_y0, spml_y1,
+            lamb_requires_grad && (((t + start_t) % step_ratio) == 0),
+            mu_requires_grad && (((t + start_t) % step_ratio) == 0),
+            buoyancy_requires_grad && (((t + start_t) % step_ratio) == 0), spml_y0, spml_y1,
             spml_x0, spml_x1, vpml_y0, vpml_y1, vpml_x0, vpml_x1);
       } else {
         backward_shot(
-            lamb, mu, buoyancy,
-            grad_r_y + riy * (nt + 1) + t * n_receivers_y_per_shot,
-            grad_r_x + rix * (nt + 1) + t * n_receivers_x_per_shot,
-            grad_r_p + rip * nt + t * n_receivers_p_per_shot, vy + si, vx + si,
+            lamb_shot, mu_shot, buoyancy_shot,
+            grad_r_y + t * n_shots * n_receivers_y_per_shot + riy,
+            grad_r_x + t * n_shots * n_receivers_x_per_shot + rix,
+            grad_r_p + t * n_shots * n_receivers_p_per_shot + rip,
+            vy + si, vx + si,
             sigmayy + si, sigmaxy + si, sigmaxx + si, m_vyy + si, m_vyx + si,
             m_vxy + si, m_vxx + si, m_sigmayyy + si, m_sigmaxyy + si,
             m_sigmaxyx + si, m_sigmaxxx + si, m_sigmayyyn + si,
@@ -1971,29 +1992,29 @@ __declspec(dllexport)
             dvydbuoyancy + store_i, dvxdbuoyancy + store_i,
             dvydy_store + store_i, dvxdx_store + store_i,
             dvydxdvxdy_store + store_i,
-            grad_f_y + siy * nt + t * n_sources_y_per_shot,
-            grad_f_x + six * nt + t * n_sources_x_per_shot,
-            grad_lamb_thread + threadi, grad_mu_thread + threadi,
-            grad_buoyancy_thread + threadi, ay, ayh, ax, axh, by, byh, bx, bxh,
+            grad_f_y + t * n_shots * n_sources_y_per_shot + siy,
+            grad_f_x + t * n_shots * n_sources_x_per_shot + six,
+            grad_lamb_thread + grad_lamb_i, grad_mu_thread + grad_mu_i,
+            grad_buoyancy_thread + grad_buoyancy_i, ay, ayh, ax, axh, by, byh, bx, bxh,
             sources_y_i + siy, sources_x_i + six, receivers_y_i + riy,
             receivers_x_i + rix, receivers_p_i + rip, dt, ny, nx,
             n_sources_y_per_shot, n_sources_x_per_shot, n_receivers_y_per_shot,
             n_receivers_x_per_shot, n_receivers_p_per_shot, step_ratio,
-            lamb_requires_grad && ((t % step_ratio) == 0),
-            mu_requires_grad && ((t % step_ratio) == 0),
-            buoyancy_requires_grad && ((t % step_ratio) == 0), spml_y0, spml_y1,
+            lamb_requires_grad && (((t + start_t) % step_ratio) == 0),
+            mu_requires_grad && (((t + start_t) % step_ratio) == 0),
+            buoyancy_requires_grad && (((t + start_t) % step_ratio) == 0), spml_y0, spml_y1,
             spml_x0, spml_x1, vpml_y0, vpml_y1, vpml_x0, vpml_x1);
       }
     }
   }
 #ifdef _OPENMP
-  if (lamb_requires_grad && n_threads > 1) {
+  if (lamb_requires_grad && !lamb_batched && n_threads > 1) {
     combine_grad_elastic(grad_lamb, grad_lamb_thread, n_threads, ny, nx);
   }
-  if (mu_requires_grad && n_threads > 1) {
+  if (mu_requires_grad && !mu_batched && n_threads > 1) {
     combine_grad_elastic(grad_mu, grad_mu_thread, n_threads, ny, nx);
   }
-  if (buoyancy_requires_grad && n_threads > 1) {
+  if (buoyancy_requires_grad && !buoyancy_batched && n_threads > 1) {
     combine_grad_elastic(grad_buoyancy, grad_buoyancy_thread, n_threads, ny,
                          nx);
   }

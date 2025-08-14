@@ -4,7 +4,7 @@ from deepwave import Elastic, elastic
 from deepwave.wavelets import ricker
 from deepwave.common import (cfl_condition, upsample, downsample,
                              lambmubuoyancy_to_vpvsrho,
-                             vpvsrho_to_lambmubuoyancy)
+                             vpvsrho_to_lambmubuoyancy, IGNORE_LOCATION)
 
 DEFAULT_LAMB = 550000000
 DEFAULT_MU = 2200000000
@@ -49,6 +49,8 @@ def elasticprop(lamb,
         prop_kwargs = {}
     # For consistency when actual max speed changes
     prop_kwargs['max_vel'] = 2000
+
+    prop_kwargs['pml_freq'] = 25
 
     # Workaround for gradcheck not accepting prop_kwargs dictionary
     if pml_width is not None:
@@ -167,6 +169,8 @@ def elasticpropchained(lamb,
         prop_kwargs = {}
     # For consistency when actual max speed changes
     prop_kwargs['max_vel'] = 2000
+
+    prop_kwargs['pml_freq'] = 25
 
     # Workaround for gradcheck not accepting prop_kwargs dictionary
     if pml_width is not None:
@@ -396,6 +400,141 @@ def test_forward_cpu_gpu_match():
         assert torch.allclose(cpui, gpui.cpu(), atol=5e-5)
 
 
+def test_unused_source_receiver(mlamb=DEFAULT_LAMB,
+                   mmu=DEFAULT_MU,
+                   mbuoyancy=DEFAULT_BUOYANCY,
+                   freq=25,
+                   dx=(5, 5),
+                   dt=0.004,
+                   nx=(50, 50),
+                   num_shots=2,
+                   num_sources_per_shot=3,
+                   num_receivers_per_shot=4,
+                   propagator=elasticprop,
+                   prop_kwargs=None,
+                   device=None,
+                   dtype=None,
+                   dlamb=DEFAULT_LAMB / 10,
+                   dmu=DEFAULT_MU / 10,
+                   dbuoyancy=DEFAULT_BUOYANCY / 10,
+                   nt=None,
+                   dpeak_time=0.3):
+    """Test forward and backward propagation when a source and receiver are unused."""
+
+    assert num_shots > 1
+    assert num_sources_per_shot > num_shots
+    assert num_receivers_per_shot > num_shots + 1
+
+    torch.manual_seed(1)
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    nx = torch.Tensor(nx).long()
+    dx = torch.Tensor(dx)
+
+    lamb = (torch.ones(*nx, device=device, dtype=dtype) * mlamb +
+            torch.randn(*nx, dtype=dtype).to(device) * dlamb)
+    mu = (torch.ones(*nx, device=device, dtype=dtype) * mmu +
+          torch.randn(*nx, dtype=dtype).to(device) * dmu)
+    buoyancy = (torch.ones(*nx, device=device, dtype=dtype) * mbuoyancy +
+                torch.randn(*nx, dtype=dtype).to(device) * dbuoyancy)
+
+    vp, vs, rho = lambmubuoyancy_to_vpvsrho(lamb.abs(), mu.abs(),
+                                            buoyancy.abs())
+    vmin = min(vp.abs().min(), vs.abs().min())
+
+    if nt is None:
+        nt = int(
+            (2 * torch.norm(nx.float() * dx) / vmin + 0.35 + 2 / freq) / dt)
+    x_s = _set_coords(num_shots, 2 * num_sources_per_shot, nx)
+    x_s_y = x_s[:, :num_sources_per_shot]
+    x_s_x = x_s[:, num_sources_per_shot:]
+    x_r = _set_coords(num_shots, 3 * num_receivers_per_shot, nx, 'bottom')
+    x_r_y = x_r[:, :num_receivers_per_shot]
+    x_r_x = x_r[:, num_receivers_per_shot:2*num_receivers_per_shot]
+    x_r_p = x_r[:, 2*num_receivers_per_shot:]
+    sources_y = _set_sources(x_s_y, freq, dt, nt, dtype, dpeak_time=dpeak_time)
+    sources_x = _set_sources(x_s_x, freq, dt, nt, dtype, dpeak_time=dpeak_time)
+
+    # Forward with source and receiver ignored
+    lambi = lamb.clone()
+    lambi.requires_grad_()
+    mui = mu.clone()
+    mui.requires_grad_()
+    buoyancyi = buoyancy.clone()
+    buoyancyi.requires_grad_()
+    for i in range(num_shots):
+        x_s_y[i, i, :] = IGNORE_LOCATION
+        x_s_x[i, i+1, :] = IGNORE_LOCATION
+        x_r_y[i, i, :] = IGNORE_LOCATION
+        x_r_x[i, i+1, :] = IGNORE_LOCATION
+        x_r_p[i, i+2, :] = IGNORE_LOCATION
+    sources_y['locations'] = x_s_y
+    sources_x['locations'] = x_s_x
+    out_ignored = propagator(lambi,
+                      mui,
+                      buoyancyi,
+                      dx,
+                      dt,
+                      sources_y['amplitude'],
+                      sources_x['amplitude'],
+                      sources_y['locations'],
+                      sources_x['locations'],
+                      x_r_y,
+                      x_r_x,
+                      x_r_p,
+                      prop_kwargs=prop_kwargs)
+
+    ((out_ignored[-1]**2).sum() + (out_ignored[-2]**2).sum() + (out_ignored[-3]**2).sum()).backward()
+
+    # Forward with amplitudes of sources that will be ignored set to zero
+    lambf = lamb.clone()
+    lambf.requires_grad_()
+    muf = mu.clone()
+    muf.requires_grad_()
+    buoyancyf = buoyancy.clone()
+    buoyancyf.requires_grad_()
+    x_s = _set_coords(num_shots, 2 * num_sources_per_shot, nx)
+    x_s_y = x_s[:, :num_sources_per_shot]
+    x_s_x = x_s[:, num_sources_per_shot:]
+    x_r = _set_coords(num_shots, 3 * num_receivers_per_shot, nx, 'bottom')
+    x_r_y = x_r[:, :num_receivers_per_shot]
+    x_r_x = x_r[:, num_receivers_per_shot:2*num_receivers_per_shot]
+    x_r_p = x_r[:, 2*num_receivers_per_shot:]
+    for i in range(num_shots):
+        sources_y['amplitude'][i, i].fill_(0)
+        sources_x['amplitude'][i, i+1].fill_(0)
+    sources_y['locations'] = x_s_y
+    sources_x['locations'] = x_s_x
+    out_filled = propagator(lambf,
+                      muf,
+                      buoyancyf,
+                      dx,
+                      dt,
+                      sources_y['amplitude'],
+                      sources_x['amplitude'],
+                      sources_y['locations'],
+                      sources_x['locations'],
+                      x_r_y,
+                      x_r_x,
+                      x_r_p,
+                      prop_kwargs=prop_kwargs)
+    # Set receiver amplitudes of receiver that will be ignored to zero
+    for i in range(num_shots):
+        out_filled[-2][i, i].fill_(0)
+        out_filled[-1][i, i+1].fill_(0)
+        out_filled[-3][i, i+2].fill_(0)
+
+    ((out_filled[-1]**2).sum() + (out_filled[-2]**2).sum() + (out_filled[-3]**2).sum()).backward()
+
+    for ofi, oii in zip(out_filled, out_ignored):
+        assert torch.allclose(ofi, oii)
+
+    assert torch.allclose(lambf.grad, lambi.grad)
+    assert torch.allclose(muf.grad, mui.grad)
+    assert torch.allclose(buoyancyf.grad, buoyancyi.grad)
+
+
 def run_elasticfunc(nt=3):
     from deepwave.elastic import elastic_func
     torch.manual_seed(1)
@@ -431,28 +570,16 @@ def run_elasticfunc(nt=3):
     m_sigmaxyy = torch.randn_like(vy)
     m_sigmaxyx = torch.randn_like(vy)
     m_sigmaxxx = torch.randn_like(vy)
-    if device == torch.device('cpu'):
-        source_amplitudes_y = torch.randn(n_batch,
-                                          nt,
-                                          n_sources_y_per_shot,
-                                          dtype=torch.double,
-                                          device=device)
-        source_amplitudes_x = torch.randn(n_batch,
-                                          nt,
-                                          n_sources_x_per_shot,
-                                          dtype=torch.double,
-                                          device=device)
-    else:
-        source_amplitudes_y = torch.randn(nt,
-                                          n_batch,
-                                          n_sources_y_per_shot,
-                                          dtype=torch.double,
-                                          device=device)
-        source_amplitudes_x = torch.randn(nt,
-                                          n_batch,
-                                          n_sources_x_per_shot,
-                                          dtype=torch.double,
-                                          device=device)
+    source_amplitudes_y = torch.randn(nt,
+                                      n_batch,
+                                      n_sources_y_per_shot,
+                                      dtype=torch.double,
+                                      device=device)
+    source_amplitudes_x = torch.randn(nt,
+                                      n_batch,
+                                      n_sources_x_per_shot,
+                                      dtype=torch.double,
+                                      device=device)
     sources_y_i = torch.tensor([[1 * nx + 1], [2 * nx + 2]]).long().to(device)
     sources_x_i = torch.tensor([[3 * nx + 3, 4 * nx + 4],
                                 [2 * nx + 2, 4 * nx + 5]]).long().to(device)
@@ -596,6 +723,20 @@ def test_gradcheck_only_mu_2d():
         source_requires_grad=False,
     )
 
+def test_gradcheck_batched_lamb_2d():
+    """Test gradcheck in a 2D model with batched lamb."""
+    run_gradcheck_2d(propagator=elasticprop,
+                     lamb=torch.tensor([[[DEFAULT_LAMB]],[[DEFAULT_LAMB*1.2]]]))
+
+def test_gradcheck_batched_mu_2d():
+    """Test gradcheck in a 2D model with batched mu."""
+    run_gradcheck_2d(propagator=elasticprop,
+                     mu=torch.tensor([[[DEFAULT_MU]],[[DEFAULT_MU*1.2]]]))
+
+def test_gradcheck_batched_buoyancy_2d():
+    """Test gradcheck in a 2D model with batched buoyancy."""
+    run_gradcheck_2d(propagator=elasticprop,
+                     buoyancy=torch.tensor([[[DEFAULT_BUOYANCY]],[[DEFAULT_BUOYANCY*1.2]]]))
 
 def _set_sources(x_s, freq, dt, nt, dtype=None, dpeak_time=0.3):
     """Create sources with amplitudes that have randomly shifted start times.
@@ -842,12 +983,18 @@ def run_gradcheck(mlamb,
     torch.manual_seed(1)
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    lamb = (torch.ones(*nx, device=device, dtype=dtype) * mlamb +
-            torch.randn(*nx, dtype=dtype).to(device) * dlamb)
-    mu = (torch.ones(*nx, device=device, dtype=dtype) * mmu +
-          torch.randn(*nx, dtype=dtype).to(device) * dmu)
-    buoyancy = (torch.ones(*nx, device=device, dtype=dtype) * mbuoyancy +
-                torch.randn(*nx, dtype=dtype).to(device) * dbuoyancy)
+    if isinstance(mlamb, torch.Tensor):
+        mlamb = mlamb.to(device)
+    if isinstance(mmu, torch.Tensor):
+        mmu = mmu.to(device)
+    if isinstance(mbuoyancy, torch.Tensor):
+        mbuoyancy = mbuoyancy.to(device)
+    lamb = torch.ones(*nx, device=device, dtype=dtype) * mlamb
+    lamb += torch.randn(*lamb.shape, dtype=dtype).to(device) * dlamb
+    mu = torch.ones(*nx, device=device, dtype=dtype) * mmu
+    mu += torch.randn(*mu.shape, dtype=dtype).to(device) * dmu
+    buoyancy = torch.ones(*nx, device=device, dtype=dtype) * mbuoyancy
+    buoyancy += torch.randn(*buoyancy.shape, dtype=dtype).to(device) * dbuoyancy
 
     nx = torch.Tensor(nx).long()
     dx = torch.Tensor(dx)
@@ -869,6 +1016,8 @@ def run_gradcheck(mlamb,
         x_s_x = x_s[:, num_sources_per_shot:]
         sources_y = _set_sources(x_s_y, freq, dt, nt, dtype, dpeak_time=0.05)
         sources_x = _set_sources(x_s_x, freq, dt, nt, dtype, dpeak_time=0.05)
+        sources_y['amplitude'] = sources_y['amplitude'].to(device)
+        sources_x['amplitude'] = sources_x['amplitude'].to(device)
         sources_y['amplitude'].requires_grad_(source_requires_grad)
         sources_x['amplitude'].requires_grad_(source_requires_grad)
         nt = None
@@ -885,11 +1034,27 @@ def run_gradcheck(mlamb,
     if isinstance(pml_width, int):
         pml_width = [pml_width for _ in range(4)]
 
-    if mlamb != 0:
+    if isinstance(mlamb, torch.Tensor):
+        mlamb = mlamb.to(device)
+        min_mlamb = mlamb.abs().min().item()
+    else:
+        min_mlamb = mlamb
+    if isinstance(mmu, torch.Tensor):
+        mmu = mmu.to(device)
+        min_mmu = mmu.abs().min().item()
+    else:
+        min_mmu = mmu
+    if isinstance(mbuoyancy, torch.Tensor):
+        mbuoyancy = mbuoyancy.to(device)
+        min_mbuoyancy = mbuoyancy.abs().min().item()
+    else:
+        min_mbuoyancy = mbuoyancy
+
+    if min_mlamb != 0:
         lamb /= mlamb
-    if mmu != 0:
+    if min_mmu != 0:
         mu /= mmu
-    if mbuoyancy != 0:
+    if min_mbuoyancy != 0:
         buoyancy /= mbuoyancy
 
     lamb.requires_grad_(lamb_requires_grad)
@@ -897,9 +1062,9 @@ def run_gradcheck(mlamb,
     buoyancy.requires_grad_(buoyancy_requires_grad)
 
     def wrap(lamb, mu, buoyancy, sources_y_amplitude, sources_x_amplitude):
-        if sources_y_amplitude is not None and mbuoyancy != 0:
+        if sources_y_amplitude is not None and min_mbuoyancy != 0:
             sources_y_amplitude = sources_y_amplitude / mbuoyancy / dt
-        if sources_x_amplitude is not None and mbuoyancy != 0:
+        if sources_x_amplitude is not None and min_mbuoyancy != 0:
             sources_x_amplitude = sources_x_amplitude / mbuoyancy / dt
         out = propagator(lamb * mlamb,
                          mu * mmu,

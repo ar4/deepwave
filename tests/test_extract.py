@@ -59,28 +59,28 @@ def test_get_extents_from_locations():
     assert deepwave.common.get_survey_extents_from_locations(model_shape,
                                                              locations,
                                                              survey_pad) == \
-        [0, 8, 0, 9]
+        [(0, 8), (0, 9)]
     survey_pad = [1, 2, 3, 4]
     assert deepwave.common.get_survey_extents_from_locations(model_shape,
                                                              locations,
                                                              survey_pad) == \
-        [0, 8, 0, 9]
+        [(0, 8), (0, 9)]
     locations = [None, 3 * torch.ones(2, 3, 2)]
     survey_pad = None
     assert deepwave.common.get_survey_extents_from_locations(model_shape,
                                                              locations,
                                                              survey_pad) == \
-        [0, 8, 0, 9]
+        [(0, 8), (0, 9)]
     survey_pad = [None, 2, None, 4]
     assert deepwave.common.get_survey_extents_from_locations(model_shape,
                                                              locations,
                                                              survey_pad) == \
-        [0, 6, 0, 8]
+        [(0, 6), (0, 8)]
     survey_pad = [1, 2, 3, 4]
     assert deepwave.common.get_survey_extents_from_locations(model_shape,
                                                              locations,
                                                              survey_pad) == \
-        [2, 6, 0, 8]
+        [(2, 6), (0, 8)]
     locations = [3 * torch.ones(3, 4, 2), 3 * torch.ones(2, 3, 2)]
     locations[0][1, 1, 0] = 2
     locations[1][1, 2, 1] = 8
@@ -88,105 +88,149 @@ def test_get_extents_from_locations():
     assert deepwave.common.get_survey_extents_from_locations(model_shape,
                                                              locations,
                                                              survey_pad) == \
-        [0, 6, 0, 9]
+        [(0, 6), (0, 9)]
     survey_pad = [1, 2, 3, 4]
     assert deepwave.common.get_survey_extents_from_locations(model_shape,
                                                              locations,
                                                              survey_pad) == \
-        [1, 6, 0, 9]
+        [(1, 6), (0, 9)]
 
 
 def test_get_extents_from_wavefields():
     wavefields = [None, torch.zeros(2, 8, 9)]
     origin = None
-    pad = [0, 0, 0, 0]
+    pml_width = [0, 0, 0, 0]
     assert deepwave.common.get_survey_extents_from_wavefields(wavefields,
-                                                              origin, pad) == \
-        [0, 8, 0, 9]
-    pad = [1, 2, 3, 4]
+                                                              origin,
+                                                              pml_width) == \
+        [(0, 8), (0, 9)]
+    pml_width = [1, 2, 3, 4]
     assert deepwave.common.get_survey_extents_from_wavefields(wavefields,
-                                                              origin, pad) == \
-        [0, 5, 0, 2]
+                                                              origin,
+                                                              pml_width) == \
+        [(0, 5), (0, 2)]
     origin = [1, 2]
     assert deepwave.common.get_survey_extents_from_wavefields(wavefields,
-                                                              origin, pad) == \
-        [1, 6, 2, 4]
+                                                              origin,
+                                                              pml_width) == \
+        [(1, 6), (2, 4)]
     origin = [1, -2]
     with pytest.raises(RuntimeError):
         deepwave.common.get_survey_extents_from_wavefields(
-            wavefields, origin, pad)
+            wavefields, origin, pml_width)
     origin = [1, 2, 3]
     with pytest.raises(RuntimeError):
         deepwave.common.get_survey_extents_from_wavefields(
-            wavefields, origin, pad)
+            wavefields, origin, pml_width)
     origin = [1, None]
     with pytest.raises(RuntimeError):
         deepwave.common.get_survey_extents_from_wavefields(
-            wavefields, origin, pad)
+            wavefields, origin, pml_width)
     origin = [1, 2]
-    pad = [1, 2]
+    pml_width = [1, 2]
     with pytest.raises(RuntimeError):
         deepwave.common.get_survey_extents_from_wavefields(
-            wavefields, origin, pad)
-    pad = [1, -2]
+            wavefields, origin, pml_width)
+    pml_width = [1, -2, 1, 1]
     with pytest.raises(RuntimeError):
         deepwave.common.get_survey_extents_from_wavefields(
-            wavefields, origin, pad)
-    pad = None
+            wavefields, origin, pml_width)
+    pml_width = None
     with pytest.raises(RuntimeError):
         deepwave.common.get_survey_extents_from_wavefields(
-            wavefields, origin, pad)
+            wavefields, origin, pml_width)
 
 
 def test_extract_survey():
     nx = (8, 9)
     models = [
-        torch.arange(nx[0] * nx[1]).reshape(nx),
-        123 + torch.arange(nx[0] * nx[1]).reshape(nx)
+        torch.arange(nx[0] * nx[1]).reshape(nx).float(),
+        123 + torch.arange(nx[0] * nx[1]).reshape(nx).float()
     ]
-    locations = [
-        3 * torch.ones(3, 4, 2).long(), 3 * torch.ones(2, 3, 2).long()
-    ]
-    locations[0][1, 1, 0] = 2
-    locations[1][1, 2, 1] = 8
+    source_locations = [3 * torch.ones(3, 4, 2).long()]
+    receiver_locations = [3 * torch.ones(3, 3, 2).long()]
+    source_locations[0][..., 1] = 3 + torch.arange(4).reshape(1, -1).repeat(3, 1)
+    receiver_locations[0][..., 1] = 3 + torch.arange(3).reshape(1, -1).repeat(3, 1)
+    source_locations[0][1, 1, 0] = 2
+    receiver_locations[0][1, 2, 1] = 8
     survey_pad = [1, 2, 3, 4]
     wavefields = [None, None]
     origin = None
-    pad = [4, 3, 2, 1]
-    out = deepwave.common.extract_survey(models, locations, survey_pad,
-                                         wavefields, origin, pad)
-    assert torch.allclose(out[0][0], models[0][1:6])
-    assert torch.allclose(out[0][1], models[1][1:6])
-    assert torch.allclose(out[1][0],
-                          locations[0] - torch.Tensor([1, 0]).long())
-    assert torch.allclose(out[1][1],
-                          locations[1] - torch.Tensor([1, 0]).long())
-    wavefields = [torch.zeros(2, 4 + 7, 6 + 3)]
-    origin = [2, 3]
+    fd_pad = [1, 1, 1, 1]
+    pml_width = [3, 2, 1, 0]
+    model_pad_modes = ['replicate'] * 2
+    n_batch = 3
+    n_dims = 2
+    device = torch.device('cpu')
+    dtype = torch.float32
+    out = deepwave.common.extract_survey(models, source_locations, receiver_locations,
+                                         wavefields, survey_pad, origin,
+                                         fd_pad, pml_width,
+                                         model_pad_modes, n_batch, n_dims,
+                                         device, dtype)
+    # locations cover ranges y in [2, 3], x in [3, 8]
+    # with survey_pad, extent should be y in [1, 5], x in [0, 12]
+    # but since the original model extent is only [0, 8] in x,
+    # the extent should be y in [1, 5], x in [0, 8]. The models are
+    # then padded with fd_pad + pml_width
+    assert torch.allclose(out[0][0], torch.nn.functional.pad(models[0][1:6, :].unsqueeze(0), (2, 1, 4, 3), mode='replicate'))
+    assert torch.allclose(out[0][1], torch.nn.functional.pad(models[1][1:6, :].unsqueeze(0), (2, 1, 4, 3), mode='replicate'))
+    # The beginning of the extent in each dimension (1 for y, 0 for x)
+    # will be subtracted from the locations, and the padding for the
+    # beginning of each dimension will be added (4 for y, 2 for x).
+    # The locations will then be converted to 1D indices. The nx used
+    # to convert to 1D will be the length of the extent in x (9) plus the padding (2 + 1),
+    # so 12.
+    locations_2d = source_locations[0] - torch.Tensor([1, 0]).long() + torch.Tensor([4, 2]).long()
+    assert torch.allclose(out[1][0], locations_2d[..., 0] * 12 + locations_2d[..., 1])
+    locations_2d = receiver_locations[0] - torch.Tensor([1, 0]).long() + torch.Tensor([4, 2]).long()
+    assert torch.allclose(out[2][0], locations_2d[..., 0] * 12 + locations_2d[..., 1])
 
+    wavefields = [torch.zeros(3, 4 + 5, 6 + 1)]
+    origin = [2, 3]
+    # The extent from the origin and wavefields should be y in [2, 2+9-3-2=6), x in [3, 3+7-1=9),
+    # but from the locations and survey_pad it should be y in [1, 5], x in [0, 12]. This
+    # sort of conflict is why specifying both survey_pad and origin is not allowed and
+    # should raise an error.
     with pytest.raises(RuntimeError):
-        out = deepwave.common.extract_survey(models, locations, survey_pad,
-                                             wavefields, origin, pad)
+        out = deepwave.common.extract_survey(models, source_locations, receiver_locations,
+                                             wavefields, survey_pad, origin,
+                                             fd_pad, pml_width,
+                                             model_pad_modes, n_batch, n_dims, device, dtype)
     survey_pad = None
-    out = deepwave.common.extract_survey(models, locations, survey_pad,
-                                         wavefields, origin, pad)
-    assert torch.allclose(out[0][0], models[0][2:6, 3:9])
-    assert torch.allclose(out[0][1], models[1][2:6, 3:9])
-    assert torch.allclose(out[1][0],
-                          locations[0] - torch.Tensor([2, 3]).long())
-    assert torch.allclose(out[1][1],
-                          locations[1] - torch.Tensor([2, 3]).long())
+    # As survey_pad is no longer specified, it should now run.
+    out = deepwave.common.extract_survey(models, source_locations, receiver_locations,
+                                         wavefields, survey_pad, origin,
+                                         fd_pad, pml_width,
+                                         model_pad_modes, n_batch, n_dims, device, dtype)
+    assert torch.allclose(out[0][0], torch.nn.functional.pad(models[0][2:6, 3:9].unsqueeze(0), (2, 1, 4, 3), mode='replicate'))
+    assert torch.allclose(out[0][1], torch.nn.functional.pad(models[1][2:6, 3:9].unsqueeze(0), (2, 1, 4, 3), mode='replicate'))
+    # The nx for the 1D index conversion should be (given x range from 3 to 8, padding of 3) 9.
+    locations_2d = source_locations[0] - torch.Tensor([2, 3]).long() + torch.Tensor([4, 2]).long()
+    assert torch.allclose(out[1][0], locations_2d[..., 0] * 9 + locations_2d[..., 1])
+    locations_2d = receiver_locations[0] - torch.Tensor([2, 3]).long() + torch.Tensor([4, 2]).long()
+    assert torch.allclose(out[2][0], locations_2d[..., 0] * 9 + locations_2d[..., 1])
 
 
 def test_check_extents_match_wavefields_shape():
-    survey_extents = [2, 5, 6, 9]
+    survey_extents = [(2, 5), (6, 9)]
     pad = [0, 1, 2, 3]
+    # Wavefields are None, so all extents match
     wavefields = [None, None]
     deepwave.common.check_extents_match_wavefields_shape(
         survey_extents, wavefields, pad)
+    # Spatial size of wavefield is (4, 8), with padding of (1, 5),
+    # so the size of the extents should be (4-1, 8-5) = (3, 3),
+    # which it is.
     wavefields = [None, torch.zeros(2, 4, 8)]
     deepwave.common.check_extents_match_wavefields_shape(
         survey_extents, wavefields, pad)
+    # When the wavefield is smaller, it will not match the extents.
+    wavefields = [None, torch.zeros(2, 3, 8)]
+    with pytest.raises(RuntimeError):
+        deepwave.common.check_extents_match_wavefields_shape(
+            survey_extents, wavefields, pad)
+    # Similarly, when it is bigger, it will not match.
     wavefields = [None, torch.zeros(2, 4, 9)]
     with pytest.raises(RuntimeError):
         deepwave.common.check_extents_match_wavefields_shape(

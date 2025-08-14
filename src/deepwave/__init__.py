@@ -160,7 +160,7 @@ scalar_iso_float_forward_argtypes = [
     c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
     c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_float,
     c_float, c_float, c_float, c_float, c_int64, c_int64, c_int64, c_int64,
-    c_int64, c_int64, c_int64, c_bool, c_int64, c_int64, c_int64, c_int64,
+    c_int64, c_int64, c_int64, c_bool, c_bool, c_int64, c_int64, c_int64, c_int64, c_int64,
     c_int64
 ]
 scalar_iso_double_forward_argtypes = [
@@ -168,7 +168,7 @@ scalar_iso_double_forward_argtypes = [
     c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
     c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_double,
     c_double, c_double, c_double, c_double, c_int64, c_int64, c_int64, c_int64,
-    c_int64, c_int64, c_int64, c_bool, c_int64, c_int64, c_int64, c_int64,
+    c_int64, c_int64, c_int64, c_bool, c_bool, c_int64, c_int64, c_int64, c_int64, c_int64,
     c_int64
 ]
 scalar_iso_float_backward_argtypes = [
@@ -176,7 +176,7 @@ scalar_iso_float_backward_argtypes = [
     c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
     c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
     c_void_p, c_void_p, c_void_p, c_float, c_float, c_float, c_float, c_int64,
-    c_int64, c_int64, c_int64, c_int64, c_int64, c_int64, c_bool, c_int64,
+    c_int64, c_int64, c_int64, c_int64, c_int64, c_int64, c_bool, c_bool, c_int64, c_int64,
     c_int64, c_int64, c_int64, c_int64
 ]
 scalar_iso_double_backward_argtypes = [
@@ -185,7 +185,7 @@ scalar_iso_double_backward_argtypes = [
     c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
     c_void_p, c_void_p, c_void_p, c_double, c_double, c_double, c_double,
     c_int64, c_int64, c_int64, c_int64, c_int64, c_int64, c_int64, c_bool,
-    c_int64, c_int64, c_int64, c_int64, c_int64
+    c_bool, c_int64, c_int64, c_int64, c_int64, c_int64, c_int64
 ]
 scalar_born_iso_float_forward_argtypes = [
     c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
@@ -194,7 +194,7 @@ scalar_born_iso_float_forward_argtypes = [
     c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
     c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_float, c_float,
     c_float, c_float, c_float, c_int64, c_int64, c_int64, c_int64, c_int64,
-    c_int64, c_int64, c_int64, c_bool, c_bool, c_int64, c_int64, c_int64,
+    c_int64, c_int64, c_int64, c_bool, c_bool, c_bool, c_bool, c_int64, c_int64, c_int64, c_int64,
     c_int64, c_int64
 ]
 scalar_born_iso_double_forward_argtypes = [
@@ -204,7 +204,7 @@ scalar_born_iso_double_forward_argtypes = [
     c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
     c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_double, c_double,
     c_double, c_double, c_double, c_int64, c_int64, c_int64, c_int64, c_int64,
-    c_int64, c_int64, c_int64, c_bool, c_bool, c_int64, c_int64, c_int64,
+    c_int64, c_int64, c_int64, c_bool, c_bool, c_bool, c_bool, c_int64, c_int64, c_int64, c_int64,
     c_int64, c_int64
 ]
 scalar_born_iso_float_backward_argtypes = [
@@ -215,7 +215,7 @@ scalar_born_iso_float_backward_argtypes = [
     c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
     c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_float,
     c_float, c_float, c_float, c_float, c_int64, c_int64, c_int64, c_int64,
-    c_int64, c_int64, c_int64, c_int64, c_int64, c_bool, c_bool, c_int64,
+    c_int64, c_int64, c_int64, c_int64, c_int64, c_bool, c_bool, c_bool, c_bool, c_int64, c_int64,
     c_int64, c_int64, c_int64, c_int64
 ]
 scalar_born_iso_double_backward_argtypes = [
@@ -226,7 +226,7 @@ scalar_born_iso_double_backward_argtypes = [
     c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
     c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_double,
     c_double, c_double, c_double, c_double, c_int64, c_int64, c_int64, c_int64,
-    c_int64, c_int64, c_int64, c_int64, c_int64, c_bool, c_bool, c_int64,
+    c_int64, c_int64, c_int64, c_int64, c_int64, c_bool, c_bool, c_bool, c_bool, c_int64, c_int64,
     c_int64, c_int64, c_int64, c_int64
 ]
 scalar_born_iso_double_backward_sc_argtypes = [
@@ -235,7 +235,7 @@ scalar_born_iso_double_backward_sc_argtypes = [
     c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
     c_void_p, c_void_p, c_void_p, c_double, c_double, c_double, c_double,
     c_double, c_int64, c_int64, c_int64, c_int64, c_int64, c_int64, c_int64,
-    c_bool, c_int64, c_int64, c_int64, c_int64, c_int64
+    c_bool, c_bool, c_bool, c_int64, c_int64, c_int64, c_int64, c_int64, c_int64
 ]
 scalar_born_iso_float_backward_sc_argtypes = [
     c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
@@ -243,7 +243,7 @@ scalar_born_iso_float_backward_sc_argtypes = [
     c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
     c_void_p, c_void_p, c_void_p, c_float, c_float, c_float, c_float, c_float,
     c_int64, c_int64, c_int64, c_int64, c_int64, c_int64, c_int64, c_bool,
-    c_int64, c_int64, c_int64, c_int64, c_int64
+    c_bool, c_bool, c_int64, c_int64, c_int64, c_int64, c_int64, c_int64
 ]
 elastic_iso_float_forward_argtypes = [
     c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
@@ -253,7 +253,7 @@ elastic_iso_float_forward_argtypes = [
     c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
     c_void_p, c_void_p, c_void_p, c_void_p, c_float, c_float, c_float, c_int64,
     c_int64, c_int64, c_int64, c_int64, c_int64, c_int64, c_int64, c_int64,
-    c_int64, c_bool, c_bool, c_bool, c_int64, c_int64, c_int64, c_int64,
+    c_int64, c_bool, c_bool, c_bool, c_bool, c_bool, c_bool, c_int64, c_int64, c_int64, c_int64, c_int64,
     c_int64
 ]
 elastic_iso_double_forward_argtypes = [
@@ -264,7 +264,7 @@ elastic_iso_double_forward_argtypes = [
     c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
     c_void_p, c_void_p, c_void_p, c_void_p, c_double, c_double, c_double,
     c_int64, c_int64, c_int64, c_int64, c_int64, c_int64, c_int64, c_int64,
-    c_int64, c_int64, c_bool, c_bool, c_bool, c_int64, c_int64, c_int64,
+    c_int64, c_int64, c_bool, c_bool, c_bool, c_bool, c_bool, c_bool, c_int64, c_int64, c_int64, c_int64,
     c_int64, c_int64
 ]
 elastic_iso_float_backward_argtypes = [
@@ -277,7 +277,7 @@ elastic_iso_float_backward_argtypes = [
     c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
     c_float, c_float, c_float, c_int64, c_int64, c_int64, c_int64, c_int64,
     c_int64, c_int64, c_int64, c_int64, c_int64, c_bool, c_bool, c_bool,
-    c_int64, c_int64, c_int64, c_int64, c_int64, c_int64, c_int64, c_int64,
+    c_bool, c_bool, c_bool, c_int64, c_int64, c_int64, c_int64, c_int64, c_int64, c_int64, c_int64, c_int64,
     c_int64
 ]
 elastic_iso_double_backward_argtypes = [
@@ -290,7 +290,7 @@ elastic_iso_double_backward_argtypes = [
     c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
     c_double, c_double, c_double, c_int64, c_int64, c_int64, c_int64, c_int64,
     c_int64, c_int64, c_int64, c_int64, c_int64, c_bool, c_bool, c_bool,
-    c_int64, c_int64, c_int64, c_int64, c_int64, c_int64, c_int64, c_int64,
+    c_bool, c_bool, c_bool, c_int64, c_int64, c_int64, c_int64, c_int64, c_int64, c_int64, c_int64, c_int64,
     c_int64
 ]
 dll_cpu.scalar_iso_2_float_forward.argtypes = scalar_iso_float_forward_argtypes

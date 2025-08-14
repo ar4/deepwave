@@ -3,9 +3,10 @@ from typing import List, Optional, Union, Dict, Tuple
 import math
 import torch
 from torch import Tensor
-
-DEFAULT_EPS = 1e-5
-
+from deepwave.common import IGNORE_LOCATION 
+                             
+DEFAULT_EPS = 1e-5           
+                             
 
 def _get_hicks_for_one_location_dim(
         hicks_weight_cache: Dict[Tuple[int, int, int], Tensor],
@@ -126,11 +127,11 @@ def _get_hicks_locations_and_weights(
         weights.append(shot_weights)
         n_per_shot_hicks = max(n_per_shot_hicks, n_hicks_locations)
         hicks_locations_list.append(list(locations_dict.keys()))
-    hicks_locations = torch.zeros(n_shots,
-                                  n_per_shot_hicks,
-                                  2,
-                                  dtype=torch.long,
-                                  device=locations.device)
+    hicks_locations = torch.ones(n_shots,
+                                 n_per_shot_hicks,
+                                 2,
+                                 dtype=torch.long,
+                                 device=locations.device) * IGNORE_LOCATION
     for shotidx in range(n_shots):
         for i, loc in enumerate(hicks_locations_list[shotidx]):
             hicks_locations[shotidx,

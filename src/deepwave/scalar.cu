@@ -17,28 +17,28 @@
 #define WFC(dy, dx) wfc[i + dy * nx + dx]
 #define AY_PSIY(dy, dx) ay[y + dy] * psiy[i + dy * nx + dx]
 #define AX_PSIX(dy, dx) ax[x + dx] * psix[i + dy * nx + dx]
-#define V2DT2_WFC(dy, dx) v2dt2[j + dy * nx + dx] * wfc[i + dy * nx + dx]
+#define V2DT2_WFC(dy, dx) v2dt2_shot[j + dy * nx + dx] * wfc[i + dy * nx + dx]
 #define UT_TERMY1(dy, dx)                                           \
   ((dbydy[y + dy] *                                                 \
-        ((1 + by[y + dy]) * v2dt2[j + dy * nx] * wfc[i + dy * nx] + \
+        ((1 + by[y + dy]) * v2dt2_shot[j + dy * nx] * wfc[i + dy * nx] + \
          by[y + dy] * zetay[i + dy * nx]) +                         \
     by[y + dy] * psiy[i + dy * nx]))
 #define UT_TERMX1(dy, dx)                                             \
-  ((dbxdx[x + dx] * ((1 + bx[x + dx]) * v2dt2[j + dx] * wfc[i + dx] + \
+  ((dbxdx[x + dx] * ((1 + bx[x + dx]) * v2dt2_shot[j + dx] * wfc[i + dx] + \
                      bx[x + dx] * zetax[i + dx]) +                    \
     bx[x + dx] * psix[i + dx]))
 #define UT_TERMY2(dy, dx)                                      \
   ((1 + by[y + dy]) *                                          \
-   ((1 + by[y + dy]) * v2dt2[j + dy * nx] * wfc[i + dy * nx] + \
+   ((1 + by[y + dy]) * v2dt2_shot[j + dy * nx] * wfc[i + dy * nx] + \
     by[y + dy] * zetay[i + dy * nx]))
 #define UT_TERMX2(dy, dx)                                               \
-  ((1 + bx[x + dx]) * ((1 + bx[x + dx]) * v2dt2[j + dx] * wfc[i + dx] + \
+  ((1 + bx[x + dx]) * ((1 + bx[x + dx]) * v2dt2_shot[j + dx] * wfc[i + dx] + \
                        bx[x + dx] * zetax[i + dx]))
 #define PSIY_TERM(dy, dx)                                     \
-  ((1 + by[y + dy]) * v2dt2[j + dy * nx] * wfc[i + dy * nx] + \
+  ((1 + by[y + dy]) * v2dt2_shot[j + dy * nx] * wfc[i + dy * nx] + \
    by[y + dy] * zetay[i + dy * nx])
 #define PSIX_TERM(dy, dx) \
-  ((1 + bx[x + dx]) * v2dt2[j + dx] * wfc[i + dx] + bx[x + dx] * zetax[i + dx])
+  ((1 + bx[x + dx]) * v2dt2_shot[j + dx] * wfc[i + dx] + bx[x + dx] * zetax[i + dx])
 
 #define gpuErrchk(ans) \
   { gpuAssert((ans), __FILE__, __LINE__); }
@@ -60,6 +60,7 @@ __constant__ int64_t pml_y0;
 __constant__ int64_t pml_y1;
 __constant__ int64_t pml_x0;
 __constant__ int64_t pml_x1;
+__constant__ bool v_batched;
 
 __global__ void add_sources(DW_DTYPE *__restrict const wf,
                             DW_DTYPE const *__restrict const f,
@@ -68,7 +69,7 @@ __global__ void add_sources(DW_DTYPE *__restrict const wf,
   int64_t shot_idx = blockIdx.y * blockDim.y + threadIdx.y;
   if (source_idx < n_sources_per_shot && shot_idx < n_shots) {
     int64_t k = shot_idx * n_sources_per_shot + source_idx;
-    wf[shot_idx * nynx + sources_i[k]] += f[k];
+    if (0 <= sources_i[k]) wf[shot_idx * nynx + sources_i[k]] += f[k];
   }
 }
 
@@ -79,7 +80,7 @@ __global__ void record_receivers(DW_DTYPE *__restrict const r,
   int64_t shot_idx = blockIdx.y * blockDim.y + threadIdx.y;
   if (receiver_idx < n_receivers_per_shot && shot_idx < n_shots) {
     int64_t k = shot_idx * n_receivers_per_shot + receiver_idx;
-    r[k] = wf[shot_idx * nynx + receivers_i[k]];
+    if (0 <= receivers_i[k]) r[k] = wf[shot_idx * nynx + receivers_i[k]];
   }
 }
 
@@ -112,6 +113,7 @@ __global__ void forward_kernel(
     int64_t shot_idx = blockIdx.z * blockDim.z + threadIdx.z;
     int64_t j = y * nx + x;
     int64_t i = shot_idx * nynx + j;
+    DW_DTYPE const v_shot = v_batched ? v[i] : v[j];
     bool pml_y = y < pml_y0 || y >= pml_y1;
     bool pml_x = x < pml_x0 || x >= pml_x1;
     DW_DTYPE w_sum;
@@ -136,9 +138,9 @@ __global__ void forward_kernel(
       zetax[i] = bx[x] * tmpx + ax[x] * zetax[i];
     }
     if (v_requires_grad) {
-      dwdv[i] = 2 * v[j] * dt2 * w_sum;
+      dwdv[i] = 2 * v_shot * dt2 * w_sum;
     }
-    wfp[i] = v[j] * v[j] * dt2 * w_sum + 2 * wfc[i] - wfp[i];
+    wfp[i] = v_shot * v_shot * dt2 * w_sum + 2 * wfc[i] - wfp[i];
   }
 }
 
@@ -160,6 +162,7 @@ __global__ void backward_kernel(
     int64_t shot_idx = blockIdx.z * blockDim.z + threadIdx.z;
     int64_t j = y * nx + x;
     int64_t i = shot_idx * nynx + j;
+    DW_DTYPE const *__restrict const v2dt2_shot = v_batched ? v2dt2 + shot_idx * nynx : v2dt2;
     bool pml_y = y < pml_y0 || y >= pml_y1;
     bool pml_x = x < pml_x0 || x >= pml_x1;
     wfp[i] =
@@ -168,11 +171,11 @@ __global__ void backward_kernel(
         2 * wfc[i] - wfp[i];
     if (pml_y) {
       psiyn[i] = -ay[y] * DIFFY1(PSIY_TERM) + ay[y] * psiy[i];
-      zetayn[i] = ay[y] * v2dt2[j] * wfc[i] + ay[y] * zetay[i];
+      zetayn[i] = ay[y] * v2dt2_shot[j] * wfc[i] + ay[y] * zetay[i];
     }
     if (pml_x) {
       psixn[i] = -ax[x] * DIFFX1(PSIX_TERM) + ax[x] * psix[i];
-      zetaxn[i] = ax[x] * v2dt2[j] * wfc[i] + ax[x] * zetax[i];
+      zetaxn[i] = ax[x] * v2dt2_shot[j] * wfc[i] + ax[x] * zetax[i];
     }
     if (v_requires_grad) {
       grad_v[i] += wfc[i] * dwdv[i] * step_ratio;
@@ -201,7 +204,7 @@ void set_config(DW_DTYPE const dt2_h, DW_DTYPE const rdy_h,
                 int64_t const n_receivers_per_shot_h,
                 int64_t const step_ratio_h, int64_t const pml_y0_h,
                 int64_t const pml_y1_h, int64_t const pml_x0_h,
-                int64_t const pml_x1_h) {
+                int64_t const pml_x1_h, bool const v_batched_h) {
   int64_t const nynx_h = ny_h * nx_h;
   gpuErrchk(cudaMemcpyToSymbol(dt2, &dt2_h, sizeof(DW_DTYPE)));
   gpuErrchk(cudaMemcpyToSymbol(rdy, &rdy_h, sizeof(DW_DTYPE)));
@@ -221,6 +224,7 @@ void set_config(DW_DTYPE const dt2_h, DW_DTYPE const rdy_h,
   gpuErrchk(cudaMemcpyToSymbol(pml_y1, &pml_y1_h, sizeof(int64_t)));
   gpuErrchk(cudaMemcpyToSymbol(pml_x0, &pml_x0_h, sizeof(int64_t)));
   gpuErrchk(cudaMemcpyToSymbol(pml_x1, &pml_x1_h, sizeof(int64_t)));
+  gpuErrchk(cudaMemcpyToSymbol(v_batched, &v_batched_h, sizeof(bool)));
 }
 
 }  // namespace
@@ -249,7 +253,8 @@ extern "C"
             int64_t const ny_h, int64_t const nx_h,
             int64_t const n_sources_per_shot_h,
             int64_t const n_receivers_per_shot_h, int64_t const step_ratio_h,
-            bool const v_requires_grad, int64_t const pml_y0_h,
+            bool const v_requires_grad, bool const v_batched_h, int64_t const start_t,
+	    int64_t const pml_y0_h,
             int64_t const pml_y1_h, int64_t const pml_x0_h,
             int64_t const pml_x1_h, int64_t const device) {
   dim3 dimBlock(32, 32, 1);
@@ -273,13 +278,13 @@ extern "C"
   gpuErrchk(cudaSetDevice(device));
   set_config(dt2_h, rdy_h, rdx_h, rdy2_h, rdx2_h, n_shots_h, ny_h, nx_h,
              n_sources_per_shot_h, n_receivers_per_shot_h, step_ratio_h,
-             pml_y0_h, pml_y1_h, pml_x0_h, pml_x1_h);
+             pml_y0_h, pml_y1_h, pml_x0_h, pml_x1_h, v_batched_h);
   for (t = 0; t < nt; ++t) {
     if (t & 1) {
       forward_kernel<<<dimGrid, dimBlock>>>(
           v, wfp, wfc, psiyn, psixn, psiy, psix, zetay, zetax,
           dwdv + (t / step_ratio_h) * ny_h * nx_h * n_shots_h, ay, ax, by, bx,
-          dbydy, dbxdx, v_requires_grad && ((t % step_ratio_h) == 0));
+          dbydy, dbxdx, v_requires_grad && (((t + start_t) % step_ratio_h) == 0));
       CHECK_KERNEL_ERROR
       if (n_sources_per_shot_h > 0) {
         add_sources<<<dimGrid_sources, dimBlock_sources>>>(
@@ -295,7 +300,7 @@ extern "C"
       forward_kernel<<<dimGrid, dimBlock>>>(
           v, wfc, wfp, psiy, psix, psiyn, psixn, zetay, zetax,
           dwdv + (t / step_ratio_h) * ny_h * nx_h * n_shots_h, ay, ax, by, bx,
-          dbydy, dbxdx, v_requires_grad && ((t % step_ratio_h) == 0));
+          dbydy, dbxdx, v_requires_grad && (((t + start_t) % step_ratio_h) == 0));
       CHECK_KERNEL_ERROR
       if (n_sources_per_shot_h > 0) {
         add_sources<<<dimGrid_sources, dimBlock_sources>>>(
@@ -340,7 +345,7 @@ extern "C"
             int64_t const nt, int64_t const n_shots_h, int64_t const ny_h,
             int64_t const nx_h, int64_t const n_sources_per_shot_h,
             int64_t const n_receivers_per_shot_h, int64_t const step_ratio_h,
-            bool const v_requires_grad, int64_t const pml_y0_h,
+            bool const v_requires_grad, bool const v_batched_h, int64_t start_t, int64_t const pml_y0_h,
             int64_t const pml_y1_h, int64_t const pml_x0_h,
             int64_t const pml_x1_h, int64_t const device) {
   dim3 dimBlock(32, 16, 1);
@@ -369,7 +374,7 @@ extern "C"
   gpuErrchk(cudaSetDevice(device));
   set_config(0, rdy_h, rdx_h, rdy2_h, rdx2_h, n_shots_h, ny_h, nx_h,
              n_receivers_per_shot_h, n_sources_per_shot_h, step_ratio_h,
-             pml_y0_h, pml_y1_h, pml_x0_h, pml_x1_h);
+             pml_y0_h, pml_y1_h, pml_x0_h, pml_x1_h, v_batched_h);
   for (t = nt - 1; t >= 0; --t) {
     if ((nt - 1 - t) & 1) {
       if (n_sources_per_shot_h > 0) {
@@ -381,7 +386,7 @@ extern "C"
           v2dt2, wfp, wfc, psiyn, psixn, psiy, psix, zetayn, zetaxn, zetay,
           zetax, dwdv + (t / step_ratio_h) * n_shots_h * ny_h * nx_h,
           grad_v_shot, ay, ax, by, bx, dbydy, dbxdx,
-          v_requires_grad && ((t % step_ratio_h) == 0));
+          v_requires_grad && (((t + start_t) % step_ratio_h) == 0));
       CHECK_KERNEL_ERROR
       if (n_receivers_per_shot_h > 0) {
         add_sources<<<dimGrid_receivers, dimBlock_receivers>>>(
@@ -398,7 +403,7 @@ extern "C"
           v2dt2, wfc, wfp, psiy, psix, psiyn, psixn, zetay, zetax, zetayn,
           zetaxn, dwdv + (t / step_ratio_h) * n_shots_h * ny_h * nx_h,
           grad_v_shot, ay, ax, by, bx, dbydy, dbxdx,
-          v_requires_grad && ((t % step_ratio_h) == 0));
+          v_requires_grad && (((t + start_t) % step_ratio_h) == 0));
       CHECK_KERNEL_ERROR
       if (n_receivers_per_shot_h > 0) {
         add_sources<<<dimGrid_receivers, dimBlock_receivers>>>(
@@ -407,7 +412,7 @@ extern "C"
       }
     }
   }
-  if (v_requires_grad && n_shots_h > 1) {
+  if (v_requires_grad && !v_batched_h && n_shots_h > 1) {
     combine_grad_v<<<dimGrid_combine, dimBlock_combine>>>(grad_v, grad_v_shot);
     CHECK_KERNEL_ERROR
   }

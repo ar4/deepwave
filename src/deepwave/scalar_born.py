@@ -12,7 +12,8 @@ from torch import Tensor
 from torch.autograd.function import once_differentiable
 import deepwave
 from deepwave.common import (setup_propagator, downsample_and_movedim,
-                             zero_interior, create_or_pad, diff)
+                             zero_interior, create_or_pad, IGNORE_LOCATION)
+from deepwave.regular_grid import set_pml_profiles
 
 
 class ScalarBorn(torch.nn.Module):
@@ -233,46 +234,52 @@ def scalar_born(
                 empty.
 
     """
-
+    try:
+        min_nonzero_model_vel = v[v.nonzero(as_tuple=True)].abs().min().item()
+    except:
+        min_nonzero_model_vel = 0
+    max_model_vel = v.abs().max().item()
+    fd_pad = [accuracy // 2] * 4
     (models, source_amplitudes_l, wavefields,
-     pml_profiles, sources_i_l, receivers_i_l,
-     dy, dx, dt, nt, n_shots,
+     sources_i_l, receivers_i_l,
+     grid_spacing, dt, nt, n_shots,
      step_ratio, model_gradient_sampling_interval,
-     accuracy, pml_width_list) = \
-        setup_propagator([v, scatter], 'scalar_born', grid_spacing, dt,
+     accuracy, pml_width_l, max_vel, resample_config, device, dtype) = \
+        setup_propagator([v, scatter], ['replicate', 'constant'], grid_spacing, dt,
+                         [source_amplitudes, source_amplitudes],
+                         [source_locations, source_locations],
+                         [bg_receiver_locations, receiver_locations],
+                         accuracy, fd_pad, pml_width, pml_freq, max_vel,
+                         min_nonzero_model_vel, max_model_vel, survey_pad,
                          [wavefield_0, wavefield_m1, psiy_m1, psix_m1,
                           zetay_m1, zetax_m1, wavefield_sc_0, wavefield_sc_m1,
                           psiy_sc_m1, psix_sc_m1, zetay_sc_m1, zetax_sc_m1],
-                         [source_amplitudes, source_amplitudes],
-                         [source_locations, source_locations],
-                         [receiver_locations, bg_receiver_locations],
-                         accuracy, pml_width, pml_freq, max_vel,
-                         survey_pad,
                          origin, nt, model_gradient_sampling_interval,
-                         freq_taper_frac, time_pad_frac, time_taper)
-    v, scatter = models
-    (wfc, wfp, psiy, psix, zetay, zetax, wfcsc, wfpsc, psiysc, psixsc, zetaysc,
-     zetaxsc) = wavefields
-    source_amplitudes = source_amplitudes_l[0]
-    source_amplitudessc = source_amplitudes_l[1]
-    sources_i = sources_i_l[0]
-    receivers_i = receivers_i_l[0]
-    bg_receivers_i = receivers_i_l[1]
-    ay, ax, by, bx = pml_profiles
-    dbydy = diff(by, accuracy, dy)
-    dbxdx = diff(bx, accuracy, dx)
+                         freq_taper_frac, time_pad_frac, time_taper, 2)
+
+    ny, nx = models[0].shape[-2:]
+    # Background (multiply source amplitudes by -v^2*dt^2)
+    mask = sources_i_l[0] == IGNORE_LOCATION
+    sources_i_masked = sources_i_l[0].clone()
+    sources_i_masked[mask] = 0
+    source_amplitudes_l[0] = (-source_amplitudes_l[0] * (models[0].view(-1, ny*nx).expand(n_shots, -1).gather(1, sources_i_masked))**2 * dt**2)
+    # Scattered (multiply source amplitudes by -2*v*scatter*dt^2)
+    mask = sources_i_l[1] == IGNORE_LOCATION
+    sources_i_masked = sources_i_l[1].clone()
+    sources_i_masked[mask] = 0
+    source_amplitudes_l[1] = (-2 * source_amplitudes_l[1] * (models[0].view(-1, ny*nx).expand(n_shots, -1).gather(1, sources_i_masked)) * (models[1].view(-1, ny*nx).expand(n_shots, -1).gather(1, sources_i_masked)) * dt**2)
+
+    pml_profiles = set_pml_profiles(pml_width_l, accuracy, fd_pad, dt, grid_spacing, max_vel, dtype, device, pml_freq, ny, nx)
 
     (wfc, wfp, psiy, psix, zetay, zetax, wfcsc, wfpsc, psiysc, psixsc, zetaysc, zetaxsc, receiver_amplitudes, receiver_amplitudessc) = \
         scalar_born_func(
-            v, scatter, source_amplitudes, source_amplitudessc, wfc, wfp, psiy, psix, zetay, zetax, wfcsc, wfpsc, psiysc, psixsc, zetaysc, zetaxsc, ay, ax, by, bx, dbydy, dbxdx, sources_i, bg_receivers_i, receivers_i, dy, dx, dt, nt, step_ratio * model_gradient_sampling_interval, accuracy, pml_width_list, n_shots
+            *models, *source_amplitudes_l, *wavefields, *pml_profiles, *sources_i_l, *receivers_i_l, *grid_spacing, dt, nt, step_ratio * model_gradient_sampling_interval, accuracy, pml_width_l, n_shots
         )
 
     receiver_amplitudes = downsample_and_movedim(receiver_amplitudes,
-                                                 step_ratio, freq_taper_frac,
-                                                 time_pad_frac, time_taper)
+                                                 **resample_config)
     receiver_amplitudessc = downsample_and_movedim(receiver_amplitudessc,
-                                                   step_ratio, freq_taper_frac,
-                                                   time_pad_frac, time_taper)
+                                                   **resample_config)
 
     return (wfc, wfp, psiy, psix, zetay, zetax, wfcsc, wfpsc, psiysc, psixsc,
             zetaysc, zetaxsc, receiver_amplitudes, receiver_amplitudessc)
@@ -284,7 +291,7 @@ class ScalarBornForwardFunc(torch.autograd.Function):
     def forward(ctx, v, scatter, source_amplitudes, source_amplitudessc, wfc, wfp,
                 psiy, psix, zetay, zetax, wfcsc, wfpsc, psiysc, psixsc,
                 zetaysc, zetaxsc, ay, ax, by, bx, dbydy, dbxdx, sources_i,
-                receivers_i, receiverssc_i, dy, dx, dt, nt, step_ratio,
+                _, receivers_i, receiverssc_i, dy, dx, dt, nt, step_ratio,
                 accuracy, pml_width, n_shots):
 
         v = v.contiguous()
@@ -302,7 +309,7 @@ class ScalarBornForwardFunc(torch.autograd.Function):
         receiverssc_i = receiverssc_i.contiguous()
 
         fd_pad = accuracy // 2
-        size_with_batch = (n_shots, *v.shape)
+        size_with_batch = (n_shots, *v.shape[-2:])
         wfc = create_or_pad(wfc, fd_pad, v.device, v.dtype, size_with_batch)
         wfp = create_or_pad(wfp, fd_pad, v.device, v.dtype, size_with_batch)
         psiy = create_or_pad(psiy, fd_pad, v.device, v.dtype, size_with_batch)
@@ -323,19 +330,19 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                                 size_with_batch)
         zetaxsc = create_or_pad(zetaxsc, fd_pad, v.device, v.dtype,
                                 size_with_batch)
-        zero_interior(psiy, 2 * fd_pad, pml_width, True)
-        zero_interior(psix, 2 * fd_pad, pml_width, False)
-        zero_interior(zetay, 2 * fd_pad, pml_width, True)
-        zero_interior(zetax, 2 * fd_pad, pml_width, False)
-        zero_interior(psiysc, 2 * fd_pad, pml_width, True)
-        zero_interior(psixsc, 2 * fd_pad, pml_width, False)
-        zero_interior(zetaysc, 2 * fd_pad, pml_width, True)
-        zero_interior(zetaxsc, 2 * fd_pad, pml_width, False)
+        psiy = zero_interior(psiy, fd_pad, pml_width, True)
+        psix = zero_interior(psix, fd_pad, pml_width, False)
+        zetay = zero_interior(zetay, fd_pad, pml_width, True)
+        zetax = zero_interior(zetax, fd_pad, pml_width, False)
+        psiysc = zero_interior(psiysc, fd_pad, pml_width, True)
+        psixsc = zero_interior(psixsc, fd_pad, pml_width, False)
+        zetaysc = zero_interior(zetaysc, fd_pad, pml_width, True)
+        zetaxsc = zero_interior(zetaxsc, fd_pad, pml_width, False)
 
         device = v.device
         dtype = v.dtype
-        ny = v.shape[0]
-        nx = v.shape[1]
+        ny = v.shape[-2]
+        nx = v.shape[-1]
         n_sources_per_shot = sources_i.numel() // n_shots
         n_receivers_per_shot = receivers_i.numel() // n_shots
         n_receiverssc_per_shot = receiverssc_i.numel() // n_shots
@@ -352,21 +359,25 @@ class ScalarBornForwardFunc(torch.autograd.Function):
         pml_x0 = min(pml_width[2] + 2 * fd_pad, nx - fd_pad)
         pml_x1 = max(pml_x0, nx - pml_width[3] - 2 * fd_pad)
 
+        v_batched = v.ndim == 3 and v.shape[0] > 1
+        scatter_batched = scatter.ndim == 3 and scatter.shape[0] > 1
+
+        if v.requires_grad or scatter.requires_grad:
+            w_store.resize_(nt // step_ratio, *wfc.shape)
+            w_store.fill_(0)
+        if v.requires_grad:
+            wsc_store.resize_(nt // step_ratio, *wfc.shape)
+            wsc_store.fill_(0)
+        if receivers_i.numel() > 0:
+            receiver_amplitudes.resize_(nt, n_shots, n_receivers_per_shot)
+            receiver_amplitudes.fill_(0)
+        if receiverssc_i.numel() > 0:
+            receiver_amplitudessc.resize_(nt, n_shots,
+                                          n_receiverssc_per_shot)
+            receiver_amplitudessc.fill_(0)
+
         if v.is_cuda:
             aux = v.get_device()
-            if v.requires_grad or scatter.requires_grad:
-                w_store.resize_(nt // step_ratio, n_shots, *v.shape)
-                w_store.fill_(0)
-            if v.requires_grad:
-                wsc_store.resize_(nt // step_ratio, n_shots, *v.shape)
-                wsc_store.fill_(0)
-            if receivers_i.numel() > 0:
-                receiver_amplitudes.resize_(nt, n_shots, n_receivers_per_shot)
-                receiver_amplitudes.fill_(0)
-            if receiverssc_i.numel() > 0:
-                receiver_amplitudessc.resize_(nt, n_shots,
-                                              n_receiverssc_per_shot)
-                receiver_amplitudessc.fill_(0)
             if dtype == torch.float32:
                 if accuracy == 2:
                     forward = deepwave.dll_cuda.scalar_born_iso_2_float_forward
@@ -390,19 +401,6 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                 aux = min(n_shots, torch.get_num_threads())
             else:
                 aux = 1
-            if v.requires_grad or scatter.requires_grad:
-                w_store.resize_(n_shots, nt // step_ratio, *v.shape)
-                w_store.fill_(0)
-            if v.requires_grad:
-                wsc_store.resize_(n_shots, nt // step_ratio, *v.shape)
-                wsc_store.fill_(0)
-            if receivers_i.numel() > 0:
-                receiver_amplitudes.resize_(n_shots, nt, n_receivers_per_shot)
-                receiver_amplitudes.fill_(0)
-            if receiverssc_i.numel() > 0:
-                receiver_amplitudessc.resize_(n_shots, nt,
-                                              n_receiverssc_per_shot)
-                receiver_amplitudessc.fill_(0)
             if dtype == torch.float32:
                 if accuracy == 2:
                     forward = deepwave.dll_cpu.scalar_born_iso_2_float_forward
@@ -423,6 +421,7 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                     forward = deepwave.dll_cpu.scalar_born_iso_8_double_forward
 
         if wfc.numel() > 0 and nt > 0:
+            start_t = 0
             forward(v.data_ptr(), scatter.data_ptr(),
                     source_amplitudes.data_ptr(),
                     source_amplitudessc.data_ptr(), wfc.data_ptr(),
@@ -440,7 +439,8 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                     1 / dx, 1 / dy**2, 1 / dx**2, dt**2, nt, n_shots, ny, nx,
                     n_sources_per_shot, n_receivers_per_shot,
                     n_receiverssc_per_shot, step_ratio, v.requires_grad,
-                    scatter.requires_grad, pml_y0, pml_y1, pml_x0, pml_x1, aux)
+                    scatter.requires_grad, v_batched, scatter_batched, start_t,
+                    pml_y0, pml_y1, pml_x0, pml_x1, aux)
 
         if (v.requires_grad or scatter.requires_grad
                 or source_amplitudes.requires_grad
@@ -513,14 +513,14 @@ class ScalarBornForwardFunc(torch.autograd.Function):
         non_sc = ctx.non_sc
         device = v.device
         dtype = v.dtype
-        ny = v.shape[0]
-        nx = v.shape[1]
+        ny = v.shape[-2]
+        nx = v.shape[-1]
         n_sources_per_shot = sources_i.numel() // n_shots
         n_receivers_per_shot = receivers_i.numel() // n_shots
         n_receiverssc_per_shot = receiverssc_i.numel() // n_shots
         fd_pad = accuracy // 2
 
-        size_with_batch = (n_shots, *v.shape)
+        size_with_batch = (n_shots, *v.shape[-2:])
         if non_sc:
             wfc = create_or_pad(wfc, fd_pad, v.device, v.dtype,
                                 size_with_batch)
@@ -534,10 +534,10 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                                   size_with_batch)
             zetax = create_or_pad(zetax, fd_pad, v.device, v.dtype,
                                   size_with_batch)
-            zero_interior(psiy, 2 * fd_pad, pml_width, True)
-            zero_interior(psix, 2 * fd_pad, pml_width, False)
-            zero_interior(zetay, 2 * fd_pad, pml_width, True)
-            zero_interior(zetax, 2 * fd_pad, pml_width, False)
+            psiy = zero_interior(psiy, fd_pad, pml_width, True)
+            psix = zero_interior(psix, fd_pad, pml_width, False)
+            zetay = zero_interior(zetay, fd_pad, pml_width, True)
+            zetax = zero_interior(zetax, fd_pad, pml_width, False)
             psiyn = torch.zeros_like(psiy)
             psixn = torch.zeros_like(psix)
             zetayn = torch.zeros_like(zetay)
@@ -554,10 +554,10 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                                 size_with_batch)
         zetaxsc = create_or_pad(zetaxsc, fd_pad, v.device, v.dtype,
                                 size_with_batch)
-        zero_interior(psiysc, 2 * fd_pad, pml_width, True)
-        zero_interior(psixsc, 2 * fd_pad, pml_width, False)
-        zero_interior(zetaysc, 2 * fd_pad, pml_width, True)
-        zero_interior(zetaxsc, 2 * fd_pad, pml_width, False)
+        psiysc = zero_interior(psiysc, fd_pad, pml_width, True)
+        psixsc = zero_interior(psixsc, fd_pad, pml_width, False)
+        zetaysc = zero_interior(zetaysc, fd_pad, pml_width, True)
+        zetaxsc = zero_interior(zetaxsc, fd_pad, pml_width, False)
         psiynsc = torch.zeros_like(psiysc)
         psixnsc = torch.zeros_like(psixsc)
         zetaynsc = torch.zeros_like(zetaysc)
@@ -583,22 +583,26 @@ class ScalarBornForwardFunc(torch.autograd.Function):
         pml_x0 = min(pml_width[2] + 3 * fd_pad, nx - fd_pad)
         pml_x1 = max(pml_x0, nx - pml_width[3] - 3 * fd_pad)
 
+        v_batched = v.ndim == 3 and v.shape[0] > 1
+        scatter_batched = scatter.ndim == 3 and scatter.shape[0] > 1
+
+        if source_amplitudes_requires_grad:
+            grad_f.resize_(nt, n_shots, n_sources_per_shot)
+            grad_f.fill_(0)
+        if source_amplitudessc_requires_grad:
+            grad_fsc.resize_(nt, n_shots, n_sources_per_shot)
+            grad_fsc.fill_(0)
+
         if v.is_cuda:
             aux = v.get_device()
-            if v.requires_grad and n_shots > 1:
-                grad_v_tmp.resize_(n_shots, *v.shape)
+            if v.requires_grad and not v_batched and n_shots > 1:
+                grad_v_tmp.resize_(n_shots, *v.shape[-2:])
                 grad_v_tmp.fill_(0)
                 grad_v_tmp_ptr = grad_v_tmp.data_ptr()
-            if scatter.requires_grad and n_shots > 1:
-                grad_scatter_tmp.resize_(n_shots, *scatter.shape)
+            if scatter.requires_grad and not scatter_batched and n_shots > 1:
+                grad_scatter_tmp.resize_(n_shots, *scatter.shape[-2:])
                 grad_scatter_tmp.fill_(0)
                 grad_scatter_tmp_ptr = grad_scatter_tmp.data_ptr()
-            if source_amplitudes_requires_grad:
-                grad_f.resize_(nt, n_shots, n_sources_per_shot)
-                grad_f.fill_(0)
-            if source_amplitudessc_requires_grad:
-                grad_fsc.resize_(nt, n_shots, n_sources_per_shot)
-                grad_fsc.fill_(0)
             if dtype == torch.float32:
                 if accuracy == 2:
                     backward = deepwave.dll_cuda.scalar_born_iso_2_float_backward
@@ -630,20 +634,14 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                 aux = min(n_shots, torch.get_num_threads())
             else:
                 aux = 1
-            if v.requires_grad and aux > 1 and deepwave.use_openmp:
-                grad_v_tmp.resize_(aux, *v.shape)
+            if v.requires_grad and not v_batched and aux > 1 and deepwave.use_openmp:
+                grad_v_tmp.resize_(aux, *v.shape[-2:])
                 grad_v_tmp.fill_(0)
                 grad_v_tmp_ptr = grad_v_tmp.data_ptr()
-            if scatter.requires_grad and aux > 1 and deepwave.use_openmp:
-                grad_scatter_tmp.resize_(aux, *scatter.shape)
+            if scatter.requires_grad and not scatter_batched and aux > 1 and deepwave.use_openmp:
+                grad_scatter_tmp.resize_(aux, *scatter.shape[-2:])
                 grad_scatter_tmp.fill_(0)
                 grad_scatter_tmp_ptr = grad_scatter_tmp.data_ptr()
-            if source_amplitudes_requires_grad:
-                grad_f.resize_(n_shots, nt, n_sources_per_shot)
-                grad_f.fill_(0)
-            if source_amplitudessc_requires_grad:
-                grad_fsc.resize_(n_shots, nt, n_sources_per_shot)
-                grad_fsc.fill_(0)
             if dtype == torch.float32:
                 if accuracy == 2:
                     backward = deepwave.dll_cpu.scalar_born_iso_2_float_backward
@@ -675,6 +673,7 @@ class ScalarBornForwardFunc(torch.autograd.Function):
         wfpsc = -wfpsc
 
         if wfc.numel() > 0 and nt > 0:
+            start_t = 0
             if non_sc:
                 backward(
                     v.data_ptr(), scatter.data_ptr(), grad_r.data_ptr(),
@@ -697,7 +696,8 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                     n_sources_per_shot * source_amplitudes_requires_grad,
                     n_sources_per_shot * source_amplitudessc_requires_grad,
                     n_receivers_per_shot, n_receiverssc_per_shot, step_ratio,
-                    v.requires_grad, scatter.requires_grad, pml_y0, pml_y1,
+                    v.requires_grad, scatter.requires_grad,
+                    v_batched, scatter_batched, start_t, pml_y0, pml_y1,
                     pml_x0, pml_x1, aux)
             else:
                 backward_sc(
@@ -714,6 +714,7 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                     1 / dx**2, dt**2, nt, n_shots, ny, nx,
                     n_sources_per_shot * source_amplitudessc_requires_grad,
                     n_receiverssc_per_shot, step_ratio, scatter.requires_grad,
+                    v_batched, scatter_batched, start_t,
                     pml_y0, pml_y1, pml_x0, pml_x1, aux)
 
         s = (slice(None), slice(fd_pad, -fd_pad), slice(fd_pad, -fd_pad))

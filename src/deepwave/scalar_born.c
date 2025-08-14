@@ -123,6 +123,7 @@
 #define FORWARD_KERNEL(pml_y, pml_x, v_requires_grad, scatter_requires_grad) \
   {                                                                          \
     SET_RANGE(pml_y, pml_x)                                                  \
+    _Pragma("omp simd collapse(2)")                                        \
     for (y = y_begin; y < y_end; ++y) {                                      \
       for (x = x_begin; x < x_end; ++x) {                                    \
         int64_t const i = y * nx + x;                                        \
@@ -176,6 +177,7 @@
 #define BACKWARD_KERNEL(pml_y, pml_x, v_requires_grad, scatter_requires_grad)  \
   {                                                                            \
     SET_RANGE(pml_y, pml_x)                                                    \
+    _Pragma("omp simd collapse(2)")                                        \
     for (y = y_begin; y < y_end; ++y) {                                        \
       for (x = x_begin; x < x_end; ++x) {                                      \
         int64_t const i = y * nx + x;                                          \
@@ -228,6 +230,7 @@
 #define BACKWARD_KERNEL_SC(pml_y, pml_x, scatter_requires_grad)                \
   {                                                                            \
     SET_RANGE(pml_y, pml_x)                                                    \
+    _Pragma("omp simd collapse(2)")                                        \
     for (y = y_begin; y < y_end; ++y) {                                        \
       for (x = x_begin; x < x_end; ++x) {                                      \
         int64_t const i = y * nx + x;                                          \
@@ -470,6 +473,7 @@ __declspec(dllexport)
         int64_t const n_receivers_per_shot,
         int64_t const n_receiverssc_per_shot, int64_t const step_ratio,
         bool const v_requires_grad, bool const scatter_requires_grad,
+	bool const v_batched, bool const scatter_batched, int64_t start_t,
         int64_t const pml_y0, int64_t const pml_y1, int64_t const pml_x0,
         int64_t const pml_x1, int64_t const n_threads) {
   int64_t shot;
@@ -481,52 +485,56 @@ __declspec(dllexport)
     int64_t const si = shot * n_sources_per_shot;
     int64_t const ri = shot * n_receivers_per_shot;
     int64_t const risc = shot * n_receiverssc_per_shot;
+    DW_DTYPE const* __restrict const v_shot = v_batched ? v + i : v;
+    DW_DTYPE const* __restrict const scatter_shot = scatter_batched ? scatter + i : scatter;
     int64_t t;
     for (t = 0; t < nt; ++t) {
       if (t & 1) {
-        forward_kernel(v, scatter, wfp + i, wfc + i, psiyn + i, psixn + i,
+        forward_kernel(v_shot, scatter_shot, wfp + i, wfc + i, psiyn + i, psixn + i,
                        psiy + i, psix + i, zetay + i, zetax + i, wfpsc + i,
                        wfcsc + i, psiynsc + i, psixnsc + i, psiysc + i,
                        psixsc + i, zetaysc + i, zetaxsc + i,
-                       w_store + shot * (nt / step_ratio) * ny * nx +
-                           (t / step_ratio) * ny * nx,
-                       wsc_store + shot * (nt / step_ratio) * ny * nx +
-                           (t / step_ratio) * ny * nx,
+                       w_store + (t / step_ratio) * n_shots * ny * nx + shot * ny * nx,
+                       wsc_store + (t / step_ratio) * n_shots * ny * nx + shot * ny * nx,
                        ay, ax, by, bx, dbydy, dbxdx, rdy, rdx, rdy2, rdx2, dt2,
-                       ny, nx, v_requires_grad && ((t % step_ratio) == 0),
-                       scatter_requires_grad && ((t % step_ratio) == 0), pml_y0,
+                       ny, nx, v_requires_grad && (((t + start_t) % step_ratio) == 0),
+                       scatter_requires_grad && (((t + start_t) % step_ratio) == 0), pml_y0,
                        pml_y1, pml_x0, pml_x1);
-        add_sources(wfc + i, f + si * nt + t * n_sources_per_shot,
-                    sources_i + si, n_sources_per_shot);
-        add_sources(wfcsc + i, fsc + si * nt + t * n_sources_per_shot,
-                    sources_i + si, n_sources_per_shot);
-        record_receivers(r + ri * nt + t * n_receivers_per_shot, wfp + i,
-                         receivers_i + ri, n_receivers_per_shot);
-        record_receivers(rsc + risc * nt + t * n_receiverssc_per_shot,
-                         wfpsc + i, receiverssc_i + risc,
-                         n_receiverssc_per_shot);
+        add_to_wavefield(wfc + i, sources_i + si,
+                         f + t * n_shots * n_sources_per_shot + si,
+                         n_sources_per_shot);
+        add_to_wavefield(wfcsc + i, sources_i + si,
+                         fsc + t * n_shots * n_sources_per_shot + si,
+                         n_sources_per_shot);
+        record_from_wavefield(wfp + i, receivers_i + ri,
+                              r + t * n_shots * n_receivers_per_shot + ri,
+                              n_receivers_per_shot);
+        record_from_wavefield(wfpsc + i, receiverssc_i + risc,
+                              rsc + t * n_shots * n_receiverssc_per_shot + risc,
+                              n_receiverssc_per_shot);
       } else {
-        forward_kernel(v, scatter, wfc + i, wfp + i, psiy + i, psix + i,
+        forward_kernel(v_shot, scatter_shot, wfc + i, wfp + i, psiy + i, psix + i,
                        psiyn + i, psixn + i, zetay + i, zetax + i, wfcsc + i,
                        wfpsc + i, psiysc + i, psixsc + i, psiynsc + i,
                        psixnsc + i, zetaysc + i, zetaxsc + i,
-                       w_store + shot * (nt / step_ratio) * ny * nx +
-                           (t / step_ratio) * ny * nx,
-                       wsc_store + shot * (nt / step_ratio) * ny * nx +
-                           (t / step_ratio) * ny * nx,
+                       w_store + (t / step_ratio) * n_shots * ny * nx + shot * ny * nx,
+                       wsc_store + (t / step_ratio) * n_shots * ny * nx + shot * ny * nx,
                        ay, ax, by, bx, dbydy, dbxdx, rdy, rdx, rdy2, rdx2, dt2,
-                       ny, nx, v_requires_grad && ((t % step_ratio) == 0),
-                       scatter_requires_grad && ((t % step_ratio) == 0), pml_y0,
+                       ny, nx, v_requires_grad && (((t + start_t) % step_ratio) == 0),
+                       scatter_requires_grad && (((t + start_t) % step_ratio) == 0), pml_y0,
                        pml_y1, pml_x0, pml_x1);
-        add_sources(wfp + i, f + si * nt + t * n_sources_per_shot,
-                    sources_i + si, n_sources_per_shot);
-        add_sources(wfpsc + i, fsc + si * nt + t * n_sources_per_shot,
-                    sources_i + si, n_sources_per_shot);
-        record_receivers(r + ri * nt + t * n_receivers_per_shot, wfc + i,
-                         receivers_i + ri, n_receivers_per_shot);
-        record_receivers(rsc + risc * nt + t * n_receiverssc_per_shot,
-                         wfcsc + i, receiverssc_i + risc,
-                         n_receiverssc_per_shot);
+        add_to_wavefield(wfp + i, sources_i + si,
+                         f + t * n_shots * n_sources_per_shot + si,
+                         n_sources_per_shot);
+        add_to_wavefield(wfpsc + i, sources_i + si,
+                         fsc + t * n_shots * n_sources_per_shot + si,
+                         n_sources_per_shot);
+        record_from_wavefield(wfc + i, receivers_i + ri,
+                              r + t * n_shots * n_receivers_per_shot + ri,
+                              n_receivers_per_shot);
+        record_from_wavefield(wfcsc + i, receiverssc_i + risc,
+                              rsc + t * n_shots * n_receiverssc_per_shot + risc,
+                              n_receiverssc_per_shot);
       }
     }
   }
@@ -573,6 +581,7 @@ __declspec(dllexport)
         int64_t const n_sourcessc_per_shot, int64_t const n_receivers_per_shot,
         int64_t const n_receiverssc_per_shot, int64_t const step_ratio,
         bool const v_requires_grad, bool const scatter_requires_grad,
+	bool const v_batched, bool const scatter_batched, int64_t start_t,
         int64_t const pml_y0, int64_t const pml_y1, int64_t const pml_x0,
         int64_t const pml_x1, int64_t const n_threads) {
   int64_t shot;
@@ -590,64 +599,70 @@ __declspec(dllexport)
 #else
     int64_t const threadi = 0;
 #endif /* _OPENMP */
+    int64_t const grad_v_i = v_batched ? i : threadi;
+    int64_t const grad_scatter_i = scatter_batched ? i : threadi;
+    DW_DTYPE const* __restrict const v_shot = v_batched ? v + i : v;
+    DW_DTYPE const* __restrict const scatter_shot = scatter_batched ? scatter + i : scatter;
     int64_t t;
     for (t = nt - 1; t >= 0; --t) {
       if ((nt - 1 - t) & 1) {
-        record_receivers(grad_f + si * nt + t * n_sources_per_shot, wfp + i,
-                         sources_i + si, n_sources_per_shot);
-        record_receivers(grad_fsc + sisc * nt + t * n_sourcessc_per_shot,
-                         wfpsc + i, sources_i + sisc, n_sourcessc_per_shot);
+        record_from_wavefield(wfp + i, sources_i + si,
+                              grad_f + t * n_shots * n_sources_per_shot + si,
+                              n_sources_per_shot);
+        record_from_wavefield(wfpsc + i, sources_i + sisc,
+                              grad_fsc + t * n_shots * n_sourcessc_per_shot + sisc,
+                              n_sourcessc_per_shot);
         backward_kernel(
-            v, scatter, wfp + i, wfc + i, psiyn + i, psixn + i, psiy + i,
+            v_shot, scatter_shot, wfp + i, wfc + i, psiyn + i, psixn + i, psiy + i,
             psix + i, zetayn + i, zetaxn + i, zetay + i, zetax + i, wfpsc + i,
             wfcsc + i, psiynsc + i, psixnsc + i, psiysc + i, psixsc + i,
             zetaynsc + i, zetaxnsc + i, zetaysc + i, zetaxsc + i,
-            w_store + shot * (nt / step_ratio) * ny * nx +
-                (t / step_ratio) * ny * nx,
-            wsc_store + shot * (nt / step_ratio) * ny * nx +
-                (t / step_ratio) * ny * nx,
-            grad_v_thread + threadi, grad_scatter_thread + threadi, ay, ax, by,
+            w_store + (t / step_ratio) * n_shots * ny * nx + shot * ny * nx,
+            wsc_store + (t / step_ratio) * n_shots * ny * nx + shot * ny * nx,
+            grad_v_thread + grad_v_i, grad_scatter_thread + grad_scatter_i, ay, ax, by,
             bx, dbydy, dbxdx, rdy, rdx, rdy2, rdx2, dt2, ny, nx, step_ratio,
-            v_requires_grad && ((t % step_ratio) == 0),
-            scatter_requires_grad && ((t % step_ratio) == 0), pml_y0, pml_y1,
+            v_requires_grad && (((t + start_t) % step_ratio) == 0),
+            scatter_requires_grad && (((t + start_t) % step_ratio) == 0), pml_y0, pml_y1,
             pml_x0, pml_x1);
-        add_sources(wfc + i, grad_r + ri * nt + t * n_receivers_per_shot,
-                    receivers_i + ri, n_receivers_per_shot);
-        add_sources(wfcsc + i,
-                    grad_rsc + risc * nt + t * n_receiverssc_per_shot,
-                    receiverssc_i + risc, n_receiverssc_per_shot);
+        add_to_wavefield(wfc + i, receivers_i + ri,
+                         grad_r + t * n_shots * n_receivers_per_shot + ri,
+                         n_receivers_per_shot);
+        add_to_wavefield(wfcsc + i, receiverssc_i + risc,
+                         grad_rsc + t * n_shots * n_receiverssc_per_shot + risc,
+                         n_receiverssc_per_shot);
       } else {
-        record_receivers(grad_f + si * nt + t * n_sources_per_shot, wfc + i,
-                         sources_i + si, n_sources_per_shot);
-        record_receivers(grad_fsc + sisc * nt + t * n_sourcessc_per_shot,
-                         wfcsc + i, sources_i + sisc, n_sourcessc_per_shot);
+        record_from_wavefield(wfc + i, sources_i + si,
+                              grad_f + t * n_shots * n_sources_per_shot + si,
+                              n_sources_per_shot);
+        record_from_wavefield(wfcsc + i, sources_i + sisc,
+                              grad_fsc + t * n_shots * n_sourcessc_per_shot + sisc,
+                              n_sourcessc_per_shot);
         backward_kernel(
-            v, scatter, wfc + i, wfp + i, psiy + i, psix + i, psiyn + i,
+            v_shot, scatter_shot, wfc + i, wfp + i, psiy + i, psix + i, psiyn + i,
             psixn + i, zetay + i, zetax + i, zetayn + i, zetaxn + i, wfcsc + i,
             wfpsc + i, psiysc + i, psixsc + i, psiynsc + i, psixnsc + i,
             zetaysc + i, zetaxsc + i, zetaynsc + i, zetaxnsc + i,
-            w_store + shot * (nt / step_ratio) * ny * nx +
-                (t / step_ratio) * ny * nx,
-            wsc_store + shot * (nt / step_ratio) * ny * nx +
-                (t / step_ratio) * ny * nx,
-            grad_v_thread + threadi, grad_scatter_thread + threadi, ay, ax, by,
+            w_store + (t / step_ratio) * n_shots * ny * nx + shot * ny * nx,
+            wsc_store + (t / step_ratio) * n_shots * ny * nx + shot * ny * nx,
+            grad_v_thread + grad_v_i, grad_scatter_thread + grad_scatter_i, ay, ax, by,
             bx, dbydy, dbxdx, rdy, rdx, rdy2, rdx2, dt2, ny, nx, step_ratio,
-            v_requires_grad && ((t % step_ratio) == 0),
-            scatter_requires_grad && ((t % step_ratio) == 0), pml_y0, pml_y1,
+            v_requires_grad && (((t + start_t) % step_ratio) == 0),
+            scatter_requires_grad && (((t + start_t) % step_ratio) == 0), pml_y0, pml_y1,
             pml_x0, pml_x1);
-        add_sources(wfp + i, grad_r + ri * nt + t * n_receivers_per_shot,
-                    receivers_i + ri, n_receivers_per_shot);
-        add_sources(wfpsc + i,
-                    grad_rsc + risc * nt + t * n_receiverssc_per_shot,
-                    receiverssc_i + risc, n_receiverssc_per_shot);
+        add_to_wavefield(wfp + i, receivers_i + ri,
+                         grad_r + t * n_shots * n_receivers_per_shot + ri,
+                         n_receivers_per_shot);
+        add_to_wavefield(wfpsc + i, receiverssc_i + risc,
+                         grad_rsc + t * n_shots * n_receiverssc_per_shot + risc,
+                         n_receiverssc_per_shot);
       }
     }
   }
 #ifdef _OPENMP
-  if (v_requires_grad && n_threads > 1) {
+  if (v_requires_grad && !v_batched && n_threads > 1) {
     combine_grad(grad_v, grad_v_thread, n_threads, ny, nx);
   }
-  if (scatter_requires_grad && n_threads > 1) {
+  if (scatter_requires_grad && !scatter_batched && n_threads > 1) {
     combine_grad(grad_scatter, grad_scatter_thread, n_threads, ny, nx);
   }
 #endif /* _OPENMP */
@@ -681,7 +696,9 @@ __declspec(dllexport)
         DW_DTYPE const dt2, int64_t const nt, int64_t const n_shots,
         int64_t const ny, int64_t const nx, int64_t const n_sourcessc_per_shot,
         int64_t const n_receiverssc_per_shot, int64_t const step_ratio,
-        bool const scatter_requires_grad, int64_t const pml_y0,
+        bool const scatter_requires_grad,
+	bool const v_batched, bool const scatter_batched, int64_t start_t,
+	int64_t const pml_y0,
         int64_t const pml_y1, int64_t const pml_x0, int64_t const pml_x1,
         int64_t const n_threads) {
   int64_t shot;
@@ -697,43 +714,45 @@ __declspec(dllexport)
 #else
     int64_t const threadi = 0;
 #endif /* _OPENMP */
+    int64_t const grad_scatter_i = scatter_batched ? i : threadi;
+    DW_DTYPE const* __restrict const v_shot = v_batched ? v + i : v;
     int64_t t;
     for (t = nt - 1; t >= 0; --t) {
       if ((nt - 1 - t) & 1) {
-        record_receivers(grad_fsc + sisc * nt + t * n_sourcessc_per_shot,
-                         wfpsc + i, sources_i + sisc, n_sourcessc_per_shot);
-        backward_kernel_sc(v, wfpsc + i, wfcsc + i, psiynsc + i, psixnsc + i,
+        record_from_wavefield(wfpsc + i, sources_i + sisc,
+                              grad_fsc + t * n_shots * n_sourcessc_per_shot + sisc,
+                              n_sourcessc_per_shot);
+        backward_kernel_sc(v_shot, wfpsc + i, wfcsc + i, psiynsc + i, psixnsc + i,
                            psiysc + i, psixsc + i, zetaynsc + i, zetaxnsc + i,
                            zetaysc + i, zetaxsc + i,
-                           w_store + shot * (nt / step_ratio) * ny * nx +
-                               (t / step_ratio) * ny * nx,
-                           grad_scatter_thread + threadi, ay, ax, by, bx, dbydy,
+            		   w_store + (t / step_ratio) * n_shots * ny * nx + shot * ny * nx,
+                           grad_scatter_thread + grad_scatter_i, ay, ax, by, bx, dbydy,
                            dbxdx, rdy, rdx, rdy2, rdx2, dt2, ny, nx, step_ratio,
-                           scatter_requires_grad && ((t % step_ratio) == 0),
+                           scatter_requires_grad && (((t + start_t) % step_ratio) == 0),
                            pml_y0, pml_y1, pml_x0, pml_x1);
-        add_sources(wfcsc + i,
-                    grad_rsc + risc * nt + t * n_receiverssc_per_shot,
-                    receiverssc_i + risc, n_receiverssc_per_shot);
+        add_to_wavefield(wfcsc + i, receiverssc_i + risc,
+                         grad_rsc + t * n_shots * n_receiverssc_per_shot + risc,
+                         n_receiverssc_per_shot);
       } else {
-        record_receivers(grad_fsc + sisc * nt + t * n_sourcessc_per_shot,
-                         wfcsc + i, sources_i + sisc, n_sourcessc_per_shot);
-        backward_kernel_sc(v, wfcsc + i, wfpsc + i, psiysc + i, psixsc + i,
+        record_from_wavefield(wfcsc + i, sources_i + sisc,
+                              grad_fsc + t * n_shots * n_sourcessc_per_shot + sisc,
+                              n_sourcessc_per_shot);
+        backward_kernel_sc(v_shot, wfcsc + i, wfpsc + i, psiysc + i, psixsc + i,
                            psiynsc + i, psixnsc + i, zetaysc + i, zetaxsc + i,
                            zetaynsc + i, zetaxnsc + i,
-                           w_store + shot * (nt / step_ratio) * ny * nx +
-                               (t / step_ratio) * ny * nx,
-                           grad_scatter_thread + threadi, ay, ax, by, bx, dbydy,
+            		   w_store + (t / step_ratio) * n_shots * ny * nx + shot * ny * nx,
+                           grad_scatter_thread + grad_scatter_i, ay, ax, by, bx, dbydy,
                            dbxdx, rdy, rdx, rdy2, rdx2, dt2, ny, nx, step_ratio,
-                           scatter_requires_grad && ((t % step_ratio) == 0),
+                           scatter_requires_grad && (((t + start_t) % step_ratio) == 0),
                            pml_y0, pml_y1, pml_x0, pml_x1);
-        add_sources(wfpsc + i,
-                    grad_rsc + risc * nt + t * n_receiverssc_per_shot,
-                    receiverssc_i + risc, n_receiverssc_per_shot);
+        add_to_wavefield(wfpsc + i, receiverssc_i + risc,
+                         grad_rsc + t * n_shots * n_receiverssc_per_shot + risc,
+                         n_receiverssc_per_shot);
       }
     }
   }
 #ifdef _OPENMP
-  if (scatter_requires_grad && n_threads > 1) {
+  if (scatter_requires_grad && !scatter_batched && n_threads > 1) {
     combine_grad(grad_scatter, grad_scatter_thread, n_threads, ny, nx);
   }
 #endif /* _OPENMP */
