@@ -23,7 +23,7 @@ jobs:
                 cp /lib64/libgomp.so.1 .
                 ./build_linux.sh
             - name: Archive built libraries
-              uses: actions/upload-artifact@v3
+              uses: actions/upload-artifact@v4
               with:
                 name: linux_libraries
                 path: src/deepwave/*.so*
@@ -37,7 +37,7 @@ jobs:
                 cd src/deepwave
                 ./build_macos.sh
             - name: Archive built libraries
-              uses: actions/upload-artifact@v3
+              uses: actions/upload-artifact@v4
               with:
                 name: macos_libraries
                 path: src/deepwave/*.dylib
@@ -67,7 +67,7 @@ jobs:
                 cp intelopenmp.redist.win*/runtimes/win-x86/native/libiomp5md.dll .
                 ./build_windows.sh
             - name: Archive built libraries
-              uses: actions/upload-artifact@v3
+              uses: actions/upload-artifact@v4
               with:
                 name: windows_libraries
                 path: src/deepwave/*.dll
@@ -82,17 +82,17 @@ jobs:
             - name: Checkout
               uses: actions/checkout@v3
             - name: Download built Linux libraries
-              uses: actions/download-artifact@v3
+              uses: actions/download-artifact@v4
               with:
                 name: linux_libraries
                 path: src/deepwave/
             - name: Download built MacOS libraries
-              uses: actions/download-artifact@v3
+              uses: actions/download-artifact@v4
               with:
                 name: macos_libraries
                 path: src/deepwave/
             - name: Download built Windows libraries
-              uses: actions/download-artifact@v3
+              uses: actions/download-artifact@v4
               with:
                 name: windows_libraries
                 path: src/deepwave/
