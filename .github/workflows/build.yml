@@ -6,7 +6,7 @@ jobs:
         container: quay.io/pypa/manylinux2014_x86_64
         steps:
             - name: Checkout
-              uses: actions/checkout@v3
+              uses: actions/checkout@v5
             - name: Install NVCC
               run: |
                 yum-config-manager --add-repo https://developer.download.nvidia.com/compute/cuda/repos/rhel7/x86_64/cuda-rhel7.repo
@@ -31,7 +31,7 @@ jobs:
         runs-on: macos-11
         steps:
             - name: Checkout
-              uses: actions/checkout@v3
+              uses: actions/checkout@v5
             - name: Compile
               run: |
                 cd src/deepwave
@@ -48,7 +48,7 @@ jobs:
                 shell: bash
         steps:
             - name: Checkout
-              uses: actions/checkout@v3
+              uses: actions/checkout@v5
             - name: Install NVCC
               run: |
                 curl https://developer.download.nvidia.com/compute/cuda/11.1.1/network_installers/cuda_11.1.1_win10_network.exe -o cuda_11.1.1_win10_network.exe
@@ -80,7 +80,7 @@ jobs:
         needs: [Linux-build, MacOS-build, Windows-build]
         steps:
             - name: Checkout
-              uses: actions/checkout@v3
+              uses: actions/checkout@v5
             - name: Download built Linux libraries
               uses: actions/download-artifact@v4
               with:
@@ -97,7 +97,7 @@ jobs:
                 name: windows_libraries
                 path: src/deepwave/
             - name: Set up Python
-              uses: actions/setup-python@v3
+              uses: actions/setup-python@v5
             - name: Install dependencies
               run: |
                 python -m pip install --upgrade pip
