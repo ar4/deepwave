@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.18)
+cmake_minimum_required(VERSION 3.21)
 # If scikit-build-core sets SKBUILD_PROJECT_NAME / VERSION, prefer those.
 if(DEFINED SKBUILD_PROJECT_NAME)
     project(${SKBUILD_PROJECT_NAME} LANGUAGES C)
@@ -7,9 +7,9 @@ else()
 endif()
 
 # Detect and enable CUDA if present
-if(CMAKE_CUDA_COMPILER)
+find_package(CUDAToolkit)
+if(CUDAToolkit_FOUND)
     enable_language(CUDA)
-    set(CMAKE_CUDA_STANDARD 11)
 else()
     message(WARNING "CUDA not found. Building without CUDA support.")
 endif()
@@ -19,10 +19,49 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build." FORCE)
 endif()
 
-# Find OpenMP quietly (optional)
-find_package(OpenMP QUIET)
+# --- OpenMP Configuration ---
+add_library(Deepwave::OpenMP INTERFACE)
+set(OPENMP_CONFIGURED FALSE)
 
-# AVX2 test: use CMAKE_REQUIRED_FLAGS (safer than clobbering CMAKE_C_FLAGS)
+if(WIN32)
+    # On Windows, prioritize the Intel OpenMP library to avoid conflicts with PyTorch.
+    set(INTEL_OMP_LIB_PATH "${CMAKE_CURRENT_SOURCE_DIR}/src/deepwave/libiomp5md.lib")
+    if(EXISTS "${INTEL_OMP_LIB_PATH}")
+        message(STATUS "Found Intel OpenMP library for Windows build.")
+        # Use /openmp:experimental, link the Intel lib, and exclude the default MSVC lib.
+        target_compile_options(Deepwave::OpenMP INTERFACE /openmp:experimental)
+        target_link_libraries(Deepwave::OpenMP INTERFACE "${INTEL_OMP_LIB_PATH}")
+        target_link_options(Deepwave::OpenMP INTERFACE "/nodefaultlib:vcomp")
+        set(OPENMP_CONFIGURED TRUE)
+    else()
+        # Fallback for users building from source without the Intel lib.
+        # Use standard MSVC OpenMP, but with the user-required experimental flag.
+        message(STATUS "Intel OpenMP library not found. Falling back to standard MSVC OpenMP.")
+        find_package(OpenMP QUIET)
+        if(OpenMP_C_FOUND)
+            target_link_libraries(Deepwave::OpenMP INTERFACE OpenMP::OpenMP_C)
+            target_compile_options(Deepwave::OpenMP INTERFACE /openmp:experimental)
+            set(OPENMP_CONFIGURED TRUE)
+        endif()
+    endif()
+else()
+    # For non-Windows, use the standard find_package
+    find_package(OpenMP QUIET)
+    if(OpenMP_C_FOUND)
+        target_link_libraries(Deepwave::OpenMP INTERFACE OpenMP::OpenMP_C)
+        set(OPENMP_CONFIGURED TRUE)
+    endif()
+endif()
+
+if(OPENMP_CONFIGURED)
+    message(STATUS "OpenMP enabled.")
+else()
+    message(STATUS "OpenMP not found or not configured.")
+endif()
+# --- End OpenMP Configuration ---
+
+
+# AVX2 test
 include(CheckCSourceCompiles)
 set(AVX2_TEST_CODE "
     #include <immintrin.h>
@@ -31,16 +70,13 @@ set(AVX2_TEST_CODE "
         return 0;
     }")
 
-# Prepare flags for the test based on compiler
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang|Intel")
     set(CMAKE_REQUIRED_FLAGS "-mavx2")
-elseif(CMAKE_C_COMPILER_ID MATCHES "MSVC")
+elif(CMAKE_C_COMPILER_ID MATCHES "MSVC")
     set(CMAKE_REQUIRED_FLAGS "/arch:AVX2")
 endif()
 
 check_c_source_compiles("${AVX2_TEST_CODE}" HAVE_AVX2)
-
-# Clear any test-only flags
 unset(CMAKE_REQUIRED_FLAGS)
 
 if(HAVE_AVX2)
@@ -49,20 +85,24 @@ else()
     message(STATUS "AVX2 is not supported.")
 endif()
 
-# Compiler optimization flags — prefer target/compile-options but keep simple here
+# Compiler optimization flags
+add_compile_options(
+    $<$<CONFIG:Release>:$<$<C_COMPILER_ID:GNU,Clang,Intel>:-Ofast>>
+    $<$<CONFIG:Release>:$<$<C_COMPILER_ID:MSVC>:/O2 /fp:fast>>
+    $<$<BOOL:${HAVE_AVX2}>:$<$<C_COMPILER_ID:GNU,Clang,Intel>:-mavx2>>
+    $<$<BOOL:${HAVE_AVX2}>:$<$<C_COMPILER_ID:MSVC>:/arch:AVX2>>
+)
+
+# Add warning flags for GCC/Clang
+add_compile_options(
+    $<$<C_COMPILER_ID:GNU,Clang>:-Wall>
+    $<$<C_COMPILER_ID:GNU,Clang>:-Wextra>
+    $<$<C_COMPILER_ID:GNU,Clang>:-pedantic>
+)
+
 if(CMAKE_BUILD_TYPE MATCHES Release)
     if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang|Intel")
-        add_compile_options(-Ofast)
-        if(HAVE_AVX2)
-            add_compile_options(-mavx2)
-        endif()
-        # Ensure -Ofast in link step
         set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Ofast")
-    elseif(CMAKE_C_COMPILER_ID MATCHES "MSVC")
-        add_compile_options(/O2 /fp:fast)
-        if(HAVE_AVX2)
-            add_compile_options(/arch:AVX2)
-        endif()
     endif()
 endif()
 
@@ -72,39 +112,45 @@ set(SCALAR_ACCURACIES 2 4 6 8)
 set(ELASTIC_ACCURACIES 2 4)
 set(DTYPES float double)
 
-# CPU object libraries (scalar and scalar_born)
+# --- CPU object libraries ---
+# All CPU object libraries will link to our unified OpenMP target if it was configured.
+set(CPU_TARGETS)
+
+# scalar and scalar_born
 foreach(ACCURACY ${SCALAR_ACCURACIES})
     foreach(DTYPE ${DTYPES})
         add_library(scalar_${ACCURACY}_${DTYPE}_obj OBJECT src/deepwave/scalar.c)
         target_compile_definitions(scalar_${ACCURACY}_${DTYPE}_obj PRIVATE DW_ACCURACY=${ACCURACY} DW_DTYPE=${DTYPE} DW_DEVICE=cpu)
         list(APPEND DEEPWAVE_OBJECTS $<TARGET_OBJECTS:scalar_${ACCURACY}_${DTYPE}_obj>)
+        list(APPEND CPU_TARGETS scalar_${ACCURACY}_${DTYPE}_obj)
 
         add_library(scalar_born_${ACCURACY}_${DTYPE}_obj OBJECT src/deepwave/scalar_born.c)
         target_compile_definitions(scalar_born_${ACCURACY}_${DTYPE}_obj PRIVATE DW_ACCURACY=${ACCURACY} DW_DTYPE=${DTYPE} DW_DEVICE=cpu)
         list(APPEND DEEPWAVE_OBJECTS $<TARGET_OBJECTS:scalar_born_${ACCURACY}_${DTYPE}_obj>)
-
-        if(OpenMP_C_FOUND)
-            target_link_libraries(scalar_${ACCURACY}_${DTYPE}_obj PRIVATE OpenMP::OpenMP_C)
-            target_link_libraries(scalar_born_${ACCURACY}_${DTYPE}_obj PRIVATE OpenMP::OpenMP_C)
-        endif()
+        list(APPEND CPU_TARGETS scalar_born_${ACCURACY}_${DTYPE}_obj)
     endforeach()
 endforeach()
 
-# CPU object libraries (elastic)
+# elastic
 foreach(ACCURACY ${ELASTIC_ACCURACIES})
     foreach(DTYPE ${DTYPES})
         add_library(elastic_${ACCURACY}_${DTYPE}_obj OBJECT src/deepwave/elastic.c)
         target_compile_definitions(elastic_${ACCURACY}_${DTYPE}_obj PRIVATE DW_ACCURACY=${ACCURACY} DW_DTYPE=${DTYPE} DW_DEVICE=cpu)
         list(APPEND DEEPWAVE_OBJECTS $<TARGET_OBJECTS:elastic_${ACCURACY}_${DTYPE}_obj>)
-
-        if(OpenMP_C_FOUND)
-            target_link_libraries(elastic_${ACCURACY}_${DTYPE}_obj PRIVATE OpenMP::OpenMP_C)
-        endif()
+        list(APPEND CPU_TARGETS elastic_${ACCURACY}_${DTYPE}_obj)
     endforeach()
 endforeach()
 
-# CUDA object libraries (if CUDA available)
-if(CMAKE_CUDA_COMPILER)
+if(OPENMP_CONFIGURED)
+    # Link all CPU targets to our unified OpenMP interface library in one go.
+    target_link_libraries(${CPU_TARGETS} PRIVATE Deepwave::OpenMP)
+endif()
+# --- End CPU object libraries ---
+
+
+# --- CUDA object libraries ---
+if(CUDAToolkit_FOUND)
+    # scalar and scalar_born
     foreach(ACCURACY ${SCALAR_ACCURACIES})
         foreach(DTYPE ${DTYPES})
             add_library(scalar_cu_${ACCURACY}_${DTYPE}_obj OBJECT src/deepwave/scalar.cu)
@@ -116,14 +162,15 @@ if(CMAKE_CUDA_COMPILER)
             list(APPEND DEEPWAVE_OBJECTS $<TARGET_OBJECTS:scalar_born_cu_${ACCURACY}_${DTYPE}_obj>)
 
             if(CMAKE_BUILD_TYPE MATCHES Release)
-                target_compile_options(scalar_cu_${ACCURACY}_${DTYPE}_obj PRIVATE --use_fast_math -O3)
-                target_compile_options(scalar_born_cu_${ACCURACY}_${DTYPE}_obj PRIVATE --use_fast_math -O3)
+                target_compile_options(scalar_cu_${ACCURACY}_${DTYPE}_obj PRIVATE --use_fast_math -O3 --restrict)
+                target_compile_options(scalar_born_cu_${ACCURACY}_${DTYPE}_obj PRIVATE --use_fast_math -O3 --restrict)
                 set_target_properties(scalar_cu_${ACCURACY}_${DTYPE}_obj PROPERTIES CUDA_ARCHITECTURES all-major)
                 set_target_properties(scalar_born_cu_${ACCURACY}_${DTYPE}_obj PROPERTIES CUDA_ARCHITECTURES all-major)
             endif()
         endforeach()
     endforeach()
 
+    # elastic
     foreach(ACCURACY ${ELASTIC_ACCURACIES})
         foreach(DTYPE ${DTYPES})
             add_library(elastic_cu_${ACCURACY}_${DTYPE}_obj OBJECT src/deepwave/elastic.cu)
@@ -131,14 +178,16 @@ if(CMAKE_CUDA_COMPILER)
             list(APPEND DEEPWAVE_OBJECTS $<TARGET_OBJECTS:elastic_cu_${ACCURACY}_${DTYPE}_obj>)
 
             if(CMAKE_BUILD_TYPE MATCHES Release)
-                target_compile_options(elastic_cu_${ACCURACY}_${DTYPE}_obj PRIVATE --use_fast_math -O3)
+                target_compile_options(elastic_cu_${ACCURACY}_${DTYPE}_obj PRIVATE --use_fast_math -O3 --restrict)
                 set_target_properties(elastic_cu_${ACCURACY}_${DTYPE}_obj PROPERTIES CUDA_ARCHITECTURES all-major)
             endif()
         endforeach()
     endforeach()
 endif()
+# --- End CUDA object libraries ---
 
-# Build shared lib from object files (this is what Python/ctypes will load)
+
+# --- Final Library Build ---
 add_library(deepwave_C SHARED ${DEEPWAVE_OBJECTS})
 set_target_properties(deepwave_C PROPERTIES
     C_VISIBILITY_PRESET default
@@ -147,14 +196,8 @@ set_target_properties(deepwave_C PROPERTIES
     WINDOWS_EXPORT_ALL_SYMBOLS ON
 )
 
-# Link libs
-if(CMAKE_CUDA_COMPILER)
-    find_package(CUDAToolkit REQUIRED)  # prefer CUDA::cudart via the toolkit package
+if(CUDAToolkit_FOUND)
     target_link_libraries(deepwave_C PRIVATE CUDA::cudart)
-endif()
-
-if(OpenMP_C_FOUND)
-    target_link_libraries(deepwave_C PRIVATE OpenMP::OpenMP_C)
 endif()
 
 if(HAVE_AVX2)
@@ -162,20 +205,8 @@ if(HAVE_AVX2)
 endif()
 
 # Install
-# If scikit-build-core drives the build, install into the package name — scikit-build-core
-# will map that to platlib/site-packages for wheels/editable redirects.
-if(DEFINED SKBUILD)
-    message(STATUS "scikit-build-core detected; installing into package '${SKBUILD_PROJECT_NAME}'.")
-    install(TARGETS deepwave_C
-        LIBRARY DESTINATION ${SKBUILD_PROJECT_NAME}
-        ARCHIVE DESTINATION ${SKBUILD_PROJECT_NAME}
-        RUNTIME DESTINATION ${SKBUILD_PROJECT_NAME}
-    )
-else()
-    message(WARNING "scikit-build-core not detected; using fallback install directories under CMAKE_INSTALL_PREFIX.")
-    install(TARGETS deepwave_C
-        LIBRARY DESTINATION ${CMAKE_INSTALL_PREFIX}/lib
-        ARCHIVE DESTINATION ${CMAKE_INSTALL_PREFIX}/lib
-        RUNTIME DESTINATION ${CMAKE_INSTALL_PREFIX}/bin
-    )
-endif()
+install(TARGETS deepwave_C
+    LIBRARY DESTINATION deepwave
+    ARCHIVE DESTINATION deepwave
+    RUNTIME DESTINATION deepwave
+)

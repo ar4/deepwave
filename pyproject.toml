@@ -1,10 +1,69 @@
 [build-system]
-requires = ["scikit-build-core"]
+requires = ["scikit-build-core>=0.8.1"]
 build-backend = "scikit_build_core.build"
-
-[tool.scikit-build]
-wheel.py-api = "py3"
 
 [project]
 name = "deepwave"
 version = "0.0.21"
+author = "Alan Richardson"
+author_email = "alan@ausargeo.com"
+description = "Wave propagation modules for PyTorch"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+]
+urls = {
+    "Homepage" = "https://github.com/ar4/deepwave",
+    "Bug Tracker" = "https://github.com/ar4/deepwave/issues",
+}
+dependencies = [
+    "torch"
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+    "scipy",
+]
+
+[tool.scikit-build]
+wheel.py-api = "py3"
+cmake.version = ">=3.21"
+
+[tool.cibuildwheel]
+# Only build for one python version, as the wheel is python-independent
+build = "cp311-*"
+skip = ["pp*", "*musllinux*"]
+
+# Use an older manylinux image for better compatibility
+manylinux-x86_64-image = "manylinux2014"
+manylinux-aarch64-image = "manylinux2014"
+
+build-verbosity = 1
+
+# Don't bundle CUDA libraries with the wheel
+repair-wheel-command-linux = "auditwheel repair -w {dest_dir} {wheel} --exclude libcuda.so.1 --exclude 'libcudart.so.*'"
+
+# Test configuration
+test-requires = "pytest scipy torch"
+
+[tool.cibuildwheel.linux]
+test-command = "pytest {project}/tests"
+
+[tool.cibuildwheel.windows]
+test-command = "pytest {project}/tests/test_scalar.py"
+before-build = [
+    "nuget install intelopenmp.devel.win -Version 2018.0.0 -DirectDownload -NonInteractive",
+    "nuget install intelopenmp.redist.win -Version 2018.0.0 -DirectDownload -NonInteractive",
+    "xcopy .\intelopenmp.redist.win.2018.0.0\runtimes\win-x64\native\libiomp5md.dll src\deepwave\ /Y",
+    "xcopy .\intelopenmp.devel.win.2018.0.0\build\native\lib\x64\libiomp5md.lib src\deepwave\ /Y",
+]
+environment = { CMAKE_ARGS = "-DOpenMP_ROOT={project}/intelopenmp.devel.win.2018.0.0" }
+
+[tool.cibuildwheel.macos]
+test-command = "pytest {project}/tests/test_scalar.py"
+before-build = "brew install libomp"
+environment = { CMAKE_ARGS = "-DOpenMP_ROOT=$(brew --prefix libomp)" }

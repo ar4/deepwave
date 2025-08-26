@@ -8,29 +8,33 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-latest, windows-2022, macos-13, macos-14]
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v5
 
-      - name: Set up QEMU
-        if: runner.os == 'Linux'
-        uses: docker/setup-qemu-action@v2
+      - name: Set up CUDA for Windows
+        if: runner.os == 'Windows'
+        uses: nvidia-github-actions/setup-cuda@v2
         with:
-          platforms: all
+          cuda-version: '12.4.0'
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v2.12.0
+        uses: pypa/cibuildwheel@v3.1.4
         env:
-          CIBW_ARCHS_LINUX: "x86_64 aarch64"
-          CIBW_ARCHS_MACOS: "x86_64 arm64"
-          CIBW_BUILD: "py3*"
-          CIBW_SKIP: "pp* *musllinux*"
-          CIBW_MANYLINUX_X86_64_IMAGE: manylinux2014
-          CIBW_MANYLINUX_AARCH64_IMAGE: manylinux2014
-          CIBW_BUILD_VERBOSITY: 1
+          # For Linux, install CUDA in the container. Note that manylinux2014
+          # is specified in pyproject.toml
+          CIBW_BEFORE_ALL_LINUX: |
+            yum-config-manager --add-repo https://developer.download.nvidia.com/compute/cuda/repos/rhel7/x86_64/cuda-rhel7.repo
+            yum install -y cuda-nvcc-11-8 cuda-cudart-devel-11-8
+            export PATH=$PATH:/usr/local/cuda-11.8/bin
+            export CUDA_HOME=/usr/local/cuda-11.8
+            export CUDA_ROOT=/usr/local/cuda-11.8
+            export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/cuda-11.8/lib64
+          # For Windows, help CMake find the CUDA toolkit
+          CUDAToolkit_ROOT: ${{ env.CUDA_PATH }}
 
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           path: ./wheelhouse/*.whl
 
@@ -38,11 +42,11 @@ jobs:
     name: Build source distribution
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v5
 
       - name: Build sdist
         run: pipx run build --sdist
 
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           path: dist/*.tar.gz
