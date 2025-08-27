@@ -8,8 +8,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest]
-          #os: [ubuntu-latest, windows-2022, macos-13, macos-14]
+        os: [ubuntu-latest, windows-2022, macos-13, macos-14]
 
     steps:
       - uses: actions/checkout@v5
@@ -28,6 +27,7 @@ jobs:
             export CUDA_ROOT=/usr/local/cuda-11.8
             export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/cuda-11.8/lib64
             export CUDACXX=/usr/local/cuda-11.8/bin/nvcc
+          CIBW_ENVIRONMENT_LINUX: PATH="$PATH:/usr/local/cuda-11.8/bin" CUDA_PATH="/usr/local/cuda-11.8/bin" CUDA_HOME="/usr/local/cuda-11.8" CUDA_ROOT="/usr/local/cuda-11.8" LD_LIBRARY_PATH="$LD_LIBRARY_PATH:/usr/local/cuda-11.8/lib64" CUDACXX="/usr/local/cuda-11.8/bin/nvcc"
           # For Windows, install CUDA
           CIBW_BEFORE_ALL_WINDOWS: |
             cd src/deepwave
@@ -40,21 +40,22 @@ jobs:
             ./cuda_12.4.0_windows_network.exe -s nvcc_12.4 cudart_12.4
             echo "CUDA_PATH=C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4" >> $GITHUB_ENV
             echo "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4\\bin" >> $GITHUB_PATH
+          CIBW_ENVIRONMENT_WINDOWS: CUDA_PATH="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4" PATH="$PATH:C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4\\bin"
           CUDAToolkit_ROOT: ${{ env.CUDA_PATH }}
 
       - uses: actions/upload-artifact@v4
         with:
           path: ./wheelhouse/*.whl
 
-            #  build_sdist:
-            #    name: Build source distribution
-            #    runs-on: ubuntu-latest
-            #    steps:
-            #      - uses: actions/checkout@v5
-            #
-            #      - name: Build sdist
-            #        run: pipx run build --sdist
-            #
-            #      - uses: actions/upload-artifact@v4
-            #        with:
-            #          path: dist/*.tar.gz
+  build_sdist:
+    name: Build source distribution
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Build sdist
+        run: pipx run build --sdist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          path: dist/*.tar.gz

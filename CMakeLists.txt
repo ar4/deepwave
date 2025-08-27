@@ -6,8 +6,6 @@ else()
     project(deepwave LANGUAGES C)
 endif()
 
-message("CMAKE CUDACXX ${CUDACXX}")
-
 # Detect and enable CUDA if present
 find_package(CUDAToolkit)
 if(CUDAToolkit_FOUND)
@@ -89,9 +87,6 @@ else()
     message(STATUS "AVX2 is not supported.")
 endif()
 
-# Compiler optimization flags
-
-
 # Add warning flags for GCC/Clang
 add_compile_options(
     $<$<C_COMPILER_ID:GNU,Clang>:-Wall>
@@ -130,8 +125,8 @@ foreach(ACCURACY ${SCALAR_ACCURACIES})
 
         if(CMAKE_BUILD_TYPE MATCHES Release)
             if(CMAKE_C_COMPILER_ID MATCHES "GNU" OR CMAKE_C_COMPILER_ID MATCHES "Clang" OR CMAKE_C_COMPILER_ID MATCHES "Intel")
-                target_compile_options(scalar_${ACCURACY}_${DTYPE}_obj PRIVATE -Ofast)
-                target_compile_options(scalar_born_${ACCURACY}_${DTYPE}_obj PRIVATE -Ofast)
+		target_compile_options(scalar_${ACCURACY}_${DTYPE}_obj PRIVATE -Ofast -fPIC)
+		target_compile_options(scalar_born_${ACCURACY}_${DTYPE}_obj PRIVATE -Ofast -fPIC)
             elseif(CMAKE_C_COMPILER_ID MATCHES "MSVC")
                 target_compile_options(scalar_${ACCURACY}_${DTYPE}_obj PRIVATE /O2 /fp:fast)
                 target_compile_options(scalar_born_${ACCURACY}_${DTYPE}_obj PRIVATE /O2 /fp:fast)
@@ -160,7 +155,7 @@ foreach(ACCURACY ${ELASTIC_ACCURACIES})
 
         if(CMAKE_BUILD_TYPE MATCHES Release)
             if(CMAKE_C_COMPILER_ID MATCHES "GNU" OR CMAKE_C_COMPILER_ID MATCHES "Clang" OR CMAKE_C_COMPILER_ID MATCHES "Intel")
-                target_compile_options(elastic_${ACCURACY}_${DTYPE}_obj PRIVATE -Ofast)
+		target_compile_options(elastic_${ACCURACY}_${DTYPE}_obj PRIVATE -Ofast -fPIC)
             elseif(CMAKE_C_COMPILER_ID MATCHES "MSVC")
                 target_compile_options(elastic_${ACCURACY}_${DTYPE}_obj PRIVATE /O2 /fp:fast)
             endif()
@@ -232,6 +227,10 @@ set_target_properties(deepwave_C PROPERTIES
     POSITION_INDEPENDENT_CODE ON
     WINDOWS_EXPORT_ALL_SYMBOLS ON
 )
+
+if(OPENMP_CONFIGURED)
+    target_link_libraries(deepwave_C PRIVATE Deepwave_OpenMP_Interface)
+endif()
 
 if(CUDAToolkit_FOUND)
     target_link_libraries(deepwave_C PRIVATE CUDA::cudart)
