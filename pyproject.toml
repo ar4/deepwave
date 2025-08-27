@@ -52,6 +52,7 @@ test-requires = "pytest scipy torch"
 test-command = "pytest {project}/tests"
 # Don't bundle CUDA libraries with the wheel
 repair-wheel-command = "auditwheel repair -w {dest_dir} {wheel} --exclude libcuda.so.1 --exclude 'libcudart.so.*'"
+before-test = "pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu"
 
 [tool.cibuildwheel.windows]
 test-command = "pytest {project}/tests/test_scalar.py"

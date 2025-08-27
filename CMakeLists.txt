@@ -88,11 +88,15 @@ else()
 endif()
 
 # Add warning flags for GCC/Clang
+#add_compile_options(
+#    $<$<C_COMPILER_ID:GNU,Clang>:-Wall>
+#    $<$<C_COMPILER_ID:GNU,Clang>:-Wextra>
+#    $<$<C_COMPILER_ID:GNU,Clang>:-pedantic>
+#)
 add_compile_options(
-    $<$<C_COMPILER_ID:GNU,Clang>:-Wall>
-    $<$<C_COMPILER_ID:GNU,Clang>:-Wextra>
-    $<$<C_COMPILER_ID:GNU,Clang>:-pedantic>
+	$<$<C_COMPILER_ID:MSVC>:/w>
 )
+
 
 if(CMAKE_BUILD_TYPE MATCHES Release)
     if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang|Intel")
@@ -221,6 +225,9 @@ endif()
 
 # --- Final Library Build ---
 add_library(deepwave_C SHARED ${DEEPWAVE_OBJECTS})
+if(WIN32)
+    set_target_properties(deepwave_C PROPERTIES OUTPUT_NAME "libdeepwave_C")
+endif()
 set_target_properties(deepwave_C PROPERTIES
     C_VISIBILITY_PRESET default
     CUDA_VISIBILITY_PRESET default
