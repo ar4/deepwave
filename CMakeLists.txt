@@ -6,6 +6,8 @@ else()
     project(deepwave LANGUAGES C)
 endif()
 
+message("CMAKE CUDACXX ${CUDACXX}")
+
 # Detect and enable CUDA if present
 find_package(CUDAToolkit)
 if(CUDAToolkit_FOUND)
