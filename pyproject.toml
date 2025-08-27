@@ -5,23 +5,23 @@ build-backend = "scikit_build_core.build"
 [project]
 name = "deepwave"
 version = "0.0.21"
-author = "Alan Richardson"
-author_email = "alan@ausargeo.com"
+dependencies = [
+    "torch"
+]
+authors = [{name = "Alan Richardson", email = "alan@ausargeo.com"}]
 description = "Wave propagation modules for PyTorch"
 readme = "README.md"
-license = { file = "LICENSE" }
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.8"
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",
 ]
-urls = [
-    "Homepage" = "https://github.com/ar4/deepwave",
-    "Bug Tracker" = "https://github.com/ar4/deepwave/issues",
-]
-dependencies = [
-    "torch"
-]
+
+[project.urls]
+Homepage = "https://github.com/ar4/deepwave"
+"Bug Tracker" = "https://github.com/ar4/deepwave/issues"
 
 [project.optional-dependencies]
 test = [
