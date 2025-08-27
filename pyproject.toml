@@ -35,7 +35,7 @@ cmake.version = ">=3.21"
 [tool.cibuildwheel]
 # Only build for one python version, as the wheel is python-independent
 build = "cp311-*"
-skip = ["pp*", "*musllinux*"]
+skip = ["*musllinux*"]
 
 # Use an older manylinux image for better compatibility
 manylinux-x86_64-image = "manylinux2014"
