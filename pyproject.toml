@@ -43,6 +43,8 @@ manylinux-aarch64-image = "manylinux2014"
 
 build-verbosity = 1
 
+# Explicitly specify architectures
+CIBW_ARCHS_WINDOWS = "AMD64"
 
 # Test configuration
 test-requires = "pytest scipy torch"
