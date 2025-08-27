@@ -43,14 +43,14 @@ manylinux-aarch64-image = "manylinux2014"
 
 build-verbosity = 1
 
-# Don't bundle CUDA libraries with the wheel
-repair-wheel-command-linux = "auditwheel repair -w {dest_dir} {wheel} --exclude libcuda.so.1 --exclude 'libcudart.so.*'"
 
 # Test configuration
 test-requires = "pytest scipy torch"
 
 [tool.cibuildwheel.linux]
 test-command = "pytest {project}/tests"
+# Don't bundle CUDA libraries with the wheel
+repair-wheel-command = "auditwheel repair -w {dest_dir} {wheel} --exclude libcuda.so.1 --exclude 'libcudart.so.*'"
 
 [tool.cibuildwheel.windows]
 test-command = "pytest {project}/tests/test_scalar.py"
