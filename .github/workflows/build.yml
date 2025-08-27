@@ -27,8 +27,6 @@ jobs:
             export CUDA_ROOT=/usr/local/cuda-11.8
             export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/cuda-11.8/lib64
             export CUDACXX=/usr/local/cuda-11.8/bin/nvcc
-            nvcc --version
-            ls -l $CUDACXX
           # For Windows, install CUDA
           CIBW_BEFORE_ALL_WINDOWS: |
             cd src/deepwave

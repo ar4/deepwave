@@ -51,9 +51,20 @@ test-requires = "pytest scipy torch"
 test-command = "pytest {project}/tests"
 # Don't bundle CUDA libraries with the wheel
 repair-wheel-command = "auditwheel repair -w {dest_dir} {wheel} --exclude libcuda.so.1 --exclude 'libcudart.so.*'"
+environment = {
+	PATH="$PATH:/usr/local/cuda-11.8/bin",
+	CUDA_HOME="/usr/local/cuda-11.8",
+        CUDA_ROOT="/usr/local/cuda-11.8",
+        LD_LIBRARY_PATH="$LD_LIBRARY_PATH:/usr/local/cuda-11.8/lib64",
+        CUDACXX="/usr/local/cuda-11.8/bin/nvcc"
+}
 
 [tool.cibuildwheel.windows]
 test-command = "pytest {project}/tests/test_scalar.py"
+environment = {
+	CUDA_PATH="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4",
+	PATH="$PATH:C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4\\bin"
+}
 
 [tool.cibuildwheel.macos]
 test-command = "pytest {project}/tests/test_scalar.py"
