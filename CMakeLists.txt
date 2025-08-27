@@ -20,7 +20,7 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 # --- OpenMP Configuration ---
-add_library(Deepwave::OpenMP INTERFACE)
+add_library(Deepwave_OpenMP_Interface INTERFACE)
 set(OPENMP_CONFIGURED FALSE)
 
 if(WIN32)
@@ -29,9 +29,9 @@ if(WIN32)
     if(EXISTS "${INTEL_OMP_LIB_PATH}")
         message(STATUS "Found Intel OpenMP library for Windows build.")
         # Use /openmp:experimental, link the Intel lib, and exclude the default MSVC lib.
-        target_compile_options(Deepwave::OpenMP INTERFACE /openmp:experimental)
-        target_link_libraries(Deepwave::OpenMP INTERFACE "${INTEL_OMP_LIB_PATH}")
-        target_link_options(Deepwave::OpenMP INTERFACE "/nodefaultlib:vcomp")
+        target_compile_options(Deepwave_OpenMP_Interface INTERFACE /openmp:experimental)
+        target_link_libraries(Deepwave_OpenMP_Interface INTERFACE "${INTEL_OMP_LIB_PATH}")
+        target_link_options(Deepwave_OpenMP_Interface INTERFACE "/nodefaultlib:vcomp")
         set(OPENMP_CONFIGURED TRUE)
     else()
         # Fallback for users building from source without the Intel lib.
@@ -39,8 +39,8 @@ if(WIN32)
         message(STATUS "Intel OpenMP library not found. Falling back to standard MSVC OpenMP.")
         find_package(OpenMP QUIET)
         if(OpenMP_C_FOUND)
-            target_link_libraries(Deepwave::OpenMP INTERFACE OpenMP::OpenMP_C)
-            target_compile_options(Deepwave::OpenMP INTERFACE /openmp:experimental)
+            target_link_libraries(Deepwave_OpenMP_Interface INTERFACE OpenMP::OpenMP_C)
+            target_compile_options(Deepwave_OpenMP_Interface INTERFACE /openmp:experimental)
             set(OPENMP_CONFIGURED TRUE)
         endif()
     endif()
@@ -48,7 +48,7 @@ else()
     # For non-Windows, use the standard find_package
     find_package(OpenMP QUIET)
     if(OpenMP_C_FOUND)
-        target_link_libraries(Deepwave::OpenMP INTERFACE OpenMP::OpenMP_C)
+        target_link_libraries(Deepwave_OpenMP_Interface INTERFACE OpenMP::OpenMP_C)
         set(OPENMP_CONFIGURED TRUE)
     endif()
 endif()
@@ -72,8 +72,10 @@ set(AVX2_TEST_CODE "
 
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang|Intel")
     set(CMAKE_REQUIRED_FLAGS "-mavx2")
-elif(CMAKE_C_COMPILER_ID MATCHES "MSVC")
+else()
+    if(CMAKE_C_COMPILER_ID MATCHES "MSVC")
     set(CMAKE_REQUIRED_FLAGS "/arch:AVX2")
+    endif()
 endif()
 
 check_c_source_compiles("${AVX2_TEST_CODE}" HAVE_AVX2)
@@ -86,12 +88,7 @@ else()
 endif()
 
 # Compiler optimization flags
-add_compile_options(
-    $<$<CONFIG:Release>:$<$<C_COMPILER_ID:GNU,Clang,Intel>:-Ofast>>
-    $<$<CONFIG:Release>:$<$<C_COMPILER_ID:MSVC>:/O2 /fp:fast>>
-    $<$<BOOL:${HAVE_AVX2}>:$<$<C_COMPILER_ID:GNU,Clang,Intel>:-mavx2>>
-    $<$<BOOL:${HAVE_AVX2}>:$<$<C_COMPILER_ID:MSVC>:/arch:AVX2>>
-)
+
 
 # Add warning flags for GCC/Clang
 add_compile_options(
@@ -128,6 +125,26 @@ foreach(ACCURACY ${SCALAR_ACCURACIES})
         target_compile_definitions(scalar_born_${ACCURACY}_${DTYPE}_obj PRIVATE DW_ACCURACY=${ACCURACY} DW_DTYPE=${DTYPE} DW_DEVICE=cpu)
         list(APPEND DEEPWAVE_OBJECTS $<TARGET_OBJECTS:scalar_born_${ACCURACY}_${DTYPE}_obj>)
         list(APPEND CPU_TARGETS scalar_born_${ACCURACY}_${DTYPE}_obj)
+
+        if(CMAKE_BUILD_TYPE MATCHES Release)
+            if(CMAKE_C_COMPILER_ID MATCHES "GNU" OR CMAKE_C_COMPILER_ID MATCHES "Clang" OR CMAKE_C_COMPILER_ID MATCHES "Intel")
+                target_compile_options(scalar_${ACCURACY}_${DTYPE}_obj PRIVATE -Ofast)
+                target_compile_options(scalar_born_${ACCURACY}_${DTYPE}_obj PRIVATE -Ofast)
+            elseif(CMAKE_C_COMPILER_ID MATCHES "MSVC")
+                target_compile_options(scalar_${ACCURACY}_${DTYPE}_obj PRIVATE /O2 /fp:fast)
+                target_compile_options(scalar_born_${ACCURACY}_${DTYPE}_obj PRIVATE /O2 /fp:fast)
+            endif()
+        endif()
+
+        if(HAVE_AVX2)
+            if(CMAKE_C_COMPILER_ID MATCHES "GNU" OR CMAKE_C_COMPILER_ID MATCHES "Clang" OR CMAKE_C_COMPILER_ID MATCHES "Intel")
+                target_compile_options(scalar_${ACCURACY}_${DTYPE}_obj PRIVATE -mavx2)
+                target_compile_options(scalar_born_${ACCURACY}_${DTYPE}_obj PRIVATE -mavx2)
+            elseif(CMAKE_C_COMPILER_ID MATCHES "MSVC")
+                target_compile_options(scalar_${ACCURACY}_${DTYPE}_obj PRIVATE /arch:AVX2)
+                target_compile_options(scalar_born_${ACCURACY}_${DTYPE}_obj PRIVATE /arch:AVX2)
+            endif()
+        endif()
     endforeach()
 endforeach()
 
@@ -138,12 +155,30 @@ foreach(ACCURACY ${ELASTIC_ACCURACIES})
         target_compile_definitions(elastic_${ACCURACY}_${DTYPE}_obj PRIVATE DW_ACCURACY=${ACCURACY} DW_DTYPE=${DTYPE} DW_DEVICE=cpu)
         list(APPEND DEEPWAVE_OBJECTS $<TARGET_OBJECTS:elastic_${ACCURACY}_${DTYPE}_obj>)
         list(APPEND CPU_TARGETS elastic_${ACCURACY}_${DTYPE}_obj)
+
+        if(CMAKE_BUILD_TYPE MATCHES Release)
+            if(CMAKE_C_COMPILER_ID MATCHES "GNU" OR CMAKE_C_COMPILER_ID MATCHES "Clang" OR CMAKE_C_COMPILER_ID MATCHES "Intel")
+                target_compile_options(elastic_${ACCURACY}_${DTYPE}_obj PRIVATE -Ofast)
+            elseif(CMAKE_C_COMPILER_ID MATCHES "MSVC")
+                target_compile_options(elastic_${ACCURACY}_${DTYPE}_obj PRIVATE /O2 /fp:fast)
+            endif()
+        endif()
+
+        if(HAVE_AVX2)
+            if(CMAKE_C_COMPILER_ID MATCHES "GNU" OR CMAKE_C_COMPILER_ID MATCHES "Clang" OR CMAKE_C_COMPILER_ID MATCHES "Intel")
+                target_compile_options(elastic_${ACCURACY}_${DTYPE}_obj PRIVATE -mavx2)
+            elseif(CMAKE_C_COMPILER_ID MATCHES "MSVC")
+                target_compile_options(elastic_${ACCURACY}_${DTYPE}_obj PRIVATE /arch:AVX2)
+            endif()
+        endif()
     endforeach()
 endforeach()
 
 if(OPENMP_CONFIGURED)
     # Link all CPU targets to our unified OpenMP interface library in one go.
-    target_link_libraries(${CPU_TARGETS} PRIVATE Deepwave::OpenMP)
+    foreach(CPU_TARGET ${CPU_TARGETS})
+        target_link_libraries(${CPU_TARGET} PRIVATE Deepwave_OpenMP_Interface)
+    endforeach()
 endif()
 # --- End CPU object libraries ---
 
@@ -162,8 +197,8 @@ if(CUDAToolkit_FOUND)
             list(APPEND DEEPWAVE_OBJECTS $<TARGET_OBJECTS:scalar_born_cu_${ACCURACY}_${DTYPE}_obj>)
 
             if(CMAKE_BUILD_TYPE MATCHES Release)
-                target_compile_options(scalar_cu_${ACCURACY}_${DTYPE}_obj PRIVATE --use_fast_math -O3 --restrict)
-                target_compile_options(scalar_born_cu_${ACCURACY}_${DTYPE}_obj PRIVATE --use_fast_math -O3 --restrict)
+                target_compile_options(scalar_cu_${ACCURACY}_${DTYPE}_obj PRIVATE --use_fast_math -O3 --restrict --compiler-options -fPIC)
+                target_compile_options(scalar_born_cu_${ACCURACY}_${DTYPE}_obj PRIVATE --use_fast_math -O3 --restrict --compiler-options -fPIC)
                 set_target_properties(scalar_cu_${ACCURACY}_${DTYPE}_obj PROPERTIES CUDA_ARCHITECTURES all-major)
                 set_target_properties(scalar_born_cu_${ACCURACY}_${DTYPE}_obj PROPERTIES CUDA_ARCHITECTURES all-major)
             endif()
@@ -178,7 +213,7 @@ if(CUDAToolkit_FOUND)
             list(APPEND DEEPWAVE_OBJECTS $<TARGET_OBJECTS:elastic_cu_${ACCURACY}_${DTYPE}_obj>)
 
             if(CMAKE_BUILD_TYPE MATCHES Release)
-                target_compile_options(elastic_cu_${ACCURACY}_${DTYPE}_obj PRIVATE --use_fast_math -O3 --restrict)
+                target_compile_options(elastic_cu_${ACCURACY}_${DTYPE}_obj PRIVATE --use_fast_math -O3 --restrict --compiler-options -fPIC)
                 set_target_properties(elastic_cu_${ACCURACY}_${DTYPE}_obj PROPERTIES CUDA_ARCHITECTURES all-major)
             endif()
         endforeach()
