@@ -28,6 +28,11 @@ jobs:
             export CUDACXX=/usr/local/cuda-11.8/bin/nvcc
           # For Windows, install CUDA
           CIBW_BEFORE_ALL_WINDOWS: |
+            cd src/deepwave
+            nuget install intelopenmp.devel.win -DirectDownload -NonInteractive
+            nuget install intelopenmp.redist.win -DirectDownload -NonInteractive
+            cp intelopenmp.devel.win*/build/native/win-x64/libiomp5md.lib .
+            cp intelopenmp.redist.win*/runtimes/win-x64/native/libiomp5md.dll .
             curl https://developer.download.nvidia.com/compute/cuda/12.4.0/network_installers/cuda_12.4.0_windows_network.exe -o cuda_12.4.0_windows_network.exe
             chmod +x ./cuda_12.4.0_windows_network.exe
             ./cuda_12.4.0_windows_network.exe -s nvcc_12.4 cudart_12.4
