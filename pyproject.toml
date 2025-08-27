@@ -15,10 +15,10 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",
 ]
-urls = {
+urls = [
     "Homepage" = "https://github.com/ar4/deepwave",
     "Bug Tracker" = "https://github.com/ar4/deepwave/issues",
-}
+]
 dependencies = [
     "torch"
 ]

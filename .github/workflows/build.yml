@@ -13,12 +13,6 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Set up CUDA for Windows
-        if: runner.os == 'Windows'
-        uses: nvidia-github-actions/setup-cuda@v2
-        with:
-          cuda-version: '12.4.0'
-
       - name: Build wheels
         uses: pypa/cibuildwheel@v3.1.4
         env:
@@ -31,7 +25,13 @@ jobs:
             export CUDA_HOME=/usr/local/cuda-11.8
             export CUDA_ROOT=/usr/local/cuda-11.8
             export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/cuda-11.8/lib64
-          # For Windows, help CMake find the CUDA toolkit
+          # For Windows, install CUDA
+          CIBW_BEFORE_ALL_WINDOWS: |
+            curl https://developer.download.nvidia.com/compute/cuda/12.4.0/network_installers/cuda_12.4.0_windows_network.exe -o cuda_12.4.0_windows_network.exe
+            chmod +x ./cuda_12.4.0_windows_network.exe
+            ./cuda_12.4.0_windows_network.exe -s nvcc_12.4 cudart_12.4
+            echo "CUDA_PATH=C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4" >> $GITHUB_ENV
+            echo "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4\\bin" >> $GITHUB_PATH
           CUDAToolkit_ROOT: ${{ env.CUDA_PATH }}
 
       - uses: actions/upload-artifact@v4
