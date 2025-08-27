@@ -23,6 +23,35 @@ endif()
 add_library(Deepwave_OpenMP_Interface INTERFACE)
 set(OPENMP_CONFIGURED FALSE)
 
+#file(COPY_FILE ${GITHUB_WORKSPACE}/libiomp5md.lib src/deepwave/libiomp5md.lib)
+#file(COPY_FILE ${GITHUB_WORKSPACE}/libiomp5md.dll src/deepwave/libiomp5md.dll)
+
+message(STATUS "CURRENT DIR ${CMAKE_CURRENT_SOURCE_DIR}")
+
+message(STATUS "FILES IN CURRENT DIR")
+# List the files in the specified directory directly
+file(GLOB files "${CMAKE_CURRENT_SOURCE_DIR}/*")
+
+message(STATUS "FILES IN SRC/DEEPWAVE")
+# List the files in the specified directory directly
+file(GLOB files2 "${CMAKE_CURRENT_SOURCE_DIR}/src/deepwave/*")
+
+# Print the files
+foreach(file ${files2})
+    message(STATUS "Found file: ${file}")
+endforeach()
+
+message(STATUS "GITHUB_WORKSPACE ${GITHUB_WORKSPACE}")
+
+message(STATUS "FILES IN GITHUB WORKSPACE")
+# List the files in the specified directory directly
+file(GLOB files3 "${GITHUB_WORKSPACE}/*")
+
+# Print the files
+foreach(file ${files3})
+    message(STATUS "Found file: ${file}")
+endforeach()
+
 if(WIN32)
     # On Windows, prioritize the Intel OpenMP library to avoid conflicts with PyTorch.
     set(INTEL_OMP_LIB_PATH "${CMAKE_CURRENT_SOURCE_DIR}/src/deepwave/libiomp5md.lib")
@@ -106,9 +135,9 @@ endif()
 
 # Prepare lists that will collect the object files
 set(DEEPWAVE_OBJECTS)
-set(SCALAR_ACCURACIES 2 4 6 8)
-set(ELASTIC_ACCURACIES 2 4)
-set(DTYPES float double)
+set(SCALAR_ACCURACIES 2)# 4 6 8)
+set(ELASTIC_ACCURACIES 2)# 4)
+set(DTYPES float)# double)
 
 # --- CPU object libraries ---
 # All CPU object libraries will link to our unified OpenMP target if it was configured.
