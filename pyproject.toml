@@ -41,9 +41,10 @@ archs = ["auto64"]
 
 # Test configuration
 test-requires = "pytest scipy torch"
+test-sources = "tests"
 
 [tool.cibuildwheel.linux]
-test-command = "pytest"
+test-command = "pytest tests"
 # Don't bundle CUDA libraries with the wheel
 repair-wheel-command = "auditwheel repair -w {dest_dir} {wheel} --exclude libcuda.so.1 --exclude 'libcudart.so.*'"
 before-test = "pip install torch --index-url https://download.pytorch.org/whl/cpu"
