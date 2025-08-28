@@ -33,9 +33,9 @@ jobs:
             curl https://developer.download.nvidia.com/compute/cuda/12.4.0/network_installers/cuda_12.4.0_windows_network.exe -o cuda_12.4.0_windows_network.exe &&
             cuda_12.4.0_windows_network.exe -s nvcc_12.4 cudart_12.4 visual_studio_integration_12.4
           #CIBW_ENVIRONMENT_WINDOWS: PATH="$PATH:C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4\\bin" CUDA_PATH="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4" CUDA_HOME="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4" CUDAToolkit_ROOT="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4"
-          CIBW_ENVIRONMENT_WINDOWS: PATH="$PATH;C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4\\bin" SKBUILD_CMAKE_ARGS="-DCudaToolkitDir=C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4"
+          CIBW_ENVIRONMENT_WINDOWS: PATH="$PATH;C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4\\bin" CudaToolkitDir="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4" CUDA_PATH="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4" CUDA_HOME="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4" CUDAToolkit_ROOT="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4" CUDACXX="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4\\bin\\nvcc.exe"
           CIBW_BEFORE_BUILD_WINDOWS: >
-            echo %SKBUILD_CMAKE_ARGS%
+            echo %CudaToolkitDir%
           CIBW_BEFORE_TEST_MACOS: pip install "numpy<2"
 
       - uses: actions/upload-artifact@v4
