@@ -175,6 +175,14 @@ endif()
 
 # --- CUDA object libraries ---
 if(CUDAToolkit_FOUND)
+    if(CMAKE_BUILD_TYPE MATCHES Release)
+        set(CUDA_RELEASE_OPTIONS --use_fast_math -O3 --restrict)
+        if(NOT WIN32)
+            # -fPIC is not a valid option for the MSVC compiler on Windows.
+            list(APPEND CUDA_RELEASE_OPTIONS --compiler-options -fPIC)
+        endif()
+    endif()
+
     # scalar and scalar_born
     foreach(ACCURACY ${SCALAR_ACCURACIES})
         foreach(DTYPE ${DTYPES})
@@ -187,8 +195,8 @@ if(CUDAToolkit_FOUND)
             list(APPEND DEEPWAVE_OBJECTS $<TARGET_OBJECTS:scalar_born_cu_${ACCURACY}_${DTYPE}_obj>)
 
             if(CMAKE_BUILD_TYPE MATCHES Release)
-                target_compile_options(scalar_cu_${ACCURACY}_${DTYPE}_obj PRIVATE --use_fast_math -O3 --restrict --compiler-options -fPIC)
-                target_compile_options(scalar_born_cu_${ACCURACY}_${DTYPE}_obj PRIVATE --use_fast_math -O3 --restrict --compiler-options -fPIC)
+                target_compile_options(scalar_cu_${ACCURACY}_${DTYPE}_obj PRIVATE ${CUDA_RELEASE_OPTIONS})
+                target_compile_options(scalar_born_cu_${ACCURACY}_${DTYPE}_obj PRIVATE ${CUDA_RELEASE_OPTIONS})
                 set_target_properties(scalar_cu_${ACCURACY}_${DTYPE}_obj PROPERTIES CUDA_ARCHITECTURES all-major)
                 set_target_properties(scalar_born_cu_${ACCURACY}_${DTYPE}_obj PROPERTIES CUDA_ARCHITECTURES all-major)
             endif()
@@ -203,7 +211,7 @@ if(CUDAToolkit_FOUND)
             list(APPEND DEEPWAVE_OBJECTS $<TARGET_OBJECTS:elastic_cu_${ACCURACY}_${DTYPE}_obj>)
 
             if(CMAKE_BUILD_TYPE MATCHES Release)
-                target_compile_options(elastic_cu_${ACCURACY}_${DTYPE}_obj PRIVATE --use_fast_math -O3 --restrict --compiler-options -fPIC)
+                target_compile_options(elastic_cu_${ACCURACY}_${DTYPE}_obj PRIVATE ${CUDA_RELEASE_OPTIONS})
                 set_target_properties(elastic_cu_${ACCURACY}_${DTYPE}_obj PROPERTIES CUDA_ARCHITECTURES all-major)
             endif()
         endforeach()
@@ -226,10 +234,6 @@ set_target_properties(deepwave_C PROPERTIES
 
 if(OPENMP_CONFIGURED)
     target_link_libraries(deepwave_C PRIVATE Deepwave_OpenMP_Interface)
-endif()
-
-if(CUDAToolkit_FOUND)
-    target_link_libraries(deepwave_C PRIVATE CUDA::cudart)
 endif()
 
 if(HAVE_AVX2)
