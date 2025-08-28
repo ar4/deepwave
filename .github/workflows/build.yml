@@ -9,7 +9,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-2022, macos-13, macos-14]
+        #os: [ubuntu-latest, windows-2022, macos-13, macos-14]
+        os: [windows-2022]
 
     steps:
       - uses: actions/checkout@v5
@@ -31,7 +32,12 @@ jobs:
             cp intelopenmp.redist.win*/runtimes/win-x64/native/libiomp5md.dll src/deepwave &&
             curl https://developer.download.nvidia.com/compute/cuda/12.4.0/network_installers/cuda_12.4.0_windows_network.exe -o cuda_12.4.0_windows_network.exe &&
             cuda_12.4.0_windows_network.exe -s nvcc_12.4 cudart_12.4 visual_studio_integration_12.4
-          CIBW_ENVIRONMENT_WINDOWS: PATH="$PATH:C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4\\bin" CUDA_PATH="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4" CUDA_HOME="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4" CUDAToolkit_ROOT="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4"
+          #CIBW_ENVIRONMENT_WINDOWS: PATH="$PATH:C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4\\bin" CUDA_PATH="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4" CUDA_HOME="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4" CUDAToolkit_ROOT="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4"
+          CIBW_ENVIRONMENT_WINDOWS: PATH="$PATH;C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4\\bin"
+          CIBW_BEFORE_BUILD_WINDOWS: >
+            echo %PATH% &&
+            "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4\\bin\\nvcc.exe" --version &&
+            nvcc.exe --version
           CIBW_BEFORE_TEST_MACOS: pip install "numpy<2"
 
       - uses: actions/upload-artifact@v4
@@ -39,15 +45,15 @@ jobs:
           name: cibw-wheels-${{ matrix.os }}-${{ strategy.job-index }}
           path: ./wheelhouse/*.whl
 
-  build_sdist:
-    name: Build source distribution
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Build sdist
-        run: pipx run build --sdist
-
-      - uses: actions/upload-artifact@v4
-        with:
-          path: dist/*.tar.gz
+            #  build_sdist:
+            #    name: Build source distribution
+            #    runs-on: ubuntu-latest
+            #    steps:
+            #      - uses: actions/checkout@v5
+            #
+            #      - name: Build sdist
+            #        run: pipx run build --sdist
+            #
+            #      - uses: actions/upload-artifact@v4
+            #        with:
+            #          path: dist/*.tar.gz
