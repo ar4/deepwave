@@ -14,6 +14,10 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Install NumPy 1 on x86-64 MacOS
+        if: matrix.os == 'macos-13'
+        run: pip install "numpy<2"
+
       - name: Build wheels
         uses: pypa/cibuildwheel@v3.1.4
         env:
@@ -30,11 +34,12 @@ jobs:
             cp intelopenmp.devel.win*/build/native/win-x64/libiomp5md.lib src/deepwave &&
             cp intelopenmp.redist.win*/runtimes/win-x64/native/libiomp5md.dll src/deepwave &&
             curl https://developer.download.nvidia.com/compute/cuda/12.4.0/network_installers/cuda_12.4.0_windows_network.exe -o cuda_12.4.0_windows_network.exe &&
-            cuda_12.4.0_windows_network.exe -s nvcc_12.4 cudart_12.4
-          CIBW_ENVIRONMENT_WINDOWS: PATH="$PATH:C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4\\bin" CUDA_PATH="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4" CUDA_HOME="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4" CUDACXX="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4\\bin\\nvcc.exe"
+            cuda_12.4.0_windows_network.exe -s nvcc_12.4 cudart_12.4 visual_studio_integration_12.4
+          CIBW_ENVIRONMENT_WINDOWS: PATH="$PATH:C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4\\bin" CUDA_PATH="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4" CUDA_HOME="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4"
 
       - uses: actions/upload-artifact@v4
         with:
+          name: cibw-wheels-${{ matrix.os }}-${{ strategy.job-index }}
           path: ./wheelhouse/*.whl
 
   build_sdist:
