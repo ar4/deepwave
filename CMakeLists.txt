@@ -1,4 +1,6 @@
-cmake_minimum_required(VERSION 3.21)
+# Lowering from 3.21 to 3.18 to support older systems like RHEL 8.
+# 3.18 is the minimum because of the use of the CUDA_ARCHITECTURES property.
+cmake_minimum_required(VERSION 3.18)
 # If scikit-build-core sets SKBUILD_PROJECT_NAME / VERSION, prefer those.
 if(DEFINED SKBUILD_PROJECT_NAME)
     project(${SKBUILD_PROJECT_NAME} LANGUAGES C)
@@ -61,7 +63,8 @@ endif()
 # --- End OpenMP Configuration ---
 
 
-# AVX2 test
+# --- Compiler Feature Detection and Flags ---
+# AVX2
 include(CheckCSourceCompiles)
 set(AVX2_TEST_CODE "
     #include <immintrin.h>
@@ -71,15 +74,18 @@ set(AVX2_TEST_CODE "
     }")
 
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang|Intel")
-    set(CMAKE_REQUIRED_FLAGS "-mavx2")
-else()
-    if(CMAKE_C_COMPILER_ID MATCHES "MSVC")
-    set(CMAKE_REQUIRED_FLAGS "/arch:AVX2")
-    endif()
+    set(C_AVX2_FLAG "-mavx2")
+elseif(CMAKE_C_COMPILER_ID MATCHES "MSVC")
+    set(C_AVX2_FLAG "/arch:AVX2")
 endif()
 
-check_c_source_compiles("${AVX2_TEST_CODE}" HAVE_AVX2)
-unset(CMAKE_REQUIRED_FLAGS)
+if(C_AVX2_FLAG)
+    set(CMAKE_REQUIRED_FLAGS "${C_AVX2_FLAG}")
+    check_c_source_compiles("${AVX2_TEST_CODE}" HAVE_AVX2)
+    unset(CMAKE_REQUIRED_FLAGS)
+else()
+    set(HAVE_AVX2 FALSE)
+endif()
 
 if(HAVE_AVX2)
     message(STATUS "AVX2 is supported.")
@@ -87,80 +93,72 @@ else()
     message(STATUS "AVX2 is not supported.")
 endif()
 
+# Release flags
 if(CMAKE_BUILD_TYPE MATCHES Release)
     if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang|Intel")
+        set(C_RELEASE_FLAGS "-Ofast")
         set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Ofast")
+    elseif(CMAKE_C_COMPILER_ID MATCHES "MSVC")
+        set(C_RELEASE_FLAGS "/O2 /fp:fast")
     endif()
 endif()
+# --- End Compiler Feature Detection and Flags ---
+
+
+# --- Helper Macros for Object Libraries ---
+macro(add_deepwave_cpu_object_library BASENAME ACCURACY DTYPE)
+    set(TARGET_NAME "${BASENAME}_${ACCURACY}_${DTYPE}_obj")
+    add_library(${TARGET_NAME} OBJECT src/deepwave/${BASENAME}.c)
+    target_compile_definitions(${TARGET_NAME} PRIVATE DW_ACCURACY=${ACCURACY} DW_DTYPE=${DTYPE} DW_DEVICE=cpu)
+    list(APPEND DEEPWAVE_OBJECTS $<TARGET_OBJECTS:${TARGET_NAME}>)
+    list(APPEND CPU_TARGETS ${TARGET_NAME})
+
+    # Set PIC for shared library objects
+    set_target_properties(${TARGET_NAME} PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+    if(C_RELEASE_FLAGS)
+        target_compile_options(${TARGET_NAME} PRIVATE ${C_RELEASE_FLAGS})
+    endif()
+
+    if(HAVE_AVX2 AND C_AVX2_FLAG)
+        target_compile_options(${TARGET_NAME} PRIVATE ${C_AVX2_FLAG})
+    endif()
+endmacro()
+
+if(CUDAToolkit_FOUND)
+    macro(add_deepwave_cuda_object_library BASENAME ACCURACY DTYPE)
+        set(TARGET_NAME "${BASENAME}_cu_${ACCURACY}_${DTYPE}_obj")
+        add_library(${TARGET_NAME} OBJECT src/deepwave/${BASENAME}.cu)
+        target_compile_definitions(${TARGET_NAME} PRIVATE DW_ACCURACY=${ACCURACY} DW_DTYPE=${DTYPE} DW_DEVICE=cuda)
+        list(APPEND DEEPWAVE_OBJECTS $<TARGET_OBJECTS:${TARGET_NAME}>)
+
+        if(CMAKE_BUILD_TYPE MATCHES Release)
+            target_compile_options(${TARGET_NAME} PRIVATE ${CUDA_RELEASE_OPTIONS})
+            set_target_properties(${TARGET_NAME} PROPERTIES CUDA_ARCHITECTURES all-major)
+        endif()
+    endmacro()
+endif()
+# --- End Helper Macros ---
+
 
 # Prepare lists that will collect the object files
 set(DEEPWAVE_OBJECTS)
+set(CPU_TARGETS)
 set(SCALAR_ACCURACIES 2 4 6 8)
 set(ELASTIC_ACCURACIES 2 4)
 set(DTYPES float double)
 
 # --- CPU object libraries ---
-# All CPU object libraries will link to our unified OpenMP target if it was configured.
-set(CPU_TARGETS)
-
-# scalar and scalar_born
 foreach(ACCURACY ${SCALAR_ACCURACIES})
     foreach(DTYPE ${DTYPES})
-        add_library(scalar_${ACCURACY}_${DTYPE}_obj OBJECT src/deepwave/scalar.c)
-        target_compile_definitions(scalar_${ACCURACY}_${DTYPE}_obj PRIVATE DW_ACCURACY=${ACCURACY} DW_DTYPE=${DTYPE} DW_DEVICE=cpu)
-        list(APPEND DEEPWAVE_OBJECTS $<TARGET_OBJECTS:scalar_${ACCURACY}_${DTYPE}_obj>)
-        list(APPEND CPU_TARGETS scalar_${ACCURACY}_${DTYPE}_obj)
-
-        add_library(scalar_born_${ACCURACY}_${DTYPE}_obj OBJECT src/deepwave/scalar_born.c)
-        target_compile_definitions(scalar_born_${ACCURACY}_${DTYPE}_obj PRIVATE DW_ACCURACY=${ACCURACY} DW_DTYPE=${DTYPE} DW_DEVICE=cpu)
-        list(APPEND DEEPWAVE_OBJECTS $<TARGET_OBJECTS:scalar_born_${ACCURACY}_${DTYPE}_obj>)
-        list(APPEND CPU_TARGETS scalar_born_${ACCURACY}_${DTYPE}_obj)
-
-        if(CMAKE_BUILD_TYPE MATCHES Release)
-            if(CMAKE_C_COMPILER_ID MATCHES "GNU" OR CMAKE_C_COMPILER_ID MATCHES "Clang" OR CMAKE_C_COMPILER_ID MATCHES "Intel")
-		target_compile_options(scalar_${ACCURACY}_${DTYPE}_obj PRIVATE -Ofast -fPIC)
-		target_compile_options(scalar_born_${ACCURACY}_${DTYPE}_obj PRIVATE -Ofast -fPIC)
-            elseif(CMAKE_C_COMPILER_ID MATCHES "MSVC")
-                target_compile_options(scalar_${ACCURACY}_${DTYPE}_obj PRIVATE /O2 /fp:fast)
-                target_compile_options(scalar_born_${ACCURACY}_${DTYPE}_obj PRIVATE /O2 /fp:fast)
-            endif()
-        endif()
-
-        if(HAVE_AVX2)
-            if(CMAKE_C_COMPILER_ID MATCHES "GNU" OR CMAKE_C_COMPILER_ID MATCHES "Clang" OR CMAKE_C_COMPILER_ID MATCHES "Intel")
-                target_compile_options(scalar_${ACCURACY}_${DTYPE}_obj PRIVATE -mavx2)
-                target_compile_options(scalar_born_${ACCURACY}_${DTYPE}_obj PRIVATE -mavx2)
-            elseif(CMAKE_C_COMPILER_ID MATCHES "MSVC")
-                target_compile_options(scalar_${ACCURACY}_${DTYPE}_obj PRIVATE /arch:AVX2)
-                target_compile_options(scalar_born_${ACCURACY}_${DTYPE}_obj PRIVATE /arch:AVX2)
-            endif()
-        endif()
+        add_deepwave_cpu_object_library(scalar ${ACCURACY} ${DTYPE})
+        add_deepwave_cpu_object_library(scalar_born ${ACCURACY} ${DTYPE})
     endforeach()
 endforeach()
 
-# elastic
 foreach(ACCURACY ${ELASTIC_ACCURACIES})
     foreach(DTYPE ${DTYPES})
-        add_library(elastic_${ACCURACY}_${DTYPE}_obj OBJECT src/deepwave/elastic.c)
-        target_compile_definitions(elastic_${ACCURACY}_${DTYPE}_obj PRIVATE DW_ACCURACY=${ACCURACY} DW_DTYPE=${DTYPE} DW_DEVICE=cpu)
-        list(APPEND DEEPWAVE_OBJECTS $<TARGET_OBJECTS:elastic_${ACCURACY}_${DTYPE}_obj>)
-        list(APPEND CPU_TARGETS elastic_${ACCURACY}_${DTYPE}_obj)
-
-        if(CMAKE_BUILD_TYPE MATCHES Release)
-            if(CMAKE_C_COMPILER_ID MATCHES "GNU" OR CMAKE_C_COMPILER_ID MATCHES "Clang" OR CMAKE_C_COMPILER_ID MATCHES "Intel")
-		target_compile_options(elastic_${ACCURACY}_${DTYPE}_obj PRIVATE -Ofast -fPIC)
-            elseif(CMAKE_C_COMPILER_ID MATCHES "MSVC")
-                target_compile_options(elastic_${ACCURACY}_${DTYPE}_obj PRIVATE /O2 /fp:fast)
-            endif()
-        endif()
-
-        if(HAVE_AVX2)
-            if(CMAKE_C_COMPILER_ID MATCHES "GNU" OR CMAKE_C_COMPILER_ID MATCHES "Clang" OR CMAKE_C_COMPILER_ID MATCHES "Intel")
-                target_compile_options(elastic_${ACCURACY}_${DTYPE}_obj PRIVATE -mavx2)
-            elseif(CMAKE_C_COMPILER_ID MATCHES "MSVC")
-                target_compile_options(elastic_${ACCURACY}_${DTYPE}_obj PRIVATE /arch:AVX2)
-            endif()
-        endif()
+        add_deepwave_cpu_object_library(elastic ${ACCURACY} ${DTYPE})
     endforeach()
 endforeach()
 
@@ -183,37 +181,16 @@ if(CUDAToolkit_FOUND)
         endif()
     endif()
 
-    # scalar and scalar_born
     foreach(ACCURACY ${SCALAR_ACCURACIES})
         foreach(DTYPE ${DTYPES})
-            add_library(scalar_cu_${ACCURACY}_${DTYPE}_obj OBJECT src/deepwave/scalar.cu)
-            target_compile_definitions(scalar_cu_${ACCURACY}_${DTYPE}_obj PRIVATE DW_ACCURACY=${ACCURACY} DW_DTYPE=${DTYPE} DW_DEVICE=cuda)
-            list(APPEND DEEPWAVE_OBJECTS $<TARGET_OBJECTS:scalar_cu_${ACCURACY}_${DTYPE}_obj>)
-
-            add_library(scalar_born_cu_${ACCURACY}_${DTYPE}_obj OBJECT src/deepwave/scalar_born.cu)
-            target_compile_definitions(scalar_born_cu_${ACCURACY}_${DTYPE}_obj PRIVATE DW_ACCURACY=${ACCURACY} DW_DTYPE=${DTYPE} DW_DEVICE=cuda)
-            list(APPEND DEEPWAVE_OBJECTS $<TARGET_OBJECTS:scalar_born_cu_${ACCURACY}_${DTYPE}_obj>)
-
-            if(CMAKE_BUILD_TYPE MATCHES Release)
-                target_compile_options(scalar_cu_${ACCURACY}_${DTYPE}_obj PRIVATE ${CUDA_RELEASE_OPTIONS})
-                target_compile_options(scalar_born_cu_${ACCURACY}_${DTYPE}_obj PRIVATE ${CUDA_RELEASE_OPTIONS})
-                set_target_properties(scalar_cu_${ACCURACY}_${DTYPE}_obj PROPERTIES CUDA_ARCHITECTURES all-major)
-                set_target_properties(scalar_born_cu_${ACCURACY}_${DTYPE}_obj PROPERTIES CUDA_ARCHITECTURES all-major)
-            endif()
+            add_deepwave_cuda_object_library(scalar ${ACCURACY} ${DTYPE})
+            add_deepwave_cuda_object_library(scalar_born ${ACCURACY} ${DTYPE})
         endforeach()
     endforeach()
 
-    # elastic
     foreach(ACCURACY ${ELASTIC_ACCURACIES})
         foreach(DTYPE ${DTYPES})
-            add_library(elastic_cu_${ACCURACY}_${DTYPE}_obj OBJECT src/deepwave/elastic.cu)
-            target_compile_definitions(elastic_cu_${ACCURACY}_${DTYPE}_obj PRIVATE DW_ACCURACY=${ACCURACY} DW_DTYPE=${DTYPE} DW_DEVICE=cuda)
-            list(APPEND DEEPWAVE_OBJECTS $<TARGET_OBJECTS:elastic_cu_${ACCURACY}_${DTYPE}_obj>)
-
-            if(CMAKE_BUILD_TYPE MATCHES Release)
-                target_compile_options(elastic_cu_${ACCURACY}_${DTYPE}_obj PRIVATE ${CUDA_RELEASE_OPTIONS})
-                set_target_properties(elastic_cu_${ACCURACY}_${DTYPE}_obj PROPERTIES CUDA_ARCHITECTURES all-major)
-            endif()
+            add_deepwave_cuda_object_library(elastic ${ACCURACY} ${DTYPE})
         endforeach()
     endforeach()
 endif()
