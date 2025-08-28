@@ -22,12 +22,6 @@ classifiers = [
 Homepage = "https://github.com/ar4/deepwave"
 "Bug Tracker" = "https://github.com/ar4/deepwave/issues"
 
-[project.optional-dependencies]
-test = [
-    "pytest",
-    "scipy",
-]
-
 [tool.scikit-build]
 wheel.py-api = "py3"
 cmake.version = ">=3.21"
@@ -46,16 +40,16 @@ build-verbosity = 3
 archs = ["auto64"]
 
 # Test configuration
-test-requires = "pytest scipy torch"
+test-requires = "pytest scipy numpy torch"
 
 [tool.cibuildwheel.linux]
 test-command = "pytest {project}/tests"
 # Don't bundle CUDA libraries with the wheel
 repair-wheel-command = "auditwheel repair -w {dest_dir} {wheel} --exclude libcuda.so.1 --exclude 'libcudart.so.*'"
-before-test = "pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu"
+before-test = "pip install torch --index-url https://download.pytorch.org/whl/cpu"
 
-#[tool.cibuildwheel.windows]
-#test-command = "pytest {project}/tests/test_scalar.py"
+[tool.cibuildwheel.windows]
+test-command = "pytest {project}/tests/test_scalar.py"
 
 [tool.cibuildwheel.macos]
 test-command = "pytest {project}/tests/test_scalar.py"

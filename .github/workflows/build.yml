@@ -7,9 +7,9 @@ jobs:
     name: Build wheels on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
-        os: [windows-2022]
-          #os: [ubuntu-latest, windows-2022, macos-13, macos-14]
+        os: [ubuntu-latest, windows-2022, macos-13, macos-14]
 
     steps:
       - uses: actions/checkout@v5
@@ -19,15 +19,9 @@ jobs:
         env:
           # For Linux, install CUDA in the container. Note that manylinux2014
           # is specified in pyproject.toml
-          CIBW_BEFORE_ALL_LINUX: |
-            yum-config-manager --add-repo https://developer.download.nvidia.com/compute/cuda/repos/rhel7/x86_64/cuda-rhel7.repo
+          CIBW_BEFORE_ALL_LINUX: >
+            yum-config-manager --add-repo https://developer.download.nvidia.com/compute/cuda/repos/rhel7/x86_64/cuda-rhel7.repo &&
             yum install -y cuda-nvcc-11-8 cuda-cudart-devel-11-8
-            export PATH=$PATH:/usr/local/cuda-11.8/bin
-            export CUDA_PATH=/usr/local/cuda-11.8/bin
-            export CUDA_HOME=/usr/local/cuda-11.8
-            export CUDA_ROOT=/usr/local/cuda-11.8
-            export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/cuda-11.8/lib64
-            export CUDACXX=/usr/local/cuda-11.8/bin/nvcc
           CIBW_ENVIRONMENT_LINUX: PATH="$PATH:/usr/local/cuda-11.8/bin" CUDA_PATH="/usr/local/cuda-11.8/bin" CUDA_HOME="/usr/local/cuda-11.8" CUDA_ROOT="/usr/local/cuda-11.8" LD_LIBRARY_PATH="$LD_LIBRARY_PATH:/usr/local/cuda-11.8/lib64" CUDACXX="/usr/local/cuda-11.8/bin/nvcc"
           # For Windows, install CUDA
           CIBW_BEFORE_ALL_WINDOWS: >
@@ -35,31 +29,23 @@ jobs:
             nuget install intelopenmp.redist.win -DirectDownload -NonInteractive &&
             cp intelopenmp.devel.win*/build/native/win-x64/libiomp5md.lib src/deepwave &&
             cp intelopenmp.redist.win*/runtimes/win-x64/native/libiomp5md.dll src/deepwave &&
-            echo "DIR" &&
-            ls &&
-            echo "DIR SRC" &&
-            ls src/deepwave
+            curl https://developer.download.nvidia.com/compute/cuda/12.4.0/network_installers/cuda_12.4.0_windows_network.exe -o cuda_12.4.0_windows_network.exe &&
+            cuda_12.4.0_windows_network.exe -s nvcc_12.4 cudart_12.4
+          CIBW_ENVIRONMENT_WINDOWS: PATH="$PATH:C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4\\bin" CUDA_PATH="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4" CUDA_HOME="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4" CUDACXX="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4\\bin\\nvcc.exe"
 
-            #curl https://developer.download.nvidia.com/compute/cuda/12.4.0/network_installers/cuda_12.4.0_windows_network.exe -o cuda_12.4.0_windows_network.exe
-            #chmod +x ./cuda_12.4.0_windows_network.exe
-            #./cuda_12.4.0_windows_network.exe -s nvcc_12.4 cudart_12.4
-            #echo "CUDA_PATH=C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4" >> $GITHUB_ENV
-            #echo "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4\\bin" >> $GITHUB_PATH
-            #CIBW_ENVIRONMENT_WINDOWS: PATH="$PATH:C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4\\bin" CUDA_PATH="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4" CUDA_HOME="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4" CUDACXX="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4\\bin\\nvcc"
+      - uses: actions/upload-artifact@v4
+        with:
+          path: ./wheelhouse/*.whl
 
-              # - uses: actions/upload-artifact@v4
-              #   with:
-              #     path: ./wheelhouse/*.whl
+  build_sdist:
+    name: Build source distribution
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
 
-            #  build_sdist:
-            #    name: Build source distribution
-            #    runs-on: ubuntu-latest
-            #    steps:
-            #      - uses: actions/checkout@v5
-            #
-            #      - name: Build sdist
-            #        run: pipx run build --sdist
-            #
-            #      - uses: actions/upload-artifact@v4
-            #        with:
-            #          path: dist/*.tar.gz
+      - name: Build sdist
+        run: pipx run build --sdist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          path: dist/*.tar.gz
