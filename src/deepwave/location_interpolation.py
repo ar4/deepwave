@@ -225,16 +225,24 @@ class Hicks:
         if any(free_surfaces) and model_shape is None:
             raise RuntimeError("If there are free surfaces then model_shape "
                                "must be specified")
-        if model_shape is not None and (
-                not isinstance(model_shape, list) or len(model_shape) != 2
-                or not isinstance(model_shape[0], int)
-                or not isinstance(model_shape[1], int)):
-            raise RuntimeError(
-                "model_shape must be a list with two int entries")
-        if free_surface_locs is not None and (not isinstance(
-                free_surface_locs, list) or len(free_surface_locs) != 4):
-            raise RuntimeError(
-                "free_surface_locs must be a list of four floats")
+        if model_shape is not None:
+            if not isinstance(model_shape, list) or len(model_shape) != 2:
+                raise RuntimeError(
+                    "model_shape must be a list with two int entries")
+            try:
+                model_shape = [int(v) for v in model_shape]
+            except (ValueError, TypeError):
+                raise TypeError(
+                    "model_shape entries must be convertible to int")
+        if free_surface_locs is not None:
+            if not isinstance(free_surface_locs, list) or len(free_surface_locs) != 4:
+                raise RuntimeError(
+                    "free_surface_locs must be a list of four floats")
+            try:
+                free_surface_locs = [float(v) for v in free_surface_locs]
+            except (ValueError, TypeError):
+                raise TypeError(
+                    "free_surface_locs entries must be convertible to float")
         if model_shape is None:
             model_shape = [-1, -1]
         if free_surface_locs is None:

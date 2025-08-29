@@ -38,9 +38,9 @@ class Elastic(torch.nn.Module):
             A 2D Tensor containing an initial guess of the buoyancy
             (1/density).
         grid_spacing:
-            The spatial grid cell size, specified with a single real number
-            (used for both dimensions) or a List or Tensor of length
-            two (the length in each of the two dimensions).
+            The spatial grid cell size. It can be a single number (int or
+            float), a torch.Tensor (scalar or with two elements), or a
+            sequence (list or tuple) of two numbers.
         lamb_requires_grad:
             Optional bool specifying how to set the `requires_grad`
             attribute of lamb, and so whether the necessary
@@ -56,7 +56,7 @@ class Elastic(torch.nn.Module):
                  lamb: Tensor,
                  mu: Tensor,
                  buoyancy: Tensor,
-                 grid_spacing: Union[float, Sequence[float]],
+                 grid_spacing: Union[int, float, torch.Tensor, Sequence[Union[int, float]]],
                  lamb_requires_grad: bool = False,
                  mu_requires_grad: bool = False,
                  buoyancy_requires_grad: bool = False) -> None:
@@ -76,7 +76,7 @@ class Elastic(torch.nn.Module):
 
     def forward(
         self,
-        dt: float,
+        dt: Union[int, float],
         source_amplitudes_y: Optional[Tensor] = None,
         source_amplitudes_x: Optional[Tensor] = None,
         source_locations_y: Optional[Tensor] = None,
@@ -85,9 +85,9 @@ class Elastic(torch.nn.Module):
         receiver_locations_x: Optional[Tensor] = None,
         receiver_locations_p: Optional[Tensor] = None,
         accuracy: int = 4,
-        pml_width: Union[int, Sequence[int]] = 20,
-        pml_freq: Optional[float] = None,
-        max_vel: Optional[float] = None,
+        pml_width: Union[int, float, torch.Tensor, Sequence[Union[int, float]]] = 20,
+        pml_freq: Optional[Union[int, float]] = None,
+        max_vel: Optional[Union[int, float]] = None,
         survey_pad: Optional[Union[int, Sequence[Optional[int]]]] = None,
         vy_0: Optional[Tensor] = None,
         vx_0: Optional[Tensor] = None,
@@ -153,8 +153,8 @@ def elastic(
     lamb: Tensor,
     mu: Tensor,
     buoyancy: Tensor,
-    grid_spacing: Union[float, Sequence[float]],
-    dt: float,
+    grid_spacing: Union[int, float, torch.Tensor, Sequence[Union[int, float]]],
+    dt: Union[int, float],
     source_amplitudes_y: Optional[Tensor] = None,
     source_amplitudes_x: Optional[Tensor] = None,
     source_locations_y: Optional[Tensor] = None,
@@ -163,9 +163,9 @@ def elastic(
     receiver_locations_x: Optional[Tensor] = None,
     receiver_locations_p: Optional[Tensor] = None,
     accuracy: int = 4,
-    pml_width: Union[int, Sequence[int]] = 20,
-    pml_freq: Optional[float] = None,
-    max_vel: Optional[float] = None,
+    pml_width: Union[int, float, torch.Tensor, Sequence[Union[int, float]]] = 20,
+    pml_freq: Optional[Union[int, float]] = None,
+    max_vel: Optional[Union[int, float]] = None,
     survey_pad: Optional[Union[int, Sequence[Optional[int]]]] = None,
     vy_0: Optional[Tensor] = None,
     vx_0: Optional[Tensor] = None,
@@ -215,13 +215,13 @@ def elastic(
         buoyancy:
             A 2D Tensor containing the buoyancy (1/density) model.
         grid_spacing:
-            The spatial grid cell size, specified with a single real number
-            (used for both dimensions) or a List or Tensor of length
-            two (the length in each of the two dimensions).
+            The spatial grid cell size. It can be a single number (int or
+            float), a torch.Tensor (scalar or with two elements), or a
+            sequence (list or tuple) of two numbers.
         dt:
-            A float specifying the time step interval of the input and
-            output (internally a smaller interval may be used in
-            propagation to obey the CFL condition for stability).
+            A number (int or float) specifying the time step interval of
+            the input and output (internally a smaller interval may be
+            used in propagation to obey the CFL condition for stability).
         source_amplitudes_y:
             A Tensor with dimensions [shot, source, time] containing time
             samples of the source wavelets for sources oriented in the
@@ -271,11 +271,12 @@ def elastic(
             accurate results but greater computational cost. Optional, with
             a default of 4.
         pml_width:
-            An int or list of four ints specifying the width (in number of
-            cells) of the PML that prevents reflections from the edges of
-            the model. If a single integer is provided, that value will be
-            used for all edges. If a list is provided, it should contain
-            the integer values for the edges in the following order:
+            A number (int or float), a torch.Tensor, or a sequence of
+            numbers specifying the width (in number of cells) of the PML
+            that prevents reflections from the edges of the model. Floats
+            will be truncated to integers. If a single value is provided,
+            it will be used for all edges. If a sequence is provided, it
+            should contain the values for the edges in the following order:
             [the beginning of the first dimension,
             the end of the first dimension,
             the beginning of the second dimension,
@@ -289,19 +290,19 @@ def elastic(
             are obtained by replicating the values on the edge of the
             model. Optional, default 20.
         pml_freq:
-            A float specifying the frequency that you wish to use when
-            constructing the PML. This is usually the dominant frequency
-            of the source wavelet. Choosing this value poorly will
-            result in the edges becoming more reflective. Optional, default
-            25 Hz (assuming `dt` is in seconds).
+            A number (int or float) specifying the frequency that you wish
+            to use when constructing the PML. This is usually the dominant
+            frequency of the source wavelet. Choosing this value poorly
+            will result in the edges becoming more reflective. Optional,
+            default 25 Hz (assuming `dt` is in seconds).
         max_vel:
-            A float specifying the maximum velocity, which is used when
-            applying the CFL condition and when constructing the PML. If
-            not specified, the actual maximum absolute wavespeed in the
-            model (or portion of it that is used) will be used. The option
-            to specify this is provided to allow you to ensure consistency
-            between runs even if there are changes in the wavespeed.
-            Optional, default None.
+            A number (int or float) specifying the maximum velocity, which
+            is used when applying the CFL condition and when constructing
+            the PML. If not specified, the actual maximum absolute
+            wavespeed in the model (or portion of it that is used) will be
+            used. The option to specify this is provided to allow you to
+            ensure consistency between runs even if there are changes in
+            the wavespeed. Optional, default None.
         survey_pad:
             A single value or list of four values, all of which are either
             an int or None, specifying whether the simulation domain

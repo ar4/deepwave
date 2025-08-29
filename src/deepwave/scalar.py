@@ -33,7 +33,7 @@ class Scalar(torch.nn.Module):
     def __init__(
         self,
         v: Tensor,
-        grid_spacing: Union[float, Sequence[float]],
+        grid_spacing: Union[int, float, torch.Tensor, Sequence[Union[int, float]]],
         v_requires_grad: bool = False
     ) -> None:
         """
@@ -41,7 +41,7 @@ class Scalar(torch.nn.Module):
 
         Args:
             v (Tensor): 2D wavespeed model.
-            grid_spacing (float or Sequence[float]): Grid cell size(s).
+            grid_spacing (int, float, torch.Tensor, or sequence of them): Grid cell size(s).
             v_requires_grad (bool, optional): If True, gradients will be computed for v. Default: False.
         """
         if not isinstance(v_requires_grad, bool):
@@ -52,14 +52,14 @@ class Scalar(torch.nn.Module):
 
     def forward(
         self,
-        dt: float,
+        dt: Union[int, float],
         source_amplitudes: Optional[Tensor] = None,
         source_locations: Optional[Tensor] = None,
         receiver_locations: Optional[Tensor] = None,
         accuracy: int = 4,
-        pml_width: Union[int, Sequence[int]] = 20,
-        pml_freq: Optional[float] = None,
-        max_vel: Optional[float] = None,
+        pml_width: Union[int, float, torch.Tensor, Sequence[Union[int, float]]] = 20,
+        pml_freq: Optional[Union[int, float]] = None,
+        max_vel: Optional[Union[int, float]] = None,
         survey_pad: Optional[Union[int, Sequence[Optional[int]]]] = None,
         wavefield_0: Optional[Tensor] = None,
         wavefield_m1: Optional[Tensor] = None,
@@ -99,15 +99,15 @@ class Scalar(torch.nn.Module):
 
 def scalar(
     v: Tensor,
-    grid_spacing: Union[float, Sequence[float]],
-    dt: float,
+    grid_spacing: Union[int, float, torch.Tensor, Sequence[Union[int, float]]],
+    dt: Union[int, float],
     source_amplitudes: Optional[Tensor] = None,
     source_locations: Optional[Tensor] = None,
     receiver_locations: Optional[Tensor] = None,
     accuracy: int = 4,
-    pml_width: Union[int, Sequence[int]] = 20,
-    pml_freq: Optional[float] = None,
-    max_vel: Optional[float] = None,
+    pml_width: Union[int, float, torch.Tensor, Sequence[Union[int, float]]] = 20,
+    pml_freq: Optional[Union[int, float]] = None,
+    max_vel: Optional[Union[int, float]] = None,
     survey_pad: Optional[Union[int, Sequence[Optional[int]]]] = None,
     wavefield_0: Optional[Tensor] = None,
     wavefield_m1: Optional[Tensor] = None,
@@ -152,13 +152,13 @@ def scalar(
             not made of the model, so gradients will propagate back into
             the provided Tensor.
         grid_spacing:
-            The spatial grid cell size, specified with a single real number
-            (used for both dimensions) or a List or Tensor of length
-            two (the length in each of the two dimensions).
+            The spatial grid cell size. It can be a single number (int or
+            float), a torch.Tensor (scalar or with two elements), or a
+            sequence (list or tuple) of two numbers.
         dt:
-            A float specifying the time step interval of the input and
-            output (internally a smaller interval may be used in
-            propagation to obey the CFL condition for stability).
+            A number (int or float) specifying the time step interval of
+            the input and output (internally a smaller interval may be
+            used in propagation to obey the CFL condition for stability).
         source_amplitudes:
             A Tensor with dimensions [shot, source, time]. If two shots
             are being propagated simultaneously, each containing three
@@ -188,11 +188,12 @@ def scalar(
             accurate results but greater computational cost. Optional, with
             a default of 4.
         pml_width:
-            An int or list of four ints specifying the width (in number of
-            cells) of the PML that prevents reflections from the edges of
-            the model. If a single integer is provided, that value will be
-            used for all edges. If a list is provided, it should contain
-            the integer values for the edges in the following order:
+            A number (int or float), a torch.Tensor, or a sequence of
+            numbers specifying the width (in number of cells) of the PML
+            that prevents reflections from the edges of the model. Floats
+            will be truncated to integers. If a single value is provided,
+            it will be used for all edges. If a sequence is provided, it
+            should contain the values for the edges in the following order:
             [the beginning of the first dimension,
             the end of the first dimension,
             the beginning of the second dimension,
@@ -206,19 +207,19 @@ def scalar(
             is obtained by replicating the values on the edge of the
             model. Optional, default 20.
         pml_freq:
-            A float specifying the frequency that you wish to use when
-            constructing the PML. This is usually the dominant frequency
-            of the source wavelet. Choosing this value poorly will
-            result in the edges becoming more reflective. Optional, default
-            25 Hz (assuming `dt` is in seconds).
+            A number (int or float) specifying the frequency that you wish
+            to use when constructing the PML. This is usually the dominant
+            frequency of the source wavelet. Choosing this value poorly
+            will result in the edges becoming more reflective. Optional,
+            default 25 Hz (assuming `dt` is in seconds).
         max_vel:
-            A float specifying the maximum velocity, which is used when
-            applying the CFL condition and when constructing the PML. If
-            not specified, the actual maximum absolute wavespeed in the
-            model (or portion of it that is used) will be used. The option
-            to specify this is provided to allow you to ensure consistency
-            between runs even if there are changes in the wavespeed.
-            Optional, default None.
+            A number (int or float) specifying the maximum velocity, which
+            is used when applying the CFL condition and when constructing
+            the PML. If not specified, the actual maximum absolute
+            wavespeed in the model (or portion of it that is used) will be
+            used. The option to specify this is provided to allow you to
+            ensure consistency between runs even if there are changes in
+            the wavespeed. Optional, default None.
         survey_pad:
             A single value or list of four values, all of which are either
             an int or None, specifying whether the simulation domain

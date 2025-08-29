@@ -36,9 +36,9 @@ class ScalarBorn(torch.nn.Module):
             A 2D Tensor containing an initial guess of the scattering
             potential.
         grid_spacing:
-            The spatial grid cell size, specified with a single real number
-            (used for both dimensions) or a List or Tensor of length
-            two (the length in each of the two dimensions).
+            The spatial grid cell size. It can be a single number (int or
+            float), a torch.Tensor (scalar or with two elements), or a
+            sequence (list or tuple) of two numbers.
         v_requires_grad:
             Optional bool specifying how to set the `requires_grad`
             attribute of the wavespeed, and so whether the necessary
@@ -51,7 +51,7 @@ class ScalarBorn(torch.nn.Module):
     def __init__(self,
                  v: Tensor,
                  scatter: Tensor,
-                 grid_spacing: Union[float, Sequence[float]],
+                 grid_spacing: Union[int, float, torch.Tensor, Sequence[Union[int, float]]],
                  v_requires_grad: bool = False,
                  scatter_requires_grad: bool = False) -> None:
         super().__init__()
@@ -71,15 +71,15 @@ class ScalarBorn(torch.nn.Module):
 
     def forward(
         self,
-        dt: float,
+        dt: Union[int, float],
         source_amplitudes: Optional[Tensor] = None,
         source_locations: Optional[Tensor] = None,
         receiver_locations: Optional[Tensor] = None,
         bg_receiver_locations: Optional[Tensor] = None,
         accuracy: int = 4,
-        pml_width: Union[int, Sequence[int]] = 20,
-        pml_freq: Optional[float] = None,
-        max_vel: Optional[float] = None,
+        pml_width: Union[int, float, torch.Tensor, Sequence[Union[int, float]]] = 20,
+        pml_freq: Optional[Union[int, float]] = None,
+        max_vel: Optional[Union[int, float]] = None,
         survey_pad: Optional[Union[int, Sequence[Optional[int]]]] = None,
         wavefield_0: Optional[Tensor] = None,
         wavefield_m1: Optional[Tensor] = None,
@@ -139,16 +139,16 @@ class ScalarBorn(torch.nn.Module):
 def scalar_born(
     v: Tensor,
     scatter: Tensor,
-    grid_spacing: Union[float, Sequence[float]],
-    dt: float,
+    grid_spacing: Union[int, float, torch.Tensor, Sequence[Union[int, float]]],
+    dt: Union[int, float],
     source_amplitudes: Optional[Tensor] = None,
     source_locations: Optional[Tensor] = None,
     receiver_locations: Optional[Tensor] = None,
     bg_receiver_locations: Optional[Tensor] = None,
     accuracy: int = 4,
-    pml_width: Union[int, Sequence[int]] = 20,
-    pml_freq: Optional[float] = None,
-    max_vel: Optional[float] = None,
+    pml_width: Union[int, float, torch.Tensor, Sequence[Union[int, float]]] = 20,
+    pml_freq: Optional[Union[int, float]] = None,
+    max_vel: Optional[Union[int, float]] = None,
     survey_pad: Optional[Union[int, Sequence[Optional[int]]]] = None,
     wavefield_0: Optional[Tensor] = None,
     wavefield_m1: Optional[Tensor] = None,

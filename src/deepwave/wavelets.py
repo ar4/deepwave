@@ -5,22 +5,22 @@ import torch
 from torch import Tensor
 
 
-def ricker(freq: float,
+def ricker(freq: Union[int, float],
            length: int,
-           dt: float,
-           peak_time: float,
+           dt: Union[int, float],
+           peak_time: Union[int, float],
            dtype: Optional[torch.dtype] = None) -> Tensor:
     """Return a Ricker wavelet with the specified central frequency.
 
     Args:
         freq:
-            A float specifying the central frequency
+            A number (int or float) specifying the central frequency
         length:
             An int specifying the number of time samples
         dt:
-            A float specifying the time sample spacing
+            A number (int or float) specifying the time sample spacing
         peak_time:
-            A float specifying the time (in secs) of the peak amplitude
+            A number (int or float) specifying the time (in secs) of the peak amplitude
         dtype:
             The PyTorch datatype to use. Optional, defaults to PyTorch's
             default (float32).

@@ -17,6 +17,24 @@ class ResampleConfig:
 IGNORE_LOCATION = -1 << 31
 
 
+def _as_list(value: Union[int, float, torch.Tensor, Sequence],
+             name: str,
+             target_type: type) -> List:
+    """Convert a value to a list of a target type."""
+    if isinstance(value, torch.Tensor):
+        if value.numel() == 1:
+            return [target_type(value.item())]
+        return [target_type(v) for v in value.flatten().tolist()]
+    if isinstance(value, (int, float)):
+        return [target_type(value)]
+    if isinstance(value, Sequence) and not isinstance(value, str):
+        return [target_type(v) for v in value]
+    raise TypeError(
+        f"{name} must be a float, int, torch.Tensor, or a sequence of "
+        f"floats/ints, got {type(value)}."
+    )
+
+
 def setup_propagator(
     models: Sequence[Tensor], model_pad_modes: Sequence[str],
     grid_spacing: Union[float, Sequence[float]], dt: float,
@@ -73,10 +91,10 @@ def setup_propagator(
         raise TypeError("models must be a sequence of torch.Tensor objects.")
     if not (isinstance(model_pad_modes, Sequence) and all(isinstance(m, str) for m in model_pad_modes)):
         raise TypeError("model_pad_modes must be a sequence of str.")
-    if not (isinstance(grid_spacing, float) or (isinstance(grid_spacing, Sequence) and all(isinstance(g, float) for g in grid_spacing))):
-        raise TypeError("grid_spacing must be a float or a sequence of floats.")
-    if not isinstance(dt, float):
-        raise TypeError("dt must be a float.")
+    # grid_spacing is checked in set_grid_spacing
+    if not isinstance(dt, (int, float)):
+        raise TypeError("dt must be a float or an int.")
+    dt = float(dt)
     if not (isinstance(source_amplitudes, Sequence) and all((a is None or isinstance(a, Tensor)) for a in source_amplitudes)):
         raise TypeError("source_amplitudes must be a sequence of torch.Tensor or None.")
     if not (isinstance(source_locations, Sequence) and all((l is None or isinstance(l, Tensor)) for l in source_locations)):
@@ -87,12 +105,11 @@ def setup_propagator(
         raise TypeError("accuracy must be an int.")
     if not (isinstance(fd_pad, Sequence) and all(isinstance(f, int) for f in fd_pad)):
         raise TypeError("fd_pad must be a sequence of int.")
-    if not (isinstance(pml_width, int) or (isinstance(pml_width, Sequence) and all(isinstance(p, int) for p in pml_width))):
-        raise TypeError("pml_width must be an int or a sequence of int.")
-    if pml_freq is not None and not isinstance(pml_freq, float):
-        raise TypeError("pml_freq must be a float or None.")
-    if max_vel is not None and not isinstance(max_vel, float):
-        raise TypeError("max_vel must be a float or None.")
+    # pml_width is checked in set_pml_width
+    if pml_freq is not None and not isinstance(pml_freq, (int, float)):
+        raise TypeError("pml_freq must be a float, int, or None.")
+    if max_vel is not None and not isinstance(max_vel, (int, float)):
+        raise TypeError("max_vel must be a float, int, or None.")
     if not isinstance(min_nonzero_model_vel, float):
         raise TypeError("min_nonzero_model_vel must be a float.")
     if not isinstance(max_model_vel, float):
@@ -107,10 +124,12 @@ def setup_propagator(
         raise TypeError("nt must be an int or None.")
     if not isinstance(model_gradient_sampling_interval, int):
         raise TypeError("model_gradient_sampling_interval must be an int.")
-    if not isinstance(freq_taper_frac, float):
-        raise TypeError("freq_taper_frac must be a float.")
-    if not isinstance(time_pad_frac, float):
-        raise TypeError("time_pad_frac must be a float.")
+    if not isinstance(freq_taper_frac, (int, float)):
+        raise TypeError("freq_taper_frac must be a float or an int.")
+    freq_taper_frac = float(freq_taper_frac)
+    if not isinstance(time_pad_frac, (int, float)):
+        raise TypeError("time_pad_frac must be a float or an int.")
+    time_pad_frac = float(time_pad_frac)
     if not isinstance(time_taper, bool):
         raise TypeError("time_taper must be a bool.")
     if not isinstance(n_dims, int):
@@ -217,14 +236,13 @@ def set_grid_spacing(grid_spacing: Union[float, Sequence[float]], n_dims: int) -
     """
     Ensure grid_spacing is a sequence of length n_dims.
     """
-    # Explicit type check for user-facing API
-    if not (isinstance(grid_spacing, float) or (isinstance(grid_spacing, Sequence) and all(isinstance(g, float) for g in grid_spacing))):
-        raise TypeError(f"grid_spacing must be a float or a sequence of floats, got {type(grid_spacing)}.")
-    if isinstance(grid_spacing, float):
-        return [grid_spacing] * n_dims
-    if len(grid_spacing) != n_dims:
-        raise RuntimeError(f"grid_spacing must have {n_dims} elements, got {len(grid_spacing)}.")
-    return list(grid_spacing)
+    processed_grid_spacing = _as_list(grid_spacing, "grid_spacing", float)
+
+    if len(processed_grid_spacing) == 1:
+        return processed_grid_spacing * n_dims
+    if len(processed_grid_spacing) != n_dims:
+        raise RuntimeError(f"grid_spacing must have 1 or {n_dims} elements, got {len(processed_grid_spacing)}.")
+    return processed_grid_spacing
 
 
 def set_accuracy(accuracy: int) -> int:
@@ -241,11 +259,13 @@ def set_pml_width(pml_width: Union[int, Sequence[int]],
     """
     Ensure pml_width is a sequence of length 2 * n_dims.
     """
-    if isinstance(pml_width, int):
-        return [pml_width] * 2 * n_dims
-    if len(pml_width) != 2 * n_dims:
-        raise RuntimeError(f"Expected pml_width to be of length {2 * n_dims}, got {len(pml_width)}.")
-    return list(pml_width)
+    processed_pml_width = _as_list(pml_width, "pml_width", int)
+
+    if len(processed_pml_width) == 1:
+        return processed_pml_width * (2 * n_dims)
+    if len(processed_pml_width) != 2 * n_dims:
+        raise RuntimeError(f"Expected pml_width to be of length 1 or {2 * n_dims}, got {len(processed_pml_width)}.")
+    return processed_pml_width
 
 
 def set_pml_freq(pml_freq: Optional[float], dt: float) -> float:
