@@ -396,7 +396,7 @@ def scalar(
                          model_gradient_sampling_interval, freq_taper_frac,
                          time_pad_frac, time_taper, 2)
 
-    # In the finite difference implementation, the source amplitudes we 
+    # In the finite difference implementation, the source amplitudes we
     # add to the wavefield each time step are multiplied by
     # -v^2 * dt^2 (where v is the velocity model, stored in models[0]).
     # For simplicity, we multiply the amplitudes by that here.
@@ -407,16 +407,21 @@ def scalar(
     mask = sources_i_l[0] == IGNORE_LOCATION
     sources_i_masked = sources_i_l[0].clone()
     sources_i_masked[mask] = 0
-    source_amplitudes_l[0] = (-source_amplitudes_l[0] * (models[0].view(-1, ny*nx).expand(n_shots, -1).gather(1, sources_i_masked))**2 * dt**2)
+    source_amplitudes_l[0] = (-source_amplitudes_l[0] * (models[0].view(
+        -1, ny * nx).expand(n_shots, -1).gather(1, sources_i_masked))**2 *
+                              dt**2)
 
-    pml_profiles = set_pml_profiles(pml_width_l, accuracy, fd_pad, dt, grid_spacing, max_vel, dtype, device, pml_freq, ny, nx)
+    pml_profiles = set_pml_profiles(pml_width_l, accuracy, fd_pad, dt,
+                                    grid_spacing, max_vel, dtype, device,
+                                    pml_freq, ny, nx)
 
     (wfc, wfp, psiy, psix, zetay, zetax, receiver_amplitudes) = \
         scalar_func(
             *models, *source_amplitudes_l, *wavefields, *pml_profiles, *sources_i_l, *receivers_i_l, *grid_spacing, dt, nt, step_ratio * model_gradient_sampling_interval, accuracy, pml_width_l, n_shots
         )
 
-    receiver_amplitudes = downsample_and_movedim(receiver_amplitudes, **resample_config)
+    receiver_amplitudes = downsample_and_movedim(receiver_amplitudes,
+                                                 **resample_config)
 
     return wfc, wfp, psiy, psix, zetay, zetax, receiver_amplitudes
 
@@ -551,8 +556,7 @@ class ScalarForwardFunc(torch.autograd.Function):
                     receivers_i.data_ptr(), 1 / dy, 1 / dx, 1 / dy**2,
                     1 / dx**2, dt**2, nt, n_shots, ny, nx, n_sources_per_shot,
                     n_receivers_per_shot, step_ratio, v.requires_grad,
-                    v_batched, start_t, pml_y0,
-                    pml_y1, pml_x0, pml_x1, aux)
+                    v_batched, start_t, pml_y0, pml_y1, pml_x0, pml_x1, aux)
 
         ctx.dwdv = dwdv
 
@@ -739,8 +743,7 @@ class ScalarBackwardFunc(torch.autograd.Function):
                      1 / dx**2, nt, n_shots, ny, nx,
                      n_sources_per_shot * source_amplitudes_requires_grad,
                      n_receivers_per_shot, step_ratio, v.requires_grad,
-                     v_batched, start_t, pml_y0,
-                     pml_y1, pml_x0, pml_x1, aux)
+                     v_batched, start_t, pml_y0, pml_y1, pml_x0, pml_x1, aux)
 
         s = (slice(None), slice(fd_pad, -fd_pad), slice(fd_pad, -fd_pad))
         if nt % 2 == 0:
@@ -850,8 +853,7 @@ class ScalarBackwardFunc(torch.autograd.Function):
             receiver_amplitudes.resize_(nt, n_shots, n_receivers_per_shot)
             receiver_amplitudes.fill_(0)
         if fwd_ggreceivers_i.numel() > 0:
-            ggreceiver_amplitudes.resize_(nt, n_shots,
-                                          n_ggreceivers_per_shot)
+            ggreceiver_amplitudes.resize_(nt, n_shots, n_ggreceivers_per_shot)
             ggreceiver_amplitudes.fill_(0)
 
         if v.is_cuda:
@@ -916,9 +918,8 @@ class ScalarBackwardFunc(torch.autograd.Function):
                     fwd_ggreceivers_i.data_ptr(), 1 / dy, 1 / dx, 1 / dy**2,
                     1 / dx**2, dt**2, nt, n_shots, ny, nx, n_sources_per_shot,
                     n_receivers_per_shot, n_ggreceivers_per_shot, step_ratio,
-                    v.requires_grad, False,
-                    v_batched, ggv_batched, start_t, pml_y0, pml_y1, pml_x0, pml_x1,
-                    aux)
+                    v.requires_grad, False, v_batched, ggv_batched, start_t,
+                    pml_y0, pml_y1, pml_x0, pml_x1, aux)
 
         bwd_sources_i = sources_i.contiguous()
         bwd_receivers_i = torch.empty(0)
@@ -1044,28 +1045,29 @@ class ScalarBackwardFunc(torch.autograd.Function):
 
         if wfc.numel() > 0 and nt > 0 and v.requires_grad:
             start_t = 0
-            backward(
-                v.data_ptr(), ggv.data_ptr(),
-                torch.empty(0).data_ptr(), grad_r.data_ptr(), wfc.data_ptr(),
-                wfp.data_ptr(), psiy.data_ptr(), psix.data_ptr(),
-                psiyn.data_ptr(), psixn.data_ptr(), zetay.data_ptr(),
-                zetax.data_ptr(), zetayn.data_ptr(), zetaxn.data_ptr(),
-                gwfc.data_ptr(), gwfp.data_ptr(), gpsiy.data_ptr(),
-                gpsix.data_ptr(), gpsiyn.data_ptr(), gpsixn.data_ptr(),
-                gzetay.data_ptr(), gzetax.data_ptr(), gzetayn.data_ptr(),
-                gzetaxn.data_ptr(), w_store.data_ptr(), ggw_store.data_ptr(),
-                grad_f.data_ptr(), grad_gf.data_ptr(), grad_v.data_ptr(),
-                torch.empty(0).data_ptr(), grad_v_tmp_ptr,
-                torch.empty(0).data_ptr(), ay.data_ptr(), ax.data_ptr(),
-                by.data_ptr(),
-                bx.data_ptr(), dbydy.data_ptr(), dbxdx.data_ptr(),
-                bwd_sources_i.data_ptr(), bwd_receivers_i.data_ptr(),
-                bwd_greceivers_i.data_ptr(), 1 / dy, 1 / dx, 1 / dy**2,
-                1 / dx**2, dt**2, nt, n_shots, ny, nx,
-                n_sources_per_shot * source_amplitudes_requires_grad, 0,
-                n_receivers_per_shot, n_greceivers_per_shot, step_ratio,
-                v.requires_grad, False,
-                v_batched, ggv_batched, start_t, pml_y0, pml_y1, pml_x0, pml_x1, aux)
+            backward(v.data_ptr(), ggv.data_ptr(),
+                     torch.empty(0).data_ptr(), grad_r.data_ptr(),
+                     wfc.data_ptr(), wfp.data_ptr(), psiy.data_ptr(),
+                     psix.data_ptr(), psiyn.data_ptr(), psixn.data_ptr(),
+                     zetay.data_ptr(), zetax.data_ptr(), zetayn.data_ptr(),
+                     zetaxn.data_ptr(), gwfc.data_ptr(), gwfp.data_ptr(),
+                     gpsiy.data_ptr(), gpsix.data_ptr(), gpsiyn.data_ptr(),
+                     gpsixn.data_ptr(), gzetay.data_ptr(), gzetax.data_ptr(),
+                     gzetayn.data_ptr(),
+                     gzetaxn.data_ptr(), w_store.data_ptr(),
+                     ggw_store.data_ptr(), grad_f.data_ptr(),
+                     grad_gf.data_ptr(), grad_v.data_ptr(),
+                     torch.empty(0).data_ptr(), grad_v_tmp_ptr,
+                     torch.empty(0).data_ptr(), ay.data_ptr(), ax.data_ptr(),
+                     by.data_ptr(), bx.data_ptr(), dbydy.data_ptr(),
+                     dbxdx.data_ptr(), bwd_sources_i.data_ptr(),
+                     bwd_receivers_i.data_ptr(), bwd_greceivers_i.data_ptr(),
+                     1 / dy, 1 / dx, 1 / dy**2, 1 / dx**2, dt**2, nt, n_shots,
+                     ny, nx,
+                     n_sources_per_shot * source_amplitudes_requires_grad, 0,
+                     n_receivers_per_shot, n_greceivers_per_shot, step_ratio,
+                     v.requires_grad, False, v_batched, ggv_batched, start_t,
+                     pml_y0, pml_y1, pml_x0, pml_x1, aux)
 
         s = (slice(None), slice(fd_pad, -fd_pad), slice(fd_pad, -fd_pad))
         if nt % 2 == 0:

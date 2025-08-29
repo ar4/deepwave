@@ -34,7 +34,8 @@
 
 #include "common.h"
 
-#define CAT_I(name, accuracy, dtype, device) scalar_iso_##accuracy##_##dtype##_##name##_##device
+#define CAT_I(name, accuracy, dtype, device) \
+  scalar_iso_##accuracy##_##dtype##_##name##_##device
 #define CAT(name, accuracy, dtype, device) CAT_I(name, accuracy, dtype, device)
 #define FUNC(name) CAT(name, DW_ACCURACY, DW_DTYPE, DW_DEVICE)
 
@@ -42,27 +43,28 @@
 #define AY_PSIY(dy, dx) ay[y + dy] * psiy[i + dy * nx + dx]
 #define AX_PSIX(dy, dx) ax[x + dx] * psix[i + dy * nx + dx]
 #define V2DT2_WFC(dy, dx) v2dt2_shot[j + dy * nx + dx] * wfc[i + dy * nx + dx]
-#define UT_TERMY1(dy, dx)                                           \
-  ((dbydy[y + dy] *                                                 \
+#define UT_TERMY1(dy, dx)                                                \
+  ((dbydy[y + dy] *                                                      \
         ((1 + by[y + dy]) * v2dt2_shot[j + dy * nx] * wfc[i + dy * nx] + \
-         by[y + dy] * zetay[i + dy * nx]) +                         \
+         by[y + dy] * zetay[i + dy * nx]) +                              \
     by[y + dy] * psiy[i + dy * nx]))
-#define UT_TERMX1(dy, dx)                                             \
+#define UT_TERMX1(dy, dx)                                                  \
   ((dbxdx[x + dx] * ((1 + bx[x + dx]) * v2dt2_shot[j + dx] * wfc[i + dx] + \
-                     bx[x + dx] * zetax[i + dx]) +                    \
+                     bx[x + dx] * zetax[i + dx]) +                         \
     bx[x + dx] * psix[i + dx]))
-#define UT_TERMY2(dy, dx)                                      \
-  ((1 + by[y + dy]) *                                          \
+#define UT_TERMY2(dy, dx)                                           \
+  ((1 + by[y + dy]) *                                               \
    ((1 + by[y + dy]) * v2dt2_shot[j + dy * nx] * wfc[i + dy * nx] + \
     by[y + dy] * zetay[i + dy * nx]))
-#define UT_TERMX2(dy, dx)                                               \
+#define UT_TERMX2(dy, dx)                                                    \
   ((1 + bx[x + dx]) * ((1 + bx[x + dx]) * v2dt2_shot[j + dx] * wfc[i + dx] + \
                        bx[x + dx] * zetax[i + dx]))
-#define PSIY_TERM(dy, dx)                                     \
+#define PSIY_TERM(dy, dx)                                          \
   ((1 + by[y + dy]) * v2dt2_shot[j + dy * nx] * wfc[i + dy * nx] + \
    by[y + dy] * zetay[i + dy * nx])
-#define PSIX_TERM(dy, dx) \
-  ((1 + bx[x + dx]) * v2dt2_shot[j + dx] * wfc[i + dx] + bx[x + dx] * zetax[i + dx])
+#define PSIX_TERM(dy, dx)                                \
+  ((1 + bx[x + dx]) * v2dt2_shot[j + dx] * wfc[i + dx] + \
+   bx[x + dx] * zetax[i + dx])
 
 #define gpuErrchk(ans) \
   { gpuAssert((ans), __FILE__, __LINE__); }
@@ -186,7 +188,8 @@ __global__ void backward_kernel(
     int64_t shot_idx = blockIdx.z * blockDim.z + threadIdx.z;
     int64_t j = y * nx + x;
     int64_t i = shot_idx * nynx + j;
-    DW_DTYPE const *__restrict const v2dt2_shot = v_batched ? v2dt2 + shot_idx * nynx : v2dt2;
+    DW_DTYPE const *__restrict const v2dt2_shot =
+        v_batched ? v2dt2 + shot_idx * nynx : v2dt2;
     bool pml_y = y < pml_y0 || y >= pml_y1;
     bool pml_x = x < pml_x0 || x >= pml_x1;
     wfp[i] =
@@ -277,8 +280,8 @@ extern "C"
             int64_t const ny_h, int64_t const nx_h,
             int64_t const n_sources_per_shot_h,
             int64_t const n_receivers_per_shot_h, int64_t const step_ratio_h,
-            bool const v_requires_grad, bool const v_batched_h, int64_t const start_t,
-	    int64_t const pml_y0_h,
+            bool const v_requires_grad, bool const v_batched_h,
+            int64_t const start_t, int64_t const pml_y0_h,
             int64_t const pml_y1_h, int64_t const pml_x0_h,
             int64_t const pml_x1_h, int64_t const device) {
   dim3 dimBlock(32, 32, 1);
@@ -308,7 +311,8 @@ extern "C"
       forward_kernel<<<dimGrid, dimBlock>>>(
           v, wfp, wfc, psiyn, psixn, psiy, psix, zetay, zetax,
           dwdv + (t / step_ratio_h) * ny_h * nx_h * n_shots_h, ay, ax, by, bx,
-          dbydy, dbxdx, v_requires_grad && (((t + start_t) % step_ratio_h) == 0));
+          dbydy, dbxdx,
+          v_requires_grad && (((t + start_t) % step_ratio_h) == 0));
       CHECK_KERNEL_ERROR
       if (n_sources_per_shot_h > 0) {
         add_sources<<<dimGrid_sources, dimBlock_sources>>>(
@@ -324,7 +328,8 @@ extern "C"
       forward_kernel<<<dimGrid, dimBlock>>>(
           v, wfc, wfp, psiy, psix, psiyn, psixn, zetay, zetax,
           dwdv + (t / step_ratio_h) * ny_h * nx_h * n_shots_h, ay, ax, by, bx,
-          dbydy, dbxdx, v_requires_grad && (((t + start_t) % step_ratio_h) == 0));
+          dbydy, dbxdx,
+          v_requires_grad && (((t + start_t) % step_ratio_h) == 0));
       CHECK_KERNEL_ERROR
       if (n_sources_per_shot_h > 0) {
         add_sources<<<dimGrid_sources, dimBlock_sources>>>(
@@ -369,9 +374,10 @@ extern "C"
             int64_t const nt, int64_t const n_shots_h, int64_t const ny_h,
             int64_t const nx_h, int64_t const n_sources_per_shot_h,
             int64_t const n_receivers_per_shot_h, int64_t const step_ratio_h,
-            bool const v_requires_grad, bool const v_batched_h, int64_t start_t, int64_t const pml_y0_h,
-            int64_t const pml_y1_h, int64_t const pml_x0_h,
-            int64_t const pml_x1_h, int64_t const device) {
+            bool const v_requires_grad, bool const v_batched_h, int64_t start_t,
+            int64_t const pml_y0_h, int64_t const pml_y1_h,
+            int64_t const pml_x0_h, int64_t const pml_x1_h,
+            int64_t const device) {
   dim3 dimBlock(32, 16, 1);
   unsigned int gridx = ceil_div(nx_h - 2 * FD_PAD, dimBlock.x);
   unsigned int gridy = ceil_div(ny_h - 2 * FD_PAD, dimBlock.y);

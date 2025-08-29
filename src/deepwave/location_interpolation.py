@@ -4,10 +4,10 @@ from typing import List, Optional, Union, Dict, Tuple
 import math
 import torch
 from torch import Tensor
-from deepwave.common import IGNORE_LOCATION 
-                             
-DEFAULT_EPS = 1e-5           
-                             
+from deepwave.common import IGNORE_LOCATION
+
+DEFAULT_EPS = 1e-5
+
 
 def _get_hicks_for_one_location_dim(
         hicks_weight_cache: Dict[Tuple[int, int, int], Tensor],
@@ -225,10 +225,10 @@ class Hicks:
         if any(free_surfaces) and model_shape is None:
             raise RuntimeError("If there are free surfaces then model_shape "
                                "must be specified")
-        if model_shape is not None and (not isinstance(model_shape, list)
-                                        or len(model_shape) != 2
-                                        or not isinstance(model_shape[0], int)
-                                        or not isinstance(model_shape[1], int)):
+        if model_shape is not None and (
+                not isinstance(model_shape, list) or len(model_shape) != 2
+                or not isinstance(model_shape[0], int)
+                or not isinstance(model_shape[1], int)):
             raise RuntimeError(
                 "model_shape must be a list with two int entries")
         if free_surface_locs is not None and (not isinstance(

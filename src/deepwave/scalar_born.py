@@ -281,14 +281,22 @@ def scalar_born(
     mask = sources_i_l[0] == IGNORE_LOCATION
     sources_i_masked = sources_i_l[0].clone()
     sources_i_masked[mask] = 0
-    source_amplitudes_l[0] = (-source_amplitudes_l[0] * (models[0].view(-1, ny*nx).expand(n_shots, -1).gather(1, sources_i_masked))**2 * dt**2)
+    source_amplitudes_l[0] = (-source_amplitudes_l[0] * (models[0].view(
+        -1, ny * nx).expand(n_shots, -1).gather(1, sources_i_masked))**2 *
+                              dt**2)
     # Scattered (multiply source amplitudes by -2*v*scatter*dt^2)
     mask = sources_i_l[1] == IGNORE_LOCATION
     sources_i_masked = sources_i_l[1].clone()
     sources_i_masked[mask] = 0
-    source_amplitudes_l[1] = (-2 * source_amplitudes_l[1] * (models[0].view(-1, ny*nx).expand(n_shots, -1).gather(1, sources_i_masked)) * (models[1].view(-1, ny*nx).expand(n_shots, -1).gather(1, sources_i_masked)) * dt**2)
+    source_amplitudes_l[1] = (-2 * source_amplitudes_l[1] * (models[0].view(
+        -1, ny * nx).expand(n_shots, -1).gather(1, sources_i_masked)) *
+                              (models[1].view(-1, ny * nx).expand(
+                                  n_shots, -1).gather(1, sources_i_masked)) *
+                              dt**2)
 
-    pml_profiles = set_pml_profiles(pml_width_l, accuracy, fd_pad, dt, grid_spacing, max_vel, dtype, device, pml_freq, ny, nx)
+    pml_profiles = set_pml_profiles(pml_width_l, accuracy, fd_pad, dt,
+                                    grid_spacing, max_vel, dtype, device,
+                                    pml_freq, ny, nx)
 
     (wfc, wfp, psiy, psix, zetay, zetax, wfcsc, wfpsc, psiysc, psixsc, zetaysc, zetaxsc, receiver_amplitudes, receiver_amplitudessc) = \
         scalar_born_func(
@@ -307,10 +315,10 @@ def scalar_born(
 class ScalarBornForwardFunc(torch.autograd.Function):
 
     @staticmethod
-    def forward(ctx, v, scatter, source_amplitudes, source_amplitudessc, wfc, wfp,
-                psiy, psix, zetay, zetax, wfcsc, wfpsc, psiysc, psixsc,
-                zetaysc, zetaxsc, ay, ax, by, bx, dbydy, dbxdx, sources_i,
-                _, receivers_i, receiverssc_i, dy, dx, dt, nt, step_ratio,
+    def forward(ctx, v, scatter, source_amplitudes, source_amplitudessc, wfc,
+                wfp, psiy, psix, zetay, zetax, wfcsc, wfpsc, psiysc, psixsc,
+                zetaysc, zetaxsc, ay, ax, by, bx, dbydy, dbxdx, sources_i, _,
+                receivers_i, receiverssc_i, dy, dx, dt, nt, step_ratio,
                 accuracy, pml_width, n_shots):
 
         v = v.contiguous()
@@ -391,8 +399,7 @@ class ScalarBornForwardFunc(torch.autograd.Function):
             receiver_amplitudes.resize_(nt, n_shots, n_receivers_per_shot)
             receiver_amplitudes.fill_(0)
         if receiverssc_i.numel() > 0:
-            receiver_amplitudessc.resize_(nt, n_shots,
-                                          n_receiverssc_per_shot)
+            receiver_amplitudessc.resize_(nt, n_shots, n_receiverssc_per_shot)
             receiver_amplitudessc.fill_(0)
 
         if v.is_cuda:
@@ -715,9 +722,9 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                     n_sources_per_shot * source_amplitudes_requires_grad,
                     n_sources_per_shot * source_amplitudessc_requires_grad,
                     n_receivers_per_shot, n_receiverssc_per_shot, step_ratio,
-                    v.requires_grad, scatter.requires_grad,
-                    v_batched, scatter_batched, start_t, pml_y0, pml_y1,
-                    pml_x0, pml_x1, aux)
+                    v.requires_grad, scatter.requires_grad, v_batched,
+                    scatter_batched, start_t, pml_y0, pml_y1, pml_x0, pml_x1,
+                    aux)
             else:
                 backward_sc(
                     v.data_ptr(), grad_rsc.data_ptr(), wfcsc.data_ptr(),
@@ -733,8 +740,8 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                     1 / dx**2, dt**2, nt, n_shots, ny, nx,
                     n_sources_per_shot * source_amplitudessc_requires_grad,
                     n_receiverssc_per_shot, step_ratio, scatter.requires_grad,
-                    v_batched, scatter_batched, start_t,
-                    pml_y0, pml_y1, pml_x0, pml_x1, aux)
+                    v_batched, scatter_batched, start_t, pml_y0, pml_y1,
+                    pml_x0, pml_x1, aux)
 
         s = (slice(None), slice(fd_pad, -fd_pad), slice(fd_pad, -fd_pad))
         if non_sc:

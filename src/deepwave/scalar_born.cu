@@ -238,8 +238,10 @@ __global__ void forward_kernel(
     int64_t shot_idx = blockIdx.z * blockDim.z + threadIdx.z;
     int64_t j = y * nx + x;
     int64_t i = shot_idx * nynx + j;
-    DW_DTYPE const *__restrict const v_shot = v_batched ? v + shot_idx * nynx : v;
-    DW_DTYPE const *__restrict const scatter_shot = scatter_batched ? scatter + shot_idx * nynx : scatter;
+    DW_DTYPE const *__restrict const v_shot =
+        v_batched ? v + shot_idx * nynx : v;
+    DW_DTYPE const *__restrict const scatter_shot =
+        scatter_batched ? scatter + shot_idx * nynx : scatter;
     bool pml_y = y < pml_y0 || y >= pml_y1;
     bool pml_x = x < pml_x0 || x >= pml_x1;
     DW_DTYPE w_sum, wsc_sum;
@@ -317,8 +319,10 @@ __global__ void backward_kernel(
     int64_t shot_idx = blockIdx.z * blockDim.z + threadIdx.z;
     int64_t j = y * nx + x;
     int64_t i = shot_idx * nynx + j;
-    DW_DTYPE const *__restrict const v_shot = v_batched ? v + shot_idx * nynx : v;
-    DW_DTYPE const *__restrict const scatter_shot = scatter_batched ? scatter + shot_idx * nynx : scatter;
+    DW_DTYPE const *__restrict const v_shot =
+        v_batched ? v + shot_idx * nynx : v;
+    DW_DTYPE const *__restrict const scatter_shot =
+        scatter_batched ? scatter + shot_idx * nynx : scatter;
     bool pml_y = y < pml_y0 || y >= pml_y1;
     bool pml_x = x < pml_x0 || x >= pml_x1;
     wfp[i] =
@@ -354,7 +358,8 @@ __global__ void backward_kernel(
                        step_ratio;
     }
     if (scatter_requires_grad) {
-      grad_scatter[i] += wfcsc[i] * 2 * v_shot[j] * dt2 * w_store[i] * step_ratio;
+      grad_scatter[i] +=
+          wfcsc[i] * 2 * v_shot[j] * dt2 * w_store[i] * step_ratio;
     }
   }
 }
@@ -378,7 +383,8 @@ __global__ void backward_kernel_sc(
     int64_t shot_idx = blockIdx.z * blockDim.z + threadIdx.z;
     int64_t j = y * nx + x;
     int64_t i = shot_idx * nynx + j;
-    DW_DTYPE const *__restrict const v_shot = v_batched ? v + shot_idx * nynx : v;
+    DW_DTYPE const *__restrict const v_shot =
+        v_batched ? v + shot_idx * nynx : v;
     bool pml_y = y < pml_y0 || y >= pml_y1;
     bool pml_x = x < pml_x0 || x >= pml_x1;
     wfpsc[i] = (pml_y ? -DIFFY1(UTSC_TERMY1) + DIFFY2(UTSC_TERMY2)
@@ -395,7 +401,8 @@ __global__ void backward_kernel_sc(
       zetaxnsc[i] = ax[x] * V2DT2(0, 0) * wfcsc[i] + ax[x] * zetaxsc[i];
     }
     if (scatter_requires_grad) {
-      grad_scatter[i] += wfcsc[i] * 2 * v_shot[j] * dt2 * w_store[i] * step_ratio;
+      grad_scatter[i] +=
+          wfcsc[i] * 2 * v_shot[j] * dt2 * w_store[i] * step_ratio;
     }
   }
 }
@@ -420,7 +427,8 @@ void set_config(
     int64_t const n_sourcessc_per_shot_h, int64_t const n_receivers_per_shot_h,
     int64_t const n_receiverssc_per_shot_h, int64_t const step_ratio_h,
     int64_t const pml_y0_h, int64_t const pml_y1_h, int64_t const pml_x0_h,
-    int64_t const pml_x1_h, bool const v_batched_h, bool const scatter_batched_h) {
+    int64_t const pml_x1_h, bool const v_batched_h,
+    bool const scatter_batched_h) {
   int64_t const nynx_h = ny_h * nx_h;
   gpuErrchk(cudaMemcpyToSymbol(dt2, &dt2_h, sizeof(DW_DTYPE)));
   gpuErrchk(cudaMemcpyToSymbol(rdy, &rdy_h, sizeof(DW_DTYPE)));
@@ -445,7 +453,8 @@ void set_config(
   gpuErrchk(cudaMemcpyToSymbol(pml_x0, &pml_x0_h, sizeof(int64_t)));
   gpuErrchk(cudaMemcpyToSymbol(pml_x1, &pml_x1_h, sizeof(int64_t)));
   gpuErrchk(cudaMemcpyToSymbol(v_batched, &v_batched_h, sizeof(bool)));
-  gpuErrchk(cudaMemcpyToSymbol(scatter_batched, &scatter_batched_h, sizeof(bool)));
+  gpuErrchk(
+      cudaMemcpyToSymbol(scatter_batched, &scatter_batched_h, sizeof(bool)));
 }
 
 }  // namespace
@@ -488,10 +497,10 @@ extern "C"
             int64_t const n_receivers_per_shot_h,
             int64_t const n_receiverssc_per_shot_h, int64_t const step_ratio_h,
             bool const v_requires_grad, bool const scatter_requires_grad,
-            bool const v_batched_h, bool const scatter_batched_h, int64_t const start_t,
-            int64_t const pml_y0_h, int64_t const pml_y1_h,
-            int64_t const pml_x0_h, int64_t const pml_x1_h,
-            int64_t const device) {
+            bool const v_batched_h, bool const scatter_batched_h,
+            int64_t const start_t, int64_t const pml_y0_h,
+            int64_t const pml_y1_h, int64_t const pml_x0_h,
+            int64_t const pml_x1_h, int64_t const device) {
 
   dim3 dimBlock(32, 32, 1);
   unsigned int gridx = ceil_div(nx_h - 2 * FD_PAD, dimBlock.x);
@@ -531,7 +540,8 @@ extern "C"
           wfcsc, psiynsc, psixnsc, psiysc, psixsc, zetaysc, zetaxsc,
           w_store + (t / step_ratio_h) * ny_h * nx_h * n_shots_h,
           wsc_store + (t / step_ratio_h) * ny_h * nx_h * n_shots_h, ay, ax, by,
-          bx, dbydy, dbxdx, v_requires_grad && (((t + start_t) % step_ratio_h) == 0),
+          bx, dbydy, dbxdx,
+          v_requires_grad && (((t + start_t) % step_ratio_h) == 0),
           scatter_requires_grad && (((t + start_t) % step_ratio_h) == 0));
       CHECK_KERNEL_ERROR
       if (n_sources_per_shot_h > 0) {
@@ -558,7 +568,8 @@ extern "C"
           wfpsc, psiysc, psixsc, psiynsc, psixnsc, zetaysc, zetaxsc,
           w_store + (t / step_ratio_h) * ny_h * nx_h * n_shots_h,
           wsc_store + (t / step_ratio_h) * ny_h * nx_h * n_shots_h, ay, ax, by,
-          bx, dbydy, dbxdx, v_requires_grad && (((t + start_t) % step_ratio_h) == 0),
+          bx, dbydy, dbxdx,
+          v_requires_grad && (((t + start_t) % step_ratio_h) == 0),
           scatter_requires_grad && (((t + start_t) % step_ratio_h) == 0));
       CHECK_KERNEL_ERROR
       if (n_sources_per_shot_h > 0) {
@@ -630,10 +641,10 @@ extern "C"
             int64_t const n_receivers_per_shot_h,
             int64_t const n_receiverssc_per_shot_h, int64_t const step_ratio_h,
             bool const v_requires_grad, bool const scatter_requires_grad,
-            bool const v_batched_h, bool const scatter_batched_h, int64_t const start_t,
-            int64_t const pml_y0_h, int64_t const pml_y1_h,
-            int64_t const pml_x0_h, int64_t const pml_x1_h,
-            int64_t const device) {
+            bool const v_batched_h, bool const scatter_batched_h,
+            int64_t const start_t, int64_t const pml_y0_h,
+            int64_t const pml_y1_h, int64_t const pml_x0_h,
+            int64_t const pml_x1_h, int64_t const device) {
 
   dim3 dimBlock(32, 8, 1);
   unsigned int gridx = ceil_div(nx_h - 2 * FD_PAD, dimBlock.x);
@@ -675,7 +686,8 @@ extern "C"
   set_config(dt2_h, rdy_h, rdx_h, rdy2_h, rdx2_h, n_shots_h, ny_h, nx_h,
              n_sources_per_shot_h, n_sourcessc_per_shot_h,
              n_receivers_per_shot_h, n_receiverssc_per_shot_h, step_ratio_h,
-             pml_y0_h, pml_y1_h, pml_x0_h, pml_x1_h, v_batched_h, scatter_batched_h);
+             pml_y0_h, pml_y1_h, pml_x0_h, pml_x1_h, v_batched_h,
+             scatter_batched_h);
   for (t = nt - 1; t >= 0; --t) {
     if ((nt - 1 - t) & 1) {
       if (n_sources_per_shot_h > 0) {
@@ -789,11 +801,11 @@ extern "C"
             int64_t const ny_h, int64_t const nx_h,
             int64_t const n_sourcessc_per_shot_h,
             int64_t const n_receiverssc_per_shot_h, int64_t const step_ratio_h,
-            bool const scatter_requires_grad,
-            bool const v_batched_h, bool const scatter_batched_h, int64_t const start_t,
-	    int64_t const pml_y0_h,
-            int64_t const pml_y1_h, int64_t const pml_x0_h,
-            int64_t const pml_x1_h, int64_t const device) {
+            bool const scatter_requires_grad, bool const v_batched_h,
+            bool const scatter_batched_h, int64_t const start_t,
+            int64_t const pml_y0_h, int64_t const pml_y1_h,
+            int64_t const pml_x0_h, int64_t const pml_x1_h,
+            int64_t const device) {
 
   dim3 dimBlock(32, 16, 1);
   unsigned int gridx = ceil_div(nx_h - 2 * FD_PAD, dimBlock.x);
@@ -823,7 +835,8 @@ extern "C"
   set_config(dt2_h, rdy_h, rdx_h, rdy2_h, rdx2_h, n_shots_h, ny_h, nx_h,
              n_sourcessc_per_shot_h, n_sourcessc_per_shot_h,
              n_receiverssc_per_shot_h, n_receiverssc_per_shot_h, step_ratio_h,
-             pml_y0_h, pml_y1_h, pml_x0_h, pml_x1_h, v_batched_h, scatter_batched_h);
+             pml_y0_h, pml_y1_h, pml_x0_h, pml_x1_h, v_batched_h,
+             scatter_batched_h);
   for (t = nt - 1; t >= 0; --t) {
     if ((nt - 1 - t) & 1) {
       if (n_sourcessc_per_shot_h > 0) {

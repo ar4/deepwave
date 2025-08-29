@@ -71,7 +71,8 @@
 #include "common.h"
 #include "common_cpu.h"
 
-#define CAT_I(name, accuracy, dtype, device) scalar_iso_##accuracy##_##dtype##_##name##_##device
+#define CAT_I(name, accuracy, dtype, device) \
+  scalar_iso_##accuracy##_##dtype##_##name##_##device
 #define CAT(name, accuracy, dtype, device) CAT_I(name, accuracy, dtype, device)
 #define FUNC(name) CAT(name, DW_ACCURACY, DW_DTYPE, DW_DEVICE)
 
@@ -128,8 +129,7 @@
 #define FORWARD_KERNEL(pml_y, pml_x, v_requires_grad)                      \
   {                                                                        \
     SET_RANGE(pml_y, pml_x)                                                \
-    _Pragma("omp simd collapse(2)")                                        \
-    for (y = y_begin; y < y_end; ++y) {                                    \
+    _Pragma("omp simd collapse(2)") for (y = y_begin; y < y_end; ++y) {    \
       for (x = x_begin; x < x_end; ++x) {                                  \
         int64_t const i = y * nx + x;                                      \
         if (pml_y == 1) {                                                  \
@@ -163,8 +163,7 @@
 #define BACKWARD_KERNEL(pml_y, pml_x, v_requires_grad)                   \
   {                                                                      \
     SET_RANGE(pml_y, pml_x)                                              \
-    _Pragma("omp simd collapse(2)")                                      \
-    for (y = y_begin; y < y_end; ++y) {                                  \
+    _Pragma("omp simd collapse(2)") for (y = y_begin; y < y_end; ++y) {  \
       for (x = x_begin; x < x_end; ++x) {                                \
         int64_t const i = y * nx + x;                                    \
         wfp[i] = (pml_y == 1 ? DIFFY2(V2DT2_WFC)                         \
@@ -295,8 +294,9 @@ __declspec(dllexport)
         DW_DTYPE const dt2, int64_t const nt, int64_t const n_shots,
         int64_t const ny, int64_t const nx, int64_t const n_sources_per_shot,
         int64_t const n_receivers_per_shot, int64_t const step_ratio,
-        bool const v_requires_grad, bool const v_batched, int64_t const start_t, int64_t const pml_y0, int64_t const pml_y1,
-        int64_t const pml_x0, int64_t const pml_x1, int64_t const n_threads) {
+        bool const v_requires_grad, bool const v_batched, int64_t const start_t,
+        int64_t const pml_y0, int64_t const pml_y1, int64_t const pml_x0,
+        int64_t const pml_x1, int64_t const n_threads) {
   int64_t shot;
 #ifdef _OPENMP
 #pragma omp parallel for num_threads(n_threads)
@@ -308,16 +308,17 @@ __declspec(dllexport)
     int64_t const ri = shot * n_receivers_per_shot;
     /* Select the appropriate velocity model depending on whether each shot
      * has its own velocity model (v_batched==True) or not. */
-    DW_DTYPE const* __restrict const v_shot = v_batched ? v + i : v;
+    DW_DTYPE const *__restrict const v_shot = v_batched ? v + i : v;
     int64_t t;
     for (t = 0; t < nt; ++t) {
       if (t & 1) {
-        forward_kernel(v_shot, wfp + i, wfc + i, psiyn + i, psixn + i, psiy + i,
-                       psix + i, zetay + i, zetax + i,
-                       dwdv + (t / step_ratio) * n_shots * ny * nx + shot * ny * nx,
-                       ay, ax, by, bx, dbydy, dbxdx, rdy, rdx, rdy2, rdx2, dt2,
-                       ny, nx, v_requires_grad && (((t + start_t) % step_ratio) == 0),
-                       pml_y0, pml_y1, pml_x0, pml_x1);
+        forward_kernel(
+            v_shot, wfp + i, wfc + i, psiyn + i, psixn + i, psiy + i, psix + i,
+            zetay + i, zetax + i,
+            dwdv + (t / step_ratio) * n_shots * ny * nx + shot * ny * nx, ay,
+            ax, by, bx, dbydy, dbxdx, rdy, rdx, rdy2, rdx2, dt2, ny, nx,
+            v_requires_grad && (((t + start_t) % step_ratio) == 0), pml_y0,
+            pml_y1, pml_x0, pml_x1);
         add_to_wavefield(wfc + i, sources_i + si,
                          f + t * n_shots * n_sources_per_shot + si,
                          n_sources_per_shot);
@@ -325,12 +326,13 @@ __declspec(dllexport)
                               r + t * n_shots * n_receivers_per_shot + ri,
                               n_receivers_per_shot);
       } else {
-        forward_kernel(v_shot, wfc + i, wfp + i, psiy + i, psix + i, psiyn + i,
-                       psixn + i, zetay + i, zetax + i,
-                       dwdv + (t / step_ratio) * n_shots * ny * nx + shot * ny * nx,
-                       ay, ax, by, bx, dbydy, dbxdx, rdy, rdx, rdy2, rdx2, dt2,
-                       ny, nx, v_requires_grad && (((t + start_t) % step_ratio) == 0),
-                       pml_y0, pml_y1, pml_x0, pml_x1);
+        forward_kernel(
+            v_shot, wfc + i, wfp + i, psiy + i, psix + i, psiyn + i, psixn + i,
+            zetay + i, zetax + i,
+            dwdv + (t / step_ratio) * n_shots * ny * nx + shot * ny * nx, ay,
+            ax, by, bx, dbydy, dbxdx, rdy, rdx, rdy2, rdx2, dt2, ny, nx,
+            v_requires_grad && (((t + start_t) % step_ratio) == 0), pml_y0,
+            pml_y1, pml_x0, pml_x1);
         add_to_wavefield(wfp + i, sources_i + si,
                          f + t * n_shots * n_sources_per_shot + si,
                          n_sources_per_shot);
@@ -368,8 +370,9 @@ __declspec(dllexport)
         int64_t const nt, int64_t const n_shots, int64_t const ny,
         int64_t const nx, int64_t const n_sources_per_shot,
         int64_t const n_receivers_per_shot, int64_t const step_ratio,
-        bool const v_requires_grad, bool const v_batched, int64_t start_t, int64_t const pml_y0, int64_t const pml_y1,
-        int64_t const pml_x0, int64_t const pml_x1, int64_t const n_threads) {
+        bool const v_requires_grad, bool const v_batched, int64_t start_t,
+        int64_t const pml_y0, int64_t const pml_y1, int64_t const pml_x0,
+        int64_t const pml_x1, int64_t const n_threads) {
   int64_t shot;
 #ifdef _OPENMP
 #pragma omp parallel for num_threads(n_threads)
@@ -384,20 +387,21 @@ __declspec(dllexport)
     int64_t const threadi = 0;
 #endif /* _OPENMP */
     int64_t const grad_v_i = v_batched ? i : threadi;
-    DW_DTYPE const* __restrict const v2dt2_shot = v_batched ? v2dt2 + i : v2dt2;
+    DW_DTYPE const *__restrict const v2dt2_shot = v_batched ? v2dt2 + i : v2dt2;
     int64_t t;
     for (t = nt - 1; t >= 0; --t) {
       if ((nt - 1 - t) & 1) {
         record_from_wavefield(wfp + i, sources_i + si,
                               grad_f + t * n_shots * n_sources_per_shot + si,
                               n_sources_per_shot);
-        backward_kernel(v2dt2_shot, wfp + i, wfc + i, psiyn + i, psixn + i, psiy + i,
-                        psix + i, zetayn + i, zetaxn + i, zetay + i, zetax + i,
-                        dwdv + (t / step_ratio) * n_shots * ny * nx + shot * ny * nx,
-                        grad_v_thread + grad_v_i, ay, ax, by, bx, dbydy, dbxdx,
-                        rdy, rdx, rdy2, rdx2, ny, nx, step_ratio,
-                        v_requires_grad && (((t + start_t) % step_ratio) == 0), pml_y0,
-                        pml_y1, pml_x0, pml_x1);
+        backward_kernel(
+            v2dt2_shot, wfp + i, wfc + i, psiyn + i, psixn + i, psiy + i,
+            psix + i, zetayn + i, zetaxn + i, zetay + i, zetax + i,
+            dwdv + (t / step_ratio) * n_shots * ny * nx + shot * ny * nx,
+            grad_v_thread + grad_v_i, ay, ax, by, bx, dbydy, dbxdx, rdy, rdx,
+            rdy2, rdx2, ny, nx, step_ratio,
+            v_requires_grad && (((t + start_t) % step_ratio) == 0), pml_y0,
+            pml_y1, pml_x0, pml_x1);
         add_to_wavefield(wfc + i, receivers_i + ri,
                          grad_r + t * n_shots * n_receivers_per_shot + ri,
                          n_receivers_per_shot);
@@ -405,13 +409,14 @@ __declspec(dllexport)
         record_from_wavefield(wfc + i, sources_i + si,
                               grad_f + t * n_shots * n_sources_per_shot + si,
                               n_sources_per_shot);
-        backward_kernel(v2dt2_shot, wfc + i, wfp + i, psiy + i, psix + i, psiyn + i,
-                        psixn + i, zetay + i, zetax + i, zetayn + i, zetaxn + i,
-                        dwdv + (t / step_ratio) * n_shots * ny * nx + shot * ny * nx,
-                        grad_v_thread + grad_v_i, ay, ax, by, bx, dbydy, dbxdx,
-                        rdy, rdx, rdy2, rdx2, ny, nx, step_ratio,
-                        v_requires_grad && (((t + start_t) % step_ratio) == 0), pml_y0,
-                        pml_y1, pml_x0, pml_x1);
+        backward_kernel(
+            v2dt2_shot, wfc + i, wfp + i, psiy + i, psix + i, psiyn + i,
+            psixn + i, zetay + i, zetax + i, zetayn + i, zetaxn + i,
+            dwdv + (t / step_ratio) * n_shots * ny * nx + shot * ny * nx,
+            grad_v_thread + grad_v_i, ay, ax, by, bx, dbydy, dbxdx, rdy, rdx,
+            rdy2, rdx2, ny, nx, step_ratio,
+            v_requires_grad && (((t + start_t) % step_ratio) == 0), pml_y0,
+            pml_y1, pml_x0, pml_x1);
         add_to_wavefield(wfp + i, receivers_i + ri,
                          grad_r + t * n_shots * n_receivers_per_shot + ri,
                          n_receivers_per_shot);

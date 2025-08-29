@@ -9,7 +9,8 @@ from torch import Tensor
 from torch.autograd.function import once_differentiable
 import deepwave
 from deepwave.common import (setup_propagator, downsample_and_movedim,
-                             create_or_pad, lambmubuoyancy_to_vpvsrho, IGNORE_LOCATION)
+                             create_or_pad, lambmubuoyancy_to_vpvsrho,
+                             IGNORE_LOCATION)
 from deepwave.staggered_grid import set_pml_profiles
 
 
@@ -472,7 +473,7 @@ def elastic(
         dim_location = receiver_locations_p[..., 0]
         dim_location = dim_location[dim_location != IGNORE_LOCATION]
         if (receiver_locations_p[..., 1].max() >= lamb.shape[1] - 1
-                 or dim_location.min() <= 0):
+                or dim_location.min() <= 0):
             raise RuntimeError("With the provided model, the pressure "
                                "receiver locations in the second dimension "
                                "must be less than " + str(lamb.shape[1] - 1) +
@@ -481,8 +482,7 @@ def elastic(
                                "greater than 0.")
     if accuracy not in [2, 4]:
         raise RuntimeError("The accuracy must be 2 or 4.")
-    vp, vs, _ = lambmubuoyancy_to_vpvsrho(lamb.abs(), mu.abs(),
-                                          buoyancy.abs())
+    vp, vs, _ = lambmubuoyancy_to_vpvsrho(lamb.abs(), mu.abs(), buoyancy.abs())
     max_model_vel = max(vp.abs().max().item(), vs.abs().max().item())
     try:
         min_nonzero_vp = vp[vp.nonzero(as_tuple=True)].abs().min().item()
@@ -534,19 +534,26 @@ def elastic(
     sources_i_masked = sources_i_l[0].clone()
     sources_i_masked[mask] = 0
     if source_amplitudes_l[0].numel() > 0:
-        source_amplitudes_l[0] = (source_amplitudes_l[0] * (models[2].view(-1, ny*nx).expand(n_shots, -1).gather(1, sources_i_masked) +
-                                                            models[2].view(-1, ny*nx).expand(n_shots, -1).gather(1, sources_i_masked + 1) +
-                                                            models[2].view(-1, ny*nx).expand(n_shots, -1).gather(1, sources_i_masked + nx) +
-                                                            models[2].view(-1, ny*nx).expand(n_shots, -1).gather(1, sources_i_masked + nx + 1)
-                                                            )) / 4 * dt
+        source_amplitudes_l[0] = (
+            source_amplitudes_l[0] *
+            (models[2].view(-1, ny * nx).expand(n_shots, -1).gather(
+                1, sources_i_masked) + models[2].view(-1, ny * nx).expand(
+                    n_shots, -1).gather(1, sources_i_masked + 1) +
+             models[2].view(-1, ny * nx).expand(n_shots, -1).gather(
+                 1, sources_i_masked + nx) +
+             models[2].view(-1, ny * nx).expand(n_shots, -1).gather(
+                 1, sources_i_masked + nx + 1))) / 4 * dt
     # source_amplitudes_x
     mask = sources_i_l[1] == IGNORE_LOCATION
     sources_i_masked = sources_i_l[1].clone()
     sources_i_masked[mask] = 0
     if source_amplitudes_l[1].numel() > 0:
-        source_amplitudes_l[1] = (source_amplitudes_l[1] * (models[2].view(-1, ny*nx).expand(n_shots, -1).gather(1, sources_i_masked)) * dt)
+        source_amplitudes_l[1] = (source_amplitudes_l[1] * (models[2].view(
+            -1, ny * nx).expand(n_shots, -1).gather(1, sources_i_masked)) * dt)
 
-    pml_profiles = set_pml_profiles(pml_width_l, accuracy, fd_pad, dt, grid_spacing, max_vel, dtype, device, pml_freq, ny, nx)
+    pml_profiles = set_pml_profiles(pml_width_l, accuracy, fd_pad, dt,
+                                    grid_spacing, max_vel, dtype, device,
+                                    pml_freq, ny, nx)
 
     # Run the forward propagator
     (vy, vx, sigmayy, sigmaxy, sigmaxx,
@@ -610,12 +617,12 @@ def zero_interior(tensor: Tensor, ybegin: int, yend: int, xbegin: int,
 class ElasticForwardFunc(torch.autograd.Function):
 
     @staticmethod
-    def forward(ctx, lamb, mu, buoyancy, source_amplitudes_y, source_amplitudes_x,
-                vy, vx, sigmayy, sigmaxy, sigmaxx, m_vyy, m_vyx, m_vxy, m_vxx,
-                m_sigmayyy, m_sigmaxyy, m_sigmaxyx, m_sigmaxxx, ay, ayh, ax,
-                axh, by, byh, bx, bxh, sources_y_i, sources_x_i, receivers_y_i,
-                receivers_x_i, receivers_p_i, dy, dx, dt, nt, step_ratio,
-                accuracy, pml_width, n_shots):
+    def forward(ctx, lamb, mu, buoyancy, source_amplitudes_y,
+                source_amplitudes_x, vy, vx, sigmayy, sigmaxy, sigmaxx, m_vyy,
+                m_vyx, m_vxy, m_vxx, m_sigmayyy, m_sigmaxyy, m_sigmaxyx,
+                m_sigmaxxx, ay, ayh, ax, axh, by, byh, bx, bxh, sources_y_i,
+                sources_x_i, receivers_y_i, receivers_x_i, receivers_p_i, dy,
+                dx, dt, nt, step_ratio, accuracy, pml_width, n_shots):
 
         lamb = lamb.contiguous()
         mu = mu.contiguous()
@@ -734,8 +741,7 @@ class ElasticForwardFunc(torch.autograd.Function):
                                           n_receivers_x_per_shot)
             receiver_amplitudes_x.fill_(0)
         if receivers_p_i.numel() > 0:
-            receiver_amplitudes_p.resize_(nt, n_shots,
-                                          n_receivers_p_per_shot)
+            receiver_amplitudes_p.resize_(nt, n_shots, n_receivers_p_per_shot)
             receiver_amplitudes_p.fill_(0)
 
         if lamb.is_cuda:
@@ -790,9 +796,8 @@ class ElasticForwardFunc(torch.autograd.Function):
                     n_sources_y_per_shot, n_sources_x_per_shot,
                     n_receivers_y_per_shot, n_receivers_x_per_shot,
                     n_receivers_p_per_shot, step_ratio, lamb.requires_grad,
-                    mu.requires_grad, buoyancy.requires_grad, 
-                    lamb_batched, mu_batched, buoyancy_batched, start_t,
-                    pml_y0, pml_y1,
+                    mu.requires_grad, buoyancy.requires_grad, lamb_batched,
+                    mu_batched, buoyancy_batched, start_t, pml_y0, pml_y1,
                     pml_x0, pml_x1, aux)
 
         if (lamb.requires_grad or mu.requires_grad or buoyancy.requires_grad
@@ -1056,9 +1061,8 @@ class ElasticForwardFunc(torch.autograd.Function):
                 n_sources_x_per_shot * source_amplitudes_x_requires_grad,
                 n_receivers_y_per_shot, n_receivers_x_per_shot,
                 n_receivers_p_per_shot, step_ratio, lamb.requires_grad,
-                mu.requires_grad, buoyancy.requires_grad,
-                lamb_batched, mu_batched, buoyancy_batched, start_t,
-                spml_y0, spml_y1,
+                mu.requires_grad, buoyancy.requires_grad, lamb_batched,
+                mu_batched, buoyancy_batched, start_t, spml_y0, spml_y1,
                 spml_x0, spml_x1, vpml_y0, vpml_y1, vpml_x0, vpml_x1, aux)
 
         m_vyy = zero_interior(m_vyy, pml_y0 + 1, pml_y1, 0, nx)
