@@ -3,7 +3,7 @@
 Velocity-stress formulation using C-PML.
 """
 
-from typing import Optional, Union, List, Tuple
+from typing import Optional, Union, Sequence, Tuple
 import torch
 from torch import Tensor
 from torch.autograd.function import once_differentiable
@@ -56,11 +56,12 @@ class Elastic(torch.nn.Module):
                  lamb: Tensor,
                  mu: Tensor,
                  buoyancy: Tensor,
-                 grid_spacing: Union[int, float, List[float], Tensor],
+                 grid_spacing: Union[float, Sequence[float]],
                  lamb_requires_grad: bool = False,
                  mu_requires_grad: bool = False,
                  buoyancy_requires_grad: bool = False) -> None:
         super().__init__()
+        # Only checks unique to this class (not covered by setup_propagator)
         if lamb.ndim != 2:
             raise RuntimeError("lamb must have two dimensions")
         if mu.ndim != 2:
@@ -84,10 +85,10 @@ class Elastic(torch.nn.Module):
         receiver_locations_x: Optional[Tensor] = None,
         receiver_locations_p: Optional[Tensor] = None,
         accuracy: int = 4,
-        pml_width: Union[int, List[int]] = 20,
+        pml_width: Union[int, Sequence[int]] = 20,
         pml_freq: Optional[float] = None,
         max_vel: Optional[float] = None,
-        survey_pad: Optional[Union[int, List[Optional[int]]]] = None,
+        survey_pad: Optional[Union[int, Sequence[Optional[int]]]] = None,
         vy_0: Optional[Tensor] = None,
         vx_0: Optional[Tensor] = None,
         sigmayy_0: Optional[Tensor] = None,
@@ -101,7 +102,7 @@ class Elastic(torch.nn.Module):
         m_sigmaxyy_0: Optional[Tensor] = None,
         m_sigmaxyx_0: Optional[Tensor] = None,
         m_sigmaxxx_0: Optional[Tensor] = None,
-        origin: Optional[List[int]] = None,
+        origin: Optional[Sequence[int]] = None,
         nt: Optional[int] = None,
         model_gradient_sampling_interval: int = 1
     ) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor,
@@ -152,7 +153,7 @@ def elastic(
     lamb: Tensor,
     mu: Tensor,
     buoyancy: Tensor,
-    grid_spacing: Union[int, float, List[float], Tensor],
+    grid_spacing: Union[float, Sequence[float]],
     dt: float,
     source_amplitudes_y: Optional[Tensor] = None,
     source_amplitudes_x: Optional[Tensor] = None,
@@ -162,10 +163,10 @@ def elastic(
     receiver_locations_x: Optional[Tensor] = None,
     receiver_locations_p: Optional[Tensor] = None,
     accuracy: int = 4,
-    pml_width: Union[int, List[int]] = 20,
+    pml_width: Union[int, Sequence[int]] = 20,
     pml_freq: Optional[float] = None,
     max_vel: Optional[float] = None,
-    survey_pad: Optional[Union[int, List[Optional[int]]]] = None,
+    survey_pad: Optional[Union[int, Sequence[Optional[int]]]] = None,
     vy_0: Optional[Tensor] = None,
     vx_0: Optional[Tensor] = None,
     sigmayy_0: Optional[Tensor] = None,
@@ -179,7 +180,7 @@ def elastic(
     m_sigmaxyy_0: Optional[Tensor] = None,
     m_sigmaxyx_0: Optional[Tensor] = None,
     m_sigmaxxx_0: Optional[Tensor] = None,
-    origin: Optional[List[int]] = None,
+    origin: Optional[Sequence[int]] = None,
     nt: Optional[int] = None,
     model_gradient_sampling_interval: int = 1,
     freq_taper_frac: float = 0.0,
@@ -580,11 +581,20 @@ def elastic(
     receiver_amplitudes_y = average_adjacent(receiver_amplitudes_y)
     receiver_amplitudes_x = average_adjacent(receiver_amplitudes_x)
     receiver_amplitudes_y = downsample_and_movedim(receiver_amplitudes_y,
-                                                   **resample_config)
+                                                   resample_config.step_ratio,
+                                                   resample_config.freq_taper_frac,
+                                                   resample_config.time_pad_frac,
+                                                   resample_config.time_taper)
     receiver_amplitudes_x = downsample_and_movedim(receiver_amplitudes_x,
-                                                   **resample_config)
+                                                   resample_config.step_ratio,
+                                                   resample_config.freq_taper_frac,
+                                                   resample_config.time_pad_frac,
+                                                   resample_config.time_taper)
     receiver_amplitudes_p = downsample_and_movedim(receiver_amplitudes_p,
-                                                   **resample_config)
+                                                   resample_config.step_ratio,
+                                                   resample_config.freq_taper_frac,
+                                                   resample_config.time_pad_frac,
+                                                   resample_config.time_taper)
 
     return (vy, vx, sigmayy, sigmaxy, sigmaxx, m_vyy, m_vyx, m_vxy, m_vxx,
             m_sigmayyy, m_sigmaxyy, m_sigmaxyx, m_sigmaxxx,

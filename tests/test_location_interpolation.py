@@ -39,7 +39,7 @@ def test_monopole(c=1500,
     hicks_receiver = Hicks(receiver_locations, dtype=dtype)
     hicks_receiver_locations = hicks_receiver.hicks_locations
     o = deepwave.scalar(model,
-                        dx,
+                        dx.tolist(),
                         dt,
                         source_amplitudes=hicks_amplitudes,
                         source_locations=hicks_source_locations,

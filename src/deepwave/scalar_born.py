@@ -6,7 +6,7 @@ described in the scalar module, with the addition of a scattered
 wavefield that uses 2 / v * scatter * dt^2 * wavefield as the source term.
 """
 
-from typing import Optional, Union, Tuple, List
+from typing import Optional, Union, Tuple, Sequence
 import torch
 from torch import Tensor
 from torch.autograd.function import once_differentiable
@@ -51,10 +51,11 @@ class ScalarBorn(torch.nn.Module):
     def __init__(self,
                  v: Tensor,
                  scatter: Tensor,
-                 grid_spacing: Union[int, float, List[float], Tensor],
+                 grid_spacing: Union[float, Sequence[float]],
                  v_requires_grad: bool = False,
                  scatter_requires_grad: bool = False) -> None:
         super().__init__()
+        # Only checks unique to this class (not covered by setup_propagator)
         if v.ndim != 2:
             raise RuntimeError("v must have two dimensions")
         if scatter.ndim != 2:
@@ -76,10 +77,10 @@ class ScalarBorn(torch.nn.Module):
         receiver_locations: Optional[Tensor] = None,
         bg_receiver_locations: Optional[Tensor] = None,
         accuracy: int = 4,
-        pml_width: Union[int, List[int]] = 20,
+        pml_width: Union[int, Sequence[int]] = 20,
         pml_freq: Optional[float] = None,
         max_vel: Optional[float] = None,
-        survey_pad: Optional[Union[int, List[Optional[int]]]] = None,
+        survey_pad: Optional[Union[int, Sequence[Optional[int]]]] = None,
         wavefield_0: Optional[Tensor] = None,
         wavefield_m1: Optional[Tensor] = None,
         psiy_m1: Optional[Tensor] = None,
@@ -92,7 +93,7 @@ class ScalarBorn(torch.nn.Module):
         psix_sc_m1: Optional[Tensor] = None,
         zetay_sc_m1: Optional[Tensor] = None,
         zetax_sc_m1: Optional[Tensor] = None,
-        origin: Optional[List[int]] = None,
+        origin: Optional[Sequence[int]] = None,
         nt: Optional[int] = None,
         model_gradient_sampling_interval: int = 1
     ) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor,
@@ -138,17 +139,17 @@ class ScalarBorn(torch.nn.Module):
 def scalar_born(
     v: Tensor,
     scatter: Tensor,
-    grid_spacing: Union[int, float, List[float], Tensor],
+    grid_spacing: Union[float, Sequence[float]],
     dt: float,
     source_amplitudes: Optional[Tensor] = None,
     source_locations: Optional[Tensor] = None,
     receiver_locations: Optional[Tensor] = None,
     bg_receiver_locations: Optional[Tensor] = None,
     accuracy: int = 4,
-    pml_width: Union[int, List[int]] = 20,
+    pml_width: Union[int, Sequence[int]] = 20,
     pml_freq: Optional[float] = None,
     max_vel: Optional[float] = None,
-    survey_pad: Optional[Union[int, List[Optional[int]]]] = None,
+    survey_pad: Optional[Union[int, Sequence[Optional[int]]]] = None,
     wavefield_0: Optional[Tensor] = None,
     wavefield_m1: Optional[Tensor] = None,
     psiy_m1: Optional[Tensor] = None,
@@ -161,7 +162,7 @@ def scalar_born(
     psix_sc_m1: Optional[Tensor] = None,
     zetay_sc_m1: Optional[Tensor] = None,
     zetax_sc_m1: Optional[Tensor] = None,
-    origin: Optional[List[int]] = None,
+    origin: Optional[Sequence[int]] = None,
     nt: Optional[int] = None,
     model_gradient_sampling_interval: int = 1,
     freq_taper_frac: float = 0.0,
@@ -304,9 +305,15 @@ def scalar_born(
         )
 
     receiver_amplitudes = downsample_and_movedim(receiver_amplitudes,
-                                                 **resample_config)
+                                                 resample_config.step_ratio,
+                                                 resample_config.freq_taper_frac,
+                                                 resample_config.time_pad_frac,
+                                                 resample_config.time_taper)
     receiver_amplitudessc = downsample_and_movedim(receiver_amplitudessc,
-                                                   **resample_config)
+                                                   resample_config.step_ratio,
+                                                   resample_config.freq_taper_frac,
+                                                   resample_config.time_pad_frac,
+                                                   resample_config.time_taper)
 
     return (wfc, wfp, psiy, psix, zetay, zetax, wfcsc, wfpsc, psiysc, psixsc,
             zetaysc, zetaxsc, receiver_amplitudes, receiver_amplitudessc)

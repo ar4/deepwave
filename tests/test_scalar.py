@@ -318,7 +318,7 @@ def test_unused_source_receiver(c=1500,
         x_r[i, i, :] = IGNORE_LOCATION
     sources['locations'] = x_s
     out_ignored = propagator(modeli,
-                              dx,
+                              dx.tolist(),
                               dt,
                               sources['amplitude'],
                               sources['locations'],
@@ -336,7 +336,7 @@ def test_unused_source_receiver(c=1500,
         sources['amplitude'][i, i].fill_(0)
     sources['locations'] = x_s
     out_filled = propagator(modelf,
-                              dx,
+                              dx.tolist(),
                               dt,
                               sources['amplitude'],
                               sources['locations'],
@@ -808,7 +808,7 @@ def run_direct(c,
                            -sources['amplitude'][shot, source, :]).to(dtype)
 
     actual = propagator(model,
-                        dx,
+                        dx.tolist(),
                         dt,
                         sources['amplitude'],
                         sources['locations'],
@@ -872,7 +872,7 @@ def run_forward(c,
     sources = _set_sources(x_s, freq, dt, nt, dtype)
 
     return propagator(model,
-                      dx,
+                      dx.tolist(),
                       dt,
                       sources['amplitude'],
                       sources['locations'],
@@ -958,14 +958,14 @@ def run_scatter(c,
                               -sources['amplitude'][shot, source, :]).to(dtype)
 
     y_const = propagator(model_const,
-                         dx,
+                         dx.tolist(),
                          dt,
                          sources['amplitude'],
                          sources['locations'],
                          x_r,
                          prop_kwargs=prop_kwargs)[6]
     y = propagator(model,
-                   dx,
+                   dx.tolist(),
                    dt,
                    sources['amplitude'],
                    sources['locations'],
@@ -1093,7 +1093,7 @@ def run_gradcheck(c,
 
     torch.autograd.gradcheck(
         propagator,
-        (model, dx, dt, sources['amplitude'], sources['locations'], x_r,
+        (model, dx.tolist(), dt, sources['amplitude'], sources['locations'], x_r,
          prop_kwargs, pml_width, survey_pad, origin, wavefield_0, wavefield_m1,
          psiy_m1, psix_m1, zetay_m1, zetax_m1, nt, 1, True),
         nondet_tol=1e-3,
@@ -1105,7 +1105,7 @@ def run_gradcheck(c,
         gradgradatol = math.sqrt(atol)
         torch.autograd.gradgradcheck(
             propagator,
-            (model, dx, dt, sources['amplitude'], sources['locations'], x_r,
+            (model, dx.tolist(), dt, sources['amplitude'], sources['locations'], x_r,
              prop_kwargs, pml_width, survey_pad, origin, wavefield_0, wavefield_m1,
              psiy_m1, psix_m1, zetay_m1, zetax_m1, nt, 1, True),
             nondet_tol=1e-3,

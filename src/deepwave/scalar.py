@@ -36,6 +36,16 @@ class Scalar(torch.nn.Module):
         grid_spacing: Union[float, Sequence[float]],
         v_requires_grad: bool = False
     ) -> None:
+        """
+        Initialize the Scalar propagator module.
+
+        Args:
+            v (Tensor): 2D wavespeed model.
+            grid_spacing (float or Sequence[float]): Grid cell size(s).
+            v_requires_grad (bool, optional): If True, gradients will be computed for v. Default: False.
+        """
+        if not isinstance(v_requires_grad, bool):
+            raise TypeError(f"v_requires_grad must be bool, got {type(v_requires_grad).__name__}")
         super().__init__()
         self.v = torch.nn.Parameter(v, requires_grad=v_requires_grad)
         self.grid_spacing = grid_spacing
@@ -64,7 +74,6 @@ class Scalar(torch.nn.Module):
         """
         Perform forward propagation/modelling. See `scalar` for details.
         """
-
         return scalar(
             self.v,
             self.grid_spacing,
@@ -113,6 +122,12 @@ def scalar(
     time_pad_frac: float = 0.0,
     time_taper: bool = False
 ) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
+    """
+    Scalar wave propagation (functional interface).
+
+    See the full docstring above for details.
+    """
+    # --- original implementation follows ---
     """Scalar wave propagation (functional interface).
 
     This function performs forward modelling with the scalar wave equation.
@@ -378,7 +393,11 @@ def scalar(
         *grid_spacing, dt, nt, step_ratio * model_gradient_sampling_interval, accuracy, pml_width_l, n_shots
     )
 
-    receiver_amplitudes = downsample_and_movedim(receiver_amplitudes, **resample_config)
+    receiver_amplitudes = downsample_and_movedim(receiver_amplitudes,
+                                                 resample_config.step_ratio,
+                                                 resample_config.freq_taper_frac,
+                                                 resample_config.time_pad_frac,
+                                                 resample_config.time_taper)
     return wfc, wfp, psiy, psix, zetay, zetax, receiver_amplitudes
 
 
