@@ -386,7 +386,7 @@ def scalar(
      sources_i_l, receivers_i_l,
      grid_spacing, dt, nt, n_shots,
      step_ratio, model_gradient_sampling_interval,
-     accuracy, pml_width_l, max_vel, resample_config, device, dtype) = \
+     accuracy, pml_width_l, pml_freq, max_vel, resample_config, device, dtype) = \
         setup_propagator([v], ['replicate'], grid_spacing, dt,
                          [source_amplitudes], [source_locations],
                          [receiver_locations], accuracy, fd_pad, pml_width, pml_freq,

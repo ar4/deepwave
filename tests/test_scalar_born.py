@@ -113,8 +113,6 @@ def scalarbornprop(model,
     # For consistency when actual max speed changes
     prop_kwargs['max_vel'] = 2000
 
-    prop_kwargs['pml_freq'] = 25
-
     # Workaround for gradcheck not accepting prop_kwargs dictionary
     if pml_width is not None:
         prop_kwargs['pml_width'] = pml_width

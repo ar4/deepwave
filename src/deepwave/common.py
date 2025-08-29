@@ -62,7 +62,7 @@ def setup_propagator(
         wavefields, source and receiver location indices, grid
         spacing, time step interval, number of time steps, number of
         shots, step ratio, model gradient sampling interval, accuracy,
-        PML width, maximum velocity, source/receiver time series resampling
+        PML width, PML frequency, maximum velocity, source/receiver time series resampling
         configuration, and PyTorch device and dtype.
     """
 
@@ -75,7 +75,7 @@ def setup_propagator(
     pml_freq = set_pml_freq(pml_freq, dt)
     check_points_per_wavelength(min_nonzero_model_vel, pml_freq, grid_spacing)
     max_vel = set_max_vel(max_vel, max_model_vel)
-    dt, step_ratio = cfl_condition(*grid_spacing, dt, max_vel)
+    dt, step_ratio = cfl_condition_n(grid_spacing, dt, max_vel)
     nt = set_nt(nt, source_amplitudes, step_ratio)
     model_gradient_sampling_interval = set_model_gradient_sampling_interval(
         model_gradient_sampling_interval, step_ratio)
@@ -100,8 +100,8 @@ def setup_propagator(
                                                   nt, device, dtype)
     return (models, source_amplitudes, wavefields, source_locations,
             receiver_locations, grid_spacing, dt, nt, n_batch, step_ratio,
-            model_gradient_sampling_interval, accuracy, pml_width, max_vel,
-            resample_config, device, dtype)
+            model_gradient_sampling_interval, accuracy, pml_width, pml_freq,
+            max_vel, resample_config, device, dtype)
 
 
 def get_n_batch(source_locations: List[Optional[Tensor]],
@@ -152,63 +152,65 @@ def downsample_and_movedim(receiver_amplitudes: Tensor,
 
 def set_grid_spacing(grid_spacing: Union[int, float, List[int], List[float],
                                          Tensor], n_dims: int) -> List[float]:
-    if isinstance(grid_spacing, int) or isinstance(grid_spacing, float):
+    if isinstance(grid_spacing, (int, float)):
         return [float(grid_spacing)] * n_dims
-    if (isinstance(grid_spacing, list) and len(grid_spacing) == n_dims):
+    if isinstance(grid_spacing, (list, tuple)):
+        if len(grid_spacing) != n_dims:
+            raise RuntimeError(f"grid_spacing must have {n_dims} elements.")
         return [float(dim_spacing) for dim_spacing in grid_spacing]
-    if isinstance(grid_spacing,
-                  torch.Tensor) and grid_spacing.shape == (n_dims, ):
+    if isinstance(grid_spacing, torch.Tensor):
+        if grid_spacing.numel() != n_dims:
+            raise RuntimeError(
+                f"grid_spacing tensor must have {n_dims} elements.")
         return [float(dim_spacing) for dim_spacing in grid_spacing]
     raise RuntimeError(
-        "Expected grid_spacing to be a real number or a list of " +
-        str(n_dims) + " real numbers.")
+        f"Expected grid_spacing to be a real number, list, or tensor of length {n_dims}."
+    )
 
 
 def set_accuracy(accuracy: int) -> int:
-    accuracies = [2, 4, 6, 8]
-    if accuracy not in accuracies:
-        raise RuntimeError("accuracy must be 2, 4, 6, or 8")
+    if accuracy not in (2, 4, 6, 8):
+        raise ValueError("accuracy must be 2, 4, 6, or 8")
     return accuracy
 
 
 def set_pml_width(pml_width: Union[int, List[int], Tensor],
                   n_dims: int) -> List[int]:
     if isinstance(pml_width, int):
-        pml_width = [pml_width] * 2 * n_dims
-    elif (isinstance(pml_width, torch.Tensor)
-          and pml_width.shape == (2 * n_dims, )
-          and not torch.is_floating_point(pml_width)
-          and not torch.is_complex(pml_width)):
-        pml_width = pml_width.tolist()
-    if not (isinstance(pml_width, list) and len(pml_width) == 2 * n_dims
-            and all([isinstance(width, int) for width in pml_width])):
-        raise RuntimeError("Expected pml_width to be an int or a list of " +
-                           str(2 * n_dims) + " ints.")
-    return pml_width
+        return [pml_width] * 2 * n_dims
+    if isinstance(pml_width, torch.Tensor):
+        if pml_width.numel() != 2 * n_dims:
+            raise RuntimeError(
+                f"pml_width tensor must have {2 * n_dims} elements.")
+        return pml_width.tolist()
+    if isinstance(pml_width,
+                  (list, tuple)) and len(pml_width) == 2 * n_dims and all(
+                      isinstance(width, int) for width in pml_width):
+        return list(pml_width)
+    raise RuntimeError(
+        f"Expected pml_width to be an int, list, or tensor of {2 * n_dims} ints."
+    )
 
 
 def set_pml_freq(pml_freq: Optional[float], dt: float) -> float:
     """If pml_freq is not set, default to half the Nyquist frequency."""
-    nyquist = 1 / 2 / abs(dt)
+    nyquist = 0.5 / abs(dt)
     if pml_freq is None:
-        # Something like nyquist / 2 might be more appropriate,
-        # but using 25 Hz for backward compatibility
-        pml_freq = 25
-        warnings.warn("pml_freq was not set, so defaulting to " +
-                      str(pml_freq) + ".")
+        pml_freq = 25.0
+        warnings.warn(f"pml_freq was not set, so defaulting to {pml_freq}.")
     if pml_freq < 0:
         warnings.warn("pml_freq must be non-negative.")
-    if nyquist < pml_freq:
-        warnings.warn("pml_freq " + str(pml_freq) + " is greater than the "
-                      "Nyquist frequency of the data.")
-    return pml_freq
+    if pml_freq > nyquist:
+        warnings.warn(
+            f"pml_freq {pml_freq} is greater than the Nyquist frequency {nyquist}."
+        )
+    return float(pml_freq)
 
 
 def set_max_vel(max_vel: Optional[float], max_model_vel: float) -> float:
     if max_vel is None:
-        max_vel = max_model_vel
-    else:
-        max_vel = abs(max_vel)
+        return max_model_vel
+    max_vel = abs(max_vel)
     if max_vel < max_model_vel:
         warnings.warn("max_vel is less than the actual maximum velocity.")
     return max_vel
@@ -216,11 +218,8 @@ def set_max_vel(max_vel: Optional[float], max_model_vel: float) -> float:
 
 def set_nt(nt: Optional[int], source_amplitudes: List[Optional[Tensor]],
            step_ratio: int) -> int:
-    source_amplitudes_nt = None
-    for source_amplitude in source_amplitudes:
-        if source_amplitude is not None:
-            source_amplitudes_nt = source_amplitude.shape[-1]
-            break
+    source_amplitudes_nt = next(
+        (a.shape[-1] for a in source_amplitudes if a is not None), None)
     if nt is None:
         if source_amplitudes_nt is None:
             raise RuntimeError('nt or source amplitudes must be specified')
@@ -236,19 +235,19 @@ def set_nt(nt: Optional[int], source_amplitudes: List[Optional[Tensor]],
 def set_model_gradient_sampling_interval(model_gradient_sampling_interval: int,
                                          step_ratio: int) -> int:
     if model_gradient_sampling_interval < 0:
-        raise RuntimeError('model_gradient_sampling_interval must be >= 0')
+        raise ValueError('model_gradient_sampling_interval must be >= 0')
     return model_gradient_sampling_interval
 
 
 def set_freq_taper_frac(freq_taper_frac: float) -> float:
-    if freq_taper_frac < 0.0 or 1.0 < freq_taper_frac:
-        raise RuntimeError('freq_taper_frac must be in [0, 1]')
+    if not (0.0 <= freq_taper_frac <= 1.0):
+        raise ValueError('freq_taper_frac must be in [0, 1]')
     return freq_taper_frac
 
 
 def set_time_pad_frac(time_pad_frac: float) -> float:
-    if time_pad_frac < 0.0 or 1.0 < time_pad_frac:
-        raise RuntimeError('time_pad_frac must be in [0, 1]')
+    if not (0.0 <= time_pad_frac <= 1.0):
+        raise ValueError('time_pad_frac must be in [0, 1]')
     return time_pad_frac
 
 
@@ -256,16 +255,18 @@ def check_source_amplitudes_locations_match(
         source_amplitudes: List[Optional[Tensor]],
         source_locations: List[Optional[Tensor]]):
     if len(source_amplitudes) != len(source_locations):
-        raise RuntimeError("The same number of source_amplitudes and "
-                           "source_locations must be provided.")
+        raise RuntimeError(
+            "The same number of source_amplitudes and source_locations must be provided."
+        )
     for amplitudes, locations in zip(source_amplitudes, source_locations):
         if (amplitudes is None) != (locations is None):
-            raise RuntimeError("corresponding source locations and amplitudes "
-                               "must both either be None or non-None.")
+            raise RuntimeError(
+                "corresponding source locations and amplitudes must both either be None or non-None."
+            )
         if amplitudes is not None and amplitudes.shape[1] != locations.shape[1]:
             raise RuntimeError(
-                "Expected source amplitudes and locations to "
-                "be the same size in the n_sources_per_shot dimension.")
+                "Expected source amplitudes and locations to be the same size in the n_sources_per_shot dimension."
+            )
 
 
 def set_source_amplitudes(source_amplitudes: List[Optional[Tensor]],
@@ -280,64 +281,50 @@ def set_source_amplitudes(source_amplitudes: List[Optional[Tensor]],
                                                0,
                                                device=device,
                                                dtype=dtype)
-        elif amplitudes.ndim != 3:
+            continue
+        if amplitudes.ndim != 3:
             raise RuntimeError(
-                "source amplitudes Tensors should have 3 dimensions, but found one with "
-                + str(amplitudes.ndim) + ".")
-        elif amplitudes.device != device:
+                f"source amplitudes Tensors should have 3 dimensions, but found one with {amplitudes.ndim}."
+            )
+        if amplitudes.device != device:
             raise RuntimeError(
-                "Inconsistent device: Expected all Tensors be on device " +
-                str(device) +
-                ", but found a source amplitudes Tensor on device " +
-                str(amplitudes.device) + ".")
-        elif amplitudes.dtype != dtype:
+                f"Inconsistent device: Expected all Tensors be on device {device}, but found a source amplitudes Tensor on device {amplitudes.device}."
+            )
+        if amplitudes.dtype != dtype:
             raise RuntimeError(
-                "Inconsistent dtype: Expected source amplitudes to have datatype "
-                + str(dtype) + ", but found one with dtype " +
-                str(amplitudes.dtype) + ".")
-        elif amplitudes.shape[0] != n_batch:
-            raise RuntimeError('Expected source amplitudes to have '
-                               ' size ' + str(n_batch) +
-                               ' in the batch dimension, '
-                               'but found one with size ' +
-                               str(amplitudes.shape[0]) + '.')
-        elif amplitudes.shape[2] * resample_config['step_ratio'] != nt:
+                f"Inconsistent dtype: Expected source amplitudes to have datatype {dtype}, but found one with dtype {amplitudes.dtype}."
+            )
+        if amplitudes.shape[0] != n_batch:
             raise RuntimeError(
-                'Inconsistent number of time samples: Expected source amplitudes to have '
-                + str(nt / resample_config['step_ratio']) +
-                ' time samples, but found one with ' +
-                str(amplitudes.shape[2]) + '.')
-        else:
-            source_amplitudes[i] = torch.movedim(
-                upsample(amplitudes, **resample_config), -1, 0).contiguous()
+                f"Expected source amplitudes to have size {n_batch} in the batch dimension, but found one with size {amplitudes.shape[0]}."
+            )
+        if amplitudes.shape[2] * resample_config['step_ratio'] != nt:
+            raise RuntimeError(
+                f"Inconsistent number of time samples: Expected source amplitudes to have {nt // resample_config['step_ratio']} time samples, but found one with {amplitudes.shape[2]}."
+            )
+        source_amplitudes[i] = torch.movedim(
+            upsample(amplitudes, **resample_config), -1, 0).contiguous()
     return source_amplitudes
 
 
 def set_receiver_amplitudes(receiver_locations: List[Tensor], n_batch: int,
                             nt: int, device: torch.device,
                             dtype: torch.dtype) -> List[Tensor]:
-    receiver_amplitudes: List[Tensor] = []
-    for locations in receiver_locations:
-        receiver_amplitudes.append(
-            torch.zeros(nt,
-                        n_batch,
-                        locations.shape[1],
-                        device=device,
-                        dtype=dtype))
-    return receiver_amplitudes
+    return [
+        torch.zeros(nt, n_batch, loc.shape[1], device=device, dtype=dtype)
+        for loc in receiver_locations
+    ]
 
 
 def check_points_per_wavelength(min_nonzero_vel: float, pml_freq: float,
                                 grid_spacing: List[float]) -> None:
     min_wavelength = abs(min_nonzero_vel / pml_freq)
-    max_spacing = max([abs(dim_spacing) for dim_spacing in grid_spacing])
-    if min_wavelength / max_spacing < 6:
-        warnings.warn("At least six grid cells per wavelength is "
-                      "recommended, but at a frequency of {}, a "
-                      "minimum non-zero velocity of {}, and a grid cell "
-                      "spacing of {}, there are only {}.".format(
-                          pml_freq, min_nonzero_vel, max_spacing,
-                          min_wavelength / max_spacing))
+    max_spacing = max(abs(dim_spacing) for dim_spacing in grid_spacing)
+    cells_per_wavelength = min_wavelength / max_spacing
+    if cells_per_wavelength < 6:
+        warnings.warn(
+            f"At least six grid cells per wavelength is recommended, but at a frequency of {pml_freq}, a minimum non-zero velocity of {min_nonzero_vel}, and a grid cell spacing of {max_spacing}, there are only {cells_per_wavelength:.2f}."
+        )
 
 
 def cosine_taper_end(signal: Tensor, n_taper: int) -> Tensor:
@@ -414,11 +401,10 @@ def upsample(signal: Tensor,
     """
     if step_ratio == 1:
         return signal
-    if time_pad_frac > 0.0:
-        n_time_pad = int(time_pad_frac * signal.shape[-1])
+    n_time_pad = int(time_pad_frac *
+                     signal.shape[-1]) if time_pad_frac > 0.0 else 0
+    if n_time_pad > 0:
         signal = torch.nn.functional.pad(signal, (0, n_time_pad))
-    else:
-        n_time_pad = 0
     nt = signal.shape[-1]
     up_nt = nt * step_ratio
     signal_f = torch.fft.rfft(signal, norm='ortho') * math.sqrt(step_ratio)
@@ -426,12 +412,12 @@ def upsample(signal: Tensor,
         freq_taper_len = int(freq_taper_frac * signal_f.shape[-1])
         signal_f = cosine_taper_end(signal_f, freq_taper_len)
     elif signal_f.shape[-1] > 1:
-        # Set Nyquist frequency to zero
         signal_f = zero_last_element_of_final_dimension(signal_f)
-    signal_f = torch.nn.functional.pad(signal_f,
-                                       (0, up_nt // 2 + 1 - nt // 2 + 1))
+    pad_len = up_nt // 2 + 1 - signal_f.shape[-1]
+    if pad_len > 0:
+        signal_f = torch.nn.functional.pad(signal_f, (0, pad_len))
     signal = torch.fft.irfft(signal_f, n=up_nt, norm='ortho')
-    if time_pad_frac > 0.0:
+    if n_time_pad > 0:
         signal = signal[..., :signal.shape[-1] - n_time_pad * step_ratio]
     if time_taper:
         signal = signal * torch.hann_window(
@@ -491,11 +477,11 @@ def downsample(signal: Tensor,
     if time_taper:
         signal = signal * torch.hann_window(
             signal.shape[-1], periodic=False, device=signal.device)
-    if time_pad_frac > 0.0:
-        n_time_pad = int(time_pad_frac * (signal.shape[-1] // step_ratio))
+    n_time_pad = int(
+        time_pad_frac *
+        (signal.shape[-1] // step_ratio)) if time_pad_frac > 0.0 else 0
+    if n_time_pad > 0:
         signal = torch.nn.functional.pad(signal, (0, n_time_pad * step_ratio))
-    else:
-        n_time_pad = 0
     nt = signal.shape[-1]
     down_nt = nt // step_ratio
     signal_f = torch.fft.rfft(signal, norm='ortho')[..., :down_nt // 2 + 1]
@@ -503,14 +489,14 @@ def downsample(signal: Tensor,
         freq_taper_len = int(freq_taper_frac * signal_f.shape[-1])
         signal_f = cosine_taper_end(signal_f, freq_taper_len)
     elif signal_f.shape[-1] > 1:
-        # Set Nyquist frequency to zero
         signal_f = zero_last_element_of_final_dimension(signal_f)
     if shift != 0.0:
-        signal_f *= torch.exp(-1j * 2 * math.pi * torch.fft.rfftfreq(
-            signal.shape[-1], device=signal.device)[:down_nt // 2 + 1] * shift)
+        freqs = torch.fft.rfftfreq(signal.shape[-1],
+                                   device=signal.device)[:down_nt // 2 + 1]
+        signal_f *= torch.exp(-1j * 2 * math.pi * freqs * shift)
     signal = torch.fft.irfft(signal_f, n=down_nt,
                              norm='ortho') / math.sqrt(step_ratio)
-    if time_pad_frac > 0.0:
+    if n_time_pad > 0:
         signal = signal[..., :signal.shape[-1] - n_time_pad]
     return signal
 
@@ -1290,4 +1276,4 @@ def diff(a: Tensor, accuracy: int, grid_spacing: float) -> Tensor:
     a = torch.nn.functional.pad(a, (4, 4))
     return (4 / 5 * (a[5:-3] - a[3:-5]) + -1 / 5 *
             (a[6:-2] - a[2:-6]) + 4 / 105 * (a[7:-1] - a[1:-7]) + -1 / 280 *
-            (a[8:] - a[:-8])) / grid_spacinging
+            (a[8:] - a[:-8])) / grid_spacing
