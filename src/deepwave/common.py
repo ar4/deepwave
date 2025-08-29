@@ -31,7 +31,7 @@ def setup_propagator(
              time_taper: bool,
              n_dims: int) -> Tuple[List[Tensor], List[Tensor], List[Tensor], List[Tensor],
            List[Tensor], List[float], float, int, int, int, int,
-           int, List[int], float, Dict, torch.device, torch.dtype]:
+           int, List[int], float, Dict[str, Union[int, float, bool]], torch.device, torch.dtype]:
     """Common setup for propagators.
 
     This function performs tasks that are common to all of the
@@ -100,13 +100,14 @@ def setup_propagator(
                            wavefields, survey_pad, origin,
                            fd_pad, pml_width, model_pad_modes, n_batch, n_dims, device, dtype)
     receiver_amplitudes = set_receiver_amplitudes(receiver_locations, n_batch, nt, device, dtype)
-    return (models, source_amplitudes, wavefields,
+    return (
+            models, source_amplitudes, wavefields,
             source_locations, receiver_locations, grid_spacing,
             dt, nt, n_batch, step_ratio, model_gradient_sampling_interval,
             accuracy, pml_width, max_vel, resample_config, device, dtype)
 
 def get_n_batch(source_locations: List[Optional[Tensor]], wavefields: List[Optional[Tensor]]) -> int:
-    "Get the size of the batch dimension."
+    """Get the size of the batch dimension."""
     tensors = source_locations + wavefields
     for tensor in tensors:
         if tensor is not None:
@@ -148,7 +149,7 @@ def downsample_and_movedim(receiver_amplitudes: Tensor,
     return receiver_amplitudes
 
 
-def set_grid_spacing(grid_spacing: Union[int, float, List[int], List[float], Tensor], n_dims) -> List[float]:
+def set_grid_spacing(grid_spacing: Union[int, float, List[int], List[float], Tensor], n_dims: int) -> List[float]:
     if isinstance(grid_spacing, int) or isinstance(grid_spacing, float):
         return [float(grid_spacing)] * n_dims
     if (isinstance(grid_spacing, list) and len(grid_spacing) == n_dims):
@@ -169,7 +170,8 @@ def set_accuracy(accuracy: int) -> int:
 def set_pml_width(pml_width: Union[int, List[int], Tensor], n_dims: int) -> List[int]:
     if isinstance(pml_width, int):
         pml_width = [pml_width] * 2 * n_dims
-    elif (isinstance(pml_width, torch.Tensor) and
+    elif (
+          isinstance(pml_width, torch.Tensor) and
           pml_width.shape == (2 * n_dims, ) and
           not torch.is_floating_point(pml_width) and
           not torch.is_complex(pml_width)):
@@ -181,14 +183,16 @@ def set_pml_width(pml_width: Union[int, List[int], Tensor], n_dims: int) -> List
     return pml_width
 
 
-def set_pml_freq(pml_freq: Optional[float], dt: float):
-    "If pml_freq is not set, default to half the Nyquist frequency."
+def set_pml_freq(pml_freq: Optional[float], dt: float) -> float:
+    """If pml_freq is not set, default to half the Nyquist frequency."""
     nyquist = 1 / 2 / abs(dt)
     if pml_freq is None:
-        pml_freq = nyquist / 2
+        # Something like nyquist / 2 might be more appropriate,
+        # but using 25 Hz for backward compatibility
+        pml_freq = 25
         warnings.warn("pml_freq was not set, so defaulting to " + str(pml_freq) + ".")
     if pml_freq < 0:
-        warning.warn("pml_freq must be non-negative.")
+        warnings.warn("pml_freq must be non-negative.")
     if nyquist < pml_freq:
         warnings.warn("pml_freq " + str(pml_freq) + " is greater than the "
                       "Nyquist frequency of the data.")
@@ -251,9 +255,8 @@ def check_source_amplitudes_locations_match(source_amplitudes: List[Optional[Ten
             raise RuntimeError("Expected source amplitudes and locations to "
                                "be the same size in the n_sources_per_shot dimension.")
     
-
 def set_source_amplitudes(source_amplitudes: List[Optional[Tensor]], n_batch: int,
-                          nt: int, resample_config: Dict, device: torch.device,
+                          nt: int, resample_config: Dict[str, Union[int, float, bool]], device: torch.device,
                           dtype: torch.dtype) -> List[Tensor]:
     for i, amplitudes in enumerate(source_amplitudes):
         if amplitudes is None:
@@ -503,7 +506,8 @@ def extract_survey(
     model_spatial_shape = models[0].shape[-n_dims:]
     check_locations_are_within_model(model_spatial_shape, locations)
     pad = [fd + pml for (fd, pml) in zip(fd_pad, pml_width)]
-    if (survey_pad is None
+    if (
+          survey_pad is None
             and any([wavefield is not None for wavefield in wavefields])):
         # Use origin (possibly default of all zero) and wavefields
         survey_extents = get_survey_extents_from_wavefields(
@@ -515,7 +519,8 @@ def extract_survey(
         survey_extents = get_survey_extents_from_locations(
             model_spatial_shape, locations, survey_pad)
         check_extents_match_wavefields_shape(survey_extents, wavefields, pml_width)
-    return (extract_models(models, survey_extents, pad, model_pad_modes, n_batch, device, dtype),
+    return (
+            extract_models(models, survey_extents, pad, model_pad_modes, n_batch, device, dtype),
             extract_locations("Source", source_locations, survey_extents, pad, n_batch, device),
             extract_locations("Receiver", receiver_locations, survey_extents, pad, n_batch, device),
             prepare_wavefields(wavefields, survey_extents, pml_width, n_batch, device, dtype))
@@ -731,7 +736,8 @@ def check_locations_within_extents(extents: List[Tuple[int, int]],
             for dim in range(location.shape[-1]):
                 dim_location = location[..., dim]
                 dim_location = dim_location[dim_location != IGNORE_LOCATION]
-                if (dim_location.min() < extents[dim][0]
+                if (
+                      dim_location.min() < extents[dim][0]
                      or extents[dim][1] <= dim_location.max()):
                     raise RuntimeError("Locations are not within "
                                        "survey extents. This probably occurred " +
@@ -771,7 +777,7 @@ def reverse_pad(pad: List[int]) -> List[int]:
 
 
 def calculate_blocksize_padding(extents: List[Tuple[int, int]], pml_width: List[int], extent_blocksize: List[int]) -> List[int]:
-    "Calculate padding to make extent + PML a multiple of blocksize."
+    """Calculate padding to make extent + PML a multiple of blocksize."""
     blocksize_padding = []
     n_dims = len(extents)
     for dim in range(n_dims):
@@ -943,12 +949,11 @@ def prepare_wavefields(wavefields: List[Optional[Tensor]],
     return wavefields
 
 
-def cfl_condition(dy: float,
-                  dx: float,
-                  dt: float,
-                  max_vel: float,
-                  eps: float = 1e-15,
-                  C_max: float = 0.6) -> Tuple[float, int]:
+def cfl_condition_n(grid_spacing: List[float],
+                    dt: float,
+                    max_vel: float,
+                    eps: float = 1e-15,
+                    C_max: float = 0.6) -> Tuple[float, int]:
     """Calculates the time step interval to obey the CFL condition.
 
     The output time step will be a factor of the input time step.
@@ -958,10 +963,8 @@ def cfl_condition(dy: float,
     less than or equal to this value.
 
     Args:
-        dy:
-            The grid spacing in the first dimension.
-        dx:
-            The grid spacing in the second dimension.
+        grid_spacing:
+            A List specifying the grid spacing in each spatial dimension.
         dt:
             The time step interval.
         max_vel:
@@ -979,11 +982,18 @@ def cfl_condition(dy: float,
             step_ratio:
                 The integer dt / inner_dt.
     """
-    max_dt = (C_max / math.sqrt(sum([1 / dim_spacing**2 for dim_spacing in [dy, dx]])) /
+    max_dt = (C_max / math.sqrt(sum([1 / dim_spacing**2 for dim_spacing in grid_spacing])) /
               (max_vel**2 + eps)) * max_vel
     step_ratio = int(math.ceil(abs(dt) / max_dt))
     inner_dt = dt / step_ratio
     return inner_dt, step_ratio
+
+
+def cfl_condition(dy: float,
+                  dx: float,
+                  *args, **kwargs) -> Tuple[float, int]:
+    """Calculates the time step interval to obey the CFL condition for 2D models."""
+    return cfl_condition_n([dy, dx], *args, **kwargs)
 
 
 def vpvsrho_to_lambmubuoyancy(
@@ -1066,7 +1076,7 @@ def setup_pml(pml_width: List[int],
               max_vel: float,
               dtype: torch.dtype,
               device: torch.device,
-              pml_freq: Optional[float],
+              pml_freq: float,
               start: float = 0.0,
               eps: float = 1e-9) -> Tuple[Tensor, Tensor]:
     """Creates a and b profiles for C-PML
@@ -1086,7 +1096,7 @@ def setup_pml(pml_width: List[int],
         dtype: PyTorch datatype to use
         device: PyTorch device to use
         pml_freq: The frequency value to use for the profile, usually the
-                  dominant frequency in the wavefield. Optional, default 25 Hz.
+                  dominant frequency in the wavefield.
         start: Float specifying the coordinate (in grid cells) of the first element.
                     Optional, default 0.
         eps: A small number to prevent division by zero. Optional, default 1e-9.
@@ -1097,8 +1107,6 @@ def setup_pml(pml_width: List[int],
     """
     R = 0.001
     n_power = 2
-    if pml_freq is None:
-        pml_freq = 25.0
     alpha0 = math.pi * pml_freq
     if max_pml == 0:
         a = torch.zeros(n, device=device, dtype=dtype)
@@ -1172,5 +1180,4 @@ def diff(a: Tensor, accuracy: int, grid_spacing: float) -> Tensor:
     a = torch.nn.functional.pad(a, (4, 4))
     return (4 / 5 * (a[5:-3] - a[3:-5]) + -1 / 5 *
             (a[6:-2] - a[2:-6]) + 4 / 105 * (a[7:-1] - a[1:-7]) + -1 / 280 *
-            (a[8:] - a[:-8])) / grid_spacing
-
+            (a[8:] - a[:-8])) / grid_spacinging

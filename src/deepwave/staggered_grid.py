@@ -4,7 +4,7 @@ from torch import Tensor
 from deepwave.common import setup_pml
 
 def set_pml_profiles(pml_width: List[int], accuracy: int, fd_pad: List[int], dt: float, grid_spacing: List[float], max_vel: float, dtype: torch.dtype, device: torch.device, pml_freq: float, ny: int, nx: int) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
-    pml_start = [pml_width[0],
+    pml_start : List[float] = [pml_width[0],
                   ny - 1 - pml_width[1],
                   pml_width[2],
                   nx - 1 - pml_width[3]]

@@ -25,7 +25,9 @@ def ricker(freq: float,
             The PyTorch datatype to use. Optional, defaults to PyTorch's
             default (float32).
     """
-    t = torch.arange(float(length), dtype=dtype) * dt - peak_time
-    y = (1 - 2 * math.pi**2 * freq**2 * t**2) \
+    t: Tensor = torch.arange(float(length), dtype=dtype) * dt - peak_time
+    y: Tensor = (1 - 2 * math.pi**2 * freq**2 * t**2) \
         * torch.exp(-math.pi**2 * freq**2 * t**2)
-    return y.to(dtype)
+    if dtype is not None:
+        return y.to(dtype)
+    return y
