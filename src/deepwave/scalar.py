@@ -1,38 +1,15 @@
-"""Scalar wave propagation module.
+from typing import Sequence
+"""
+Scalar wave propagation module for Deepwave.
 
-Finite difference in time (2nd order accurate) and space (user specifiable
-order of accuracy from 2, 4, 6, or 8) is used to step the 2D scalar wave
-equation
+Implements 2D scalar wave equation propagation using finite differences in time (2nd order)
+and space (user-selectable order: 2, 4, 6, or 8). Supports PML boundaries and adjoint mode
+for gradient computation. See Pasalic & McGarry (SEG 2010) for PML details.
 
-    v^2 d^2(w) / dx^2 - d^2(w) / dt^2 = v^2 f
-
-forward in time, where v is the wavespeed, w is the wavefield, x are the
-space dimensions, t is the time dimension, and f is a source term. A
-Perfectly Matched Layer (PML) based on
-
-    Pasalic, Damir, and Ray McGarry. "Convolutional perfectly matched
-    layer for isotropic and anisotropic acoustic wave equations."
-    SEG Technical Program Expanded Abstracts 2010.
-    Society of Exploration Geophysicists, 2010. 2925-2929.
-
-is used to optionally prevent reflections from one or more of the
-boundaries.
-
-The adjoint of this is also provided, so that backpropagation can be used
-to calculate the gradient of outputs with respect to the inputs.
-
-The only required inputs are the wavespeed model (`v`), the spatial grid
-cell size (`dx`), the time step interval (`dt`), and either the source
-term (`source_amplitudes` and `source_locations`) or the number of time
-steps (`nt`). You may additionally provide other inputs, such as receiver
-locations, and initial wavefields.
-
-The outputs are the wavefields (including those related to the PML) at
-the final time step, and the receiver amplitudes (which will be empty
-if no receiver locations are provided).
-
-The gradient of all of the outputs with respect to the wavespeed, the
-source amplitudes, and the initial wavefields, may be calculated.
+Required inputs: wavespeed model (`v`), grid cell size (`dx`), time step (`dt`), and either
+source term (`source_amplitudes` and `source_locations`) or number of time steps (`nt`).
+Outputs: final wavefields (including PML) and receiver amplitudes (empty if no receivers).
+All outputs are differentiable with respect to float Tensor inputs.
 """
 
 from typing import Optional, Union, List, Tuple
@@ -46,38 +23,20 @@ from deepwave.regular_grid import set_pml_profiles
 
 
 class Scalar(torch.nn.Module):
-    """A Module wrapper around :func:`scalar`.
+    """
+    Convenience nn.Module wrapper for scalar wave propagation.
 
-    This is a convenience module that allows you to only specify
-    `v` and `grid_spacing` once. They will then be added to the list of
-    arguments passed to :func:`scalar` when you call the forward method.
-
-    Note that a copy will be made of the provided wavespeed. Gradients
-    will not backpropagate to the initial guess wavespeed that is
-    provided. You can use the module's `v` attribute to access the
-    wavespeed.
-
-    Args:
-        v:
-            A 2D Tensor containing an initial guess of the wavespeed.
-        grid_spacing:
-            The spatial grid cell size, specified with a single real number
-            (used for both dimensions) or a List or Tensor of length
-            two (the length in each of the two dimensions).
-        v_requires_grad:
-            Optional bool specifying how to set the `requires_grad`
-            attribute of the wavespeed, and so whether the necessary
-            data should be stored to calculate the gradient with respect
-            to `v` during backpropagation. Default False.
+    Stores `v` and `grid_spacing` for repeated use. Gradients do not propagate to the
+    initial guess wavespeed. Use the module's `v` attribute to access the wavespeed.
     """
 
-    def __init__(self,
-                 v: Tensor,
-                 grid_spacing: Union[int, float, List[float], Tensor],
-                 v_requires_grad: bool = False) -> None:
+    def __init__(
+        self,
+        v: Tensor,
+        grid_spacing: Union[float, Sequence[float]],
+        v_requires_grad: bool = False
+    ) -> None:
         super().__init__()
-        if v.ndim != 2:
-            raise RuntimeError("v must have two dimensions")
         self.v = torch.nn.Parameter(v, requires_grad=v_requires_grad)
         self.grid_spacing = grid_spacing
 
@@ -88,26 +47,24 @@ class Scalar(torch.nn.Module):
         source_locations: Optional[Tensor] = None,
         receiver_locations: Optional[Tensor] = None,
         accuracy: int = 4,
-        pml_width: Union[int, List[int]] = 20,
+        pml_width: Union[int, Sequence[int]] = 20,
         pml_freq: Optional[float] = None,
         max_vel: Optional[float] = None,
-        survey_pad: Optional[Union[int, List[Optional[int]]]] = None,
+        survey_pad: Optional[Union[int, Sequence[Optional[int]]]] = None,
         wavefield_0: Optional[Tensor] = None,
         wavefield_m1: Optional[Tensor] = None,
         psiy_m1: Optional[Tensor] = None,
         psix_m1: Optional[Tensor] = None,
         zetay_m1: Optional[Tensor] = None,
         zetax_m1: Optional[Tensor] = None,
-        origin: Optional[List[int]] = None,
+        origin: Optional[Sequence[int]] = None,
         nt: Optional[int] = None,
         model_gradient_sampling_interval: int = 1
     ) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
-        """Perform forward propagation/modelling.
-
-        The inputs are the same as for :func:`scalar` except that `v` and
-        `grid_spacing` do not need to be provided again. See :func:`scalar`
-        for a description of the inputs and outputs.
         """
+        Perform forward propagation/modelling. See `scalar` for details.
+        """
+
         return scalar(
             self.v,
             self.grid_spacing,
@@ -133,23 +90,23 @@ class Scalar(torch.nn.Module):
 
 def scalar(
     v: Tensor,
-    grid_spacing: Union[int, float, List[float], Tensor],
+    grid_spacing: Union[float, Sequence[float]],
     dt: float,
     source_amplitudes: Optional[Tensor] = None,
     source_locations: Optional[Tensor] = None,
     receiver_locations: Optional[Tensor] = None,
     accuracy: int = 4,
-    pml_width: Union[int, List[int]] = 20,
+    pml_width: Union[int, Sequence[int]] = 20,
     pml_freq: Optional[float] = None,
     max_vel: Optional[float] = None,
-    survey_pad: Optional[Union[int, List[Optional[int]]]] = None,
+    survey_pad: Optional[Union[int, Sequence[Optional[int]]]] = None,
     wavefield_0: Optional[Tensor] = None,
     wavefield_m1: Optional[Tensor] = None,
     psiy_m1: Optional[Tensor] = None,
     psix_m1: Optional[Tensor] = None,
     zetay_m1: Optional[Tensor] = None,
     zetax_m1: Optional[Tensor] = None,
-    origin: Optional[List[int]] = None,
+    origin: Optional[Sequence[int]] = None,
     nt: Optional[int] = None,
     model_gradient_sampling_interval: int = 1,
     freq_taper_frac: float = 0.0,
@@ -376,25 +333,25 @@ def scalar(
                 this Tensor will be empty.
 
     """
+    # Convert Sequence arguments to List for compatibility with setup_propagator
+    mv = float(max_vel) if max_vel is not None else float(0.0)
     try:
-        min_nonzero_model_vel = v[v.nonzero(as_tuple=True)].abs().min().item()
-    except:
-        min_nonzero_model_vel = 0
+        min_nonzero_model_vel = v[v != 0].abs().min().item()
+    except Exception:
+        min_nonzero_model_vel = 0.0
     max_model_vel = v.abs().max().item()
     fd_pad = [accuracy // 2] * 4
-    (models, source_amplitudes_l, wavefields,
-     sources_i_l, receivers_i_l,
-     grid_spacing, dt, nt, n_shots,
-     step_ratio, model_gradient_sampling_interval,
-     accuracy, pml_width_l, pml_freq, max_vel, resample_config, device, dtype) = \
-        setup_propagator([v], ['replicate'], grid_spacing, dt,
-                         [source_amplitudes], [source_locations],
-                         [receiver_locations], accuracy, fd_pad, pml_width, pml_freq,
-                         max_vel, min_nonzero_model_vel, max_model_vel, survey_pad,
-                         [wavefield_0, wavefield_m1, psiy_m1, psix_m1,
-                          zetay_m1, zetax_m1], origin, nt,
-                         model_gradient_sampling_interval, freq_taper_frac,
-                         time_pad_frac, time_taper, 2)
+    (
+        models, source_amplitudes_l, wavefields, sources_i_l, receivers_i_l,
+        grid_spacing, dt, nt, n_shots, step_ratio, model_gradient_sampling_interval,
+        accuracy, pml_width_l, pml_freq, max_vel, resample_config, device, dtype
+    ) = setup_propagator(
+        [v], ['replicate'], grid_spacing, dt,
+        [source_amplitudes], [source_locations], [receiver_locations],
+        accuracy, fd_pad, pml_width, pml_freq, max_vel, min_nonzero_model_vel,
+        max_model_vel, survey_pad, [wavefield_0, wavefield_m1, psiy_m1, psix_m1, zetay_m1, zetax_m1],
+        origin, nt, model_gradient_sampling_interval, freq_taper_frac, time_pad_frac, time_taper, 2
+    )
 
     # In the finite difference implementation, the source amplitudes we
     # add to the wavefield each time step are multiplied by
@@ -407,22 +364,21 @@ def scalar(
     mask = sources_i_l[0] == IGNORE_LOCATION
     sources_i_masked = sources_i_l[0].clone()
     sources_i_masked[mask] = 0
-    source_amplitudes_l[0] = (-source_amplitudes_l[0] * (models[0].view(
-        -1, ny * nx).expand(n_shots, -1).gather(1, sources_i_masked))**2 *
-                              dt**2)
+    # Multiply source amplitudes by -v^2 * dt^2 at source locations
+    source_amplitudes_l[0] = (
+        -source_amplitudes_l[0] * (models[0].view(-1, ny * nx).expand(n_shots, -1).gather(1, sources_i_masked)) ** 2 * dt ** 2
+    )
 
-    pml_profiles = set_pml_profiles(pml_width_l, accuracy, fd_pad, dt,
-                                    grid_spacing, max_vel, dtype, device,
-                                    pml_freq, ny, nx)
+    pml_profiles = set_pml_profiles(
+        pml_width_l, accuracy, fd_pad, dt, grid_spacing, max_vel, dtype, device, pml_freq, ny, nx
+    )
 
-    (wfc, wfp, psiy, psix, zetay, zetax, receiver_amplitudes) = \
-        scalar_func(
-            *models, *source_amplitudes_l, *wavefields, *pml_profiles, *sources_i_l, *receivers_i_l, *grid_spacing, dt, nt, step_ratio * model_gradient_sampling_interval, accuracy, pml_width_l, n_shots
-        )
+    (wfc, wfp, psiy, psix, zetay, zetax, receiver_amplitudes) = scalar_func(
+        *models, *source_amplitudes_l, *wavefields, *pml_profiles, *sources_i_l, *receivers_i_l,
+        *grid_spacing, dt, nt, step_ratio * model_gradient_sampling_interval, accuracy, pml_width_l, n_shots
+    )
 
-    receiver_amplitudes = downsample_and_movedim(receiver_amplitudes,
-                                                 **resample_config)
-
+    receiver_amplitudes = downsample_and_movedim(receiver_amplitudes, **resample_config)
     return wfc, wfp, psiy, psix, zetay, zetax, receiver_amplitudes
 
 
