@@ -31,12 +31,11 @@ class Scalar(torch.nn.Module):
     initial guess wavespeed. Use the module's `v` attribute to access the wavespeed.
     """
 
-    def __init__(
-        self,
-        v: Tensor,
-        grid_spacing: Union[int, float, torch.Tensor, Sequence[Union[int, float]]],
-        v_requires_grad: bool = False
-    ) -> None:
+    def __init__(self,
+                 v: Tensor,
+                 grid_spacing: Union[int, float, torch.Tensor,
+                                     Sequence[Union[int, float]]],
+                 v_requires_grad: bool = False) -> None:
         """
         Initialize the Scalar propagator module.
 
@@ -47,7 +46,9 @@ class Scalar(torch.nn.Module):
         """
         super().__init__()
         if not isinstance(v_requires_grad, bool):
-            raise TypeError(f"v_requires_grad must be bool, got {type(v_requires_grad).__name__}")
+            raise TypeError(
+                f"v_requires_grad must be bool, got {type(v_requires_grad).__name__}"
+            )
         if not isinstance(v, Tensor):
             raise RuntimeError("model must be a torch.Tensor.")
         self.v = torch.nn.Parameter(v, requires_grad=v_requires_grad)
@@ -60,7 +61,8 @@ class Scalar(torch.nn.Module):
         source_locations: Optional[Tensor] = None,
         receiver_locations: Optional[Tensor] = None,
         accuracy: int = 4,
-        pml_width: Union[int, float, torch.Tensor, Sequence[Union[int, float]]] = 20,
+        pml_width: Union[int, float, torch.Tensor,
+                         Sequence[Union[int, float]]] = 20,
         pml_freq: Optional[Union[int, float]] = None,
         max_vel: Optional[Union[int, float]] = None,
         survey_pad: Optional[Union[int, Sequence[Optional[int]]]] = None,
@@ -81,14 +83,15 @@ class Scalar(torch.nn.Module):
         Perform forward propagation/modelling. See `scalar` for details.
         """
         pml_config = PMLConfig(_as_list(pml_width, 'pml_width', int), pml_freq)
-        survey_config = SurveyConfig(
-            source_locations=[source_locations],
-            receiver_locations=[receiver_locations],
-            source_amplitudes=[source_amplitudes],
-            wavefields=[wavefield_0, wavefield_m1, psiy_m1, psix_m1, zetay_m1, zetax_m1],
-            survey_pad=survey_pad,
-            origin=origin
-        )
+        survey_config = SurveyConfig(source_locations=[source_locations],
+                                     receiver_locations=[receiver_locations],
+                                     source_amplitudes=[source_amplitudes],
+                                     wavefields=[
+                                         wavefield_0, wavefield_m1, psiy_m1,
+                                         psix_m1, zetay_m1, zetax_m1
+                                     ],
+                                     survey_pad=survey_pad,
+                                     origin=origin)
         return scalar(
             self.v,
             self.grid_spacing,
@@ -101,8 +104,7 @@ class Scalar(torch.nn.Module):
             model_gradient_sampling_interval=model_gradient_sampling_interval,
             freq_taper_frac=freq_taper_frac,
             time_pad_frac=time_pad_frac,
-            time_taper=time_taper
-        )
+            time_taper=time_taper)
 
 
 def scalar(
@@ -113,7 +115,8 @@ def scalar(
     source_locations: Optional[Tensor] = None,
     receiver_locations: Optional[Tensor] = None,
     accuracy: int = 4,
-    pml_width: Union[int, float, torch.Tensor, Sequence[Union[int, float]]] = 20,
+    pml_width: Union[int, float, torch.Tensor, Sequence[Union[int,
+                                                              float]]] = 20,
     pml_freq: Optional[Union[int, float]] = None,
     max_vel: Optional[Union[int, float]] = None,
     survey_pad: Optional[Union[int, Sequence[Optional[int]]]] = None,
@@ -140,14 +143,15 @@ def scalar(
     if pml_config is None:
         pml_config = PMLConfig(_as_list(pml_width, 'pml_width', int), pml_freq)
     if survey_config is None:
-        survey_config = SurveyConfig(
-            source_locations=[source_locations],
-            receiver_locations=[receiver_locations],
-            source_amplitudes=[source_amplitudes],
-            wavefields=[wavefield_0, wavefield_m1, psiy_m1, psix_m1, zetay_m1, zetax_m1],
-            survey_pad=survey_pad,
-            origin=origin
-        )
+        survey_config = SurveyConfig(source_locations=[source_locations],
+                                     receiver_locations=[receiver_locations],
+                                     source_amplitudes=[source_amplitudes],
+                                     wavefields=[
+                                         wavefield_0, wavefield_m1, psiy_m1,
+                                         psix_m1, zetay_m1, zetax_m1
+                                     ],
+                                     survey_pad=survey_pad,
+                                     origin=origin)
     # --- original implementation follows ---
     """Scalar wave propagation (functional interface).
 
@@ -378,15 +382,16 @@ def scalar(
         min_nonzero_model_vel = 0.0
     max_model_vel = v.abs().max().item()
     fd_pad = [accuracy // 2] * 4
-    (
-        models, source_amplitudes_l, wavefields, sources_i_l, receivers_i_l,
-        grid_spacing, dt, nt, n_shots, step_ratio, model_gradient_sampling_interval,
-        accuracy, pml_width_l, pml_freq, max_vel, resample_config, device, dtype
-    ) = setup_propagator(
-        [v], ['replicate'], _as_list(grid_spacing, 'grid_spacing', float), dt,
-        survey_config, accuracy, fd_pad, pml_config, max_vel, min_nonzero_model_vel,
-        max_model_vel, nt, model_gradient_sampling_interval, freq_taper_frac, time_pad_frac, time_taper, 2
-    )
+    (models, source_amplitudes_l, wavefields, sources_i_l, receivers_i_l,
+     grid_spacing, dt, nt, n_shots, step_ratio,
+     model_gradient_sampling_interval, accuracy, pml_width_l, pml_freq,
+     max_vel, resample_config, device,
+     dtype) = setup_propagator([v], ['replicate'],
+                               _as_list(grid_spacing, 'grid_spacing', float),
+                               dt, survey_config, accuracy, fd_pad, pml_config,
+                               max_vel, min_nonzero_model_vel, max_model_vel,
+                               nt, model_gradient_sampling_interval,
+                               freq_taper_frac, time_pad_frac, time_taper, 2)
 
     # In the finite difference implementation, the source amplitudes we
     # add to the wavefield each time step are multiplied by
@@ -400,33 +405,38 @@ def scalar(
     sources_i_masked = sources_i_l[0].clone()
     sources_i_masked[mask] = 0
     # Multiply source amplitudes by -v^2 * dt^2 at source locations
-    source_amplitudes_l[0] = (
-        -source_amplitudes_l[0] * (models[0].view(-1, ny * nx).expand(n_shots, -1).gather(1, sources_i_masked)) ** 2 * dt ** 2
-    )
+    source_amplitudes_l[0] = (-source_amplitudes_l[0] * (models[0].view(
+        -1, ny * nx).expand(n_shots, -1).gather(1, sources_i_masked))**2 *
+                              dt**2)
 
-    pml_profiles = set_pml_profiles(
-        pml_width_l, accuracy, fd_pad, dt, grid_spacing, max_vel, dtype, device, pml_freq, ny, nx
-    )
+    pml_profiles = set_pml_profiles(pml_width_l, accuracy, fd_pad, dt,
+                                    grid_spacing, max_vel, dtype, device,
+                                    pml_freq, ny, nx)
 
     (wfc, wfp, psiy, psix, zetay, zetax, receiver_amplitudes) = scalar_func(
-        *models, *source_amplitudes_l, *wavefields, *pml_profiles, *sources_i_l, *receivers_i_l,
-        *grid_spacing, dt, nt, step_ratio * model_gradient_sampling_interval, accuracy, pml_width_l, n_shots
-    )
+        *models, *source_amplitudes_l, *wavefields, *pml_profiles,
+        *sources_i_l, *receivers_i_l, *grid_spacing, dt, nt,
+        step_ratio * model_gradient_sampling_interval, accuracy, pml_width_l,
+        n_shots)
 
-    receiver_amplitudes = downsample_and_movedim(receiver_amplitudes,
-                                                 resample_config.step_ratio,
-                                                 resample_config.freq_taper_frac,
-                                                 resample_config.time_pad_frac,
-                                                 resample_config.time_taper)
+    receiver_amplitudes = downsample_and_movedim(
+        receiver_amplitudes, resample_config.step_ratio,
+        resample_config.freq_taper_frac, resample_config.time_pad_frac,
+        resample_config.time_taper)
     return wfc, wfp, psiy, psix, zetay, zetax, receiver_amplitudes
 
 
 class ScalarForwardFunc(torch.autograd.Function):
 
     @staticmethod
-    def forward(ctx: Any, v: Tensor, source_amplitudes: Tensor, wfc: Tensor, wfp: Tensor, psiy: Tensor, psix: Tensor, zetay: Tensor, zetax: Tensor,
-                ay: Tensor, ax: Tensor, by: Tensor, bx: Tensor, dbydy: Tensor, dbxdx: Tensor, sources_i: Tensor, receivers_i: Tensor, dy: float, dx: float,
-                dt: float, nt: int, step_ratio: int, accuracy: int, pml_width: List[int], n_shots: int) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
+    def forward(
+        ctx: Any, v: Tensor, source_amplitudes: Tensor, wfc: Tensor,
+        wfp: Tensor, psiy: Tensor, psix: Tensor, zetay: Tensor, zetax: Tensor,
+        ay: Tensor, ax: Tensor, by: Tensor, bx: Tensor, dbydy: Tensor,
+        dbxdx: Tensor, sources_i: Tensor, receivers_i: Tensor, dy: float,
+        dx: float, dt: float, nt: int, step_ratio: int, accuracy: int,
+        pml_width: List[int], n_shots: int
+    ) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
 
         if (v.requires_grad or source_amplitudes.requires_grad
                 or wfc.requires_grad or wfp.requires_grad or psiy.requires_grad
@@ -564,7 +574,9 @@ class ScalarForwardFunc(torch.autograd.Function):
                     receiver_amplitudes)
 
     @staticmethod
-    def backward(ctx: Any, gwfc: Tensor, gwfp: Tensor, gpsiy: Tensor, gpsix: Tensor, gzetay: Tensor, gzetax: Tensor, grad_r: Tensor) -> Tuple[Optional[Tensor], ...]:
+    def backward(ctx: Any, gwfc: Tensor, gwfp: Tensor, gpsiy: Tensor,
+                 gpsix: Tensor, gzetay: Tensor, gzetax: Tensor,
+                 grad_r: Tensor) -> Tuple[Optional[Tensor], ...]:
         (v, ay, ax, by, bx, dbydy, dbxdx, sources_i, receivers_i,
          source_amplitudes, wfc, wfp, psiy, psix, zetay,
          zetax) = ctx.saved_tensors
@@ -590,11 +602,16 @@ class ScalarForwardFunc(torch.autograd.Function):
 class ScalarBackwardFunc(torch.autograd.Function):
 
     @staticmethod
-    def forward(ctx: Any, gwfc: Tensor, gwfp: Tensor, gpsiy: Tensor, gpsix: Tensor, gzetay: Tensor, gzetax: Tensor, grad_r: Tensor, v: Tensor, ay: Tensor,
-                ax: Tensor, by: Tensor, bx: Tensor, dbydy: Tensor, dbxdx: Tensor, sources_i: Tensor, receivers_i: Tensor, dwdv: Tensor,
-                source_amplitudes: Tensor, wfc: Tensor, wfp: Tensor, psiy: Tensor, psix: Tensor, zetay: Tensor, zetax: Tensor, dy: float, dx: float,
-                dt: float, nt: int, n_shots: int, step_ratio: int, accuracy: int, pml_width: List[int],
-                source_amplitudes_requires_grad: bool) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
+    def forward(
+        ctx: Any, gwfc: Tensor, gwfp: Tensor, gpsiy: Tensor, gpsix: Tensor,
+        gzetay: Tensor, gzetax: Tensor, grad_r: Tensor, v: Tensor, ay: Tensor,
+        ax: Tensor, by: Tensor, bx: Tensor, dbydy: Tensor, dbxdx: Tensor,
+        sources_i: Tensor, receivers_i: Tensor, dwdv: Tensor,
+        source_amplitudes: Tensor, wfc: Tensor, wfp: Tensor, psiy: Tensor,
+        psix: Tensor, zetay: Tensor, zetax: Tensor, dy: float, dx: float,
+        dt: float, nt: int, n_shots: int, step_ratio: int, accuracy: int,
+        pml_width: List[int], source_amplitudes_requires_grad: bool
+    ) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
 
         ctx.save_for_backward(gwfc, gwfp, gpsiy, gpsix, gzetay, gzetax, grad_r,
                               v, ay, ax, by, bx, dbydy, dbxdx, sources_i,
@@ -750,7 +767,9 @@ class ScalarBackwardFunc(torch.autograd.Function):
 
     @staticmethod
     @once_differentiable
-    def backward(ctx: Any, ggv: Tensor, ggf: Tensor, ggwfc: Tensor, ggwfp: Tensor, ggpsiy: Tensor, ggpsix: Tensor, ggzetay: Tensor,
+    def backward(ctx: Any, ggv: Tensor, ggf: Tensor, ggwfc: Tensor,
+                 ggwfp: Tensor, ggpsiy: Tensor, ggpsix: Tensor,
+                 ggzetay: Tensor,
                  ggzetax: Tensor) -> Tuple[Optional[Tensor], ...]:
         (gwfc, gwfp, gpsiy, gpsix, gzetay, gzetax, grad_r, v, ay, ax, by, bx,
          dbydy, dbxdx, sources_i, receivers_i, source_amplitudes, wfc, wfp,

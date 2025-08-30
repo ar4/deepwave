@@ -52,7 +52,8 @@ class ScalarBorn(torch.nn.Module):
     def __init__(self,
                  v: Tensor,
                  scatter: Tensor,
-                 grid_spacing: Union[int, float, torch.Tensor, Sequence[Union[int, float]]],
+                 grid_spacing: Union[int, float, torch.Tensor,
+                                     Sequence[Union[int, float]]],
                  v_requires_grad: bool = False,
                  scatter_requires_grad: bool = False) -> None:
         super().__init__()
@@ -69,7 +70,8 @@ class ScalarBorn(torch.nn.Module):
         receiver_locations: Optional[Tensor] = None,
         bg_receiver_locations: Optional[Tensor] = None,
         accuracy: int = 4,
-        pml_width: Union[int, float, torch.Tensor, Sequence[Union[int, float]]] = 20,
+        pml_width: Union[int, float, torch.Tensor,
+                         Sequence[Union[int, float]]] = 20,
         pml_freq: Optional[Union[int, float]] = None,
         max_vel: Optional[Union[int, float]] = None,
         survey_pad: Optional[Union[int, Sequence[Optional[int]]]] = None,
@@ -96,22 +98,25 @@ class ScalarBorn(torch.nn.Module):
         `scatter`, and `grid_spacing` do not need to be provided again. See
         :func:`scalar_born` for a description of the inputs and outputs.
         """
-        pml_config = PMLConfig(cast(Union[int, Sequence[int]], pml_width), pml_freq)
+        pml_config = PMLConfig(cast(Union[int, Sequence[int]], pml_width),
+                               pml_freq)
         survey_config = SurveyConfig(
             source_locations=[source_locations, source_locations],
             receiver_locations=[bg_receiver_locations, receiver_locations],
             source_amplitudes=[source_amplitudes, source_amplitudes],
-            wavefields=[wavefield_0, wavefield_m1, psiy_m1, psix_m1,
-                        zetay_m1, zetax_m1, wavefield_sc_0, wavefield_sc_m1,
-                        psiy_sc_m1, psix_sc_m1, zetay_sc_m1, zetax_sc_m1],
+            wavefields=[
+                wavefield_0, wavefield_m1, psiy_m1, psix_m1, zetay_m1,
+                zetax_m1, wavefield_sc_0, wavefield_sc_m1, psiy_sc_m1,
+                psix_sc_m1, zetay_sc_m1, zetax_sc_m1
+            ],
             survey_pad=survey_pad,
-            origin=origin
-        )
+            origin=origin)
 
         return scalar_born(
             cast(Tensor, self.v),
             cast(Tensor, self.scatter),
-            cast(Union[int, float, torch.Tensor, Sequence[Union[int, float]]], self.grid_spacing),
+            cast(Union[int, float, torch.Tensor, Sequence[Union[int, float]]],
+                 self.grid_spacing),
             dt,
             accuracy=accuracy,
             pml_config=pml_config,
@@ -131,7 +136,8 @@ def scalar_born(
     receiver_locations: Optional[Tensor] = None,
     bg_receiver_locations: Optional[Tensor] = None,
     accuracy: int = 4,
-    pml_width: Union[int, float, torch.Tensor, Sequence[Union[int, float]]] = 20,
+    pml_width: Union[int, float, torch.Tensor, Sequence[Union[int,
+                                                              float]]] = 20,
     pml_freq: Optional[Union[int, float]] = None,
     max_vel: Optional[Union[int, float]] = None,
     survey_pad: Optional[Union[int, Sequence[Optional[int]]]] = None,
@@ -242,18 +248,20 @@ def scalar_born(
 
     """
     if pml_config is None:
-        pml_config = PMLConfig(cast(Union[int, Sequence[int]], pml_width), pml_freq)
+        pml_config = PMLConfig(cast(Union[int, Sequence[int]], pml_width),
+                               pml_freq)
     if survey_config is None:
         survey_config = SurveyConfig(
             source_locations=[source_locations, source_locations],
             receiver_locations=[bg_receiver_locations, receiver_locations],
             source_amplitudes=[source_amplitudes, source_amplitudes],
-            wavefields=[wavefield_0, wavefield_m1, psiy_m1, psix_m1,
-                        zetay_m1, zetax_m1, wavefield_sc_0, wavefield_sc_m1,
-                        psiy_sc_m1, psix_sc_m1, zetay_sc_m1, zetax_sc_m1],
+            wavefields=[
+                wavefield_0, wavefield_m1, psiy_m1, psix_m1, zetay_m1,
+                zetax_m1, wavefield_sc_0, wavefield_sc_m1, psiy_sc_m1,
+                psix_sc_m1, zetay_sc_m1, zetax_sc_m1
+            ],
             survey_pad=survey_pad,
-            origin=origin
-        )
+            origin=origin)
 
     try:
         min_nonzero_model_vel = v[v.nonzero(as_tuple=True)].abs().min().item()
@@ -300,16 +308,14 @@ def scalar_born(
             *models, *source_amplitudes_l, *wavefields, *pml_profiles, *sources_i_l, *receivers_i_l, *grid_spacing, dt, nt, step_ratio * model_gradient_sampling_interval, accuracy, pml_width_l, n_shots
         )
 
-    receiver_amplitudes = downsample_and_movedim(receiver_amplitudes,
-                                                 resample_config.step_ratio,
-                                                 resample_config.freq_taper_frac,
-                                                 resample_config.time_pad_frac,
-                                                 resample_config.time_taper)
-    receiver_amplitudessc = downsample_and_movedim(receiver_amplitudessc,
-                                                   resample_config.step_ratio,
-                                                   resample_config.freq_taper_frac,
-                                                   resample_config.time_pad_frac,
-                                                   resample_config.time_taper)
+    receiver_amplitudes = downsample_and_movedim(
+        receiver_amplitudes, resample_config.step_ratio,
+        resample_config.freq_taper_frac, resample_config.time_pad_frac,
+        resample_config.time_taper)
+    receiver_amplitudessc = downsample_and_movedim(
+        receiver_amplitudessc, resample_config.step_ratio,
+        resample_config.freq_taper_frac, resample_config.time_pad_frac,
+        resample_config.time_taper)
 
     return (wfc, wfp, psiy, psix, zetay, zetax, wfcsc, wfpsc, psiysc, psixsc,
             zetaysc, zetaxsc, receiver_amplitudes, receiver_amplitudessc)
@@ -318,11 +324,17 @@ def scalar_born(
 class ScalarBornForwardFunc(torch.autograd.Function):
 
     @staticmethod
-    def forward(ctx: Any, v: Tensor, scatter: Tensor, source_amplitudes: Tensor, source_amplitudessc: Tensor, wfc: Tensor,
-                wfp: Tensor, psiy: Tensor, psix: Tensor, zetay: Tensor, zetax: Tensor, wfcsc: Tensor, wfpsc: Tensor, psiysc: Tensor, psixsc: Tensor,
-                zetaysc: Tensor, zetaxsc: Tensor, ay: Tensor, ax: Tensor, by: Tensor, bx: Tensor, dbydy: Tensor, dbxdx: Tensor, sources_i: Tensor, _: Tensor,
-                receivers_i: Tensor, receiverssc_i: Tensor, dy: float, dx: float, dt: float, nt: int, step_ratio: int,
-                accuracy: int, pml_width: List[int], n_shots: int) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor,
+    def forward(
+        ctx: Any, v: Tensor, scatter: Tensor, source_amplitudes: Tensor,
+        source_amplitudessc: Tensor, wfc: Tensor, wfp: Tensor, psiy: Tensor,
+        psix: Tensor, zetay: Tensor, zetax: Tensor, wfcsc: Tensor,
+        wfpsc: Tensor, psiysc: Tensor, psixsc: Tensor, zetaysc: Tensor,
+        zetaxsc: Tensor, ay: Tensor, ax: Tensor, by: Tensor, bx: Tensor,
+        dbydy: Tensor, dbxdx: Tensor, sources_i: Tensor, _: Tensor,
+        receivers_i: Tensor, receiverssc_i: Tensor, dy: float, dx: float,
+        dt: float, nt: int, step_ratio: int, accuracy: int,
+        pml_width: List[int], n_shots: int
+    ) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor,
                Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
 
         v = v.contiguous()
@@ -511,8 +523,23 @@ class ScalarBornForwardFunc(torch.autograd.Function):
 
     @staticmethod
     @once_differentiable
-    def backward(ctx: Any, wfc: Tensor, wfp: Tensor, psiy: Tensor, psix: Tensor, zetay: Tensor, zetax: Tensor, wfcsc: Tensor, wfpsc: Tensor, psiysc: Tensor,
-                 psixsc: Tensor, zetaysc: Tensor, zetaxsc: Tensor, grad_r: Tensor, grad_rsc: Tensor) -> Tuple[Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor]]:
+    def backward(
+        ctx: Any, wfc: Tensor, wfp: Tensor, psiy: Tensor, psix: Tensor,
+        zetay: Tensor, zetax: Tensor, wfcsc: Tensor, wfpsc: Tensor,
+        psiysc: Tensor, psixsc: Tensor, zetaysc: Tensor, zetaxsc: Tensor,
+        grad_r: Tensor, grad_rsc: Tensor
+    ) -> Tuple[Optional[Tensor], Optional[Tensor], Optional[Tensor],
+               Optional[Tensor], Optional[Tensor], Optional[Tensor],
+               Optional[Tensor], Optional[Tensor], Optional[Tensor],
+               Optional[Tensor], Optional[Tensor], Optional[Tensor],
+               Optional[Tensor], Optional[Tensor], Optional[Tensor],
+               Optional[Tensor], Optional[Tensor], Optional[Tensor],
+               Optional[Tensor], Optional[Tensor], Optional[Tensor],
+               Optional[Tensor], Optional[Tensor], Optional[Tensor],
+               Optional[Tensor], Optional[Tensor], Optional[Tensor],
+               Optional[Tensor], Optional[Tensor], Optional[Tensor],
+               Optional[Tensor], Optional[Tensor], Optional[Tensor],
+               Optional[Tensor]]:
         (v, scatter, ay, ax, by, bx, dbydy, dbxdx, sources_i, receivers_i,
          receiverssc_i, w_store, wsc_store) = ctx.saved_tensors
 
@@ -769,5 +796,9 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                     s], -wfcsc[s], psiynsc[s], psixnsc[s], zetaynsc[s], zetaxnsc[
                         s], None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None
 
-def scalar_born_func(*args: Any) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
+
+def scalar_born_func(
+    *args: Any
+) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor,
+           Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
     return ScalarBornForwardFunc.apply(*args)
