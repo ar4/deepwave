@@ -10,10 +10,16 @@ from typing import Optional, Union, Tuple, Sequence, cast, List, Any
 import torch
 from torch import Tensor
 from torch.autograd.function import once_differentiable
-import deepwave
-from deepwave.common import (setup_propagator, downsample_and_movedim,
-                             zero_interior, create_or_pad, IGNORE_LOCATION,
-                             PMLConfig, SurveyConfig)
+from deepwave.backend_utils import dll, USE_OPENMP
+from deepwave.common import (
+    setup_propagator,
+    downsample_and_movedim,
+    zero_interior,
+    create_or_pad,
+    IGNORE_LOCATION,
+    PMLConfig,
+    SurveyConfig,
+)
 from deepwave.regular_grid import set_pml_profiles
 
 
@@ -49,17 +55,17 @@ class ScalarBorn(torch.nn.Module):
             Similar, for the scattering potential.
     """
 
-    def __init__(self,
-                 v: Tensor,
-                 scatter: Tensor,
-                 grid_spacing: Union[int, float, torch.Tensor,
-                                     Sequence[Union[int, float]]],
-                 v_requires_grad: bool = False,
-                 scatter_requires_grad: bool = False) -> None:
+    def __init__(
+        self,
+        v: Tensor,
+        scatter: Tensor,
+        grid_spacing: Union[int, float, torch.Tensor, Sequence[Union[int, float]]],
+        v_requires_grad: bool = False,
+        scatter_requires_grad: bool = False,
+    ) -> None:
         super().__init__()
         self.v = torch.nn.Parameter(v, requires_grad=v_requires_grad)
-        self.scatter = torch.nn.Parameter(scatter,
-                                          requires_grad=scatter_requires_grad)
+        self.scatter = torch.nn.Parameter(scatter, requires_grad=scatter_requires_grad)
         self.grid_spacing = grid_spacing
 
     def forward(
@@ -70,8 +76,7 @@ class ScalarBorn(torch.nn.Module):
         receiver_locations: Optional[Tensor] = None,
         bg_receiver_locations: Optional[Tensor] = None,
         accuracy: int = 4,
-        pml_width: Union[int, float, torch.Tensor,
-                         Sequence[Union[int, float]]] = 20,
+        pml_width: Union[int, float, torch.Tensor, Sequence[Union[int, float]]] = 20,
         pml_freq: Optional[Union[int, float]] = None,
         max_vel: Optional[Union[int, float]] = None,
         survey_pad: Optional[Union[int, Sequence[Optional[int]]]] = None,
@@ -89,41 +94,67 @@ class ScalarBorn(torch.nn.Module):
         zetax_sc_m1: Optional[Tensor] = None,
         origin: Optional[Sequence[int]] = None,
         nt: Optional[int] = None,
-        model_gradient_sampling_interval: int = 1
-    ) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor,
-               Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
+        model_gradient_sampling_interval: int = 1,
+    ) -> Tuple[
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+    ]:
         """Perform forward propagation/modelling.
 
         The inputs are the same as for :func:`scalar_born` except that `v`,
         `scatter`, and `grid_spacing` do not need to be provided again. See
         :func:`scalar_born` for a description of the inputs and outputs.
         """
-        pml_config = PMLConfig(cast(Union[int, Sequence[int]], pml_width),
-                               pml_freq)
+        pml_config = PMLConfig(cast(Union[int, Sequence[int]], pml_width), pml_freq)
         survey_config = SurveyConfig(
             source_locations=[source_locations, source_locations],
             receiver_locations=[bg_receiver_locations, receiver_locations],
             source_amplitudes=[source_amplitudes, source_amplitudes],
             wavefields=[
-                wavefield_0, wavefield_m1, psiy_m1, psix_m1, zetay_m1,
-                zetax_m1, wavefield_sc_0, wavefield_sc_m1, psiy_sc_m1,
-                psix_sc_m1, zetay_sc_m1, zetax_sc_m1
+                wavefield_0,
+                wavefield_m1,
+                psiy_m1,
+                psix_m1,
+                zetay_m1,
+                zetax_m1,
+                wavefield_sc_0,
+                wavefield_sc_m1,
+                psiy_sc_m1,
+                psix_sc_m1,
+                zetay_sc_m1,
+                zetax_sc_m1,
             ],
             survey_pad=survey_pad,
-            origin=origin)
+            origin=origin,
+        )
 
         return scalar_born(
             cast(Tensor, self.v),
             cast(Tensor, self.scatter),
-            cast(Union[int, float, torch.Tensor, Sequence[Union[int, float]]],
-                 self.grid_spacing),
+            cast(
+                Union[int, float, torch.Tensor, Sequence[Union[int, float]]],
+                self.grid_spacing,
+            ),
             dt,
             accuracy=accuracy,
             pml_config=pml_config,
             max_vel=max_vel,
             survey_config=survey_config,
             nt=nt,
-            model_gradient_sampling_interval=model_gradient_sampling_interval)
+            model_gradient_sampling_interval=model_gradient_sampling_interval,
+        )
 
 
 def scalar_born(
@@ -136,8 +167,7 @@ def scalar_born(
     receiver_locations: Optional[Tensor] = None,
     bg_receiver_locations: Optional[Tensor] = None,
     accuracy: int = 4,
-    pml_width: Union[int, float, torch.Tensor, Sequence[Union[int,
-                                                              float]]] = 20,
+    pml_width: Union[int, float, torch.Tensor, Sequence[Union[int, float]]] = 20,
     pml_freq: Optional[Union[int, float]] = None,
     max_vel: Optional[Union[int, float]] = None,
     survey_pad: Optional[Union[int, Sequence[Optional[int]]]] = None,
@@ -161,8 +191,22 @@ def scalar_born(
     time_taper: bool = False,
     pml_config: Optional[PMLConfig] = None,
     survey_config: Optional[SurveyConfig] = None,
-) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor,
-           Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
+) -> Tuple[
+    Tensor,
+    Tensor,
+    Tensor,
+    Tensor,
+    Tensor,
+    Tensor,
+    Tensor,
+    Tensor,
+    Tensor,
+    Tensor,
+    Tensor,
+    Tensor,
+    Tensor,
+    Tensor,
+]:
     """Scalar Born wave propagation (functional interface).
 
     This function performs Born forward modelling with the scalar wave
@@ -248,95 +292,233 @@ def scalar_born(
 
     """
     if pml_config is None:
-        pml_config = PMLConfig(cast(Union[int, Sequence[int]], pml_width),
-                               pml_freq)
+        pml_config = PMLConfig(cast(Union[int, Sequence[int]], pml_width), pml_freq)
     if survey_config is None:
         survey_config = SurveyConfig(
             source_locations=[source_locations, source_locations],
             receiver_locations=[bg_receiver_locations, receiver_locations],
             source_amplitudes=[source_amplitudes, source_amplitudes],
             wavefields=[
-                wavefield_0, wavefield_m1, psiy_m1, psix_m1, zetay_m1,
-                zetax_m1, wavefield_sc_0, wavefield_sc_m1, psiy_sc_m1,
-                psix_sc_m1, zetay_sc_m1, zetax_sc_m1
+                wavefield_0,
+                wavefield_m1,
+                psiy_m1,
+                psix_m1,
+                zetay_m1,
+                zetax_m1,
+                wavefield_sc_0,
+                wavefield_sc_m1,
+                psiy_sc_m1,
+                psix_sc_m1,
+                zetay_sc_m1,
+                zetax_sc_m1,
             ],
             survey_pad=survey_pad,
-            origin=origin)
+            origin=origin,
+        )
 
     try:
         min_nonzero_model_vel = v[v.nonzero(as_tuple=True)].abs().min().item()
-    except Exception:
+    except RuntimeError:
         min_nonzero_model_vel = 0
     max_model_vel = v.abs().max().item()
     fd_pad = [accuracy // 2] * 4
-    (models, source_amplitudes_l, wavefields,
-     sources_i_l, receivers_i_l,
-     grid_spacing, dt, nt, n_shots,
-     step_ratio, model_gradient_sampling_interval,
-     accuracy, pml_width_l, pml_freq, max_vel, resample_config, device, dtype) = \
-        setup_propagator([v, scatter], ['replicate', 'constant'], cast(Union[float, Sequence[float]], grid_spacing), dt,
-                         survey_config,
-                         accuracy, fd_pad, pml_config, max_vel,
-                         min_nonzero_model_vel, max_model_vel,
-                         nt, model_gradient_sampling_interval,
-                         freq_taper_frac, time_pad_frac, time_taper, 2)
+    (
+        models,
+        source_amplitudes_l,
+        wavefields,
+        sources_i_l,
+        receivers_i_l,
+        grid_spacing,
+        dt,
+        nt,
+        n_shots,
+        step_ratio,
+        model_gradient_sampling_interval,
+        accuracy,
+        pml_width_l,
+        pml_freq,
+        max_vel,
+        resample_config,
+        device,
+        dtype,
+    ) = setup_propagator(
+        [v, scatter],
+        ["replicate", "constant"],
+        cast(Union[float, Sequence[float]], grid_spacing),
+        dt,
+        survey_config,
+        accuracy,
+        fd_pad,
+        pml_config,
+        max_vel,
+        min_nonzero_model_vel,
+        max_model_vel,
+        nt,
+        model_gradient_sampling_interval,
+        freq_taper_frac,
+        time_pad_frac,
+        time_taper,
+        2,
+    )
 
     ny, nx = models[0].shape[-2:]
     # Background (multiply source amplitudes by -v^2*dt^2)
     mask = sources_i_l[0] == IGNORE_LOCATION
     sources_i_masked = sources_i_l[0].clone()
     sources_i_masked[mask] = 0
-    source_amplitudes_l[0] = (-source_amplitudes_l[0] * (models[0].view(
-        -1, ny * nx).expand(n_shots, -1).gather(1, sources_i_masked))**2 *
-                              dt**2)
+    source_amplitudes_l[0] = (
+        -source_amplitudes_l[0]
+        * (models[0].view(-1, ny * nx).expand(n_shots, -1).gather(1, sources_i_masked))
+        ** 2
+        * dt**2
+    )
     # Scattered (multiply source amplitudes by -2*v*scatter*dt^2)
     mask = sources_i_l[1] == IGNORE_LOCATION
     sources_i_masked = sources_i_l[1].clone()
     sources_i_masked[mask] = 0
-    source_amplitudes_l[1] = (-2 * source_amplitudes_l[1] * (models[0].view(
-        -1, ny * nx).expand(n_shots, -1).gather(1, sources_i_masked)) *
-                              (models[1].view(-1, ny * nx).expand(
-                                  n_shots, -1).gather(1, sources_i_masked)) *
-                              dt**2)
+    source_amplitudes_l[1] = (
+        -2
+        * source_amplitudes_l[1]
+        * (models[0].view(-1, ny * nx).expand(n_shots, -1).gather(1, sources_i_masked))
+        * (models[1].view(-1, ny * nx).expand(n_shots, -1).gather(1, sources_i_masked))
+        * dt**2
+    )
 
-    pml_profiles = set_pml_profiles(pml_width_l, accuracy, fd_pad, dt,
-                                    grid_spacing, max_vel, dtype, device,
-                                    pml_freq, ny, nx)
+    pml_profiles = set_pml_profiles(
+        pml_width_l,
+        accuracy,
+        fd_pad,
+        dt,
+        grid_spacing,
+        max_vel,
+        dtype,
+        device,
+        pml_freq,
+        ny,
+        nx,
+    )
 
-    (wfc, wfp, psiy, psix, zetay, zetax, wfcsc, wfpsc, psiysc, psixsc, zetaysc, zetaxsc, receiver_amplitudes, receiver_amplitudessc) = \
-        scalar_born_func(
-            *models, *source_amplitudes_l, *wavefields, *pml_profiles, *sources_i_l, *receivers_i_l, *grid_spacing, dt, nt, step_ratio * model_gradient_sampling_interval, accuracy, pml_width_l, n_shots
-        )
+    (
+        wfc,
+        wfp,
+        psiy,
+        psix,
+        zetay,
+        zetax,
+        wfcsc,
+        wfpsc,
+        psiysc,
+        psixsc,
+        zetaysc,
+        zetaxsc,
+        receiver_amplitudes,
+        receiver_amplitudessc,
+    ) = scalar_born_func(
+        *models,
+        *source_amplitudes_l,
+        *wavefields,
+        *pml_profiles,
+        *sources_i_l,
+        *receivers_i_l,
+        *grid_spacing,
+        dt,
+        nt,
+        step_ratio * model_gradient_sampling_interval,
+        accuracy,
+        pml_width_l,
+        n_shots,
+    )
 
     receiver_amplitudes = downsample_and_movedim(
-        receiver_amplitudes, resample_config.step_ratio,
-        resample_config.freq_taper_frac, resample_config.time_pad_frac,
-        resample_config.time_taper)
+        receiver_amplitudes,
+        resample_config.step_ratio,
+        resample_config.freq_taper_frac,
+        resample_config.time_pad_frac,
+        resample_config.time_taper,
+    )
     receiver_amplitudessc = downsample_and_movedim(
-        receiver_amplitudessc, resample_config.step_ratio,
-        resample_config.freq_taper_frac, resample_config.time_pad_frac,
-        resample_config.time_taper)
+        receiver_amplitudessc,
+        resample_config.step_ratio,
+        resample_config.freq_taper_frac,
+        resample_config.time_pad_frac,
+        resample_config.time_taper,
+    )
 
-    return (wfc, wfp, psiy, psix, zetay, zetax, wfcsc, wfpsc, psiysc, psixsc,
-            zetaysc, zetaxsc, receiver_amplitudes, receiver_amplitudessc)
+    return (
+        wfc,
+        wfp,
+        psiy,
+        psix,
+        zetay,
+        zetax,
+        wfcsc,
+        wfpsc,
+        psiysc,
+        psixsc,
+        zetaysc,
+        zetaxsc,
+        receiver_amplitudes,
+        receiver_amplitudessc,
+    )
 
 
 class ScalarBornForwardFunc(torch.autograd.Function):
-
     @staticmethod
     def forward(
-        ctx: Any, v: Tensor, scatter: Tensor, source_amplitudes: Tensor,
-        source_amplitudessc: Tensor, wfc: Tensor, wfp: Tensor, psiy: Tensor,
-        psix: Tensor, zetay: Tensor, zetax: Tensor, wfcsc: Tensor,
-        wfpsc: Tensor, psiysc: Tensor, psixsc: Tensor, zetaysc: Tensor,
-        zetaxsc: Tensor, ay: Tensor, ax: Tensor, by: Tensor, bx: Tensor,
-        dbydy: Tensor, dbxdx: Tensor, sources_i: Tensor, _: Tensor,
-        receivers_i: Tensor, receiverssc_i: Tensor, dy: float, dx: float,
-        dt: float, nt: int, step_ratio: int, accuracy: int,
-        pml_width: List[int], n_shots: int
-    ) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor,
-               Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
-
+        ctx: Any,
+        v: Tensor,
+        scatter: Tensor,
+        source_amplitudes: Tensor,
+        source_amplitudessc: Tensor,
+        wfc: Tensor,
+        wfp: Tensor,
+        psiy: Tensor,
+        psix: Tensor,
+        zetay: Tensor,
+        zetax: Tensor,
+        wfcsc: Tensor,
+        wfpsc: Tensor,
+        psiysc: Tensor,
+        psixsc: Tensor,
+        zetaysc: Tensor,
+        zetaxsc: Tensor,
+        ay: Tensor,
+        ax: Tensor,
+        by: Tensor,
+        bx: Tensor,
+        dbydy: Tensor,
+        dbxdx: Tensor,
+        sources_i: Tensor,
+        _: Tensor,
+        receivers_i: Tensor,
+        receiverssc_i: Tensor,
+        dy: float,
+        dx: float,
+        dt: float,
+        nt: int,
+        step_ratio: int,
+        accuracy: int,
+        pml_width: List[int],
+        n_shots: int,
+        *args: Any,
+        **kwargs: Any,
+    ) -> Tuple[
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+    ]:
+        forward = None # Initialize to None to prevent E0601
         v = v.contiguous()
         scatter = scatter.contiguous()
         source_amplitudes = source_amplitudes.contiguous()
@@ -357,22 +539,14 @@ class ScalarBornForwardFunc(torch.autograd.Function):
         wfp = create_or_pad(wfp, fd_pad, v.device, v.dtype, size_with_batch)
         psiy = create_or_pad(psiy, fd_pad, v.device, v.dtype, size_with_batch)
         psix = create_or_pad(psix, fd_pad, v.device, v.dtype, size_with_batch)
-        zetay = create_or_pad(zetay, fd_pad, v.device, v.dtype,
-                              size_with_batch)
-        zetax = create_or_pad(zetax, fd_pad, v.device, v.dtype,
-                              size_with_batch)
-        wfcsc = create_or_pad(wfcsc, fd_pad, v.device, v.dtype,
-                              size_with_batch)
-        wfpsc = create_or_pad(wfpsc, fd_pad, v.device, v.dtype,
-                              size_with_batch)
-        psiysc = create_or_pad(psiysc, fd_pad, v.device, v.dtype,
-                               size_with_batch)
-        psixsc = create_or_pad(psixsc, fd_pad, v.device, v.dtype,
-                               size_with_batch)
-        zetaysc = create_or_pad(zetaysc, fd_pad, v.device, v.dtype,
-                                size_with_batch)
-        zetaxsc = create_or_pad(zetaxsc, fd_pad, v.device, v.dtype,
-                                size_with_batch)
+        zetay = create_or_pad(zetay, fd_pad, v.device, v.dtype, size_with_batch)
+        zetax = create_or_pad(zetax, fd_pad, v.device, v.dtype, size_with_batch)
+        wfcsc = create_or_pad(wfcsc, fd_pad, v.device, v.dtype, size_with_batch)
+        wfpsc = create_or_pad(wfpsc, fd_pad, v.device, v.dtype, size_with_batch)
+        psiysc = create_or_pad(psiysc, fd_pad, v.device, v.dtype, size_with_batch)
+        psixsc = create_or_pad(psixsc, fd_pad, v.device, v.dtype, size_with_batch)
+        zetaysc = create_or_pad(zetaysc, fd_pad, v.device, v.dtype, size_with_batch)
+        zetaxsc = create_or_pad(zetaxsc, fd_pad, v.device, v.dtype, size_with_batch)
         psiy = zero_interior(psiy, fd_pad, pml_width, True)
         psix = zero_interior(psix, fd_pad, pml_width, False)
         zetay = zero_interior(zetay, fd_pad, pml_width, True)
@@ -422,80 +596,140 @@ class ScalarBornForwardFunc(torch.autograd.Function):
             aux = v.get_device()
             if dtype == torch.float32:
                 if accuracy == 2:
-                    forward = deepwave.dll.scalar_born_iso_2_float_forward_cuda
+                    forward = dll.scalar_born_iso_2_float_forward_cuda
                 elif accuracy == 4:
-                    forward = deepwave.dll.scalar_born_iso_4_float_forward_cuda
+                    forward = dll.scalar_born_iso_4_float_forward_cuda
                 elif accuracy == 6:
-                    forward = deepwave.dll.scalar_born_iso_6_float_forward_cuda
+                    forward = dll.scalar_born_iso_6_float_forward_cuda
                 else:
-                    forward = deepwave.dll.scalar_born_iso_8_float_forward_cuda
+                    forward = dll.scalar_born_iso_8_float_forward_cuda
             else:
                 if accuracy == 2:
-                    forward = deepwave.dll.scalar_born_iso_2_double_forward_cuda
+                    forward = dll.scalar_born_iso_2_double_forward_cuda
                 elif accuracy == 4:
-                    forward = deepwave.dll.scalar_born_iso_4_double_forward_cuda
+                    forward = dll.scalar_born_iso_4_double_forward_cuda
                 elif accuracy == 6:
-                    forward = deepwave.dll.scalar_born_iso_6_double_forward_cuda
+                    forward = dll.scalar_born_iso_6_double_forward_cuda
                 else:
-                    forward = deepwave.dll.scalar_born_iso_8_double_forward_cuda
+                    forward = dll.scalar_born_iso_8_double_forward_cuda
         else:
-            if deepwave.USE_OPENMP:
+            if USE_OPENMP:
                 aux = min(n_shots, torch.get_num_threads())
             else:
                 aux = 1
             if dtype == torch.float32:
                 if accuracy == 2:
-                    forward = deepwave.dll.scalar_born_iso_2_float_forward_cpu
+                    forward = dll.scalar_born_iso_2_float_forward_cpu
                 elif accuracy == 4:
-                    forward = deepwave.dll.scalar_born_iso_4_float_forward_cpu
+                    forward = dll.scalar_born_iso_4_float_forward_cpu
                 elif accuracy == 6:
-                    forward = deepwave.dll.scalar_born_iso_6_float_forward_cpu
+                    forward = dll.scalar_born_iso_6_float_forward_cpu
                 else:
-                    forward = deepwave.dll.scalar_born_iso_8_float_forward_cpu
+                    forward = dll.scalar_born_iso_8_float_forward_cpu
             else:
                 if accuracy == 2:
-                    forward = deepwave.dll.scalar_born_iso_2_double_forward_cpu
+                    forward = dll.scalar_born_iso_2_double_forward_cpu
                 elif accuracy == 4:
-                    forward = deepwave.dll.scalar_born_iso_4_double_forward_cpu
+                    forward = dll.scalar_born_iso_4_double_forward_cpu
                 elif accuracy == 6:
-                    forward = deepwave.dll.scalar_born_iso_6_double_forward_cpu
+                    forward = dll.scalar_born_iso_6_double_forward_cpu
                 else:
-                    forward = deepwave.dll.scalar_born_iso_8_double_forward_cpu
+                    forward = dll.scalar_born_iso_8_double_forward_cpu
 
         if wfc.numel() > 0 and nt > 0:
             start_t = 0
-            forward(v.data_ptr(), scatter.data_ptr(),
-                    source_amplitudes.data_ptr(),
-                    source_amplitudessc.data_ptr(), wfc.data_ptr(),
-                    wfp.data_ptr(), psiy.data_ptr(), psix.data_ptr(),
-                    psiyn.data_ptr(), psixn.data_ptr(), zetay.data_ptr(),
-                    zetax.data_ptr(), wfcsc.data_ptr(), wfpsc.data_ptr(),
-                    psiysc.data_ptr(), psixsc.data_ptr(), psiynsc.data_ptr(),
-                    psixnsc.data_ptr(), zetaysc.data_ptr(), zetaxsc.data_ptr(),
-                    w_store.data_ptr(), wsc_store.data_ptr(),
-                    receiver_amplitudes.data_ptr(),
-                    receiver_amplitudessc.data_ptr(), ay.data_ptr(),
-                    ax.data_ptr(), by.data_ptr(), bx.data_ptr(),
-                    dbydy.data_ptr(), dbxdx.data_ptr(), sources_i.data_ptr(),
-                    receivers_i.data_ptr(), receiverssc_i.data_ptr(), 1 / dy,
-                    1 / dx, 1 / dy**2, 1 / dx**2, dt**2, nt, n_shots, ny, nx,
-                    n_sources_per_shot, n_receivers_per_shot,
-                    n_receiverssc_per_shot, step_ratio, v.requires_grad,
-                    scatter.requires_grad, v_batched, scatter_batched, start_t,
-                    pml_y0, pml_y1, pml_x0, pml_x1, aux)
+            forward(
+                v.data_ptr(),
+                scatter.data_ptr(),
+                source_amplitudes.data_ptr(),
+                source_amplitudessc.data_ptr(),
+                wfc.data_ptr(),
+                wfp.data_ptr(),
+                psiy.data_ptr(),
+                psix.data_ptr(),
+                psiyn.data_ptr(),
+                psixn.data_ptr(),
+                zetay.data_ptr(),
+                zetax.data_ptr(),
+                wfcsc.data_ptr(),
+                wfpsc.data_ptr(),
+                psiysc.data_ptr(),
+                psixsc.data_ptr(),
+                psiynsc.data_ptr(),
+                psixnsc.data_ptr(),
+                zetaysc.data_ptr(),
+                zetaxsc.data_ptr(),
+                w_store.data_ptr(),
+                wsc_store.data_ptr(),
+                receiver_amplitudes.data_ptr(),
+                receiver_amplitudessc.data_ptr(),
+                ay.data_ptr(),
+                ax.data_ptr(),
+                by.data_ptr(),
+                bx.data_ptr(),
+                dbydy.data_ptr(),
+                dbxdx.data_ptr(),
+                sources_i.data_ptr(),
+                receivers_i.data_ptr(),
+                receiverssc_i.data_ptr(),
+                1 / dy,
+                1 / dx,
+                1 / dy**2,
+                1 / dx**2,
+                dt**2,
+                nt,
+                n_shots,
+                ny,
+                nx,
+                n_sources_per_shot,
+                n_receivers_per_shot,
+                n_receiverssc_per_shot,
+                step_ratio,
+                v.requires_grad,
+                scatter.requires_grad,
+                v_batched,
+                scatter_batched,
+                start_t,
+                pml_y0,
+                pml_y1,
+                pml_x0,
+                pml_x1,
+                aux,
+            )
 
-        if (v.requires_grad or scatter.requires_grad
-                or source_amplitudes.requires_grad
-                or source_amplitudessc.requires_grad or wfc.requires_grad
-                or wfp.requires_grad or psiy.requires_grad
-                or psix.requires_grad or zetay.requires_grad
-                or zetax.requires_grad or wfcsc.requires_grad
-                or wfpsc.requires_grad or psiysc.requires_grad
-                or psixsc.requires_grad or zetaysc.requires_grad
-                or zetaxsc.requires_grad):
-            ctx.save_for_backward(v, scatter, ay, ax, by, bx, dbydy, dbxdx,
-                                  sources_i, receivers_i, receiverssc_i,
-                                  w_store, wsc_store)
+        if (
+            v.requires_grad
+            or scatter.requires_grad
+            or source_amplitudes.requires_grad
+            or source_amplitudessc.requires_grad
+            or wfc.requires_grad
+            or wfp.requires_grad
+            or psiy.requires_grad
+            or psix.requires_grad
+            or zetay.requires_grad
+            or zetax.requires_grad
+            or wfcsc.requires_grad
+            or wfpsc.requires_grad
+            or psiysc.requires_grad
+            or psixsc.requires_grad
+            or zetaysc.requires_grad
+            or zetaxsc.requires_grad
+        ):
+            ctx.save_for_backward(
+                v,
+                scatter,
+                ay,
+                ax,
+                by,
+                bx,
+                dbydy,
+                dbxdx,
+                sources_i,
+                receivers_i,
+                receiverssc_i,
+                w_store,
+                wsc_store,
+            )
             ctx.dy = dy
             ctx.dx = dx
             ctx.dt = dt
@@ -506,42 +740,126 @@ class ScalarBornForwardFunc(torch.autograd.Function):
             ctx.pml_width = pml_width
             ctx.source_amplitudes_requires_grad = source_amplitudes.requires_grad
             ctx.source_amplitudessc_requires_grad = source_amplitudessc.requires_grad
-            ctx.non_sc = (v.requires_grad or source_amplitudes.requires_grad
-                          or wfc.requires_grad or wfp.requires_grad
-                          or psiy.requires_grad or psix.requires_grad
-                          or zetay.requires_grad or zetax.requires_grad)
+            ctx.non_sc = (
+                v.requires_grad
+                or source_amplitudes.requires_grad
+                or wfc.requires_grad
+                or wfp.requires_grad
+                or psiy.requires_grad
+                or psix.requires_grad
+                or zetay.requires_grad
+                or zetax.requires_grad
+            )
 
         s = (slice(None), slice(fd_pad, -fd_pad), slice(fd_pad, -fd_pad))
         if nt % 2 == 0:
-            return (wfc[s], wfp[s], psiy[s], psix[s], zetay[s], zetax[s],
-                    wfcsc[s], wfpsc[s], psiysc[s], psixsc[s], zetaysc[s],
-                    zetaxsc[s], receiver_amplitudes, receiver_amplitudessc)
+            return (
+                wfc[s],
+                wfp[s],
+                psiy[s],
+                psix[s],
+                zetay[s],
+                zetax[s],
+                wfcsc[s],
+                wfpsc[s],
+                psiysc[s],
+                psixsc[s],
+                zetaysc[s],
+                zetaxsc[s],
+                receiver_amplitudes,
+                receiver_amplitudessc,
+            )
         else:
-            return (wfp[s], wfc[s], psiyn[s], psixn[s], zetay[s], zetax[s],
-                    wfpsc[s], wfcsc[s], psiynsc[s], psixnsc[s], zetaysc[s],
-                    zetaxsc[s], receiver_amplitudes, receiver_amplitudessc)
+            return (
+                wfp[s],
+                wfc[s],
+                psiyn[s],
+                psixn[s],
+                zetay[s],
+                zetax[s],
+                wfpsc[s],
+                wfcsc[s],
+                psiynsc[s],
+                psixnsc[s],
+                zetaysc[s],
+                zetaxsc[s],
+                receiver_amplitudes,
+                receiver_amplitudessc,
+            )
 
     @staticmethod
     @once_differentiable
     def backward(
-        ctx: Any, wfc: Tensor, wfp: Tensor, psiy: Tensor, psix: Tensor,
-        zetay: Tensor, zetax: Tensor, wfcsc: Tensor, wfpsc: Tensor,
-        psiysc: Tensor, psixsc: Tensor, zetaysc: Tensor, zetaxsc: Tensor,
-        grad_r: Tensor, grad_rsc: Tensor
-    ) -> Tuple[Optional[Tensor], Optional[Tensor], Optional[Tensor],
-               Optional[Tensor], Optional[Tensor], Optional[Tensor],
-               Optional[Tensor], Optional[Tensor], Optional[Tensor],
-               Optional[Tensor], Optional[Tensor], Optional[Tensor],
-               Optional[Tensor], Optional[Tensor], Optional[Tensor],
-               Optional[Tensor], Optional[Tensor], Optional[Tensor],
-               Optional[Tensor], Optional[Tensor], Optional[Tensor],
-               Optional[Tensor], Optional[Tensor], Optional[Tensor],
-               Optional[Tensor], Optional[Tensor], Optional[Tensor],
-               Optional[Tensor], Optional[Tensor], Optional[Tensor],
-               Optional[Tensor], Optional[Tensor], Optional[Tensor],
-               Optional[Tensor]]:
-        (v, scatter, ay, ax, by, bx, dbydy, dbxdx, sources_i, receivers_i,
-         receiverssc_i, w_store, wsc_store) = ctx.saved_tensors
+        ctx: Any,
+        wfc: Tensor,
+        wfp: Tensor,
+        psiy: Tensor,
+        psix: Tensor,
+        zetay: Tensor,
+        zetax: Tensor,
+        wfcsc: Tensor,
+        wfpsc: Tensor,
+        psiysc: Tensor,
+        psixsc: Tensor,
+        zetaysc: Tensor,
+        zetaxsc: Tensor,
+        grad_r: Tensor,
+        grad_rsc: Tensor,
+        *args: Any,
+        **kwargs: Any,
+    ) -> Tuple[
+        Optional[Tensor],
+        Optional[Tensor],
+        Optional[Tensor],
+        Optional[Tensor],
+        Optional[Tensor],
+        Optional[Tensor],
+        Optional[Tensor],
+        Optional[Tensor],
+        Optional[Tensor],
+        Optional[Tensor],
+        Optional[Tensor],
+        Optional[Tensor],
+        Optional[Tensor],
+        Optional[Tensor],
+        Optional[Tensor],
+        Optional[Tensor],
+        Optional[Tensor],
+        Optional[Tensor],
+        Optional[Tensor],
+        Optional[Tensor],
+        Optional[Tensor],
+        Optional[Tensor],
+        Optional[Tensor],
+        Optional[Tensor],
+        Optional[Tensor],
+        Optional[Tensor],
+        Optional[Tensor],
+        Optional[Tensor],
+        Optional[Tensor],
+        Optional[Tensor],
+        Optional[Tensor],
+        Optional[Tensor],
+        Optional[Tensor],
+        Optional[Tensor],
+    ]:
+        backward = None # Initialize to None to prevent E0601
+        backward_sc = None # Initialize to None to prevent E0601
+        (
+            v,
+            scatter,
+            ay,
+            ax,
+            by,
+            bx,
+            dbydy,
+            dbxdx,
+            sources_i,
+            receivers_i,
+            receiverssc_i,
+            w_store,
+            wsc_store,
+        ) = ctx.saved_tensors
 
         v = v.contiguous()
         scatter = scatter.contiguous()
@@ -579,18 +897,12 @@ class ScalarBornForwardFunc(torch.autograd.Function):
 
         size_with_batch = (n_shots, *v.shape[-2:])
         if non_sc:
-            wfc = create_or_pad(wfc, fd_pad, v.device, v.dtype,
-                                size_with_batch)
-            wfp = create_or_pad(wfp, fd_pad, v.device, v.dtype,
-                                size_with_batch)
-            psiy = create_or_pad(psiy, fd_pad, v.device, v.dtype,
-                                 size_with_batch)
-            psix = create_or_pad(psix, fd_pad, v.device, v.dtype,
-                                 size_with_batch)
-            zetay = create_or_pad(zetay, fd_pad, v.device, v.dtype,
-                                  size_with_batch)
-            zetax = create_or_pad(zetax, fd_pad, v.device, v.dtype,
-                                  size_with_batch)
+            wfc = create_or_pad(wfc, fd_pad, v.device, v.dtype, size_with_batch)
+            wfp = create_or_pad(wfp, fd_pad, v.device, v.dtype, size_with_batch)
+            psiy = create_or_pad(psiy, fd_pad, v.device, v.dtype, size_with_batch)
+            psix = create_or_pad(psix, fd_pad, v.device, v.dtype, size_with_batch)
+            zetay = create_or_pad(zetay, fd_pad, v.device, v.dtype, size_with_batch)
+            zetax = create_or_pad(zetax, fd_pad, v.device, v.dtype, size_with_batch)
             psiy = zero_interior(psiy, fd_pad, pml_width, True)
             psix = zero_interior(psix, fd_pad, pml_width, False)
             zetay = zero_interior(zetay, fd_pad, pml_width, True)
@@ -599,18 +911,12 @@ class ScalarBornForwardFunc(torch.autograd.Function):
             psixn = torch.zeros_like(psix)
             zetayn = torch.zeros_like(zetay)
             zetaxn = torch.zeros_like(zetax)
-        wfcsc = create_or_pad(wfcsc, fd_pad, v.device, v.dtype,
-                              size_with_batch)
-        wfpsc = create_or_pad(wfpsc, fd_pad, v.device, v.dtype,
-                              size_with_batch)
-        psiysc = create_or_pad(psiysc, fd_pad, v.device, v.dtype,
-                               size_with_batch)
-        psixsc = create_or_pad(psixsc, fd_pad, v.device, v.dtype,
-                               size_with_batch)
-        zetaysc = create_or_pad(zetaysc, fd_pad, v.device, v.dtype,
-                                size_with_batch)
-        zetaxsc = create_or_pad(zetaxsc, fd_pad, v.device, v.dtype,
-                                size_with_batch)
+        wfcsc = create_or_pad(wfcsc, fd_pad, v.device, v.dtype, size_with_batch)
+        wfpsc = create_or_pad(wfpsc, fd_pad, v.device, v.dtype, size_with_batch)
+        psiysc = create_or_pad(psiysc, fd_pad, v.device, v.dtype, size_with_batch)
+        psixsc = create_or_pad(psixsc, fd_pad, v.device, v.dtype, size_with_batch)
+        zetaysc = create_or_pad(zetaysc, fd_pad, v.device, v.dtype, size_with_batch)
+        zetaxsc = create_or_pad(zetaxsc, fd_pad, v.device, v.dtype, size_with_batch)
         psiysc = zero_interior(psiysc, fd_pad, pml_width, True)
         psixsc = zero_interior(psixsc, fd_pad, pml_width, False)
         zetaysc = zero_interior(zetaysc, fd_pad, pml_width, True)
@@ -662,69 +968,74 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                 grad_scatter_tmp_ptr = grad_scatter_tmp.data_ptr()
             if dtype == torch.float32:
                 if accuracy == 2:
-                    backward = deepwave.dll.scalar_born_iso_2_float_backward_cuda
-                    backward_sc = deepwave.dll.scalar_born_iso_2_float_backward_sc_cuda
+                    backward = dll.scalar_born_iso_2_float_backward_cuda
+                    backward_sc = dll.scalar_born_iso_2_float_backward_sc_cuda
                 elif accuracy == 4:
-                    backward = deepwave.dll.scalar_born_iso_4_float_backward_cuda
-                    backward_sc = deepwave.dll.scalar_born_iso_4_float_backward_sc_cuda
+                    backward = dll.scalar_born_iso_4_float_backward_cuda
+                    backward_sc = dll.scalar_born_iso_4_float_backward_sc_cuda
                 elif accuracy == 6:
-                    backward = deepwave.dll.scalar_born_iso_6_float_backward_cuda
-                    backward_sc = deepwave.dll.scalar_born_iso_6_float_backward_sc_cuda
+                    backward = dll.scalar_born_iso_6_float_backward_cuda
+                    backward_sc = dll.scalar_born_iso_6_float_backward_sc_cuda
                 else:
-                    backward = deepwave.dll.scalar_born_iso_8_float_backward_cuda
-                    backward_sc = deepwave.dll.scalar_born_iso_8_float_backward_sc_cuda
+                    backward = dll.scalar_born_iso_8_float_backward_cuda
+                    backward_sc = dll.scalar_born_iso_8_float_backward_sc_cuda
             else:
                 if accuracy == 2:
-                    backward = deepwave.dll.scalar_born_iso_2_double_backward_cuda
-                    backward_sc = deepwave.dll.scalar_born_iso_2_double_backward_sc_cuda
+                    backward = dll.scalar_born_iso_2_double_backward_cuda
+                    backward_sc = dll.scalar_born_iso_2_double_backward_sc_cuda
                 elif accuracy == 4:
-                    backward = deepwave.dll.scalar_born_iso_4_double_backward_cuda
-                    backward_sc = deepwave.dll.scalar_born_iso_4_double_backward_sc_cuda
+                    backward = dll.scalar_born_iso_4_double_backward_cuda
+                    backward_sc = dll.scalar_born_iso_4_double_backward_sc_cuda
                 elif accuracy == 6:
-                    backward = deepwave.dll.scalar_born_iso_6_double_backward_cuda
-                    backward_sc = deepwave.dll.scalar_born_iso_6_double_backward_sc_cuda
+                    backward = dll.scalar_born_iso_6_double_backward_cuda
+                    backward_sc = dll.scalar_born_iso_6_double_backward_sc_cuda
                 else:
-                    backward = deepwave.dll.scalar_born_iso_8_double_backward_cuda
-                    backward_sc = deepwave.dll.scalar_born_iso_8_double_backward_sc_cuda
+                    backward = dll.scalar_born_iso_8_double_backward_cuda
+                    backward_sc = dll.scalar_born_iso_8_double_backward_sc_cuda
         else:
-            if deepwave.USE_OPENMP:
+            if USE_OPENMP:
                 aux = min(n_shots, torch.get_num_threads())
             else:
                 aux = 1
-            if v.requires_grad and not v_batched and aux > 1 and deepwave.USE_OPENMP:
+            if v.requires_grad and not v_batched and aux > 1 and USE_OPENMP:
                 grad_v_tmp.resize_(aux, *v.shape[-2:])
                 grad_v_tmp.fill_(0)
                 grad_v_tmp_ptr = grad_v_tmp.data_ptr()
-            if scatter.requires_grad and not scatter_batched and aux > 1 and deepwave.USE_OPENMP:
+            if (
+                scatter.requires_grad
+                and not scatter_batched
+                and aux > 1
+                and USE_OPENMP
+            ):
                 grad_scatter_tmp.resize_(aux, *scatter.shape[-2:])
                 grad_scatter_tmp.fill_(0)
                 grad_scatter_tmp_ptr = grad_scatter_tmp.data_ptr()
             if dtype == torch.float32:
                 if accuracy == 2:
-                    backward = deepwave.dll.scalar_born_iso_2_float_backward_cpu
-                    backward_sc = deepwave.dll.scalar_born_iso_2_float_backward_sc_cpu
+                    backward = dll.scalar_born_iso_2_float_backward_cpu
+                    backward_sc = dll.scalar_born_iso_2_float_backward_sc_cpu
                 elif accuracy == 4:
-                    backward = deepwave.dll.scalar_born_iso_4_float_backward_cpu
-                    backward_sc = deepwave.dll.scalar_born_iso_4_float_backward_sc_cpu
+                    backward = dll.scalar_born_iso_4_float_backward_cpu
+                    backward_sc = dll.scalar_born_iso_4_float_backward_sc_cpu
                 elif accuracy == 6:
-                    backward = deepwave.dll.scalar_born_iso_6_float_backward_cpu
-                    backward_sc = deepwave.dll.scalar_born_iso_6_float_backward_sc_cpu
+                    backward = dll.scalar_born_iso_6_float_backward_cpu
+                    backward_sc = dll.scalar_born_iso_6_float_backward_sc_cpu
                 else:
-                    backward = deepwave.dll.scalar_born_iso_8_float_backward_cpu
-                    backward_sc = deepwave.dll.scalar_born_iso_8_float_backward_sc_cpu
+                    backward = dll.scalar_born_iso_8_float_backward_cpu
+                    backward_sc = dll.scalar_born_iso_8_float_backward_sc_cpu
             else:
                 if accuracy == 2:
-                    backward = deepwave.dll.scalar_born_iso_2_double_backward_cpu
-                    backward_sc = deepwave.dll.scalar_born_iso_2_double_backward_sc_cpu
+                    backward = dll.scalar_born_iso_2_double_backward_cpu
+                    backward_sc = dll.scalar_born_iso_2_double_backward_sc_cpu
                 elif accuracy == 4:
-                    backward = deepwave.dll.scalar_born_iso_4_double_backward_cpu
-                    backward_sc = deepwave.dll.scalar_born_iso_4_double_backward_sc_cpu
+                    backward = dll.scalar_born_iso_4_double_backward_cpu
+                    backward_sc = dll.scalar_born_iso_4_double_backward_sc_cpu
                 elif accuracy == 6:
-                    backward = deepwave.dll.scalar_born_iso_6_double_backward_cpu
-                    backward_sc = deepwave.dll.scalar_born_iso_6_double_backward_sc_cpu
+                    backward = dll.scalar_born_iso_6_double_backward_cpu
+                    backward_sc = dll.scalar_born_iso_6_double_backward_sc_cpu
                 else:
-                    backward = deepwave.dll.scalar_born_iso_8_double_backward_cpu
-                    backward_sc = deepwave.dll.scalar_born_iso_8_double_backward_sc_cpu
+                    backward = dll.scalar_born_iso_8_double_backward_cpu
+                    backward_sc = dll.scalar_born_iso_8_double_backward_sc_cpu
 
         wfp = -wfp
         wfpsc = -wfpsc
@@ -733,72 +1044,290 @@ class ScalarBornForwardFunc(torch.autograd.Function):
             start_t = 0
             if non_sc:
                 backward(
-                    v.data_ptr(), scatter.data_ptr(), grad_r.data_ptr(),
-                    grad_rsc.data_ptr(), wfc.data_ptr(), wfp.data_ptr(),
-                    psiy.data_ptr(), psix.data_ptr(), psiyn.data_ptr(),
-                    psixn.data_ptr(), zetay.data_ptr(), zetax.data_ptr(),
-                    zetayn.data_ptr(), zetaxn.data_ptr(), wfcsc.data_ptr(),
-                    wfpsc.data_ptr(), psiysc.data_ptr(), psixsc.data_ptr(),
-                    psiynsc.data_ptr(), psixnsc.data_ptr(), zetaysc.data_ptr(),
-                    zetaxsc.data_ptr(), zetaynsc.data_ptr(),
-                    zetaxnsc.data_ptr(), w_store.data_ptr(),
-                    wsc_store.data_ptr(), grad_f.data_ptr(),
-                    grad_fsc.data_ptr(), grad_v.data_ptr(),
-                    grad_scatter.data_ptr(), grad_v_tmp_ptr,
-                    grad_scatter_tmp_ptr, ay.data_ptr(), ax.data_ptr(),
-                    by.data_ptr(), bx.data_ptr(), dbydy.data_ptr(),
-                    dbxdx.data_ptr(), sources_i.data_ptr(),
-                    receivers_i.data_ptr(), receiverssc_i.data_ptr(), 1 / dy,
-                    1 / dx, 1 / dy**2, 1 / dx**2, dt**2, nt, n_shots, ny, nx,
+                    v.data_ptr(),
+                    scatter.data_ptr(),
+                    grad_r.data_ptr(),
+                    grad_rsc.data_ptr(),
+                    wfc.data_ptr(),
+                    wfp.data_ptr(),
+                    psiy.data_ptr(),
+                    psix.data_ptr(),
+                    psiyn.data_ptr(),
+                    psixn.data_ptr(),
+                    zetay.data_ptr(),
+                    zetax.data_ptr(),
+                    zetayn.data_ptr(),
+                    zetaxn.data_ptr(),
+                    wfcsc.data_ptr(),
+                    wfpsc.data_ptr(),
+                    psiysc.data_ptr(),
+                    psixsc.data_ptr(),
+                    psiynsc.data_ptr(),
+                    psixnsc.data_ptr(),
+                    zetaysc.data_ptr(),
+                    zetaxsc.data_ptr(),
+                    zetaynsc.data_ptr(),
+                    zetaxnsc.data_ptr(),
+                    w_store.data_ptr(),
+                    wsc_store.data_ptr(),
+                    grad_f.data_ptr(),
+                    grad_fsc.data_ptr(),
+                    grad_v.data_ptr(),
+                    grad_scatter.data_ptr(),
+                    grad_v_tmp_ptr,
+                    grad_scatter_tmp_ptr,
+                    ay.data_ptr(),
+                    ax.data_ptr(),
+                    by.data_ptr(),
+                    bx.data_ptr(),
+                    dbydy.data_ptr(),
+                    dbxdx.data_ptr(),
+                    sources_i.data_ptr(),
+                    receivers_i.data_ptr(),
+                    receiverssc_i.data_ptr(),
+                    1 / dy,
+                    1 / dx,
+                    1 / dy**2,
+                    1 / dx**2,
+                    dt**2,
+                    nt,
+                    n_shots,
+                    ny,
+                    nx,
                     n_sources_per_shot * source_amplitudes_requires_grad,
                     n_sources_per_shot * source_amplitudessc_requires_grad,
-                    n_receivers_per_shot, n_receiverssc_per_shot, step_ratio,
-                    v.requires_grad, scatter.requires_grad, v_batched,
-                    scatter_batched, start_t, pml_y0, pml_y1, pml_x0, pml_x1,
-                    aux)
+                    n_receivers_per_shot,
+                    n_receiverssc_per_shot,
+                    step_ratio,
+                    v.requires_grad,
+                    scatter.requires_grad,
+                    v_batched,
+                    scatter_batched,
+                    start_t,
+                    pml_y0,
+                    pml_y1,
+                    pml_x0,
+                    pml_x1,
+                    aux,
+                )
             else:
                 backward_sc(
-                    v.data_ptr(), grad_rsc.data_ptr(), wfcsc.data_ptr(),
-                    wfpsc.data_ptr(), psiysc.data_ptr(), psixsc.data_ptr(),
-                    psiynsc.data_ptr(), psixnsc.data_ptr(), zetaysc.data_ptr(),
-                    zetaxsc.data_ptr(), zetaynsc.data_ptr(),
+                    v.data_ptr(),
+                    grad_rsc.data_ptr(),
+                    wfcsc.data_ptr(),
+                    wfpsc.data_ptr(),
+                    psiysc.data_ptr(),
+                    psixsc.data_ptr(),
+                    psiynsc.data_ptr(),
+                    psixnsc.data_ptr(),
+                    zetaysc.data_ptr(),
+                    zetaxsc.data_ptr(),
+                    zetaynsc.data_ptr(),
                     zetaxnsc.data_ptr(),
-                    w_store.data_ptr(), grad_fsc.data_ptr(),
-                    grad_scatter.data_ptr(), grad_scatter_tmp_ptr,
-                    ay.data_ptr(), ax.data_ptr(), by.data_ptr(), bx.data_ptr(),
-                    dbydy.data_ptr(), dbxdx.data_ptr(), sources_i.data_ptr(),
-                    receiverssc_i.data_ptr(), 1 / dy, 1 / dx, 1 / dy**2,
-                    1 / dx**2, dt**2, nt, n_shots, ny, nx,
+                    w_store.data_ptr(),
+                    grad_fsc.data_ptr(),
+                    grad_scatter.data_ptr(),
+                    grad_scatter_tmp_ptr,
+                    ay.data_ptr(),
+                    ax.data_ptr(),
+                    by.data_ptr(),
+                    bx.data_ptr(),
+                    dbydy.data_ptr(),
+                    dbxdx.data_ptr(),
+                    sources_i.data_ptr(),
+                    receiverssc_i.data_ptr(),
+                    1 / dy,
+                    1 / dx,
+                    1 / dy**2,
+                    1 / dx**2,
+                    dt**2,
+                    nt,
+                    n_shots,
+                    ny,
+                    nx,
                     n_sources_per_shot * source_amplitudessc_requires_grad,
-                    n_receiverssc_per_shot, step_ratio, scatter.requires_grad,
-                    v_batched, scatter_batched, start_t, pml_y0, pml_y1,
-                    pml_x0, pml_x1, aux)
+                    n_receiverssc_per_shot,
+                    step_ratio,
+                    scatter.requires_grad,
+                    v_batched,
+                    scatter_batched,
+                    start_t,
+                    pml_y0,
+                    pml_y1,
+                    pml_x0,
+                    pml_x1,
+                    aux,
+                )
 
         s = (slice(None), slice(fd_pad, -fd_pad), slice(fd_pad, -fd_pad))
         if non_sc:
             if nt % 2 == 0:
-                return grad_v, grad_scatter, grad_f, grad_fsc, wfc[s], -wfp[
-                    s], psiy[s], psix[s], zetay[s], zetax[s], wfcsc[s], -wfpsc[
-                        s], psiysc[s], psixsc[s], zetaysc[s], zetaxsc[
-                            s], None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None
+                return (
+                    grad_v,
+                    grad_scatter,
+                    grad_f,
+                    grad_fsc,
+                    wfc[s],
+                    -wfp[s],
+                    psiy[s],
+                    psix[s],
+                    zetay[s],
+                    zetax[s],
+                    wfcsc[s],
+                    -wfpsc[s],
+                    psiysc[s],
+                    psixsc[s],
+                    zetaysc[s],
+                    zetaxsc[s],
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
             else:
-                return grad_v, grad_scatter, grad_f, grad_fsc, wfp[s], -wfc[
-                    s], psiyn[s], psixn[s], zetayn[s], zetaxn[s], wfpsc[s], -wfcsc[
-                        s], psiynsc[s], psixnsc[s], zetaynsc[s], zetaxnsc[
-                            s], None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None
+                return (
+                    grad_v,
+                    grad_scatter,
+                    grad_f,
+                    grad_fsc,
+                    wfp[s],
+                    -wfc[s],
+                    psiyn[s],
+                    psixn[s],
+                    zetayn[s],
+                    zetaxn[s],
+                    wfpsc[s],
+                    -wfcsc[s],
+                    psiynsc[s],
+                    psixnsc[s],
+                    zetaynsc[s],
+                    zetaxnsc[s],
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
         else:
             if nt % 2 == 0:
-                return None, grad_scatter, None, grad_fsc, None, None, None, None, None, None, wfcsc[
-                    s], -wfpsc[s], psiysc[s], psixsc[s], zetaysc[s], zetaxsc[
-                        s], None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None
+                return (
+                    None,
+                    grad_scatter,
+                    None,
+                    grad_fsc,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    wfcsc[s],
+                    -wfpsc[s],
+                    psiysc[s],
+                    psixsc[s],
+                    zetaysc[s],
+                    zetaxsc[s],
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
             else:
-                return None, grad_scatter, None, grad_fsc, None, None, None, None, None, None, wfpsc[
-                    s], -wfcsc[s], psiynsc[s], psixnsc[s], zetaynsc[s], zetaxnsc[
-                        s], None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None
+                return (
+                    None,
+                    grad_scatter,
+                    None,
+                    grad_fsc,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    wfpsc[s],
+                    -wfcsc[s],
+                    psiynsc[s],
+                    psixnsc[s],
+                    zetaynsc[s],
+                    zetaxnsc[s],
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
 
 
 def scalar_born_func(
-    *args: Any
-) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor,
-           Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
+    *args: Any,
+) -> Tuple[
+    Tensor,
+    Tensor,
+    Tensor,
+    Tensor,
+    Tensor,
+    Tensor,
+    Tensor,
+    Tensor,
+    Tensor,
+    Tensor,
+    Tensor,
+    Tensor,
+    Tensor,
+    Tensor,
+]:
     return ScalarBornForwardFunc.apply(*args)

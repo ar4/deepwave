@@ -4,9 +4,9 @@ from deepwave.wavelets import ricker
 import math
 import scipy.special
 
+
 def _set_sources(x_s, freq, dt, nt, dtype=None, dpeak_time=0.3):
-    """Create sources with amplitudes that have randomly shifted start times.
-    """
+    """Create sources with amplitudes that have randomly shifted start times."""
     if not isinstance(x_s, torch.Tensor):
         raise TypeError("x_s must be a torch.Tensor.")
     if x_s.ndim != 3:
@@ -30,22 +30,20 @@ def _set_sources(x_s, freq, dt, nt, dtype=None, dpeak_time=0.3):
 
     num_shots, num_sources_per_shot = x_s.shape[:2]
     sources = {}
-    sources['amplitude'] = torch.zeros(num_shots,
-                                       num_sources_per_shot,
-                                       nt,
-                                       dtype=dtype)
+    sources["amplitude"] = torch.zeros(num_shots, num_sources_per_shot, nt, dtype=dtype)
 
-    sources['locations'] = x_s
+    sources["locations"] = x_s
 
     for shot in range(num_shots):
         for source in range(num_sources_per_shot):
             peak_time = 0.05 + torch.rand(1).item() * dpeak_time
-            sources['amplitude'][shot, source, :] = \
-                ricker(freq, nt, dt, peak_time, dtype=dtype)
+            sources["amplitude"][shot, source, :] = ricker(
+                freq, nt, dt, peak_time, dtype=dtype
+            )
     return sources
 
 
-def _set_coords(num_shots, num_per_shot, nx, location='top'):
+def _set_coords(num_shots, num_per_shot, nx, location="top"):
     """Create an array of coordinates at the specified location."""
     if not isinstance(num_shots, int):
         raise TypeError("num_shots must be an int.")
@@ -67,13 +65,14 @@ def _set_coords(num_shots, num_per_shot, nx, location='top'):
 
     ndim = len(nx)
     coords = torch.zeros(num_shots, num_per_shot, ndim)
-    coords[..., 0] = torch.arange(num_shots * num_per_shot)\
-                          .reshape(num_shots, num_per_shot)
-    if location == 'top':
+    coords[..., 0] = torch.arange(num_shots * num_per_shot).reshape(
+        num_shots, num_per_shot
+    )
+    if location == "top":
         pass
-    elif location == 'bottom':
+    elif location == "bottom":
         coords[..., 0] = float(nx[0] - 1) - coords[..., 0]
-    elif location == 'middle':
+    elif location == "middle":
         coords[..., 0] += int(float(nx[0]) / 2)
     else:
         raise ValueError("unsupported location")
@@ -91,8 +90,9 @@ def test_set_sources_shape():
     dt = 0.004
     nt = 100
     sources = _set_sources(x_s, freq, dt, nt)
-    assert sources['amplitude'].shape == (2, 3, 100)
-    assert sources['locations'].shape == (2, 3, 2)
+    assert sources["amplitude"].shape == (2, 3, 100)
+    assert sources["locations"].shape == (2, 3, 2)
+
 
 def test_set_sources_ricker_values():
     x_s = torch.zeros(1, 1, 2)
@@ -101,21 +101,25 @@ def test_set_sources_ricker_values():
     nt = 100
     sources = _set_sources(x_s, freq, dt, nt, dpeak_time=0.0)
     # Check if ricker wavelet is generated (simple check, not full validation)
-    assert sources['amplitude'][0, 0, 0] != 0
+    assert sources["amplitude"][0, 0, 0] != 0
+
 
 def test_set_sources_invalid_xs_type():
     with pytest.raises(TypeError, match="x_s must be a torch.Tensor."):
         _set_sources([1, 2], 25, 0.004, 100)
 
+
 def test_set_sources_invalid_xs_ndim():
-    x_s = torch.zeros(2, 3) # Should be 3D
+    x_s = torch.zeros(2, 3)  # Should be 3D
     with pytest.raises(RuntimeError, match="x_s must have three dimensions."):
         _set_sources(x_s, 25, 0.004, 100)
+
 
 def test_set_sources_invalid_freq_type():
     x_s = torch.zeros(2, 3, 2)
     with pytest.raises(TypeError, match="freq must be a number."):
         _set_sources(x_s, "invalid", 0.004, 100)
+
 
 def test_set_sources_non_positive_freq():
     x_s = torch.zeros(2, 3, 2)
@@ -124,10 +128,12 @@ def test_set_sources_non_positive_freq():
     with pytest.raises(ValueError, match="freq must be positive."):
         _set_sources(x_s, -1, 0.004, 100)
 
+
 def test_set_sources_invalid_dt_type():
     x_s = torch.zeros(2, 3, 2)
     with pytest.raises(TypeError, match="dt must be a number."):
         _set_sources(x_s, 25, "invalid", 100)
+
 
 def test_set_sources_non_positive_dt():
     x_s = torch.zeros(2, 3, 2)
@@ -136,10 +142,12 @@ def test_set_sources_non_positive_dt():
     with pytest.raises(ValueError, match="dt must be positive."):
         _set_sources(x_s, 25, -0.004, 100)
 
+
 def test_set_sources_invalid_nt_type():
     x_s = torch.zeros(2, 3, 2)
     with pytest.raises(TypeError, match="nt must be an int."):
         _set_sources(x_s, 25, 0.004, 100.0)
+
 
 def test_set_sources_non_positive_nt():
     x_s = torch.zeros(2, 3, 2)
@@ -148,10 +156,12 @@ def test_set_sources_non_positive_nt():
     with pytest.raises(ValueError, match="nt must be positive."):
         _set_sources(x_s, 25, 0.004, -1)
 
+
 def test_set_sources_invalid_dtype():
     x_s = torch.zeros(2, 3, 2)
     with pytest.raises(TypeError, match="dtype must be a torch.dtype."):
         _set_sources(x_s, 25, 0.004, 100, dtype="invalid")
+
 
 def test_set_sources_negative_dpeak_time():
     x_s = torch.zeros(2, 3, 2)
@@ -167,40 +177,46 @@ def test_set_coords_shape():
     coords = _set_coords(num_shots, num_per_shot, nx)
     assert coords.shape == (num_shots, num_per_shot, len(nx))
 
+
 def test_set_coords_location_top():
     num_shots = 1
     num_per_shot = 1
     nx = (10, 10)
-    coords = _set_coords(num_shots, num_per_shot, nx, location='top')
+    coords = _set_coords(num_shots, num_per_shot, nx, location="top")
     assert coords[0, 0, 0] == 0
-    assert coords[0, 0, 1] == 5 # nx[1] / 2
+    assert coords[0, 0, 1] == 5  # nx[1] / 2
+
 
 def test_set_coords_location_bottom():
     num_shots = 1
     num_per_shot = 1
     nx = (10, 10)
-    coords = _set_coords(num_shots, num_per_shot, nx, location='bottom')
-    assert coords[0, 0, 0] == 9 # nx[0] - 1
+    coords = _set_coords(num_shots, num_per_shot, nx, location="bottom")
+    assert coords[0, 0, 0] == 9  # nx[0] - 1
     assert coords[0, 0, 1] == 5
+
 
 def test_set_coords_location_middle():
     num_shots = 1
     num_per_shot = 1
     nx = (10, 10)
-    coords = _set_coords(num_shots, num_per_shot, nx, location='middle')
-    assert coords[0, 0, 0] == 5 # int(nx[0] / 2)
+    coords = _set_coords(num_shots, num_per_shot, nx, location="middle")
+    assert coords[0, 0, 0] == 5  # int(nx[0] / 2)
     assert coords[0, 0, 1] == 5
+
 
 def test_set_coords_invalid_location():
     num_shots = 1
     num_per_shot = 1
     nx = (10, 10)
     with pytest.raises(ValueError, match="unsupported location"):
-        _set_coords(num_shots, num_per_shot, nx, location='invalid')
+        _set_coords(num_shots, num_per_shot, nx, location="invalid")
+
 
 def test_set_coords_invalid_num_shots_type():
     with pytest.raises(TypeError, match="num_shots must be an int."):
         _set_coords(1.0, 1, (10, 10))
+
 
 def test_set_coords_non_positive_num_shots():
     with pytest.raises(ValueError, match="num_shots must be positive."):
@@ -208,9 +224,11 @@ def test_set_coords_non_positive_num_shots():
     with pytest.raises(ValueError, match="num_shots must be positive."):
         _set_coords(-1, 1, (10, 10))
 
+
 def test_set_coords_invalid_num_per_shot_type():
     with pytest.raises(TypeError, match="num_per_shot must be an int."):
         _set_coords(1, 1.0, (10, 10))
+
 
 def test_set_coords_non_positive_num_per_shot():
     with pytest.raises(ValueError, match="num_per_shot must be positive."):
@@ -218,23 +236,28 @@ def test_set_coords_non_positive_num_per_shot():
     with pytest.raises(ValueError, match="num_per_shot must be positive."):
         _set_coords(1, -1, (10, 10))
 
+
 def test_set_coords_invalid_nx_type():
     with pytest.raises(TypeError, match="nx must be a list or tuple."):
         _set_coords(1, 1, "invalid")
+
 
 def test_set_coords_empty_nx():
     with pytest.raises(ValueError, match="nx must not be empty."):
         _set_coords(1, 1, ())
 
+
 def test_set_coords_invalid_nx_elements_type():
     with pytest.raises(TypeError, match="nx elements must be integers."):
         _set_coords(1, 1, (10, 10.0))
+
 
 def test_set_coords_non_positive_nx_elements():
     with pytest.raises(ValueError, match="nx elements must be positive."):
         _set_coords(1, 1, (10, 0))
     with pytest.raises(ValueError, match="nx elements must be positive."):
         _set_coords(1, 1, (10, -1))
+
 
 def direct_2d_approx(x, x_s, dx, dt, c, f):
     """Use an approximation of the 2D Green's function to calculate the
@@ -314,6 +337,7 @@ def scattered_2d(x, x_s, x_p, dx, dt, c, dc, f):
     u = 2 * dc / c**3 * direct_2d_approx(x, x_p, dx, dt, c, du_pdt2)
     return u
 
+
 def _second_deriv(arr, dt):
     """Calculate the second derivative."""
     if not isinstance(arr, torch.Tensor):
@@ -321,7 +345,9 @@ def _second_deriv(arr, dt):
     if arr.ndim != 1:
         raise RuntimeError("arr must be a 1D Tensor.")
     if arr.numel() < 3:
-        raise ValueError("arr must have at least 3 elements for second derivative calculation.")
+        raise ValueError(
+            "arr must have at least 3 elements for second derivative calculation."
+        )
     if not isinstance(dt, (int, float)):
         raise TypeError("dt must be a number.")
     if dt <= 0:
@@ -333,6 +359,7 @@ def _second_deriv(arr, dt):
     d2dt2[-1] = d2dt2[-2]
     return d2dt2
 
+
 # Unit tests for direct_2d_approx
 def test_direct_2d_approx_output_shape():
     x = torch.tensor([0, 0])
@@ -343,6 +370,7 @@ def test_direct_2d_approx_output_shape():
     f = torch.randn(100)
     result = direct_2d_approx(x, x_s, dx, dt, c, f)
     assert result.shape == (100,)
+
 
 # Unit tests for scattered_2d
 def test_scattered_2d_output_shape():
@@ -357,6 +385,7 @@ def test_scattered_2d_output_shape():
     result = scattered_2d(x, x_s, x_p, dx, dt, c, dc, f)
     assert result.shape == (100,)
 
+
 # Unit tests for _second_deriv
 def test_second_deriv_output_shape():
     arr = torch.randn(100)
@@ -364,8 +393,9 @@ def test_second_deriv_output_shape():
     result = _second_deriv(arr, dt)
     assert result.shape == (100,)
 
+
 def test_second_deriv_values():
-    arr = torch.tensor([0.0, 1.0, 4.0, 9.0, 16.0]) # y = x^2
+    arr = torch.tensor([0.0, 1.0, 4.0, 9.0, 16.0])  # y = x^2
     dt = 1.0
     # Expected second derivative of x^2 is 2
     result = _second_deriv(arr, dt)
