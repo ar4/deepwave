@@ -19,6 +19,17 @@ def _get_hicks_for_one_location_dim(
         size: int,
         monopole: bool = True,
         eps: float = DEFAULT_EPS) -> Tuple[Tensor, Tensor]:
+    if not isinstance(halfwidth, int):
+        raise TypeError("halfwidth must be an int.")
+    if halfwidth < 1 or halfwidth > 10:
+        raise RuntimeError("halfwidth must be in [1, 10].")
+    if beta < 0:
+        raise RuntimeError("beta must be non-negative.")
+    if not isinstance(free_surface_loc, List) or len(free_surface_loc) != 2 or \
+       not all(isinstance(f, (int, float)) for f in free_surface_loc):
+        raise RuntimeError("extent must be a list of two floats.")
+    if size <= 0:
+        raise RuntimeError("n_grid_points must be positive.")
     if monopole and abs(location - round(location)) < eps:
         locations = torch.tensor([location]).round().long().to(beta.device)
         weights = torch.ones(1, dtype=beta.dtype, device=beta.device)
@@ -210,8 +221,12 @@ class Hicks:
                  dtype: torch.dtype = torch.float,
                  eps: float = DEFAULT_EPS):
 
+        if not isinstance(locations, Tensor):
+            raise TypeError("locations must be a torch.Tensor.")
         if locations.ndim != 3:
-            raise RuntimeError("Locations should have three dimensions")
+            raise RuntimeError("locations must have three dimensions.")
+        if not isinstance(dtype, torch.dtype):
+            raise TypeError("dtype must be a torch.dtype.")
         if not isinstance(halfwidth, int):
             raise RuntimeError("halfwidth must be an integer")
         if halfwidth < 1 or halfwidth > 10:
@@ -311,6 +326,11 @@ class Hicks:
             to a Deepwave propagator.
         """
 
+        if not isinstance(amplitudes, Tensor):
+            raise TypeError("amplitudes must be a torch.Tensor.")
+        if amplitudes.ndim != 3:
+            raise RuntimeError("amplitudes must have three dimensions.")
+
         _check_shot_idxs(amplitudes, shot_idxs)
         n_shots, n_per_shot, nt = amplitudes.shape
         n_per_shot_hicks = self.hicks_locations.shape[1]
@@ -354,6 +374,11 @@ class Hicks:
         Returns:
             The amplitudes of receivers at the original locations.
         """
+        if not isinstance(amplitudes, Tensor):
+            raise TypeError("amplitudes must be a torch.Tensor.")
+        if amplitudes.ndim != 3:
+            raise RuntimeError("amplitudes must have three dimensions.")
+
         _check_shot_idxs(amplitudes, shot_idxs)
         n_shots, _, nt = amplitudes.shape
         n_per_shot = self.locations.shape[1]

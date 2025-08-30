@@ -444,10 +444,10 @@ def test_unused_source_receiver(mlamb=DEFAULT_LAMB,
     if nt is None:
         nt = int(
             (2 * torch.norm(nx.float() * dx) / vmin + 0.35 + 2 / freq) / dt)
-    x_s = _set_coords(num_shots, 2 * num_sources_per_shot, nx)
+    x_s = _set_coords(num_shots, 2 * num_sources_per_shot, nx.tolist())
     x_s_y = x_s[:, :num_sources_per_shot]
     x_s_x = x_s[:, num_sources_per_shot:]
-    x_r = _set_coords(num_shots, 3 * num_receivers_per_shot, nx, 'bottom')
+    x_r = _set_coords(num_shots, 3 * num_receivers_per_shot, nx.tolist(), 'bottom')
     x_r_y = x_r[:, :num_receivers_per_shot]
     x_r_x = x_r[:, num_receivers_per_shot:2*num_receivers_per_shot]
     x_r_p = x_r[:, 2*num_receivers_per_shot:]
@@ -492,10 +492,10 @@ def test_unused_source_receiver(mlamb=DEFAULT_LAMB,
     muf.requires_grad_()
     buoyancyf = buoyancy.clone()
     buoyancyf.requires_grad_()
-    x_s = _set_coords(num_shots, 2 * num_sources_per_shot, nx)
+    x_s = _set_coords(num_shots, 2 * num_sources_per_shot, nx.tolist())
     x_s_y = x_s[:, :num_sources_per_shot]
     x_s_x = x_s[:, num_sources_per_shot:]
-    x_r = _set_coords(num_shots, 3 * num_receivers_per_shot, nx, 'bottom')
+    x_r = _set_coords(num_shots, 3 * num_receivers_per_shot, nx.tolist(), 'bottom')
     x_r_y = x_r[:, :num_receivers_per_shot]
     x_r_x = x_r[:, num_receivers_per_shot:2*num_receivers_per_shot]
     x_r_p = x_r[:, 2*num_receivers_per_shot:]
@@ -854,10 +854,10 @@ def run_forward(mlamb,
     if nt is None:
         nt = int(
             (2 * torch.norm(nx.float() * dx) / vmin + 0.35 + 2 / freq) / dt)
-    x_s = _set_coords(num_shots, 2 * num_sources_per_shot, nx)
+    x_s = _set_coords(num_shots, 2 * num_sources_per_shot, nx.tolist())
     x_s_y = x_s[:, :num_sources_per_shot]
     x_s_x = x_s[:, num_sources_per_shot:]
-    x_r = _set_coords(num_shots, 2 * num_receivers_per_shot, nx, 'bottom')
+    x_r = _set_coords(num_shots, 2 * num_receivers_per_shot, nx.tolist(), 'bottom')
     x_r_y = x_r[:, :num_receivers_per_shot]
     x_r_x = x_r[:, num_receivers_per_shot:]
     sources_y = _set_sources(x_s_y, freq, dt, nt, dtype, dpeak_time=dpeak_time)
@@ -971,7 +971,7 @@ def run_gradcheck(mlamb,
             (2 * torch.norm(nx.float() * dx) / 1500 + 0.1 + 2 / freq) / dt)
     nt += nt_add
     if num_sources_per_shot > 0:
-        x_s = _set_coords(num_shots, 2 * num_sources_per_shot, nx)
+        x_s = _set_coords(num_shots, 2 * num_sources_per_shot, nx.tolist())
         x_s_y = x_s[:, :num_sources_per_shot]
         x_s_x = x_s[:, num_sources_per_shot:]
         sources_y = _set_sources(x_s_y, freq, dt, nt, dtype, dpeak_time=0.05)
@@ -985,7 +985,7 @@ def run_gradcheck(mlamb,
         sources_y = {'amplitude': None, 'locations': None}
         sources_x = {'amplitude': None, 'locations': None}
     if num_receivers_per_shot > 0:
-        x_r = _set_coords(num_shots, 2 * num_receivers_per_shot, nx)
+        x_r = _set_coords(num_shots, 2 * num_receivers_per_shot, nx.tolist())
         x_r_y = x_r[:, :num_receivers_per_shot]
         x_r_x = x_r[:, num_receivers_per_shot:]
     else:

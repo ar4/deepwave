@@ -4,6 +4,7 @@ import scipy.special
 from deepwave import Scalar, scalar
 from deepwave.wavelets import ricker
 from deepwave.common import cfl_condition, upsample, downsample, IGNORE_LOCATION
+from test_utils import _set_sources, _set_coords, direct_2d_approx, scattered_2d
 
 
 def scalarprop(model,
@@ -306,8 +307,8 @@ def test_unused_source_receiver(c=1500,
              torch.randn(*nx, device=device, dtype=dtype) * dc)
 
     nt = int((2 * torch.norm(nx.float() * dx) / c + 0.35 + 2 / freq) / dt)
-    x_s = _set_coords(num_shots, num_sources_per_shot, nx)
-    x_r = _set_coords(num_shots, num_receivers_per_shot, nx, 'bottom')
+    x_s = _set_coords(num_shots, num_sources_per_shot, nx.tolist())
+    x_r = _set_coords(num_shots, num_receivers_per_shot, nx.tolist(), 'bottom')
     sources = _set_sources(x_s, freq, dt, nt, dtype)
 
     # Forward with source and receiver ignored
@@ -330,8 +331,8 @@ def test_unused_source_receiver(c=1500,
     # Forward with amplitudes of sources that will be ignored set to zero
     modelf = model.clone()
     modelf.requires_grad_()
-    x_s = _set_coords(num_shots, num_sources_per_shot, nx)
-    x_r = _set_coords(num_shots, num_receivers_per_shot, nx, 'bottom')
+    x_s = _set_coords(num_shots, num_sources_per_shot, nx.tolist())
+    x_r = _set_coords(num_shots, num_receivers_per_shot, nx.tolist(), 'bottom')
     for i in range(num_shots):
         sources['amplitude'][i, i].fill_(0)
     sources['locations'] = x_s
@@ -589,8 +590,8 @@ def test_negative_vel(c=1500,
     dx = torch.Tensor(dx)
 
     nt = int((2 * torch.norm(nx.float() * dx) / c + 0.35 + 2 / freq) / dt)
-    x_s = _set_coords(num_shots, num_sources_per_shot, nx)
-    x_r = _set_coords(num_shots, num_receivers_per_shot, nx, 'bottom')
+    x_s = _set_coords(num_shots, num_sources_per_shot, nx.tolist())
+    x_r = _set_coords(num_shots, num_receivers_per_shot, nx.tolist(), 'bottom')
     sources = _set_sources(x_s, freq, dt, nt, dtype)
 
     # Positive velocity
@@ -684,12 +685,6 @@ def test_gradcheck_v_batched():
     run_gradcheck_2d(propagator=scalarprop, c=torch.tensor([[[1500.0]],[[1600.0]]]))
 
 
-
-
-
-from test_utils import _set_sources, _set_coords
-
-
 def run_direct(c,
                freq,
                dx,
@@ -722,8 +717,8 @@ def run_direct(c,
     dx = torch.Tensor(dx)
 
     nt = int((2 * torch.norm(nx.float() * dx) / min_c + 0.35 + 2 / freq) / dt)
-    x_s = _set_coords(num_shots, num_sources_per_shot, nx)
-    x_r = _set_coords(num_shots, num_receivers_per_shot, nx, 'bottom')
+    x_s = _set_coords(num_shots, num_sources_per_shot, nx.tolist())
+    x_r = _set_coords(num_shots, num_receivers_per_shot, nx.tolist(), 'bottom')
     sources = _set_sources(x_s, freq, dt, nt, dtype)
 
     if len(nx) == 2:
@@ -800,8 +795,8 @@ def run_forward(c,
 
     if nt is None:
         nt = int((2 * torch.norm(nx.float() * dx) / c + 0.35 + 2 / freq) / dt)
-    x_s = _set_coords(num_shots, num_sources_per_shot, nx)
-    x_r = _set_coords(num_shots, num_receivers_per_shot, nx, 'bottom')
+    x_s = _set_coords(num_shots, num_sources_per_shot, nx.tolist())
+    x_r = _set_coords(num_shots, num_receivers_per_shot, nx.tolist(), 'bottom')
     sources = _set_sources(x_s, freq, dt, nt, dtype)
 
     return propagator(model,
@@ -870,9 +865,9 @@ def run_scatter(c,
     dx = torch.Tensor(dx)
 
     nt = int((2 * torch.norm(nx.float() * dx) / c + 0.35 + 2 / freq) / dt)
-    x_s = _set_coords(num_shots, num_sources_per_shot, nx)
-    x_r = _set_coords(num_shots, num_receivers_per_shot, nx)
-    x_p = _set_coords(1, 1, nx, 'middle')[0, 0]
+    x_s = _set_coords(num_shots, num_sources_per_shot, nx.tolist())
+    x_r = _set_coords(num_shots, num_receivers_per_shot, nx.tolist())
+    x_p = _set_coords(1, 1, nx.tolist(), 'middle')[0, 0]
     model[torch.split((x_p).long(), 1)] += dc
     sources = _set_sources(x_s, freq, dt, nt, dtype)
 
@@ -983,14 +978,14 @@ def run_gradcheck(c,
             (2 * torch.norm(nx.float() * dx) / 1500 + 0.1 + 2 / freq) / dt)
     nt += nt_add
     if num_sources_per_shot > 0:
-        x_s = _set_coords(num_shots, num_sources_per_shot, nx)
+        x_s = _set_coords(num_shots, num_sources_per_shot, nx.tolist())
         sources = _set_sources(x_s, freq, dt, nt, dtype, dpeak_time=0.05)
         sources['amplitude'].requires_grad_(source_requires_grad)
         nt = None
     else:
         sources = {'amplitude': None, 'locations': None}
     if num_receivers_per_shot > 0:
-        x_r = _set_coords(num_shots, num_receivers_per_shot, nx)
+        x_r = _set_coords(num_shots, num_receivers_per_shot, nx.tolist())
     else:
         x_r = None
     if isinstance(pml_width, int):

@@ -48,6 +48,25 @@ class Scalar(torch.nn.Module):
         if not isinstance(v_requires_grad, bool):
             raise TypeError(f"v_requires_grad must be bool, got {type(v_requires_grad).__name__}")
         super().__init__()
+        if not isinstance(v, Tensor):
+            raise RuntimeError("model must be a torch.Tensor.")
+        if v.ndim < 2:
+            raise RuntimeError("model must have at least two dimensions.")
+        if v.ndim > 3:
+            raise RuntimeError("model must have at most three dimensions.")
+        if any(s <= 0 for s in v.shape):
+            raise RuntimeError("model dimensions must be positive.")
+        if not isinstance(grid_spacing, (int, float, Tensor, Sequence)):
+            raise TypeError("dx must be a float or a sequence of floats.")
+        if isinstance(grid_spacing, Sequence) and not all(isinstance(g, (int, float)) for g in grid_spacing):
+            raise TypeError("dx must be a float or a sequence of floats.")
+        if isinstance(grid_spacing, (int, float)) and grid_spacing <= 0:
+            raise ValueError("dx elements must be positive.")
+        if isinstance(grid_spacing, Tensor) and (grid_spacing <= 0).any():
+            raise ValueError("dx elements must be positive.")
+        if isinstance(grid_spacing, Sequence) and any(g <= 0 for g in grid_spacing):
+            raise ValueError("dx elements must be positive.")
+
         self.v = torch.nn.Parameter(v, requires_grad=v_requires_grad)
         self.grid_spacing = grid_spacing
 
@@ -70,7 +89,10 @@ class Scalar(torch.nn.Module):
         zetax_m1: Optional[Tensor] = None,
         origin: Optional[Sequence[int]] = None,
         nt: Optional[int] = None,
-        model_gradient_sampling_interval: int = 1
+        model_gradient_sampling_interval: int = 1,
+        freq_taper_frac: float = 0.0,
+        time_pad_frac: float = 0.0,
+        time_taper: bool = False
     ) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
         """
         Perform forward propagation/modelling. See `scalar` for details.
@@ -93,7 +115,11 @@ class Scalar(torch.nn.Module):
             max_vel=max_vel,
             survey_config=survey_config,
             nt=nt,
-            model_gradient_sampling_interval=model_gradient_sampling_interval)
+            model_gradient_sampling_interval=model_gradient_sampling_interval,
+            freq_taper_frac=freq_taper_frac,
+            time_pad_frac=time_pad_frac,
+            time_taper=time_taper
+        )
 
 
 def scalar(

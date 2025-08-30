@@ -98,11 +98,11 @@ elastic_forward_template: List[Type] = (
 )
 
 elastic_backward_template: List[Type] = (
-    [c_void_p] * 55
+    [c_void_p] * 49
     + [FLOAT_TYPE] * 3
     + [c_int64] * 10
     + [c_bool] * 6
-    + [c_int64] * 9
+    + [c_int64] * 10
 )
 
 # A dictionary to hold all the templates

@@ -243,6 +243,10 @@ def set_grid_spacing(grid_spacing: Union[float, Sequence[float]], n_dims: int) -
     """
     processed_grid_spacing = _as_list(grid_spacing, "grid_spacing", float)
 
+    for g in processed_grid_spacing:
+        if g <= 0:
+            raise ValueError("grid_spacing elements must be positive.")
+
     if len(processed_grid_spacing) == 1:
         return processed_grid_spacing * n_dims
     if len(processed_grid_spacing) != n_dims:
@@ -268,6 +272,10 @@ def set_pml_width(pml_width: Union[int, Sequence[int]],
     """
     processed_pml_width = _as_list(pml_width, "pml_width", int)
 
+    for w in processed_pml_width:
+        if w < 0:
+            raise ValueError("pml_width must be non-negative.")
+
     if len(processed_pml_width) == 1:
         return processed_pml_width * (2 * n_dims)
     if len(processed_pml_width) != 2 * n_dims:
@@ -282,12 +290,14 @@ def set_pml_freq(pml_freq: Optional[float], dt: float) -> float:
     """
     if pml_freq is not None and not isinstance(pml_freq, (int, float)):
         raise TypeError("pml_freq must be a float, int, or None.")
+    if dt <= 0:
+        raise ValueError("dt must be greater than zero to calculate Nyquist frequency.")
     nyquist = 0.5 / abs(dt)
     if pml_freq is None:
         pml_freq = 25.0
         warnings.warn(f"pml_freq was not set, so defaulting to {pml_freq}.")
     if pml_freq < 0:
-        warnings.warn("pml_freq must be non-negative.")
+        raise ValueError("pml_freq must be non-negative.")
     if pml_freq > nyquist:
         warnings.warn(
             f"pml_freq {pml_freq} is greater than the Nyquist frequency {nyquist}."
@@ -301,6 +311,8 @@ def set_max_vel(max_vel: Optional[float], max_model_vel: float) -> float:
     """
     if max_vel is not None and not isinstance(max_vel, (int, float)):
         raise TypeError("max_vel must be a float, int, or None.")
+    if max_model_vel <= 0:
+        raise ValueError("max_model_vel must be greater than zero.")
     if max_vel is None:
         return max_model_vel
     max_vel = abs(max_vel)
@@ -319,6 +331,8 @@ def set_nt(
     """
     if nt is not None and not isinstance(nt, int):
         raise TypeError("nt must be an int or None.")
+    if step_ratio < 1:
+        raise ValueError("step_ratio must be >= 1")
     source_amplitudes_nt = next((a.shape[-1] for a in source_amplitudes if a is not None), None)
     if nt is None:
         if source_amplitudes_nt is None:
@@ -441,6 +455,14 @@ def set_receiver_amplitudes(receiver_locations: Sequence[Tensor], n_batch: int,
 
 def check_points_per_wavelength(min_nonzero_vel: float, pml_freq: float,
                                 grid_spacing: Sequence[float]) -> None:
+    if min_nonzero_vel < 0:
+        raise ValueError("min_nonzero_vel must be non-negative.")
+    if pml_freq < 0:
+        raise ValueError("pml_freq must be non-negative.")
+    for g in grid_spacing:
+        if g <= 0:
+            raise ValueError("grid_spacing elements must be positive.")
+
     if pml_freq == 0:
         min_wavelength = float('inf')
     else:
@@ -449,7 +471,7 @@ def check_points_per_wavelength(min_nonzero_vel: float, pml_freq: float,
     cells_per_wavelength = min_wavelength / max_spacing
     if cells_per_wavelength < 6:
         warnings.warn(
-            f"At least six grid cells per wavelength is recommended, but at a frequency of {pml_freq}, a minimum non-zero velocity of {min_nonzero_vel}, and a grid cell spacing of {max_spacing}, there are only {cells_per_wavelength:.2f}.ירת"
+            f"At least six grid cells per wavelength is recommended, but at a frequency of {pml_freq}, a minimum non-zero velocity of {min_nonzero_vel}, and a grid cell spacing of {max_spacing}, there are only {cells_per_wavelength:.2f}."
         )
 
 
@@ -467,10 +489,14 @@ def cosine_taper_end(signal: Tensor, n_taper: int) -> Tensor:
     Returns:
         The tapered signal.
     """
+    if n_taper < 0:
+        raise ValueError("n_taper must be non-negative.")
     taper = torch.ones(signal.shape[-1],
                        dtype=signal.dtype,
                        device=signal.device)
     n_taper = min(n_taper, signal.shape[-1])
+    if n_taper == 0:
+        return signal * taper
     taper[len(taper) - n_taper:] = (torch.cos(
         torch.arange(1, n_taper + 1, device=signal.device) / n_taper * math.pi)
                                     + 1).to(signal.dtype) / 2
@@ -528,6 +554,26 @@ def upsample(signal: Tensor,
     Returns:
         The signal after upsampling.
     """
+    if not isinstance(signal, Tensor):
+        raise TypeError("signal must be a torch.Tensor.")
+    if signal.numel() == 0:
+        return signal
+
+    if not isinstance(step_ratio, int):
+        raise TypeError("step_ratio must be an int.")
+    if step_ratio <= 0:
+        raise ValueError("step_ratio must be positive.")
+    if not isinstance(freq_taper_frac, (int, float)):
+        raise TypeError("freq_taper_frac must be a float or an int.")
+    if not (0.0 <= freq_taper_frac <= 1.0):
+        raise ValueError(f"freq_taper_frac must be in [0, 1], got {freq_taper_frac}.")
+    if not isinstance(time_pad_frac, (int, float)):
+        raise TypeError("time_pad_frac must be a float or an int.")
+    if not (0.0 <= time_pad_frac <= 1.0):
+        raise ValueError(f"time_pad_frac must be in [0, 1], got {time_pad_frac}.")
+    if not isinstance(time_taper, bool):
+        raise TypeError("time_taper must be a bool.")
+
     if step_ratio == 1:
         return signal
     n_time_pad = int(time_pad_frac *
@@ -601,7 +647,29 @@ def downsample(signal: Tensor,
     Returns:
         The signal after downsampling.
     """
-    if signal.numel() == 0 or (step_ratio == 1 and shift == 0.0):
+    if not isinstance(signal, Tensor):
+        raise TypeError("signal must be a torch.Tensor.")
+    if signal.numel() == 0:
+        return signal
+
+    if not isinstance(step_ratio, int):
+        raise TypeError("step_ratio must be an int.")
+    if step_ratio <= 0:
+        raise ValueError("step_ratio must be positive.")
+    if not isinstance(freq_taper_frac, (int, float)):
+        raise TypeError("freq_taper_frac must be a float or an int.")
+    if not (0.0 <= freq_taper_frac <= 1.0):
+        raise ValueError(f"freq_taper_frac must be in [0, 1], got {freq_taper_frac}.")
+    if not isinstance(time_pad_frac, (int, float)):
+        raise TypeError("time_pad_frac must be a float or an int.")
+    if not (0.0 <= time_pad_frac <= 1.0):
+        raise ValueError(f"time_pad_frac must be in [0, 1], got {time_pad_frac}.")
+    if not isinstance(time_taper, bool):
+        raise TypeError("time_taper must be a bool.")
+    if not isinstance(shift, (int, float)):
+        raise TypeError("shift must be a float or an int.")
+
+    if step_ratio == 1 and shift == 0.0:
         return signal
     if time_taper:
         signal = signal * torch.hann_window(
@@ -678,6 +746,12 @@ def extract_survey(
 
 def check_locations_are_within_model(
         model_shape: Sequence[int], locations: Sequence[Optional[Tensor]]) -> None:
+    if not model_shape:
+        raise RuntimeError("model_shape must not be empty.")
+    for dim_shape in model_shape:
+        if dim_shape <= 0:
+            raise RuntimeError("model_shape elements must be positive.")
+
     for location in locations:
         if location is not None:
             for dim, model_dim_shape in enumerate(model_shape):
@@ -694,6 +768,9 @@ def check_locations_are_within_model(
 def set_survey_pad(survey_pad: Optional[Union[int, Sequence[Optional[int]]]],
                    ndim: int) -> List[int]:
     """Check survey_pad, and convert to a list if it is a scalar."""
+    if ndim <= 0:
+        raise RuntimeError("ndim must be positive.")
+
     # Expand to list
     survey_pad_list: List[int] = []
     if survey_pad is None:
@@ -706,8 +783,11 @@ def set_survey_pad(survey_pad: Optional[Union[int, Sequence[Optional[int]]]],
         for pad in survey_pad:
             if pad is None:
                 survey_pad_list.append(-1)
-            elif pad >= 0:
-                survey_pad_list.append(pad)
+            elif isinstance(pad, int):
+                if pad >= 0:
+                    survey_pad_list.append(pad)
+                else:
+                    raise RuntimeError("survey_pad entries must be None or non-negative ints.")
             else:
                 raise RuntimeError("survey_pad entries must be None or non-negative ints.")
     if len(survey_pad_list) != 2 * ndim:
@@ -737,6 +817,12 @@ def get_survey_extents_from_locations(
         specifying the extents of the model, as a tuple [beginning, end)
         for each dimension, that will be used for wave propagation.
     """
+    if not model_shape:
+        raise RuntimeError("model_shape must not be empty.")
+    for dim_shape in model_shape:
+        if dim_shape <= 0:
+            raise RuntimeError("model_shape elements must be positive.")
+
     ndims = len(model_shape)
     extents: List[Tuple[int, int]] = []
     survey_pad_list = set_survey_pad(survey_pad, ndims)
@@ -962,10 +1048,18 @@ def extract_models(models: Sequence[Tensor], extents: Sequence[Tuple[int, int]],
 
     region = (slice(None),) + tuple(slice(begin, end) for begin, end in extents)
     reversed_pad = reverse_pad(pad)
-    return [
-        torch.nn.functional.pad(model[region], pad=reversed_pad, mode=pad_mode).contiguous()
-        for model, pad_mode in zip(models, pad_modes)
-    ]
+    
+    # New logic to handle n_batch = 0
+    if n_batch == 0:
+        return [
+            torch.empty(0, *model[region].shape[1:], device=device, dtype=dtype)
+            for model in models
+        ]
+    else:
+        return [
+            torch.nn.functional.pad(model[region], pad=reversed_pad, mode=pad_mode).contiguous()
+            for model, pad_mode in zip(models, pad_modes)
+        ]
 
 
 def extract_locations(name: str,
@@ -1001,7 +1095,7 @@ def extract_locations(name: str,
 
             #if location.dtype != dtype:
             #    raise RuntimeError("Locations must have dtype " + str(dtype) + ", but found one with dtype " + str(location.dtype) + ".")
-            if eps < (location - location.long()).abs().max():
+            if location.numel() > 0 and eps < (location - location.long()).abs().max():
                 warnings.warn(
                     "Locations should be specified as integer numbers "
                     "of cells. If you wish to have a source or receiver "
@@ -1123,6 +1217,11 @@ def cfl_condition_n(grid_spacing: Sequence[float],
     """
     if not isinstance(grid_spacing, Sequence) or not all(isinstance(g, (int, float)) for g in grid_spacing):
         raise TypeError("grid_spacing must be a sequence of floats or ints.")
+    if not grid_spacing:
+        raise ValueError("grid_spacing must not be empty.")
+    for g in grid_spacing:
+        if g <= 0:
+            raise ValueError("grid_spacing elements must be positive.")
     if not isinstance(dt, (int, float)):
         raise TypeError("dt must be a float or an int.")
     if not isinstance(max_abs_vel, (int, float)):

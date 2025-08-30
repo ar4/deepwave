@@ -67,6 +67,16 @@ def test_get_n_batch_empty_tensor_list():
     with pytest.raises(RuntimeError, match=re.escape("At least one input source_locations or wavefield must be non-None.")):
         get_n_batch(source_locations, wavefields)
 
+def test_get_n_batch_zero_batch_size():
+    source_locations = [torch.zeros(0, 1, 2), None]
+    wavefields = [None, None]
+    assert get_n_batch(source_locations, wavefields) == 0
+
+def test_get_n_batch_zero_batch_size_wavefields():
+    source_locations = [None, None]
+    wavefields = [torch.zeros(0, 10, 10), None]
+    assert get_n_batch(source_locations, wavefields) == 0
+
 # Tests for set_grid_spacing
 def test_set_grid_spacing_single_value():
     assert set_grid_spacing(10.0, 2) == [10.0, 10.0]
@@ -91,6 +101,22 @@ def test_set_grid_spacing_list_incorrect_length():
 def test_set_grid_spacing_invalid_type():
     with pytest.raises(TypeError, match=re.escape("grid_spacing must be a float, int, torch.Tensor, or a sequence of floats/ints, got <class 'str'>.")):
         set_grid_spacing("invalid", 2)
+
+def test_set_grid_spacing_negative_value():
+    with pytest.raises(ValueError, match=re.escape("grid_spacing elements must be positive.")):
+        set_grid_spacing(-10.0, 2)
+
+def test_set_grid_spacing_zero_value():
+    with pytest.raises(ValueError, match=re.escape("grid_spacing elements must be positive.")):
+        set_grid_spacing(0.0, 2)
+
+def test_set_grid_spacing_list_negative_element():
+    with pytest.raises(ValueError, match=re.escape("grid_spacing elements must be positive.")):
+        set_grid_spacing([10.0, -1.0], 2)
+
+def test_set_grid_spacing_list_zero_element():
+    with pytest.raises(ValueError, match=re.escape("grid_spacing elements must be positive.")):
+        set_grid_spacing([10.0, 0.0], 2)
 
 # Tests for set_accuracy
 def test_set_accuracy_valid_values():
@@ -142,6 +168,20 @@ def test_set_pml_width_list_invalid_element_type():
     with pytest.raises(TypeError, match=re.escape("Elements in pml_width could not be converted to int. Original error: invalid literal for int() with base 10: 'invalid'")):
         set_pml_width([1, "invalid"], 2)
 
+def test_set_pml_width_negative_value():
+    with pytest.raises(ValueError, match=re.escape("pml_width must be non-negative.")):
+        set_pml_width(-10, 2)
+
+def test_set_pml_width_zero_value():
+    assert set_pml_width(0, 2) == [0, 0, 0, 0]
+
+def test_set_pml_width_list_negative_element():
+    with pytest.raises(ValueError, match=re.escape("pml_width must be non-negative.")):
+        set_pml_width([10, -1, 12, 13], 2)
+
+def test_set_pml_width_list_zero_element():
+    assert set_pml_width([10, 0, 12, 13], 2) == [10, 0, 12, 13]
+
 # Tests for set_pml_freq
 def test_set_pml_freq_none():
     # Default value is 25.0
@@ -153,8 +193,8 @@ def test_set_pml_freq_valid_value():
     assert set_pml_freq(10, 0.004) == 10.0
 
 def test_set_pml_freq_negative_value():
-    with pytest.warns(UserWarning, match=re.escape("pml_freq must be non-negative.")):
-        assert set_pml_freq(-10.0, 0.004) == -10.0
+    with pytest.raises(ValueError, match=re.escape("pml_freq must be non-negative.")):
+        set_pml_freq(-10.0, 0.004)
 
 def test_set_pml_freq_above_nyquist():
     # Nyquist for dt=0.004 is 0.5 / 0.004 = 125.0
@@ -164,6 +204,10 @@ def test_set_pml_freq_above_nyquist():
 def test_set_pml_freq_invalid_type():
     with pytest.raises(TypeError, match=re.escape("pml_freq must be a float, int, or None.")):
         set_pml_freq("invalid", 0.004)
+
+def test_set_pml_freq_zero_dt():
+    with pytest.raises(ValueError, match=re.escape("dt must be greater than zero to calculate Nyquist frequency.")):
+        set_pml_freq(30.0, 0.0)
 
 # Tests for set_max_vel
 def test_set_max_vel_none():
@@ -183,6 +227,10 @@ def test_set_max_vel_negative_value():
 def test_set_max_vel_invalid_type():
     with pytest.raises(TypeError, match=re.escape("max_vel must be a float, int, or None.")):
         set_max_vel("invalid", 1500.0)
+
+def test_set_max_vel_zero_actual_max_vel():
+    with pytest.raises(ValueError, match=re.escape("max_model_vel must be greater than zero.")):
+        set_max_vel(2000.0, 0.0)
 
 # Tests for set_nt
 def test_set_nt_none_with_source_amplitudes():
@@ -226,6 +274,18 @@ def test_set_nt_invalid_type():
     with pytest.raises(TypeError, match=re.escape("nt must be an int or None.")):
         set_nt("invalid", source_amplitudes, step_ratio)
 
+def test_set_nt_zero_step_ratio():
+    source_amplitudes = [None]
+    step_ratio = 0
+    with pytest.raises(ValueError, match=re.escape("step_ratio must be >= 1")):
+        set_nt(100, source_amplitudes, step_ratio)
+
+def test_set_nt_negative_step_ratio():
+    source_amplitudes = [None]
+    step_ratio = -1
+    with pytest.raises(ValueError, match=re.escape("step_ratio must be >= 1")):
+        set_nt(100, source_amplitudes, step_ratio)
+
 # Tests for set_model_gradient_sampling_interval
 def test_set_model_gradient_sampling_interval_valid_value():
     assert set_model_gradient_sampling_interval(1, 1) == 1
@@ -240,6 +300,9 @@ def test_set_model_gradient_sampling_interval_invalid_type():
         set_model_gradient_sampling_interval(1.0, 1)
     with pytest.raises(TypeError, match=re.escape("model_gradient_sampling_interval must be an int.")):
         set_model_gradient_sampling_interval("invalid", 1)
+
+def test_set_model_gradient_sampling_interval_zero_value():
+    assert set_model_gradient_sampling_interval(0, 1) == 0
 
 # Tests for set_freq_taper_frac
 def test_set_freq_taper_frac_valid_value():
@@ -296,6 +359,16 @@ def test_check_source_amplitudes_locations_match_n_sources_mismatch():
     source_locations = [torch.zeros(1, 2, 2)]
     with pytest.raises(RuntimeError, match=re.escape("Expected source amplitudes and locations to be the same size in the n_sources_per_shot dimension, got 1 and 2.")):
         check_source_amplitudes_locations_match(source_amplitudes, source_locations)
+
+def test_check_source_amplitudes_locations_match_empty_lists():
+    source_amplitudes = []
+    source_locations = []
+    check_source_amplitudes_locations_match(source_amplitudes, source_locations)
+
+def test_check_source_amplitudes_locations_match_zero_n_sources_per_shot():
+    source_amplitudes = [torch.zeros(1, 0, 10)]
+    source_locations = [torch.zeros(1, 0, 2)]
+    check_source_amplitudes_locations_match(source_amplitudes, source_locations)
 
 # Tests for set_source_amplitudes
 def test_set_source_amplitudes_none():
@@ -390,6 +463,26 @@ def test_set_source_amplitudes_upsampling():
     # Further checks for upsampling correctness would require comparing with a known good upsampling, which is complex.
     # For now, shape check is sufficient as upsample function has its own tests.
 
+def test_set_source_amplitudes_zero_n_batch():
+    source_amplitudes = [torch.randn(2, 3, 50)]
+    n_batch = 0
+    nt = 100
+    resample_config = ResampleConfig()
+    device = torch.device("cpu")
+    dtype = torch.float32
+    with pytest.raises(RuntimeError, match=re.escape("Expected source amplitudes to have size 0 in the batch dimension, but found one with size 2.")):
+        set_source_amplitudes(source_amplitudes, n_batch, nt, resample_config, device, dtype)
+
+def test_set_source_amplitudes_zero_nt():
+    source_amplitudes = [torch.randn(2, 3, 50)]
+    n_batch = 2
+    nt = 0
+    resample_config = ResampleConfig()
+    device = torch.device("cpu")
+    dtype = torch.float32
+    with pytest.raises(RuntimeError, match=re.escape("Inconsistent number of time samples: Expected source amplitudes to have 0 time samples, but found one with 50.")):
+        set_source_amplitudes(source_amplitudes, n_batch, nt, resample_config, device, dtype)
+
 # Tests for set_receiver_amplitudes
 def test_set_receiver_amplitudes_valid():
     receiver_locations = [torch.zeros(2, 3, 2), torch.zeros(2, 4, 2)]
@@ -425,6 +518,26 @@ def test_set_receiver_amplitudes_no_receivers_per_shot():
     assert len(result) == 1
     assert result[0].shape == (nt, n_batch, 0)
 
+def test_set_receiver_amplitudes_zero_n_batch():
+    receiver_locations = [torch.zeros(2, 3, 2)]
+    n_batch = 0
+    nt = 100
+    device = torch.device("cpu")
+    dtype = torch.float32
+    result = set_receiver_amplitudes(receiver_locations, n_batch, nt, device, dtype)
+    assert len(result) == 1
+    assert result[0].shape == (nt, n_batch, 3)
+
+def test_set_receiver_amplitudes_zero_nt():
+    receiver_locations = [torch.zeros(2, 3, 2)]
+    n_batch = 2
+    nt = 0
+    device = torch.device("cpu")
+    dtype = torch.float32
+    result = set_receiver_amplitudes(receiver_locations, n_batch, nt, device, dtype)
+    assert len(result) == 1
+    assert result[0].shape == (nt, n_batch, 3)
+
 # Tests for check_points_per_wavelength
 def test_check_points_per_wavelength_valid():
     min_nonzero_vel = 1500.0
@@ -456,6 +569,34 @@ def test_check_points_per_wavelength_zero_min_nonzero_vel():
     grid_spacing = [5.0, 5.0]
     # Should not warn, as min_wavelength will be 0, so cells_per_wavelength will be 0
     with pytest.warns(UserWarning, match=re.escape("At least six grid cells per wavelength is recommended, but at a frequency of 25.0, a minimum non-zero velocity of 0.0, and a grid cell spacing of 5.0, there are only 0.00.")):
+        check_points_per_wavelength(min_nonzero_vel, pml_freq, grid_spacing)
+
+def test_check_points_per_wavelength_negative_min_nonzero_vel():
+    min_nonzero_vel = -100.0
+    pml_freq = 25.0
+    grid_spacing = [5.0, 5.0]
+    with pytest.raises(ValueError, match=re.escape("min_nonzero_vel must be non-negative.")):
+        check_points_per_wavelength(min_nonzero_vel, pml_freq, grid_spacing)
+
+def test_check_points_per_wavelength_negative_pml_freq():
+    min_nonzero_vel = 1500.0
+    pml_freq = -25.0
+    grid_spacing = [5.0, 5.0]
+    with pytest.raises(ValueError, match=re.escape("pml_freq must be non-negative.")):
+        check_points_per_wavelength(min_nonzero_vel, pml_freq, grid_spacing)
+
+def test_check_points_per_wavelength_zero_grid_spacing_element():
+    min_nonzero_vel = 1500.0
+    pml_freq = 25.0
+    grid_spacing = [5.0, 0.0]
+    with pytest.raises(ValueError, match=re.escape("grid_spacing elements must be positive.")):
+        check_points_per_wavelength(min_nonzero_vel, pml_freq, grid_spacing)
+
+def test_check_points_per_wavelength_negative_grid_spacing_element():
+    min_nonzero_vel = 1500.0
+    pml_freq = 25.0
+    grid_spacing = [5.0, -1.0]
+    with pytest.raises(ValueError, match=re.escape("grid_spacing elements must be positive.")):
         check_points_per_wavelength(min_nonzero_vel, pml_freq, grid_spacing)
 
 # Tests for cosine_taper_end
@@ -493,6 +634,19 @@ def test_cosine_taper_end_zero_signal():
     expected = torch.zeros(10)
     result = cosine_taper_end(signal, n_taper)
     assert torch.allclose(result, expected)
+
+def test_cosine_taper_end_empty_signal():
+    signal = torch.tensor([])
+    n_taper = 5
+    expected = torch.tensor([])
+    result = cosine_taper_end(signal, n_taper)
+    assert torch.allclose(result, expected)
+
+def test_cosine_taper_end_negative_n_taper():
+    signal = torch.ones(10)
+    n_taper = -5
+    with pytest.raises(ValueError, match=re.escape("n_taper must be non-negative.")):
+        cosine_taper_end(signal, n_taper)
 
 # Tests for zero_last_element_of_final_dimension
 def test_zero_last_element_of_final_dimension_basic():
@@ -578,3 +732,24 @@ def test_cfl_condition_n_invalid_type_dt():
 def test_cfl_condition_n_invalid_type_max_vel():
     with pytest.raises(TypeError, match=re.escape("max_abs_vel must be a float or an int.")):
         cfl_condition_n([5.0, 5.0], 0.004, "invalid")
+
+def test_cfl_condition_n_negative_grid_spacing_element():
+    grid_spacing = [5.0, -1.0]
+    dt = 0.002
+    max_vel = 1500.0
+    with pytest.raises(ValueError, match=re.escape("grid_spacing elements must be positive.")):
+        cfl_condition_n(grid_spacing, dt, max_vel)
+
+def test_cfl_condition_n_zero_grid_spacing_element():
+    grid_spacing = [5.0, 0.0]
+    dt = 0.002
+    max_vel = 1500.0
+    with pytest.raises(ValueError, match=re.escape("grid_spacing elements must be positive.")):
+        cfl_condition_n(grid_spacing, dt, max_vel)
+
+def test_cfl_condition_n_empty_grid_spacing():
+    grid_spacing = []
+    dt = 0.002
+    max_vel = 1500.0
+    with pytest.raises(ValueError, match=re.escape("grid_spacing must not be empty.")):
+        cfl_condition_n(grid_spacing, dt, max_vel)
