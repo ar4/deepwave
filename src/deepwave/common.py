@@ -13,6 +13,20 @@ class ResampleConfig:
     time_pad_frac: float = 0.0
     time_taper: bool = False
 
+@dataclass
+class PMLConfig:
+    pml_width: Union[int, Sequence[int]]
+    pml_freq: Optional[float]
+
+@dataclass
+class SurveyConfig:
+    source_locations: Sequence[Optional[Tensor]]
+    receiver_locations: Sequence[Optional[Tensor]]
+    source_amplitudes: Sequence[Optional[Tensor]]
+    wavefields: Sequence[Optional[Tensor]]
+    survey_pad: Optional[Union[int, Sequence[Optional[int]]]]
+    origin: Optional[Sequence[int]]
+
 
 IGNORE_LOCATION = -1 << 31
 
@@ -28,24 +42,86 @@ def _as_list(value: Union[int, float, torch.Tensor, Sequence],
     if isinstance(value, (int, float)):
         return [target_type(value)]
     if isinstance(value, Sequence) and not isinstance(value, str):
-        return [target_type(v) for v in value]
+        try:
+            return [target_type(v) for v in value]
+        except ValueError as e:
+            raise TypeError(
+                f"Elements in {name} could not be converted to {target_type.__name__}. "
+                f"Original error: {e}"
+            ) from e
     raise TypeError(
         f"{name} must be a float, int, torch.Tensor, or a sequence of "
         f"floats/ints, got {type(value)}."
     )
 
 
+def _validate_propagator_inputs(
+    models: Sequence[Tensor], model_pad_modes: Sequence[str],
+    grid_spacing: Union[float, Sequence[float]], dt: float,
+    survey_config: SurveyConfig, accuracy: int,
+    fd_pad: Sequence[int], pml_config: PMLConfig,
+    max_vel: Optional[float], min_nonzero_model_vel: float,
+    max_model_vel: float,
+    nt: Optional[int], model_gradient_sampling_interval: int,
+    freq_taper_frac: float, time_pad_frac: float, time_taper: bool, n_dims: int
+) -> Tuple[float, float, float]:
+    """Perform runtime type checking for propagator inputs."""
+    if not (isinstance(models, Sequence) and all(isinstance(m, Tensor) for m in models)):
+        raise TypeError("models must be a sequence of torch.Tensor objects.")
+    if not (isinstance(model_pad_modes, Sequence) and all(isinstance(m, str) for m in model_pad_modes)):
+        raise TypeError("model_pad_modes must be a sequence of str.")
+    # grid_spacing is checked in set_grid_spacing
+    if not isinstance(dt, (int, float)):
+        raise TypeError("dt must be a float or an int.")
+    
+    if not (isinstance(survey_config.source_amplitudes, Sequence) and all((a is None or isinstance(a, Tensor)) for a in survey_config.source_amplitudes)):
+        raise TypeError("source_amplitudes must be a sequence of torch.Tensor or None.")
+    if not (isinstance(survey_config.source_locations, Sequence) and all((l is None or isinstance(l, Tensor)) for l in survey_config.source_locations)):
+        raise TypeError("source_locations must be a sequence of torch.Tensor or None.")
+    if not (isinstance(survey_config.receiver_locations, Sequence) and all((l is None or isinstance(l, Tensor)) for l in survey_config.receiver_locations)):
+        raise TypeError("receiver_locations must be a sequence of torch.Tensor or None.")
+    if not isinstance(accuracy, int):
+        raise TypeError("accuracy must be an int.")
+    if not (isinstance(fd_pad, Sequence) and all(isinstance(f, int) for f in fd_pad)):
+        raise TypeError("fd_pad must be a sequence of int.")
+    # pml_width is checked in set_pml_width
+    if pml_config.pml_freq is not None and not isinstance(pml_config.pml_freq, (int, float)):
+        raise TypeError("pml_freq must be a float, int, or None.")
+    if max_vel is not None and not isinstance(max_vel, (int, float)):
+        raise TypeError("max_vel must be a float, int, or None.")
+    if not isinstance(min_nonzero_model_vel, float):
+        raise TypeError("min_nonzero_model_vel must be a float.")
+    if not isinstance(max_model_vel, float):
+        raise TypeError("max_model_vel must be a float.")
+    if survey_config.survey_pad is not None and not (isinstance(survey_config.survey_pad, int) or (isinstance(survey_config.survey_pad, Sequence) and all((p is None or isinstance(p, int)) for p in survey_config.survey_pad))):
+        raise TypeError("survey_pad must be an int, a sequence of int or None, or a sequence of None and int.")
+    if not (isinstance(survey_config.wavefields, Sequence) and all((w is None or isinstance(w, Tensor)) for w in survey_config.wavefields)):
+        raise TypeError("wavefields must be a sequence of torch.Tensor or None.")
+    if survey_config.origin is not None and not (isinstance(survey_config.origin, Sequence) and all(isinstance(o, int) for o in survey_config.origin)):
+        raise TypeError("origin must be a sequence of int or None.")
+    if nt is not None and not isinstance(nt, int):
+        raise TypeError("nt must be an int or None.")
+    if not isinstance(model_gradient_sampling_interval, int):
+        raise TypeError("model_gradient_sampling_interval must be an int.")
+    if not isinstance(freq_taper_frac, (int, float)):
+        raise TypeError("freq_taper_frac must be a float or an int.")
+    if not isinstance(time_pad_frac, (int, float)):
+        raise TypeError("time_pad_frac must be a float or an int.")
+    if not isinstance(time_taper, bool):
+        raise TypeError("time_taper must be a bool.")
+    if not isinstance(n_dims, int):
+        raise TypeError("n_dims must be an int.")
+    
+    return float(dt), float(freq_taper_frac), float(time_pad_frac)
+
+
 def setup_propagator(
     models: Sequence[Tensor], model_pad_modes: Sequence[str],
     grid_spacing: Union[float, Sequence[float]], dt: float,
-    source_amplitudes: Sequence[Optional[Tensor]],
-    source_locations: Sequence[Optional[Tensor]],
-    receiver_locations: Sequence[Optional[Tensor]], accuracy: int,
-    fd_pad: Sequence[int], pml_width: Union[int, Sequence[int]], pml_freq: Optional[float],
+    survey_config: SurveyConfig, accuracy: int,
+    fd_pad: Sequence[int], pml_config: PMLConfig,
     max_vel: Optional[float], min_nonzero_model_vel: float,
-    max_model_vel: float, survey_pad: Optional[Union[int,
-                                                     Sequence[Optional[int]]]],
-    wavefields: Sequence[Optional[Tensor]], origin: Optional[Sequence[int]],
+    max_model_vel: float,
     nt: Optional[int], model_gradient_sampling_interval: int,
     freq_taper_frac: float, time_pad_frac: float, time_taper: bool, n_dims: int
 ) -> Tuple[List[Tensor], List[Tensor], List[Tensor], List[Tensor],
@@ -56,96 +132,25 @@ def setup_propagator(
     Common setup for all propagators.
 
     Performs input validation, calculates internal time step, sets up PML, and prepares source/receiver tensors.
-
-    Args:
-        models: List of model tensors.
-        model_pad_modes: List of padding modes for each model.
-        grid_spacing: Spatial grid cell size(s).
-        dt: User-supplied time step interval.
-        source_amplitudes: List of source amplitude tensors (or None).
-        source_locations: List of source location tensors (or None).
-        receiver_locations: List of receiver location tensors (or None).
-        accuracy: Finite difference accuracy (2, 4, 6, or 8).
-        fd_pad: Padding for finite difference stencils.
-        pml_width: PML width (int or sequence).
-        pml_freq: PML frequency (Hz) or None.
-        max_vel: Maximum velocity for CFL condition or None.
-        min_nonzero_model_vel: Minimum nonzero velocity in model.
-        max_model_vel: Maximum velocity in model.
-        survey_pad: Padding for survey extraction.
-        wavefields: List of initial wavefields (or None).
-        origin: Origin for wavefields (or None).
-        nt: Number of time steps (or None).
-        model_gradient_sampling_interval: Sampling interval for model gradient.
-        freq_taper_frac: Fraction of frequency spectrum to taper.
-        time_pad_frac: Fraction of time axis to pad with zeros.
-        time_taper: Whether to apply a Hann window in time.
-        n_dims: Number of spatial dimensions.
-
-    Returns:
-        Tuple containing processed models, source amplitudes, wavefields, source/receiver locations, grid spacing, time step, nt, n_batch, step_ratio, model_gradient_sampling_interval, accuracy, pml_width, pml_freq, max_vel, resample_config, device, dtype.
     """
+    dt, freq_taper_frac, time_pad_frac = _validate_propagator_inputs(
+        models, model_pad_modes, grid_spacing, dt, survey_config, accuracy,
+        fd_pad, pml_config, max_vel, min_nonzero_model_vel, max_model_vel,
+        nt, model_gradient_sampling_interval,
+        freq_taper_frac, time_pad_frac, time_taper, n_dims
+    )
 
-    # --- Thorough runtime type checks for user-facing API ---
-    if not (isinstance(models, Sequence) and all(isinstance(m, Tensor) for m in models)):
-        raise TypeError("models must be a sequence of torch.Tensor objects.")
-    if not (isinstance(model_pad_modes, Sequence) and all(isinstance(m, str) for m in model_pad_modes)):
-        raise TypeError("model_pad_modes must be a sequence of str.")
-    # grid_spacing is checked in set_grid_spacing
-    if not isinstance(dt, (int, float)):
-        raise TypeError("dt must be a float or an int.")
-    dt = float(dt)
-    if not (isinstance(source_amplitudes, Sequence) and all((a is None or isinstance(a, Tensor)) for a in source_amplitudes)):
-        raise TypeError("source_amplitudes must be a sequence of torch.Tensor or None.")
-    if not (isinstance(source_locations, Sequence) and all((l is None or isinstance(l, Tensor)) for l in source_locations)):
-        raise TypeError("source_locations must be a sequence of torch.Tensor or None.")
-    if not (isinstance(receiver_locations, Sequence) and all((l is None or isinstance(l, Tensor)) for l in receiver_locations)):
-        raise TypeError("receiver_locations must be a sequence of torch.Tensor or None.")
-    if not isinstance(accuracy, int):
-        raise TypeError("accuracy must be an int.")
-    if not (isinstance(fd_pad, Sequence) and all(isinstance(f, int) for f in fd_pad)):
-        raise TypeError("fd_pad must be a sequence of int.")
-    # pml_width is checked in set_pml_width
-    if pml_freq is not None and not isinstance(pml_freq, (int, float)):
-        raise TypeError("pml_freq must be a float, int, or None.")
-    if max_vel is not None and not isinstance(max_vel, (int, float)):
-        raise TypeError("max_vel must be a float, int, or None.")
-    if not isinstance(min_nonzero_model_vel, float):
-        raise TypeError("min_nonzero_model_vel must be a float.")
-    if not isinstance(max_model_vel, float):
-        raise TypeError("max_model_vel must be a float.")
-    if survey_pad is not None and not (isinstance(survey_pad, int) or (isinstance(survey_pad, Sequence) and all((p is None or isinstance(p, int)) for p in survey_pad))):
-        raise TypeError("survey_pad must be an int, a sequence of int or None, or a sequence of None and int.")
-    if not (isinstance(wavefields, Sequence) and all((w is None or isinstance(w, Tensor)) for w in wavefields)):
-        raise TypeError("wavefields must be a sequence of torch.Tensor or None.")
-    if origin is not None and not (isinstance(origin, Sequence) and all(isinstance(o, int) for o in origin)):
-        raise TypeError("origin must be a sequence of int or None.")
-    if nt is not None and not isinstance(nt, int):
-        raise TypeError("nt must be an int or None.")
-    if not isinstance(model_gradient_sampling_interval, int):
-        raise TypeError("model_gradient_sampling_interval must be an int.")
-    if not isinstance(freq_taper_frac, (int, float)):
-        raise TypeError("freq_taper_frac must be a float or an int.")
-    freq_taper_frac = float(freq_taper_frac)
-    if not isinstance(time_pad_frac, (int, float)):
-        raise TypeError("time_pad_frac must be a float or an int.")
-    time_pad_frac = float(time_pad_frac)
-    if not isinstance(time_taper, bool):
-        raise TypeError("time_taper must be a bool.")
-    if not isinstance(n_dims, int):
-        raise TypeError("n_dims must be an int.")
-
-    n_batch = get_n_batch(source_locations, wavefields)
+    n_batch = get_n_batch(survey_config.source_locations, survey_config.wavefields)
     device = models[0].device
     dtype = models[0].dtype
     grid_spacing = set_grid_spacing(grid_spacing, n_dims)
     accuracy = set_accuracy(accuracy)
-    pml_width = set_pml_width(pml_width, n_dims)
-    pml_freq = set_pml_freq(pml_freq, dt)
+    pml_width = set_pml_width(pml_config.pml_width, n_dims)
+    pml_freq = set_pml_freq(pml_config.pml_freq, dt)
     check_points_per_wavelength(min_nonzero_model_vel, pml_freq, grid_spacing)
     max_vel = set_max_vel(max_vel, max_model_vel)
     dt, step_ratio = cfl_condition_n(grid_spacing, dt, max_vel)
-    nt = set_nt(nt, source_amplitudes, step_ratio)
+    nt = set_nt(nt, survey_config.source_amplitudes, step_ratio)
     model_gradient_sampling_interval = set_model_gradient_sampling_interval(
         model_gradient_sampling_interval, step_ratio)
     freq_taper_frac = set_freq_taper_frac(freq_taper_frac)
@@ -156,14 +161,14 @@ def setup_propagator(
         time_pad_frac=time_pad_frac,
         time_taper=time_taper
     )
-    check_source_amplitudes_locations_match(source_amplitudes,
-                                            source_locations)
-    source_amplitudes_out = set_source_amplitudes(source_amplitudes, n_batch, nt,
+    check_source_amplitudes_locations_match(survey_config.source_amplitudes,
+                                            survey_config.source_locations)
+    source_amplitudes_out = set_source_amplitudes(survey_config.source_amplitudes, n_batch, nt,
                                                   resample_config, device, dtype)
     models_out, source_locations_out, receiver_locations_out, wavefields_out = \
         extract_survey(models,
-                       source_locations, receiver_locations,
-                       wavefields, survey_pad, origin,
+                       survey_config.source_locations, survey_config.receiver_locations,
+                       survey_config.wavefields, survey_config.survey_pad, survey_config.origin,
                        fd_pad, pml_width, model_pad_modes, n_batch, n_dims, device, dtype)
     receiver_amplitudes = set_receiver_amplitudes(receiver_locations_out, n_batch,
                                                   nt, device, dtype)
@@ -249,6 +254,8 @@ def set_accuracy(accuracy: int) -> int:
     """
     Validate finite difference accuracy.
     """
+    if not isinstance(accuracy, int):
+        raise TypeError("accuracy must be an int.")
     if accuracy not in (2, 4, 6, 8):
         raise ValueError(f"accuracy must be 2, 4, 6, or 8, got {accuracy}")
     return accuracy
@@ -273,6 +280,8 @@ def set_pml_freq(pml_freq: Optional[float], dt: float) -> float:
     Set or validate PML frequency. Defaults to 25.0 Hz if not set.
     Warns if out of range.
     """
+    if pml_freq is not None and not isinstance(pml_freq, (int, float)):
+        raise TypeError("pml_freq must be a float, int, or None.")
     nyquist = 0.5 / abs(dt)
     if pml_freq is None:
         pml_freq = 25.0
@@ -290,6 +299,8 @@ def set_max_vel(max_vel: Optional[float], max_model_vel: float) -> float:
     """
     Set or validate maximum velocity for CFL condition.
     """
+    if max_vel is not None and not isinstance(max_vel, (int, float)):
+        raise TypeError("max_vel must be a float, int, or None.")
     if max_vel is None:
         return max_model_vel
     max_vel = abs(max_vel)
@@ -306,6 +317,8 @@ def set_nt(
     """
     Set or validate number of time steps.
     """
+    if nt is not None and not isinstance(nt, int):
+        raise TypeError("nt must be an int or None.")
     source_amplitudes_nt = next((a.shape[-1] for a in source_amplitudes if a is not None), None)
     if nt is None:
         if source_amplitudes_nt is None:
@@ -325,6 +338,8 @@ def set_model_gradient_sampling_interval(
     """
     Validate model gradient sampling interval.
     """
+    if not isinstance(model_gradient_sampling_interval, int):
+        raise TypeError("model_gradient_sampling_interval must be an int.")
     if model_gradient_sampling_interval < 0:
         raise ValueError('model_gradient_sampling_interval must be >= 0')
     return model_gradient_sampling_interval
@@ -334,6 +349,8 @@ def set_freq_taper_frac(freq_taper_frac: float) -> float:
     """
     Validate frequency taper fraction.
     """
+    if not isinstance(freq_taper_frac, (int, float)):
+        raise TypeError("freq_taper_frac must be a float or an int.")
     if not (0.0 <= freq_taper_frac <= 1.0):
         raise ValueError(f'freq_taper_frac must be in [0, 1], got {freq_taper_frac}')
     return freq_taper_frac
@@ -343,6 +360,8 @@ def set_time_pad_frac(time_pad_frac: float) -> float:
     """
     Validate time padding fraction.
     """
+    if not isinstance(time_pad_frac, (int, float)):
+        raise TypeError("time_pad_frac must be a float or an int.")
     if not (0.0 <= time_pad_frac <= 1.0):
         raise ValueError(f'time_pad_frac must be in [0, 1], got {time_pad_frac}')
     return time_pad_frac
@@ -367,8 +386,7 @@ def check_source_amplitudes_locations_match(
         if amplitudes is not None and locations is not None:
             if amplitudes.shape[1] != locations.shape[1]:
                 raise RuntimeError(
-                    f"Expected source amplitudes and locations to be the same size in the n_sources_per_shot dimension, got {amplitudes.shape[1]} and {locations.shape[1]}."
-                )
+                    f"Expected source amplitudes and locations to be the same size in the n_sources_per_shot dimension, got {amplitudes.shape[1]} and {locations.shape[1]}.")
 
 
 def set_source_amplitudes(source_amplitudes: Sequence[Optional[Tensor]],
@@ -395,11 +413,11 @@ def set_source_amplitudes(source_amplitudes: Sequence[Optional[Tensor]],
             )
         if amplitudes.shape[0] != n_batch:
             raise RuntimeError(
-                f"Expected source amplitudes to have size {n_batch} in the batch dimension, but found one with size {amplitudes.shape[0]}."
+                f"Expected source amplitudes to have size {n_batch} in the batch dimension, but found one with size {amplitudes.shape[0]}.ירת"
             )
         if amplitudes.shape[2] * resample_config.step_ratio != nt:
             raise RuntimeError(
-                f"Inconsistent number of time samples: Expected source amplitudes to have {nt // resample_config.step_ratio} time samples, but found one with {amplitudes.shape[2]}."
+                f"Inconsistent number of time samples: Expected source amplitudes to have {nt // resample_config.step_ratio} time samples, but found one with {amplitudes.shape[2]}.ירת"
             )
         result.append(torch.movedim(
             upsample(
@@ -423,12 +441,15 @@ def set_receiver_amplitudes(receiver_locations: Sequence[Tensor], n_batch: int,
 
 def check_points_per_wavelength(min_nonzero_vel: float, pml_freq: float,
                                 grid_spacing: Sequence[float]) -> None:
-    min_wavelength = abs(min_nonzero_vel / pml_freq)
+    if pml_freq == 0:
+        min_wavelength = float('inf')
+    else:
+        min_wavelength = abs(min_nonzero_vel / pml_freq)
     max_spacing = max(abs(dim_spacing) for dim_spacing in grid_spacing)
     cells_per_wavelength = min_wavelength / max_spacing
     if cells_per_wavelength < 6:
         warnings.warn(
-            f"At least six grid cells per wavelength is recommended, but at a frequency of {pml_freq}, a minimum non-zero velocity of {min_nonzero_vel}, and a grid cell spacing of {max_spacing}, there are only {cells_per_wavelength:.2f}."
+            f"At least six grid cells per wavelength is recommended, but at a frequency of {pml_freq}, a minimum non-zero velocity of {min_nonzero_vel}, and a grid cell spacing of {max_spacing}, there are only {cells_per_wavelength:.2f}.ירת"
         )
 
 
@@ -449,6 +470,7 @@ def cosine_taper_end(signal: Tensor, n_taper: int) -> Tensor:
     taper = torch.ones(signal.shape[-1],
                        dtype=signal.dtype,
                        device=signal.device)
+    n_taper = min(n_taper, signal.shape[-1])
     taper[len(taper) - n_taper:] = (torch.cos(
         torch.arange(1, n_taper + 1, device=signal.device) / n_taper * math.pi)
                                     + 1).to(signal.dtype) / 2
@@ -456,6 +478,8 @@ def cosine_taper_end(signal: Tensor, n_taper: int) -> Tensor:
 
 
 def zero_last_element_of_final_dimension(signal: Tensor) -> Tensor:
+    if signal.numel() == 0:
+        return signal
     zeroer = torch.ones(signal.shape[-1],
                         dtype=signal.dtype,
                         device=signal.device)
@@ -829,7 +853,7 @@ def get_survey_extents_from_wavefields(
                 extent_size = wavefield.shape[1 + dim] - pml_width[dim * 2] - pml_width[dim * 2 + 1]
                 extents.append((dim_origin, dim_origin + extent_size))
             if origin is None:
-                warnings.warn(f"Survey extents set, using wavefield shape, to {extents} .")
+                warnings.warn(f"Survey extents were inferred from the wavefield shape to be {extents} because origin was not provided.")
             return extents
     raise RuntimeError("At least one wavefield must be non-None.")
 
@@ -1022,7 +1046,7 @@ def extract_locations(name: str,
             # Check that locations are unique within each shot (as they may not be added atomically)
             for batch_idx in range(n_batch):
                 shot_locations = location_1d[batch_idx]
-                shot_locations = shot_locations[shot_locations !=
+                shot_locations = shot_locations[shot_locations != 
                                                 IGNORE_LOCATION]
                 if len(shot_locations) != len(shot_locations.unique()):
                     raise RuntimeError(
@@ -1066,7 +1090,7 @@ def prepare_wavefields(wavefields: Sequence[Optional[Tensor]],
 
 def cfl_condition_n(grid_spacing: Sequence[float],
                     dt: float,
-                    max_vel: float,
+                    max_abs_vel: float,
                     eps: float = 1e-15,
                     C_max: float = 0.6) -> Tuple[float, int]:
     """Calculates the time step interval to obey the CFL condition.
@@ -1082,7 +1106,7 @@ def cfl_condition_n(grid_spacing: Sequence[float],
             A List specifying the grid spacing in each spatial dimension.
         dt:
             The time step interval.
-        max_vel:
+        max_abs_vel:
             The maximum absolute wavespeed in the model.
         eps:
             A small quantity to prevent division by zero. Default 1e-15.
@@ -1097,9 +1121,18 @@ def cfl_condition_n(grid_spacing: Sequence[float],
             step_ratio:
                 The integer dt / inner_dt.
     """
+    if not isinstance(grid_spacing, Sequence) or not all(isinstance(g, (int, float)) for g in grid_spacing):
+        raise TypeError("grid_spacing must be a sequence of floats or ints.")
+    if not isinstance(dt, (int, float)):
+        raise TypeError("dt must be a float or an int.")
+    if not isinstance(max_abs_vel, (int, float)):
+        raise TypeError("max_abs_vel must be a float or an int.")
+    if max_abs_vel <= 0:
+        raise RuntimeError("max_abs_vel must be greater than zero.")
+
     max_dt = (C_max / math.sqrt(
         sum([1 / dim_spacing**2
-             for dim_spacing in grid_spacing])) / (max_vel**2 + eps)) * max_vel
+             for dim_spacing in grid_spacing])) / (max_abs_vel**2 + eps)) * max_abs_vel
     step_ratio = int(math.ceil(abs(dt) / max_dt))
     inner_dt = dt / step_ratio
     return inner_dt, step_ratio
@@ -1156,7 +1189,7 @@ def lambmubuoyancy_to_vpvsrho(
     All input Tensors must have the same shape.
 
     Args:
-        lambda:
+        lamb:
             A Tensor containing the first Lamé parameter.
         mu:
             A Tensor containing the second Lamé parameter.
@@ -1277,7 +1310,7 @@ def zero_interior(tensor: Tensor, fd_pad: Union[int, Sequence[int]],
         tensor[:,
                fd_pad[0] + pml_width[0]:ny - pml_width[1] - fd_pad[1]].fill_(0)
     else:
-        tensor[:, :,
+        tensor[:, :, 
                fd_pad[2] + pml_width[2]:nx - pml_width[3] - fd_pad[3]].fill_(0)
     return tensor
 

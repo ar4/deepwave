@@ -736,45 +736,7 @@ def test_gradcheck_batched_buoyancy_2d():
     run_gradcheck_2d(propagator=elasticprop,
                      buoyancy=torch.tensor([[[DEFAULT_BUOYANCY]],[[DEFAULT_BUOYANCY*1.2]]]))
 
-def _set_sources(x_s, freq, dt, nt, dtype=None, dpeak_time=0.3):
-    """Create sources with amplitudes that have randomly shifted start times.
-    """
-    num_shots, num_sources_per_shot = x_s.shape[:2]
-    sources = {}
-    sources['amplitude'] = torch.zeros(num_shots,
-                                       num_sources_per_shot,
-                                       nt,
-                                       dtype=dtype)
-
-    sources['locations'] = x_s
-
-    for shot in range(num_shots):
-        for source in range(num_sources_per_shot):
-            peak_time = 0.05 + torch.rand(1).item() * dpeak_time
-            sources['amplitude'][shot, source, :] = \
-                ricker(freq, nt, dt, peak_time, dtype=dtype)
-    return sources
-
-
-def _set_coords(num_shots, num_per_shot, nx, location='top'):
-    """Create an array of coordinates at the specified location."""
-    ndim = len(nx)
-    coords = torch.zeros(num_shots, num_per_shot, ndim)
-    coords[..., 0] = torch.arange(num_shots * num_per_shot)\
-                          .reshape(num_shots, num_per_shot)
-    if location == 'top':
-        pass
-    elif location == 'bottom':
-        coords[..., 0] = (nx[0] - 1).float() - coords[..., 0]
-    elif location == 'middle':
-        coords[..., 0] += int(nx[0] / 2)
-    else:
-        raise ValueError("unsupported location")
-
-    for dim in range(1, ndim):
-        coords[..., dim] = torch.div(nx[dim], 2)
-
-    return coords.long()
+from test_utils import _set_sources, _set_coords
 
 
 def run_forward_lamb(orientation=0,

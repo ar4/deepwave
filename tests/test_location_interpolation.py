@@ -2,7 +2,7 @@ import pytest
 import torch
 import deepwave
 from deepwave.location_interpolation import Hicks, _get_hicks_for_one_location_dim
-from test_scalar import direct_2d_approx
+from test_utils import direct_2d_approx
 
 
 def test_monopole(c=1500,

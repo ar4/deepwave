@@ -1,7 +1,7 @@
 import torch
 from deepwave import ScalarBorn, scalar_born
 from deepwave.common import cfl_condition, upsample, downsample, IGNORE_LOCATION
-from test_scalar import (scattered_2d, _set_sources, _set_coords)
+from test_utils import _set_sources, _set_coords, scattered_2d
 
 
 def test_born_scatter_2d():

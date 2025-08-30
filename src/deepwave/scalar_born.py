@@ -12,7 +12,8 @@ from torch import Tensor
 from torch.autograd.function import once_differentiable
 import deepwave
 from deepwave.common import (setup_propagator, downsample_and_movedim,
-                             zero_interior, create_or_pad, IGNORE_LOCATION)
+                             zero_interior, create_or_pad, IGNORE_LOCATION,
+                             PMLConfig, SurveyConfig)
 from deepwave.regular_grid import set_pml_profiles
 
 
@@ -104,34 +105,27 @@ class ScalarBorn(torch.nn.Module):
         `scatter`, and `grid_spacing` do not need to be provided again. See
         :func:`scalar_born` for a description of the inputs and outputs.
         """
+        pml_config = PMLConfig(pml_width, pml_freq)
+        survey_config = SurveyConfig(
+            source_locations=[source_locations, source_locations],
+            receiver_locations=[bg_receiver_locations, receiver_locations],
+            source_amplitudes=[source_amplitudes, source_amplitudes],
+            wavefields=[wavefield_0, wavefield_m1, psiy_m1, psix_m1,
+                        zetay_m1, zetax_m1, wavefield_sc_0, wavefield_sc_m1,
+                        psiy_sc_m1, psix_sc_m1, zetay_sc_m1, zetax_sc_m1],
+            survey_pad=survey_pad,
+            origin=origin
+        )
 
         return scalar_born(
             self.v,
             self.scatter,
             self.grid_spacing,
             dt,
-            source_amplitudes=source_amplitudes,
-            source_locations=source_locations,
-            receiver_locations=receiver_locations,
-            bg_receiver_locations=bg_receiver_locations,
             accuracy=accuracy,
-            pml_width=pml_width,
-            pml_freq=pml_freq,
+            pml_config=pml_config,
             max_vel=max_vel,
-            survey_pad=survey_pad,
-            wavefield_0=wavefield_0,
-            wavefield_m1=wavefield_m1,
-            psiy_m1=psiy_m1,
-            psix_m1=psix_m1,
-            zetay_m1=zetay_m1,
-            zetax_m1=zetax_m1,
-            wavefield_sc_0=wavefield_sc_0,
-            wavefield_sc_m1=wavefield_sc_m1,
-            psiy_sc_m1=psiy_sc_m1,
-            psix_sc_m1=psix_sc_m1,
-            zetay_sc_m1=zetay_sc_m1,
-            zetax_sc_m1=zetax_sc_m1,
-            origin=origin,
+            survey_config=survey_config,
             nt=nt,
             model_gradient_sampling_interval=model_gradient_sampling_interval)
 
@@ -167,7 +161,9 @@ def scalar_born(
     model_gradient_sampling_interval: int = 1,
     freq_taper_frac: float = 0.0,
     time_pad_frac: float = 0.0,
-    time_taper: bool = False
+    time_taper: bool = False,
+    pml_config: Optional[PMLConfig] = None,
+    survey_config: Optional[SurveyConfig] = None,
 ) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor,
            Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
     """Scalar Born wave propagation (functional interface).
@@ -254,6 +250,20 @@ def scalar_born(
                 empty.
 
     """
+    if pml_config is None:
+        pml_config = PMLConfig(pml_width, pml_freq)
+    if survey_config is None:
+        survey_config = SurveyConfig(
+            source_locations=[source_locations, source_locations],
+            receiver_locations=[bg_receiver_locations, receiver_locations],
+            source_amplitudes=[source_amplitudes, source_amplitudes],
+            wavefields=[wavefield_0, wavefield_m1, psiy_m1, psix_m1,
+                        zetay_m1, zetax_m1, wavefield_sc_0, wavefield_sc_m1,
+                        psiy_sc_m1, psix_sc_m1, zetay_sc_m1, zetax_sc_m1],
+            survey_pad=survey_pad,
+            origin=origin
+        )
+
     try:
         min_nonzero_model_vel = v[v.nonzero(as_tuple=True)].abs().min().item()
     except:
@@ -266,15 +276,10 @@ def scalar_born(
      step_ratio, model_gradient_sampling_interval,
      accuracy, pml_width_l, pml_freq, max_vel, resample_config, device, dtype) = \
         setup_propagator([v, scatter], ['replicate', 'constant'], grid_spacing, dt,
-                         [source_amplitudes, source_amplitudes],
-                         [source_locations, source_locations],
-                         [bg_receiver_locations, receiver_locations],
-                         accuracy, fd_pad, pml_width, pml_freq, max_vel,
-                         min_nonzero_model_vel, max_model_vel, survey_pad,
-                         [wavefield_0, wavefield_m1, psiy_m1, psix_m1,
-                          zetay_m1, zetax_m1, wavefield_sc_0, wavefield_sc_m1,
-                          psiy_sc_m1, psix_sc_m1, zetay_sc_m1, zetax_sc_m1],
-                         origin, nt, model_gradient_sampling_interval,
+                         survey_config,
+                         accuracy, fd_pad, pml_config, max_vel,
+                         min_nonzero_model_vel, max_model_vel,
+                         nt, model_gradient_sampling_interval,
                          freq_taper_frac, time_pad_frac, time_taper, 2)
 
     ny, nx = models[0].shape[-2:]

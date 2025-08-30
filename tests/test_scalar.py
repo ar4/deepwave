@@ -684,77 +684,10 @@ def test_gradcheck_v_batched():
     run_gradcheck_2d(propagator=scalarprop, c=torch.tensor([[[1500.0]],[[1600.0]]]))
 
 
-def direct_2d_approx(x, x_s, dx, dt, c, f):
-    """Use an approximation of the 2D Green's function to calculate the
-    wavefield at a given location due to the given source.
-    """
-    r = torch.norm(x * dx - x_s * dx).item()
-    nt = len(f)
-    w = torch.fft.rfftfreq(nt, dt)
-    fw = torch.fft.rfft(f)
-    G = 1j / 4 * scipy.special.hankel1(0, -2 * math.pi * w * r / c)
-    G[0] = 0
-    s = G * fw * torch.prod(dx).item()
-    u = torch.fft.irfft(s, nt)
-    return u
 
 
-def scattered_2d(x, x_s, x_p, dx, dt, c, dc, f):
-    """Calculate the scattered wavefield at a given location."""
-    u_p = direct_2d_approx(x_p, x_s, dx, dt, c, f)
-    du_pdt2 = _second_deriv(u_p, dt)
-    u = 2 * dc / c**3 * direct_2d_approx(x, x_p, dx, dt, c, du_pdt2)
-    return u
 
-
-def _second_deriv(arr, dt):
-    """Calculate the second derivative."""
-    d2dt2 = torch.zeros_like(arr)
-    d2dt2[1:-1] = (arr[2:] - 2 * arr[1:-1] + arr[:-2]) / dt**2
-    d2dt2[0] = d2dt2[1]
-    d2dt2[-1] = d2dt2[-2]
-    return d2dt2
-
-
-def _set_sources(x_s, freq, dt, nt, dtype=None, dpeak_time=0.3):
-    """Create sources with amplitudes that have randomly shifted start times.
-    """
-    num_shots, num_sources_per_shot = x_s.shape[:2]
-    sources = {}
-    sources['amplitude'] = torch.zeros(num_shots,
-                                       num_sources_per_shot,
-                                       nt,
-                                       dtype=dtype)
-
-    sources['locations'] = x_s
-
-    for shot in range(num_shots):
-        for source in range(num_sources_per_shot):
-            peak_time = 0.05 + torch.rand(1).item() * dpeak_time
-            sources['amplitude'][shot, source, :] = \
-                ricker(freq, nt, dt, peak_time, dtype=dtype)
-    return sources
-
-
-def _set_coords(num_shots, num_per_shot, nx, location='top'):
-    """Create an array of coordinates at the specified location."""
-    ndim = len(nx)
-    coords = torch.zeros(num_shots, num_per_shot, ndim)
-    coords[..., 0] = torch.arange(num_shots * num_per_shot)\
-                          .reshape(num_shots, num_per_shot)
-    if location == 'top':
-        pass
-    elif location == 'bottom':
-        coords[..., 0] = (nx[0] - 1).float() - coords[..., 0]
-    elif location == 'middle':
-        coords[..., 0] += int(nx[0] / 2)
-    else:
-        raise ValueError("unsupported location")
-
-    for dim in range(1, ndim):
-        coords[..., dim] = torch.round(nx[dim].float() / 2)
-
-    return coords.long()
+from test_utils import _set_sources, _set_coords
 
 
 def run_direct(c,

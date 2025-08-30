@@ -1,6 +1,6 @@
 """Common seismic wavelets."""
 import math
-from typing import Optional
+from typing import Optional, Union
 import torch
 from torch import Tensor
 

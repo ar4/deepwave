@@ -16,6 +16,9 @@ import platform
 import ctypes
 from ctypes import c_void_p, c_int64, c_float, c_double, c_bool
 import pathlib
+from typing import List, Type, Any
+
+# These imports are for exposing the public API
 from deepwave.scalar import Scalar, scalar
 from deepwave.scalar_born import ScalarBorn, scalar_born
 from deepwave.elastic import Elastic, elastic
@@ -23,17 +26,16 @@ import deepwave.wavelets
 import deepwave.location_interpolation
 from ._version import __version__
 
-if platform.system() == 'Linux':
-    so_ext = "so"
-elif platform.system() == 'Darwin':
-    so_ext = "dylib"
-elif platform.system() == 'Windows':
-    so_ext = "dll"
-else:
+# Platform-specific shared library extension
+SO_EXT = {"Linux": "so", "Darwin": "dylib", "Windows": "dll"}.get(
+    platform.system()
+)
+if SO_EXT is None:
     raise RuntimeError("Unsupported OS or platform type")
 
 dll = ctypes.CDLL(
-    str(pathlib.Path(__file__).resolve().parent / ("libdeepwave_C." + so_ext)))
+    str(pathlib.Path(__file__).resolve().parent / f"libdeepwave_C.{SO_EXT}")
+)
 
 # Check if was compiled with OpenMP support
 try:
@@ -42,182 +44,121 @@ try:
 except AttributeError:
     use_openmp = False
 
-scalar_iso_float_forward_argtypes = [
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_float,
-    c_float, c_float, c_float, c_float, c_int64, c_int64, c_int64, c_int64,
-    c_int64, c_int64, c_int64, c_bool, c_bool, c_int64, c_int64, c_int64,
-    c_int64, c_int64, c_int64
-]
-scalar_iso_double_forward_argtypes = [
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_double,
-    c_double, c_double, c_double, c_double, c_int64, c_int64, c_int64, c_int64,
-    c_int64, c_int64, c_int64, c_bool, c_bool, c_int64, c_int64, c_int64,
-    c_int64, c_int64, c_int64
-]
-scalar_iso_float_backward_argtypes = [
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_void_p, c_void_p, c_void_p, c_float, c_float, c_float, c_float, c_int64,
-    c_int64, c_int64, c_int64, c_int64, c_int64, c_int64, c_bool, c_bool,
-    c_int64, c_int64, c_int64, c_int64, c_int64, c_int64
-]
-scalar_iso_double_backward_argtypes = [
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_void_p, c_void_p, c_void_p, c_double, c_double, c_double, c_double,
-    c_int64, c_int64, c_int64, c_int64, c_int64, c_int64, c_int64, c_bool,
-    c_bool, c_int64, c_int64, c_int64, c_int64, c_int64, c_int64
-]
-scalar_born_iso_float_forward_argtypes = [
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_float, c_float,
-    c_float, c_float, c_float, c_int64, c_int64, c_int64, c_int64, c_int64,
-    c_int64, c_int64, c_int64, c_bool, c_bool, c_bool, c_bool, c_int64,
-    c_int64, c_int64, c_int64, c_int64, c_int64
-]
-scalar_born_iso_double_forward_argtypes = [
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_double, c_double,
-    c_double, c_double, c_double, c_int64, c_int64, c_int64, c_int64, c_int64,
-    c_int64, c_int64, c_int64, c_bool, c_bool, c_bool, c_bool, c_int64,
-    c_int64, c_int64, c_int64, c_int64, c_int64
-]
-scalar_born_iso_float_backward_argtypes = [
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_float,
-    c_float, c_float, c_float, c_float, c_int64, c_int64, c_int64, c_int64,
-    c_int64, c_int64, c_int64, c_int64, c_int64, c_bool, c_bool, c_bool,
-    c_bool, c_int64, c_int64, c_int64, c_int64, c_int64, c_int64
-]
-scalar_born_iso_double_backward_argtypes = [
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_double,
-    c_double, c_double, c_double, c_double, c_int64, c_int64, c_int64, c_int64,
-    c_int64, c_int64, c_int64, c_int64, c_int64, c_bool, c_bool, c_bool,
-    c_bool, c_int64, c_int64, c_int64, c_int64, c_int64, c_int64
-]
-scalar_born_iso_double_backward_sc_argtypes = [
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_void_p, c_void_p, c_void_p, c_double, c_double, c_double, c_double,
-    c_double, c_int64, c_int64, c_int64, c_int64, c_int64, c_int64, c_int64,
-    c_bool, c_bool, c_bool, c_int64, c_int64, c_int64, c_int64, c_int64,
-    c_int64
-]
-scalar_born_iso_float_backward_sc_argtypes = [
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_void_p, c_void_p, c_void_p, c_float, c_float, c_float, c_float, c_float,
-    c_int64, c_int64, c_int64, c_int64, c_int64, c_int64, c_int64, c_bool,
-    c_bool, c_bool, c_int64, c_int64, c_int64, c_int64, c_int64, c_int64
-]
-elastic_iso_float_forward_argtypes = [
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_void_p, c_void_p, c_void_p, c_void_p, c_float, c_float, c_float, c_int64,
-    c_int64, c_int64, c_int64, c_int64, c_int64, c_int64, c_int64, c_int64,
-    c_int64, c_bool, c_bool, c_bool, c_bool, c_bool, c_bool, c_int64, c_int64,
-    c_int64, c_int64, c_int64, c_int64
-]
-elastic_iso_double_forward_argtypes = [
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_void_p, c_void_p, c_void_p, c_void_p, c_double, c_double, c_double,
-    c_int64, c_int64, c_int64, c_int64, c_int64, c_int64, c_int64, c_int64,
-    c_int64, c_int64, c_bool, c_bool, c_bool, c_bool, c_bool, c_bool, c_int64,
-    c_int64, c_int64, c_int64, c_int64, c_int64
-]
-elastic_iso_float_backward_argtypes = [
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_float, c_float, c_float, c_int64, c_int64, c_int64, c_int64, c_int64,
-    c_int64, c_int64, c_int64, c_int64, c_int64, c_bool, c_bool, c_bool,
-    c_bool, c_bool, c_bool, c_int64, c_int64, c_int64, c_int64, c_int64,
-    c_int64, c_int64, c_int64, c_int64, c_int64
-]
-elastic_iso_double_backward_argtypes = [
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
-    c_double, c_double, c_double, c_int64, c_int64, c_int64, c_int64, c_int64,
-    c_int64, c_int64, c_int64, c_int64, c_int64, c_bool, c_bool, c_bool,
-    c_bool, c_bool, c_bool, c_int64, c_int64, c_int64, c_int64, c_int64,
-    c_int64, c_int64, c_int64, c_int64, c_int64
-]
+# Define ctypes argument type templates to reduce repetition while preserving order.
+# A placeholder will be replaced by the appropriate float type (c_float or c_double).
+FLOAT_TYPE = Any
 
+# Templates for argtype lists
+scalar_forward_template: List[Type] = (
+    [c_void_p] * 20
+    + [FLOAT_TYPE] * 5
+    + [c_int64] * 7
+    + [c_bool] * 2
+    + [c_int64] * 6
+)
+
+scalar_backward_template: List[Type] = (
+    [c_void_p] * 24
+    + [FLOAT_TYPE] * 4
+    + [c_int64] * 7
+    + [c_bool] * 2
+    + [c_int64] * 6
+)
+
+scalar_born_forward_template: List[Type] = (
+    [c_void_p] * 33
+    + [FLOAT_TYPE] * 5
+    + [c_int64] * 8
+    + [c_bool] * 4
+    + [c_int64] * 6
+)
+
+scalar_born_backward_template: List[Type] = (
+    [c_void_p] * 41
+    + [FLOAT_TYPE] * 5
+    + [c_int64] * 9
+    + [c_bool] * 4
+    + [c_int64] * 6
+)
+
+scalar_born_backward_sc_template: List[Type] = (
+    [c_void_p] * 24
+    + [FLOAT_TYPE] * 5
+    + [c_int64] * 7
+    + [c_bool] * 3
+    + [c_int64] * 6
+)
+
+elastic_forward_template: List[Type] = (
+    [c_void_p] * 39
+    + [FLOAT_TYPE] * 3
+    + [c_int64] * 10
+    + [c_bool] * 6
+    + [c_int64] * 6
+)
+
+elastic_backward_template: List[Type] = (
+    [c_void_p] * 55
+    + [FLOAT_TYPE] * 3
+    + [c_int64] * 10
+    + [c_bool] * 6
+    + [c_int64] * 9
+)
+
+# A dictionary to hold all the templates
+templates = {
+    "scalar_forward": scalar_forward_template,
+    "scalar_backward": scalar_backward_template,
+    "scalar_born_forward": scalar_born_forward_template,
+    "scalar_born_backward": scalar_born_backward_template,
+    "scalar_born_backward_sc": scalar_born_backward_sc_template,
+    "elastic_forward": elastic_forward_template,
+    "elastic_backward": elastic_backward_template,
+}
+
+
+def _get_argtypes(template_name: str, float_type: Type) -> List[Type]:
+    """Generate a concrete argtype list from a template and float type."""
+    return [
+        float_type if t is FLOAT_TYPE else t for t in templates[template_name]
+    ]
+
+
+# Generate all the specific argtype lists
+for dtype_str, dtype_c in [("float", c_float), ("double", c_double)]:
+    for key in templates:
+        globals()[f"{key}_{dtype_str}_argtypes"] = _get_argtypes(key, dtype_c)
+
+
+def _assign_argtypes(
+    propagator: str, accuracy: int, dtype: str, direction: str, extra: str = ""
+) -> None:
+    """Dynamically assign ctypes argtypes to a given function."""
+    argtypes_name = f"{propagator}_{direction}{extra}_{dtype}_argtypes"
+    argtypes = globals()[argtypes_name]
+
+    for device in ["cpu", "cuda"]:
+        func_name = (
+            f"{propagator}_iso_{accuracy}_{dtype}_{direction}{extra}_{device}"
+        )
+        try:
+            func = getattr(dll, func_name)
+            func.argtypes = argtypes
+            func.restype = None  # All C functions return void
+        except AttributeError:
+            continue
+
+
+# Loop through all permutations and assign argtypes
 for accuracy in [2, 4, 6, 8]:
     for dtype in ["float", "double"]:
-        getattr(dll, f"scalar_iso_{accuracy}_{dtype}_forward_cpu").argtypes = \
-            globals()[f"scalar_iso_{dtype}_forward_argtypes"]
-        getattr(dll, f"scalar_iso_{accuracy}_{dtype}_backward_cpu").argtypes = \
-            globals()[f"scalar_iso_{dtype}_backward_argtypes"]
-        getattr(dll, f"scalar_born_iso_{accuracy}_{dtype}_forward_cpu").argtypes = \
-            globals()[f"scalar_born_iso_{dtype}_forward_argtypes"]
-        getattr(dll, f"scalar_born_iso_{accuracy}_{dtype}_backward_cpu").argtypes = \
-            globals()[f"scalar_born_iso_{dtype}_backward_argtypes"]
-        getattr(dll, f"scalar_born_iso_{accuracy}_{dtype}_backward_sc_cpu").argtypes = \
-            globals()[f"scalar_born_iso_{dtype}_backward_sc_argtypes"]
-        try:
-            getattr(dll, f"scalar_iso_{accuracy}_{dtype}_forward_cuda").argtypes = \
-                globals()[f"scalar_iso_{dtype}_forward_argtypes"]
-            getattr(dll, f"scalar_iso_{accuracy}_{dtype}_backward_cuda").argtypes = \
-                globals()[f"scalar_iso_{dtype}_backward_argtypes"]
-            getattr(dll, f"scalar_born_iso_{accuracy}_{dtype}_forward_cuda").argtypes = \
-                globals()[f"scalar_born_iso_{dtype}_forward_argtypes"]
-            getattr(dll, f"scalar_born_iso_{accuracy}_{dtype}_backward_cuda").argtypes = \
-                globals()[f"scalar_born_iso_{dtype}_backward_argtypes"]
-            getattr(dll, f"scalar_born_iso_{accuracy}_{dtype}_backward_sc_cuda").argtypes = \
-                globals()[f"scalar_born_iso_{dtype}_backward_sc_argtypes"]
-        except AttributeError:
-            pass
+        _assign_argtypes("scalar", accuracy, dtype, "forward")
+        _assign_argtypes("scalar", accuracy, dtype, "backward")
+        _assign_argtypes("scalar_born", accuracy, dtype, "forward")
+        _assign_argtypes("scalar_born", accuracy, dtype, "backward")
+        _assign_argtypes("scalar_born", accuracy, dtype, "backward", extra="_sc")
 
 for accuracy in [2, 4]:
     for dtype in ["float", "double"]:
-        getattr(dll, f"elastic_iso_{accuracy}_{dtype}_forward_cpu").argtypes = \
-            globals()[f"elastic_iso_{dtype}_forward_argtypes"]
-        getattr(dll, f"elastic_iso_{accuracy}_{dtype}_backward_cpu").argtypes = \
-            globals()[f"elastic_iso_{dtype}_backward_argtypes"]
-        try:
-            getattr(dll, f"elastic_iso_{accuracy}_{dtype}_forward_cuda").argtypes = \
-                globals()[f"elastic_iso_{dtype}_forward_argtypes"]
-            getattr(dll, f"elastic_iso_{accuracy}_{dtype}_backward_cuda").argtypes = \
-                globals()[f"elastic_iso_{dtype}_backward_argtypes"]
-        except AttributeError:
-            pass
+        _assign_argtypes("elastic", accuracy, dtype, "forward")
+        _assign_argtypes("elastic", accuracy, dtype, "backward")

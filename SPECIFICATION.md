@@ -2,6 +2,10 @@
 
 This document provides a technical specification of the Deepwave project. It is intended for developers who wish to understand the internal workings of the package, its design patterns, and how to contribute.
 
+Deepwave provides a PyTorch-compatible implementation of wave propagation. It has a wide range of users, many of whom are graduate students and researchers who use it to test new ideas for applications such as seismic inversion and non-destructive testing. As it will often be used in unexpected ways to test unusual ideas, it is important that it has a logical structure, carefully implements the mathematically correct behaviour even in non-physical situations, and is as stable and robust as possible. Many of the users are not experienced programmers, and many will use it from a Notebook environment for quickly testing ideas. This means that ease-of-use, comprehensive input checking to quickly detect mistakes, and helpful error messages, are important.
+
+Everyone who looks at the code should be impressed by how clean, clear, and Pythonic it is. It should be an exemplar of best practices. It is, however, a high performance code implementing computational intensive operations that will be limited by available computational power and memory. Complicated C and CUDA code implementing the inner loops of these calculations might therefore need to be tolerated to ensure maximum performance.
+
 ## 1. High-Level Architecture
 
 Deepwave uses a hybrid architecture to balance high performance with a user-friendly Python API. The core wave propagation logic is implemented in C (for CPUs) and CUDA (for GPUs). A Python layer provides the user interface and integrates with PyTorch for automatic differentiation.

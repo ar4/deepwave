@@ -8,9 +8,15 @@ import torch
 from torch import Tensor
 from torch.autograd.function import once_differentiable
 import deepwave
-from deepwave.common import (setup_propagator, downsample_and_movedim,
-                             create_or_pad, lambmubuoyancy_to_vpvsrho,
-                             IGNORE_LOCATION)
+from deepwave.common import (
+    setup_propagator,
+    downsample_and_movedim,
+    create_or_pad,
+    lambmubuoyancy_to_vpvsrho,
+    IGNORE_LOCATION,
+    PMLConfig,
+    SurveyConfig,
+)
 from deepwave.staggered_grid import set_pml_profiles
 
 
@@ -52,14 +58,16 @@ class Elastic(torch.nn.Module):
             Same as lamb_requires_grad, but for buoyancy.
     """
 
-    def __init__(self,
-                 lamb: Tensor,
-                 mu: Tensor,
-                 buoyancy: Tensor,
-                 grid_spacing: Union[int, float, torch.Tensor, Sequence[Union[int, float]]],
-                 lamb_requires_grad: bool = False,
-                 mu_requires_grad: bool = False,
-                 buoyancy_requires_grad: bool = False) -> None:
+    def __init__(
+        self,
+        lamb: Tensor,
+        mu: Tensor,
+        buoyancy: Tensor,
+        grid_spacing: Union[int, float, torch.Tensor, Sequence[Union[int, float]]],
+        lamb_requires_grad: bool = False,
+        mu_requires_grad: bool = False,
+        buoyancy_requires_grad: bool = False,
+    ) -> None:
         super().__init__()
         # Only checks unique to this class (not covered by setup_propagator)
         if lamb.ndim != 2:
@@ -113,40 +121,43 @@ class Elastic(torch.nn.Module):
         `mu`, `buoyancy`, and `grid_spacing` do not need to be provided again.
         See :func:`elastic` for a description of the inputs and outputs.
         """
+        pml_config = PMLConfig(pml_width, pml_freq)
+        survey_config = SurveyConfig(
+            source_locations=[source_locations_y, source_locations_x],
+            receiver_locations=[receiver_locations_y, receiver_locations_x,
+                                receiver_locations_p],
+            source_amplitudes=[source_amplitudes_y, source_amplitudes_x],
+            wavefields=[
+                vy_0,
+                vx_0,
+                sigmayy_0,
+                sigmaxy_0,
+                sigmaxx_0,
+                m_vyy_0,
+                m_vyx_0,
+                m_vxy_0,
+                m_vxx_0,
+                m_sigmayyy_0,
+                m_sigmaxyy_0,
+                m_sigmaxyx_0,
+                m_sigmaxxx_0,
+            ],
+            survey_pad=survey_pad,
+            origin=origin,
+        )
         return elastic(
             self.lamb,
             self.mu,
             self.buoyancy,
             self.grid_spacing,
             dt,
-            source_amplitudes_y=source_amplitudes_y,
-            source_amplitudes_x=source_amplitudes_x,
-            source_locations_y=source_locations_y,
-            source_locations_x=source_locations_x,
-            receiver_locations_y=receiver_locations_y,
-            receiver_locations_x=receiver_locations_x,
-            receiver_locations_p=receiver_locations_p,
             accuracy=accuracy,
-            pml_width=pml_width,
-            pml_freq=pml_freq,
+            pml_config=pml_config,
             max_vel=max_vel,
-            survey_pad=survey_pad,
-            vy_0=vy_0,
-            vx_0=vx_0,
-            sigmayy_0=sigmayy_0,
-            sigmaxy_0=sigmaxy_0,
-            sigmaxx_0=sigmaxx_0,
-            m_vyy_0=m_vyy_0,
-            m_vyx_0=m_vyx_0,
-            m_vxy_0=m_vxy_0,
-            m_vxx_0=m_vxx_0,
-            m_sigmayyy_0=m_sigmayyy_0,
-            m_sigmaxyy_0=m_sigmaxyy_0,
-            m_sigmaxyx_0=m_sigmaxyx_0,
-            m_sigmaxxx_0=m_sigmaxxx_0,
-            origin=origin,
+            survey_config=survey_config,
             nt=nt,
-            model_gradient_sampling_interval=model_gradient_sampling_interval)
+            model_gradient_sampling_interval=model_gradient_sampling_interval,
+        )
 
 
 def elastic(
@@ -185,7 +196,9 @@ def elastic(
     model_gradient_sampling_interval: int = 1,
     freq_taper_frac: float = 0.0,
     time_pad_frac: float = 0.0,
-    time_taper: bool = False
+    time_taper: bool = False,
+    pml_config: Optional[PMLConfig] = None,
+    survey_config: Optional[SurveyConfig] = None,
 ) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor,
            Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
     """Elastic wave propagation (functional interface).
@@ -274,7 +287,7 @@ def elastic(
             A number (int or float), a torch.Tensor, or a sequence of
             numbers specifying the width (in number of cells) of the PML
             that prevents reflections from the edges of the model. Floats
-            will be truncated to integers. If a single value is provided,
+            will be truncated to integers. If a single value is provided, 
             it will be used for all edges. If a sequence is provided, it
             should contain the values for the edges in the following order:
             [the beginning of the first dimension,
@@ -286,7 +299,8 @@ def elastic(
             value for that edge to be zero. For example, if your model is
             oriented so that the surface that you want to be reflective is the
             beginning of the second dimension, then you could specify
-            `pml_width=[20, 20, 0, 20]`. The model values in the PML region
+            `pml_width=[20, 20, 0, 20]`.
+            The model values in the PML region
             are obtained by replicating the values on the edge of the
             model. Optional, default 20.
         pml_freq:
@@ -445,40 +459,66 @@ def elastic(
                 oriented in the second spatial dimension.
 
     """
+    if pml_config is None:
+        pml_config = PMLConfig(pml_width, pml_freq)
+    if survey_config is None:
+        survey_config = SurveyConfig(
+            source_locations=[source_locations_y, source_locations_x],
+            receiver_locations=[receiver_locations_y, receiver_locations_x,
+                                receiver_locations_p],
+            source_amplitudes=[source_amplitudes_y, source_amplitudes_x],
+            wavefields=[
+                vy_0,
+                vx_0,
+                sigmayy_0,
+                sigmaxy_0,
+                sigmaxx_0,
+                m_vyy_0,
+                m_vyx_0,
+                m_vxy_0,
+                m_vxx_0,
+                m_sigmayyy_0,
+                m_sigmaxyy_0,
+                m_sigmaxyx_0,
+                m_sigmaxxx_0,
+            ],
+            survey_pad=survey_pad,
+            origin=origin,
+        )
     # Check that sources and receivers are not on the last row or column,
     # as these are not used
-    if (source_locations_y is not None
-            and source_locations_y[..., 1].max() >= lamb.shape[1] - 1):
+    if (survey_config.source_locations[0] is not None
+            and survey_config.source_locations[0][..., 1].max() >= lamb.shape[1] - 1):
         raise RuntimeError("With the provided model, the maximum y source "
                            "location in the second dimension must be less "
                            "than " + str(lamb.shape[1] - 1) + ".")
-    if (receiver_locations_y is not None
-            and receiver_locations_y[..., 1].max() >= lamb.shape[1] - 1):
+    if (survey_config.receiver_locations[0] is not None
+            and survey_config.receiver_locations[0][..., 1].max() >= lamb.shape[1] - 1):
         raise RuntimeError("With the provided model, the maximum y "
                            "receiver location in the second dimension "
                            "must be less than " + str(lamb.shape[1] - 1) + ".")
-    if (source_locations_x is not None):
-        dim_location = source_locations_x[..., 0]
+    if (survey_config.source_locations[1] is not None):
+        dim_location = survey_config.source_locations[1][..., 0]
         dim_location = dim_location[dim_location != IGNORE_LOCATION]
         if (dim_location.min() <= 0):
             raise RuntimeError("The minimum x source "
                                "location in the first dimension must be "
                                "greater than 0.")
-    if (receiver_locations_x is not None):
-        dim_location = receiver_locations_x[..., 0]
+    if (survey_config.receiver_locations[1] is not None):
+        dim_location = survey_config.receiver_locations[1][..., 0]
         dim_location = dim_location[dim_location != IGNORE_LOCATION]
         if (dim_location.min() <= 0):
             raise RuntimeError("The minimum x receiver "
                                "location in the first dimension must be "
                                "greater than 0.")
-    if (receiver_locations_p is not None):
-        dim_location = receiver_locations_p[..., 0]
+    if (survey_config.receiver_locations[2] is not None):
+        dim_location = survey_config.receiver_locations[2][..., 0]
         dim_location = dim_location[dim_location != IGNORE_LOCATION]
-        if (receiver_locations_p[..., 1].max() >= lamb.shape[1] - 1
+        if (survey_config.receiver_locations[2][..., 1].max() >= lamb.shape[1] - 1
                 or dim_location.min() <= 0):
             raise RuntimeError("With the provided model, the pressure "
                                "receiver locations in the second dimension "
-                               "must be less than " + str(lamb.shape[1] - 1) +
+                               "must be less than " + str(lamb.shape[1] - 1) + 
                                " and "
                                "in the first dimension must be "
                                "greater than 0.")
@@ -511,17 +551,10 @@ def elastic(
      accuracy, pml_width_l, pml_freq, max_vel, resample_config, device, dtype) = \
         setup_propagator([lamb, mu, buoyancy], ['replicate'] * 3,
                          grid_spacing, dt,
-                         [source_amplitudes_y, source_amplitudes_x],
-                         [source_locations_y, source_locations_x],
-                         [receiver_locations_y, receiver_locations_x,
-                          receiver_locations_p],
-                         accuracy, fd_pad, pml_width, pml_freq,
-                         max_vel, min_nonzero_model_vel, max_model_vel, survey_pad,
-                         [vy_0, vx_0, sigmayy_0, sigmaxy_0, sigmaxx_0,
-                          m_vyy_0, m_vyx_0, m_vxy_0, m_vxx_0,
-                          m_sigmayyy_0, m_sigmaxyy_0,
-                          m_sigmaxyx_0, m_sigmaxxx_0],
-                         origin, nt, model_gradient_sampling_interval,
+                         survey_config,
+                         accuracy, fd_pad, pml_config,
+                         max_vel, min_nonzero_model_vel, max_model_vel,
+                         nt, model_gradient_sampling_interval,
                          freq_taper_frac, time_pad_frac, time_taper, 2)
 
     if any([s <= (accuracy + 1) * 2 for s in models[0].shape[1:]]):
@@ -581,26 +614,34 @@ def elastic(
 
     receiver_amplitudes_y = average_adjacent(receiver_amplitudes_y)
     receiver_amplitudes_x = average_adjacent(receiver_amplitudes_x)
-    receiver_amplitudes_y = downsample_and_movedim(receiver_amplitudes_y,
-                                                   resample_config.step_ratio,
-                                                   resample_config.freq_taper_frac,
-                                                   resample_config.time_pad_frac,
-                                                   resample_config.time_taper)
-    receiver_amplitudes_x = downsample_and_movedim(receiver_amplitudes_x,
-                                                   resample_config.step_ratio,
-                                                   resample_config.freq_taper_frac,
-                                                   resample_config.time_pad_frac,
-                                                   resample_config.time_taper)
-    receiver_amplitudes_p = downsample_and_movedim(receiver_amplitudes_p,
-                                                   resample_config.step_ratio,
-                                                   resample_config.freq_taper_frac,
-                                                   resample_config.time_pad_frac,
-                                                   resample_config.time_taper)
+    receiver_amplitudes_y = downsample_and_movedim(
+        receiver_amplitudes_y,
+        resample_config.step_ratio,
+        resample_config.freq_taper_frac,
+        resample_config.time_pad_frac,
+        resample_config.time_taper,
+    )
+    receiver_amplitudes_x = downsample_and_movedim(
+        receiver_amplitudes_x,
+        resample_config.step_ratio,
+        resample_config.freq_taper_frac,
+        resample_config.time_pad_frac,
+        resample_config.time_taper,
+    )
+    receiver_amplitudes_p = downsample_and_movedim(
+        receiver_amplitudes_p,
+        resample_config.step_ratio,
+        resample_config.freq_taper_frac,
+        resample_config.time_pad_frac,
+        resample_config.time_taper,
+    )
 
-    return (vy, vx, sigmayy, sigmaxy, sigmaxx, m_vyy, m_vyx, m_vxy, m_vxx,
-            m_sigmayyy, m_sigmaxyy, m_sigmaxyx, m_sigmaxxx,
-            receiver_amplitudes_p, receiver_amplitudes_y,
-            receiver_amplitudes_x)
+    return (
+        vy, vx, sigmayy, sigmaxy, sigmaxx, m_vyy, m_vyx, m_vxy, m_vxx,
+        m_sigmayyy, m_sigmaxyy, m_sigmaxyx, m_sigmaxxx,
+        receiver_amplitudes_p, receiver_amplitudes_y,
+        receiver_amplitudes_x
+    )
 
 
 def zero_edges(tensor: Tensor, ny: int, nx: int):
@@ -618,8 +659,9 @@ def zero_edge_right(tensor: Tensor, nx: int):
     tensor[:, :, nx - 1] = 0
 
 
-def zero_interior(tensor: Tensor, ybegin: int, yend: int, xbegin: int,
-                  xend: int):
+def zero_interior(
+    tensor: Tensor, ybegin: int, yend: int, xbegin: int, xend: int
+):
     tensor = tensor.clone()
     tensor[:, ybegin:yend, xbegin:xend] = 0
     return tensor
@@ -628,12 +670,48 @@ def zero_interior(tensor: Tensor, ybegin: int, yend: int, xbegin: int,
 class ElasticForwardFunc(torch.autograd.Function):
 
     @staticmethod
-    def forward(ctx, lamb, mu, buoyancy, source_amplitudes_y,
-                source_amplitudes_x, vy, vx, sigmayy, sigmaxy, sigmaxx, m_vyy,
-                m_vyx, m_vxy, m_vxx, m_sigmayyy, m_sigmaxyy, m_sigmaxyx,
-                m_sigmaxxx, ay, ayh, ax, axh, by, byh, bx, bxh, sources_y_i,
-                sources_x_i, receivers_y_i, receivers_x_i, receivers_p_i, dy,
-                dx, dt, nt, step_ratio, accuracy, pml_width, n_shots):
+    def forward(
+        ctx,
+        lamb,
+        mu,
+        buoyancy,
+        source_amplitudes_y,
+        source_amplitudes_x,
+        vy,
+        vx,
+        sigmayy,
+        sigmaxy,
+        sigmaxx,
+        m_vyy,
+        m_vyx,
+        m_vxy,
+        m_vxx,
+        m_sigmayyy,
+        m_sigmaxyy,
+        m_sigmaxyx,
+        m_sigmaxxx,
+        ay,
+        ayh,
+        ax,
+        axh,
+        by,
+        byh,
+        bx,
+        bxh,
+        sources_y_i,
+        sources_x_i,
+        receivers_y_i,
+        receivers_x_i,
+        receivers_p_i,
+        dy,
+        dx,
+        dt,
+        nt,
+        step_ratio,
+        accuracy,
+        pml_width,
+        n_shots,
+    ):
 
         lamb = lamb.contiguous()
         mu = mu.contiguous()
@@ -785,31 +863,32 @@ class ElasticForwardFunc(torch.autograd.Function):
 
         if vy.numel() > 0 and nt > 0:
             start_t = 0
-            forward(lamb.data_ptr(), mu.data_ptr(), buoyancy.data_ptr(),
-                    source_amplitudes_y.data_ptr(),
-                    source_amplitudes_x.data_ptr(), vy.data_ptr(),
-                    vx.data_ptr(), sigmayy.data_ptr(), sigmaxy.data_ptr(),
-                    sigmaxx.data_ptr(), m_vyy.data_ptr(), m_vyx.data_ptr(),
-                    m_vxy.data_ptr(), m_vxx.data_ptr(), m_sigmayyy.data_ptr(),
-                    m_sigmaxyy.data_ptr(), m_sigmaxyx.data_ptr(),
-                    m_sigmaxxx.data_ptr(), dvydbuoyancy.data_ptr(),
-                    dvxdbuoyancy.data_ptr(), dvydy_store.data_ptr(),
-                    dvxdx_store.data_ptr(), dvydxdvxdy_store.data_ptr(),
-                    receiver_amplitudes_y.data_ptr(),
-                    receiver_amplitudes_x.data_ptr(),
-                    receiver_amplitudes_p.data_ptr(), ay.data_ptr(),
-                    ayh.data_ptr(), ax.data_ptr(), axh.data_ptr(),
-                    by.data_ptr(),
-                    byh.data_ptr(), bx.data_ptr(), bxh.data_ptr(),
-                    sources_y_i.data_ptr(), sources_x_i.data_ptr(),
-                    receivers_y_i.data_ptr(), receivers_x_i.data_ptr(),
-                    receivers_p_i.data_ptr(), dy, dx, dt, nt, n_shots, ny, nx,
-                    n_sources_y_per_shot, n_sources_x_per_shot,
-                    n_receivers_y_per_shot, n_receivers_x_per_shot,
-                    n_receivers_p_per_shot, step_ratio, lamb.requires_grad,
-                    mu.requires_grad, buoyancy.requires_grad, lamb_batched,
-                    mu_batched, buoyancy_batched, start_t, pml_y0, pml_y1,
-                    pml_x0, pml_x1, aux)
+            forward(
+                lamb.data_ptr(), mu.data_ptr(), buoyancy.data_ptr(),
+                source_amplitudes_y.data_ptr(),
+                source_amplitudes_x.data_ptr(), vy.data_ptr(),
+                vx.data_ptr(), sigmayy.data_ptr(), sigmaxy.data_ptr(),
+                sigmaxx.data_ptr(), m_vyy.data_ptr(), m_vyx.data_ptr(),
+                m_vxy.data_ptr(), m_vxx.data_ptr(), m_sigmayyy.data_ptr(),
+                m_sigmaxyy.data_ptr(), m_sigmaxyx.data_ptr(),
+                m_sigmaxxx.data_ptr(), dvydbuoyancy.data_ptr(),
+                dvxdbuoyancy.data_ptr(), dvydy_store.data_ptr(),
+                dvxdx_store.data_ptr(), dvydxdvxdy_store.data_ptr(),
+                receiver_amplitudes_y.data_ptr(),
+                receiver_amplitudes_x.data_ptr(),
+                receiver_amplitudes_p.data_ptr(), ay.data_ptr(),
+                ayh.data_ptr(), ax.data_ptr(), axh.data_ptr(),
+                by.data_ptr(),
+                byh.data_ptr(), bx.data_ptr(), bxh.data_ptr(),
+                sources_y_i.data_ptr(), sources_x_i.data_ptr(),
+                receivers_y_i.data_ptr(), receivers_x_i.data_ptr(),
+                receivers_p_i.data_ptr(), dy, dx, dt, nt, n_shots, ny, nx,
+                n_sources_y_per_shot, n_sources_x_per_shot,
+                n_receivers_y_per_shot, n_receivers_x_per_shot,
+                n_receivers_p_per_shot, step_ratio, lamb.requires_grad,
+                mu.requires_grad, buoyancy.requires_grad, lamb_batched,
+                mu_batched, buoyancy_batched, start_t, pml_y0, pml_y1,
+                pml_x0, pml_x1, aux)
 
         if (lamb.requires_grad or mu.requires_grad or buoyancy.requires_grad
                 or source_amplitudes_y.requires_grad
@@ -820,11 +899,13 @@ class ElasticForwardFunc(torch.autograd.Function):
                 or m_vxy.requires_grad or m_vxx.requires_grad
                 or m_sigmayyy.requires_grad or m_sigmaxyy.requires_grad
                 or m_sigmaxyx.requires_grad or m_sigmaxxx.requires_grad):
-            ctx.save_for_backward(lamb, mu, buoyancy, ay, ayh, ax, axh, by,
-                                  byh, bx, bxh, sources_y_i, sources_x_i,
-                                  receivers_y_i, receivers_x_i, receivers_p_i,
-                                  dvydbuoyancy, dvxdbuoyancy, dvydy_store,
-                                  dvxdx_store, dvydxdvxdy_store)
+            ctx.save_for_backward(
+                lamb, mu, buoyancy, ay, ayh, ax, axh, by,
+                byh, bx, bxh, sources_y_i, sources_x_i,
+                receivers_y_i, receivers_x_i, receivers_p_i,
+                dvydbuoyancy, dvxdbuoyancy, dvydy_store,
+                dvxdx_store, dvydxdvxdy_store,
+            )
             ctx.dy = dy
             ctx.dx = dx
             ctx.dt = dt
@@ -836,16 +917,34 @@ class ElasticForwardFunc(torch.autograd.Function):
             ctx.source_amplitudes_y_requires_grad = source_amplitudes_y.requires_grad
             ctx.source_amplitudes_x_requires_grad = source_amplitudes_x.requires_grad
 
-        return (vy, vx, sigmayy, sigmaxy, sigmaxx, m_vyy, m_vyx, m_vxy, m_vxx,
-                m_sigmayyy, m_sigmaxyy, m_sigmaxyx, m_sigmaxxx,
-                receiver_amplitudes_p, receiver_amplitudes_y,
-                receiver_amplitudes_x)
+        return (
+            vy, vx, sigmayy, sigmaxy, sigmaxx, m_vyy, m_vyx, m_vxy, m_vxx,
+            m_sigmayyy, m_sigmaxyy, m_sigmaxyx, m_sigmaxxx,
+            receiver_amplitudes_p, receiver_amplitudes_y,
+            receiver_amplitudes_x,
+        )
 
     @staticmethod
     @once_differentiable
-    def backward(ctx, vy, vx, sigmayy, sigmaxy, sigmaxx, m_vyy, m_vyx, m_vxy,
-                 m_vxx, m_sigmayyy, m_sigmaxyy, m_sigmaxyx, m_sigmaxxx,
-                 grad_r_p, grad_r_y, grad_r_x):
+    def backward(
+        ctx,
+        vy,
+        vx,
+        sigmayy,
+        sigmaxy,
+        sigmaxx,
+        m_vyy,
+        m_vyx,
+        m_vxy,
+        m_vxx,
+        m_sigmayyy,
+        m_sigmaxyy,
+        m_sigmaxyx,
+        m_sigmaxxx,
+        grad_r_p,
+        grad_r_y,
+        grad_r_x,
+    ):
         (lamb, mu, buoyancy, ay, ayh, ax, axh, by, byh, bx, bxh, sources_y_i,
          sources_x_i, receivers_y_i, receivers_x_i, receivers_p_i,
          dvydbuoyancy, dvxdbuoyancy, dvydy_store, dvxdx_store,
@@ -1086,21 +1185,25 @@ class ElasticForwardFunc(torch.autograd.Function):
             m_sigmaxyx = zero_interior(m_sigmaxyx, 0, ny, pml_x0, pml_x1 - 1)
             m_sigmaxyy = zero_interior(m_sigmaxyy, pml_y0 + 1, pml_y1, 0, nx)
             m_sigmaxxx = zero_interior(m_sigmaxxx, 0, ny, pml_x0, pml_x1)
-            return (grad_lamb, grad_mu, grad_buoyancy, grad_f_y, grad_f_x, vy,
-                    vx, sigmayy, sigmaxy, sigmaxx, m_vyy, m_vyx, m_vxy, m_vxx,
-                    m_sigmayyy, m_sigmaxyy, m_sigmaxyx, m_sigmaxxx, None, None,
-                    None, None, None, None, None, None, None, None, None, None,
-                    None, None, None, None, None, None, None, None, None)
+            return (
+                grad_lamb, grad_mu, grad_buoyancy, grad_f_y, grad_f_x, vy,
+                vx, sigmayy, sigmaxy, sigmaxx, m_vyy, m_vyx, m_vxy, m_vxx,
+                m_sigmayyy, m_sigmaxyy, m_sigmaxyx, m_sigmaxxx, None, None,
+                None, None, None, None, None, None, None, None, None, None,
+                None, None, None, None, None, None, None, None, None
+            )
         else:
             m_sigmayyyn = zero_interior(m_sigmayyyn, pml_y0, pml_y1, 0, nx)
             m_sigmaxyxn = zero_interior(m_sigmaxyxn, 0, ny, pml_x0, pml_x1 - 1)
             m_sigmaxyyn = zero_interior(m_sigmaxyyn, pml_y0 + 1, pml_y1, 0, nx)
             m_sigmaxxxn = zero_interior(m_sigmaxxxn, 0, ny, pml_x0, pml_x1)
-            return (grad_lamb, grad_mu, grad_buoyancy, grad_f_y, grad_f_x, vy,
-                    vx, sigmayy, sigmaxy, sigmaxx, m_vyy, m_vyx, m_vxy, m_vxx,
-                    m_sigmayyyn, m_sigmaxyyn, m_sigmaxyxn, m_sigmaxxxn, None,
-                    None, None, None, None, None, None, None, None, None, None,
-                    None, None, None, None, None, None, None, None, None, None)
+            return (
+                grad_lamb, grad_mu, grad_buoyancy, grad_f_y, grad_f_x, vy,
+                vx, sigmayy, sigmaxy, sigmaxx, m_vyy, m_vyx, m_vxy, m_vxx,
+                m_sigmayyyn, m_sigmaxyyn, m_sigmaxyxn, m_sigmaxxxn, None,
+                None, None, None, None, None, None, None, None, None, None,
+                None, None, None, None, None, None, None, None, None, None
+            )
 
 
 def elastic_func(*args):
