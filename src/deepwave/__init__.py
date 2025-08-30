@@ -16,7 +16,8 @@ import platform
 import ctypes
 from ctypes import c_void_p, c_int64, c_float, c_double, c_bool
 import pathlib
-from typing import List, Type, Any
+from typing import List, Any
+
 
 # These imports are for exposing the public API
 from deepwave.scalar import Scalar, scalar
@@ -38,18 +39,17 @@ dll = ctypes.CDLL(
 )
 
 # Check if was compiled with OpenMP support
-try:
-    dll.omp_get_num_threads
-    use_openmp = True
-except AttributeError:
-    use_openmp = False
+if hasattr(dll, 'omp_get_num_threads'):
+    USE_OPENMP = True
+else:
+    USE_OPENMP = False
 
 # Define ctypes argument type templates to reduce repetition while preserving order.
 # A placeholder will be replaced by the appropriate float type (c_float or c_double).
-FLOAT_TYPE = Any
+FLOAT_TYPE: type = c_float
 
 # Templates for argtype lists
-scalar_forward_template: List[Type] = (
+scalar_forward_template: List[type] = (
     [c_void_p] * 20
     + [FLOAT_TYPE] * 5
     + [c_int64] * 7
@@ -57,7 +57,7 @@ scalar_forward_template: List[Type] = (
     + [c_int64] * 6
 )
 
-scalar_backward_template: List[Type] = (
+scalar_backward_template: List[type] = (
     [c_void_p] * 24
     + [FLOAT_TYPE] * 4
     + [c_int64] * 7
@@ -65,7 +65,7 @@ scalar_backward_template: List[Type] = (
     + [c_int64] * 6
 )
 
-scalar_born_forward_template: List[Type] = (
+scalar_born_forward_template: List[type] = (
     [c_void_p] * 33
     + [FLOAT_TYPE] * 5
     + [c_int64] * 8
@@ -73,7 +73,7 @@ scalar_born_forward_template: List[Type] = (
     + [c_int64] * 6
 )
 
-scalar_born_backward_template: List[Type] = (
+scalar_born_backward_template: List[type] = (
     [c_void_p] * 41
     + [FLOAT_TYPE] * 5
     + [c_int64] * 9
@@ -81,7 +81,7 @@ scalar_born_backward_template: List[Type] = (
     + [c_int64] * 6
 )
 
-scalar_born_backward_sc_template: List[Type] = (
+scalar_born_backward_sc_template: List[type] = (
     [c_void_p] * 24
     + [FLOAT_TYPE] * 5
     + [c_int64] * 7
@@ -89,7 +89,7 @@ scalar_born_backward_sc_template: List[Type] = (
     + [c_int64] * 6
 )
 
-elastic_forward_template: List[Type] = (
+elastic_forward_template: List[type] = (
     [c_void_p] * 39
     + [FLOAT_TYPE] * 3
     + [c_int64] * 10
@@ -97,7 +97,7 @@ elastic_forward_template: List[Type] = (
     + [c_int64] * 6
 )
 
-elastic_backward_template: List[Type] = (
+elastic_backward_template: List[type] = (
     [c_void_p] * 49
     + [FLOAT_TYPE] * 3
     + [c_int64] * 10
@@ -117,7 +117,7 @@ templates = {
 }
 
 
-def _get_argtypes(template_name: str, float_type: Type) -> List[Type]:
+def _get_argtypes(template_name: str, float_type: type) -> List[type]:
     """Generate a concrete argtype list from a template and float type."""
     return [
         float_type if t is FLOAT_TYPE else t for t in templates[template_name]
@@ -150,15 +150,15 @@ def _assign_argtypes(
 
 
 # Loop through all permutations and assign argtypes
-for accuracy in [2, 4, 6, 8]:
-    for dtype in ["float", "double"]:
-        _assign_argtypes("scalar", accuracy, dtype, "forward")
-        _assign_argtypes("scalar", accuracy, dtype, "backward")
-        _assign_argtypes("scalar_born", accuracy, dtype, "forward")
-        _assign_argtypes("scalar_born", accuracy, dtype, "backward")
-        _assign_argtypes("scalar_born", accuracy, dtype, "backward", extra="_sc")
+for current_accuracy in [2, 4, 6, 8]:
+    for current_dtype in ["float", "double"]:
+        _assign_argtypes("scalar", current_accuracy, current_dtype, "forward")
+        _assign_argtypes("scalar", current_accuracy, current_dtype, "backward")
+        _assign_argtypes("scalar_born", current_accuracy, current_dtype, "forward")
+        _assign_argtypes("scalar_born", current_accuracy, current_dtype, "backward")
+        _assign_argtypes("scalar_born", current_accuracy, current_dtype, "backward", extra="_sc")
 
-for accuracy in [2, 4]:
-    for dtype in ["float", "double"]:
-        _assign_argtypes("elastic", accuracy, dtype, "forward")
-        _assign_argtypes("elastic", accuracy, dtype, "backward")
+for current_accuracy in [2, 4]:
+    for current_dtype in ["float", "double"]:
+        _assign_argtypes("elastic", current_accuracy, current_dtype, "forward")
+        _assign_argtypes("elastic", current_accuracy, current_dtype, "backward")

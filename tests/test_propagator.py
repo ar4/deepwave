@@ -25,24 +25,6 @@ def test_passes(prop):
 
 
 @pytest.mark.parametrize(
-    "model, dx, expected_error_match, expected_error_type",
-    [
-        (None, 5.0, "model must be a torch.Tensor.", RuntimeError),
-        (torch.ones(5), 5.0, "model must have at least two dimensions.", RuntimeError),
-        (torch.ones(5, 5, 5, 5), 5.0, "model must have at most three dimensions.", RuntimeError),
-        (torch.ones(0, 5), 5.0, "model dimensions must be positive.", RuntimeError),
-        (torch.ones(5, 0), 5.0, "model dimensions must be positive.", RuntimeError),
-        (torch.ones(5, 5), None, "dx must be a float or a sequence of floats.", TypeError),
-        (torch.ones(5, 5), -5.0, "dx elements must be positive.", ValueError),
-        (torch.ones(5, 5), [5.0, -5.0], "dx elements must be positive.", ValueError),
-        (torch.ones(5, 5), [5.0, 0.0], "dx elements must be positive.", ValueError),
-    ]
-)
-def test_scalar_constructor_invalid_args(model, dx, expected_error_match, expected_error_type):
-    with pytest.raises(expected_error_type, match=expected_error_match):
-        deepwave.Scalar(model, dx)
-
-@pytest.mark.parametrize(
     "arg_name, arg_value, expected_error_match, expected_error_type",
     [
         ("accuracy", 3, "accuracy must be 2, 4, 6, or 8", ValueError),

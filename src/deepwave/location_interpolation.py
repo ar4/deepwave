@@ -246,18 +246,18 @@ class Hicks:
                     "model_shape must be a list with two int entries")
             try:
                 model_shape = [int(v) for v in model_shape]
-            except (ValueError, TypeError):
+            except (ValueError, TypeError) as exc:
                 raise TypeError(
-                    "model_shape entries must be convertible to int")
+                    "model_shape entries must be convertible to int") from exc
         if free_surface_locs is not None:
             if not isinstance(free_surface_locs, list) or len(free_surface_locs) != 4:
                 raise RuntimeError(
                     "free_surface_locs must be a list of four floats")
             try:
                 free_surface_locs = [float(v) for v in free_surface_locs]
-            except (ValueError, TypeError):
+            except (ValueError, TypeError) as exc:
                 raise TypeError(
-                    "free_surface_locs entries must be convertible to float")
+                    "free_surface_locs entries must be convertible to float") from exc
         if model_shape is None:
             model_shape = [-1, -1]
         if free_surface_locs is None:

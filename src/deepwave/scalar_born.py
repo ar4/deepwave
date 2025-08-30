@@ -6,7 +6,7 @@ described in the scalar module, with the addition of a scattered
 wavefield that uses 2 / v * scatter * dt^2 * wavefield as the source term.
 """
 
-from typing import Optional, Union, Tuple, Sequence
+from typing import Optional, Union, Tuple, Sequence, cast, List, Any
 import torch
 from torch import Tensor
 from torch.autograd.function import once_differentiable
@@ -32,9 +32,9 @@ class ScalarBorn(torch.nn.Module):
 
     Args:
         v:
-            A 2D Tensor containing an initial guess of the wavespeed.
+            A Tensor containing an initial guess of the wavespeed.
         scatter:
-            A 2D Tensor containing an initial guess of the scattering
+            A Tensor containing an initial guess of the scattering
             potential.
         grid_spacing:
             The spatial grid cell size. It can be a single number (int or
@@ -56,15 +56,6 @@ class ScalarBorn(torch.nn.Module):
                  v_requires_grad: bool = False,
                  scatter_requires_grad: bool = False) -> None:
         super().__init__()
-        # Only checks unique to this class (not covered by setup_propagator)
-        if v.ndim != 2:
-            raise RuntimeError("v must have two dimensions")
-        if scatter.ndim != 2:
-            raise RuntimeError("scatter must have two dimensions")
-        if v.device != scatter.device:
-            raise RuntimeError("v and scatter must be on the same device")
-        if v.dtype != scatter.dtype:
-            raise RuntimeError("v and scatter must have the same dtype")
         self.v = torch.nn.Parameter(v, requires_grad=v_requires_grad)
         self.scatter = torch.nn.Parameter(scatter,
                                           requires_grad=scatter_requires_grad)
@@ -105,7 +96,7 @@ class ScalarBorn(torch.nn.Module):
         `scatter`, and `grid_spacing` do not need to be provided again. See
         :func:`scalar_born` for a description of the inputs and outputs.
         """
-        pml_config = PMLConfig(pml_width, pml_freq)
+        pml_config = PMLConfig(cast(Union[int, Sequence[int]], pml_width), pml_freq)
         survey_config = SurveyConfig(
             source_locations=[source_locations, source_locations],
             receiver_locations=[bg_receiver_locations, receiver_locations],
@@ -118,9 +109,9 @@ class ScalarBorn(torch.nn.Module):
         )
 
         return scalar_born(
-            self.v,
-            self.scatter,
-            self.grid_spacing,
+            cast(Tensor, self.v),
+            cast(Tensor, self.scatter),
+            cast(Union[int, float, torch.Tensor, Sequence[Union[int, float]]], self.grid_spacing),
             dt,
             accuracy=accuracy,
             pml_config=pml_config,
@@ -176,7 +167,7 @@ def scalar_born(
     For computational performance, multiple shots may be propagated
     simultaneously.
 
-    The scalar wave equation is: `d^2u/dt^2 = v^2 * laplacian(u) + v^2 * f`,
+    The scalar wave equation is: `d^2u/dt^2 = v^2 * laplacian(u) + v^2 * f`
     where `u` is the wavefield, `t` is time, `v` is the wavespeed, and `f`
     is the source. The Laplacian is applied to the spatial dimensions.
 
@@ -200,7 +191,7 @@ def scalar_born(
 
     Args:
         scatter:
-            A 2D Tensor containing an initial guess of the scattering
+            A Tensor containing an initial guess of the scattering
             potential. Unlike the module interface (:class:`ScalarBorn`),
             in this functional interface a copy is not made of the model,
             so gradients will propagate back into the provided Tensor.
@@ -251,7 +242,7 @@ def scalar_born(
 
     """
     if pml_config is None:
-        pml_config = PMLConfig(pml_width, pml_freq)
+        pml_config = PMLConfig(cast(Union[int, Sequence[int]], pml_width), pml_freq)
     if survey_config is None:
         survey_config = SurveyConfig(
             source_locations=[source_locations, source_locations],
@@ -266,7 +257,7 @@ def scalar_born(
 
     try:
         min_nonzero_model_vel = v[v.nonzero(as_tuple=True)].abs().min().item()
-    except:
+    except Exception:
         min_nonzero_model_vel = 0
     max_model_vel = v.abs().max().item()
     fd_pad = [accuracy // 2] * 4
@@ -275,7 +266,7 @@ def scalar_born(
      grid_spacing, dt, nt, n_shots,
      step_ratio, model_gradient_sampling_interval,
      accuracy, pml_width_l, pml_freq, max_vel, resample_config, device, dtype) = \
-        setup_propagator([v, scatter], ['replicate', 'constant'], grid_spacing, dt,
+        setup_propagator([v, scatter], ['replicate', 'constant'], cast(Union[float, Sequence[float]], grid_spacing), dt,
                          survey_config,
                          accuracy, fd_pad, pml_config, max_vel,
                          min_nonzero_model_vel, max_model_vel,
@@ -327,11 +318,12 @@ def scalar_born(
 class ScalarBornForwardFunc(torch.autograd.Function):
 
     @staticmethod
-    def forward(ctx, v, scatter, source_amplitudes, source_amplitudessc, wfc,
-                wfp, psiy, psix, zetay, zetax, wfcsc, wfpsc, psiysc, psixsc,
-                zetaysc, zetaxsc, ay, ax, by, bx, dbydy, dbxdx, sources_i, _,
-                receivers_i, receiverssc_i, dy, dx, dt, nt, step_ratio,
-                accuracy, pml_width, n_shots):
+    def forward(ctx: Any, v: Tensor, scatter: Tensor, source_amplitudes: Tensor, source_amplitudessc: Tensor, wfc: Tensor,
+                wfp: Tensor, psiy: Tensor, psix: Tensor, zetay: Tensor, zetax: Tensor, wfcsc: Tensor, wfpsc: Tensor, psiysc: Tensor, psixsc: Tensor,
+                zetaysc: Tensor, zetaxsc: Tensor, ay: Tensor, ax: Tensor, by: Tensor, bx: Tensor, dbydy: Tensor, dbxdx: Tensor, sources_i: Tensor, _: Tensor,
+                receivers_i: Tensor, receiverssc_i: Tensor, dy: float, dx: float, dt: float, nt: int, step_ratio: int,
+                accuracy: int, pml_width: List[int], n_shots: int) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor,
+               Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
 
         v = v.contiguous()
         scatter = scatter.contiguous()
@@ -435,7 +427,7 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                 else:
                     forward = deepwave.dll.scalar_born_iso_8_double_forward_cuda
         else:
-            if deepwave.use_openmp:
+            if deepwave.USE_OPENMP:
                 aux = min(n_shots, torch.get_num_threads())
             else:
                 aux = 1
@@ -519,8 +511,8 @@ class ScalarBornForwardFunc(torch.autograd.Function):
 
     @staticmethod
     @once_differentiable
-    def backward(ctx, wfc, wfp, psiy, psix, zetay, zetax, wfcsc, wfpsc, psiysc,
-                 psixsc, zetaysc, zetaxsc, grad_r, grad_rsc):
+    def backward(ctx: Any, wfc: Tensor, wfp: Tensor, psiy: Tensor, psix: Tensor, zetay: Tensor, zetax: Tensor, wfcsc: Tensor, wfpsc: Tensor, psiysc: Tensor,
+                 psixsc: Tensor, zetaysc: Tensor, zetaxsc: Tensor, grad_r: Tensor, grad_rsc: Tensor) -> Tuple[Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor]]:
         (v, scatter, ay, ax, by, bx, dbydy, dbxdx, sources_i, receivers_i,
          receiverssc_i, w_store, wsc_store) = ctx.saved_tensors
 
@@ -668,15 +660,15 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                     backward = deepwave.dll.scalar_born_iso_8_double_backward_cuda
                     backward_sc = deepwave.dll.scalar_born_iso_8_double_backward_sc_cuda
         else:
-            if deepwave.use_openmp:
+            if deepwave.USE_OPENMP:
                 aux = min(n_shots, torch.get_num_threads())
             else:
                 aux = 1
-            if v.requires_grad and not v_batched and aux > 1 and deepwave.use_openmp:
+            if v.requires_grad and not v_batched and aux > 1 and deepwave.USE_OPENMP:
                 grad_v_tmp.resize_(aux, *v.shape[-2:])
                 grad_v_tmp.fill_(0)
                 grad_v_tmp_ptr = grad_v_tmp.data_ptr()
-            if scatter.requires_grad and not scatter_batched and aux > 1 and deepwave.use_openmp:
+            if scatter.requires_grad and not scatter_batched and aux > 1 and deepwave.USE_OPENMP:
                 grad_scatter_tmp.resize_(aux, *scatter.shape[-2:])
                 grad_scatter_tmp.fill_(0)
                 grad_scatter_tmp_ptr = grad_scatter_tmp.data_ptr()
@@ -777,6 +769,5 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                     s], -wfcsc[s], psiynsc[s], psixnsc[s], zetaynsc[s], zetaxnsc[
                         s], None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None
 
-
-def scalar_born_func(*args):
+def scalar_born_func(*args: Any) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
     return ScalarBornForwardFunc.apply(*args)

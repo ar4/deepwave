@@ -2,7 +2,7 @@ from typing import Sequence
 """
 Scalar wave propagation module for Deepwave.
 
-Implements 2D scalar wave equation propagation using finite differences in time (2nd order)
+Implements scalar wave equation propagation using finite differences in time (2nd order)
 and space (user-selectable order: 2, 4, 6, or 8). Supports PML boundaries and adjoint mode
 for gradient computation. See Pasalic & McGarry (SEG 2010) for PML details.
 
@@ -12,14 +12,14 @@ Outputs: final wavefields (including PML) and receiver amplitudes (empty if no r
 All outputs are differentiable with respect to float Tensor inputs.
 """
 
-from typing import Optional, Union, List, Tuple
+from typing import Optional, Union, List, Tuple, Sequence, Any
 import torch
 from torch import Tensor
 from torch.autograd.function import once_differentiable
 import deepwave
 from deepwave.common import (setup_propagator, downsample_and_movedim,
                              zero_interior, create_or_pad, IGNORE_LOCATION,
-                             PMLConfig, SurveyConfig)
+                             PMLConfig, SurveyConfig, _as_list)
 from deepwave.regular_grid import set_pml_profiles
 
 
@@ -41,32 +41,15 @@ class Scalar(torch.nn.Module):
         Initialize the Scalar propagator module.
 
         Args:
-            v (Tensor): 2D wavespeed model.
+            v (Tensor): Wavespeed model.
             grid_spacing (int, float, torch.Tensor, or sequence of them): Grid cell size(s).
             v_requires_grad (bool, optional): If True, gradients will be computed for v. Default: False.
         """
+        super().__init__()
         if not isinstance(v_requires_grad, bool):
             raise TypeError(f"v_requires_grad must be bool, got {type(v_requires_grad).__name__}")
-        super().__init__()
         if not isinstance(v, Tensor):
             raise RuntimeError("model must be a torch.Tensor.")
-        if v.ndim < 2:
-            raise RuntimeError("model must have at least two dimensions.")
-        if v.ndim > 3:
-            raise RuntimeError("model must have at most three dimensions.")
-        if any(s <= 0 for s in v.shape):
-            raise RuntimeError("model dimensions must be positive.")
-        if not isinstance(grid_spacing, (int, float, Tensor, Sequence)):
-            raise TypeError("dx must be a float or a sequence of floats.")
-        if isinstance(grid_spacing, Sequence) and not all(isinstance(g, (int, float)) for g in grid_spacing):
-            raise TypeError("dx must be a float or a sequence of floats.")
-        if isinstance(grid_spacing, (int, float)) and grid_spacing <= 0:
-            raise ValueError("dx elements must be positive.")
-        if isinstance(grid_spacing, Tensor) and (grid_spacing <= 0).any():
-            raise ValueError("dx elements must be positive.")
-        if isinstance(grid_spacing, Sequence) and any(g <= 0 for g in grid_spacing):
-            raise ValueError("dx elements must be positive.")
-
         self.v = torch.nn.Parameter(v, requires_grad=v_requires_grad)
         self.grid_spacing = grid_spacing
 
@@ -97,7 +80,7 @@ class Scalar(torch.nn.Module):
         """
         Perform forward propagation/modelling. See `scalar` for details.
         """
-        pml_config = PMLConfig(pml_width, pml_freq)
+        pml_config = PMLConfig(_as_list(pml_width, 'pml_width', int), pml_freq)
         survey_config = SurveyConfig(
             source_locations=[source_locations],
             receiver_locations=[receiver_locations],
@@ -155,7 +138,7 @@ def scalar(
     See the full docstring above for details.
     """
     if pml_config is None:
-        pml_config = PMLConfig(pml_width, pml_freq)
+        pml_config = PMLConfig(_as_list(pml_width, 'pml_width', int), pml_freq)
     if survey_config is None:
         survey_config = SurveyConfig(
             source_locations=[source_locations],
@@ -185,7 +168,7 @@ def scalar(
 
     Args:
         v:
-            A 2D Tensor containing the wavespeed model. Unlike the module
+            A Tensor containing the wavespeed model. Unlike the module
             interface (:class:`Scalar`), in this functional interface a copy is
             not made of the model, so gradients will propagate back into
             the provided Tensor.
@@ -400,7 +383,7 @@ def scalar(
         grid_spacing, dt, nt, n_shots, step_ratio, model_gradient_sampling_interval,
         accuracy, pml_width_l, pml_freq, max_vel, resample_config, device, dtype
     ) = setup_propagator(
-        [v], ['replicate'], grid_spacing, dt,
+        [v], ['replicate'], _as_list(grid_spacing, 'grid_spacing', float), dt,
         survey_config, accuracy, fd_pad, pml_config, max_vel, min_nonzero_model_vel,
         max_model_vel, nt, model_gradient_sampling_interval, freq_taper_frac, time_pad_frac, time_taper, 2
     )
@@ -441,9 +424,9 @@ def scalar(
 class ScalarForwardFunc(torch.autograd.Function):
 
     @staticmethod
-    def forward(ctx, v, source_amplitudes, wfc, wfp, psiy, psix, zetay, zetax,
-                ay, ax, by, bx, dbydy, dbxdx, sources_i, receivers_i, dy, dx,
-                dt, nt, step_ratio, accuracy, pml_width, n_shots):
+    def forward(ctx: Any, v: Tensor, source_amplitudes: Tensor, wfc: Tensor, wfp: Tensor, psiy: Tensor, psix: Tensor, zetay: Tensor, zetax: Tensor,
+                ay: Tensor, ax: Tensor, by: Tensor, bx: Tensor, dbydy: Tensor, dbxdx: Tensor, sources_i: Tensor, receivers_i: Tensor, dy: float, dx: float,
+                dt: float, nt: int, step_ratio: int, accuracy: int, pml_width: List[int], n_shots: int) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
 
         if (v.requires_grad or source_amplitudes.requires_grad
                 or wfc.requires_grad or wfp.requires_grad or psiy.requires_grad
@@ -533,7 +516,7 @@ class ScalarForwardFunc(torch.autograd.Function):
                 else:
                     forward = deepwave.dll.scalar_iso_8_double_forward_cuda
         else:
-            if deepwave.use_openmp:
+            if deepwave.USE_OPENMP:
                 aux = min(n_shots, torch.get_num_threads())
             else:
                 aux = 1
@@ -581,7 +564,7 @@ class ScalarForwardFunc(torch.autograd.Function):
                     receiver_amplitudes)
 
     @staticmethod
-    def backward(ctx, gwfc, gwfp, gpsiy, gpsix, gzetay, gzetax, grad_r):
+    def backward(ctx: Any, gwfc: Tensor, gwfp: Tensor, gpsiy: Tensor, gpsix: Tensor, gzetay: Tensor, gzetax: Tensor, grad_r: Tensor) -> Tuple[Optional[Tensor], ...]:
         (v, ay, ax, by, bx, dbydy, dbxdx, sources_i, receivers_i,
          source_amplitudes, wfc, wfp, psiy, psix, zetay,
          zetax) = ctx.saved_tensors
@@ -607,11 +590,11 @@ class ScalarForwardFunc(torch.autograd.Function):
 class ScalarBackwardFunc(torch.autograd.Function):
 
     @staticmethod
-    def forward(ctx, gwfc, gwfp, gpsiy, gpsix, gzetay, gzetax, grad_r, v, ay,
-                ax, by, bx, dbydy, dbxdx, sources_i, receivers_i, dwdv,
-                source_amplitudes, wfc, wfp, psiy, psix, zetay, zetax, dy, dx,
-                dt, nt, n_shots, step_ratio, accuracy, pml_width,
-                source_amplitudes_requires_grad):
+    def forward(ctx: Any, gwfc: Tensor, gwfp: Tensor, gpsiy: Tensor, gpsix: Tensor, gzetay: Tensor, gzetax: Tensor, grad_r: Tensor, v: Tensor, ay: Tensor,
+                ax: Tensor, by: Tensor, bx: Tensor, dbydy: Tensor, dbxdx: Tensor, sources_i: Tensor, receivers_i: Tensor, dwdv: Tensor,
+                source_amplitudes: Tensor, wfc: Tensor, wfp: Tensor, psiy: Tensor, psix: Tensor, zetay: Tensor, zetax: Tensor, dy: float, dx: float,
+                dt: float, nt: int, n_shots: int, step_ratio: int, accuracy: int, pml_width: List[int],
+                source_amplitudes_requires_grad: bool) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
 
         ctx.save_for_backward(gwfc, gwfp, gpsiy, gpsix, gzetay, gzetax, grad_r,
                               v, ay, ax, by, bx, dbydy, dbxdx, sources_i,
@@ -711,11 +694,11 @@ class ScalarBackwardFunc(torch.autograd.Function):
                 else:
                     backward = deepwave.dll.scalar_iso_8_double_backward_cuda
         else:
-            if deepwave.use_openmp:
+            if deepwave.USE_OPENMP:
                 aux = min(n_shots, torch.get_num_threads())
             else:
                 aux = 1
-            if v.requires_grad and not v_batched and aux > 1 and deepwave.use_openmp:
+            if v.requires_grad and not v_batched and aux > 1 and deepwave.USE_OPENMP:
                 grad_v_tmp.resize_(aux, *v.shape[-2:])
                 grad_v_tmp.fill_(0)
                 grad_v_tmp_ptr = grad_v_tmp.data_ptr()
@@ -767,8 +750,8 @@ class ScalarBackwardFunc(torch.autograd.Function):
 
     @staticmethod
     @once_differentiable
-    def backward(ctx, ggv, ggf, ggwfc, ggwfp, ggpsiy, ggpsix, ggzetay,
-                 ggzetax):
+    def backward(ctx: Any, ggv: Tensor, ggf: Tensor, ggwfc: Tensor, ggwfp: Tensor, ggpsiy: Tensor, ggpsix: Tensor, ggzetay: Tensor,
+                 ggzetax: Tensor) -> Tuple[Optional[Tensor], ...]:
         (gwfc, gwfp, gpsiy, gpsix, gzetay, gzetax, grad_r, v, ay, ax, by, bx,
          dbydy, dbxdx, sources_i, receivers_i, source_amplitudes, wfc, wfp,
          psiy, psix, zetay, zetax) = ctx.saved_tensors
@@ -889,7 +872,7 @@ class ScalarBackwardFunc(torch.autograd.Function):
                 else:
                     forward = deepwave.dll.scalar_born_iso_8_double_forward_cuda
         else:
-            if deepwave.use_openmp:
+            if deepwave.USE_OPENMP:
                 aux = min(n_shots, torch.get_num_threads())
             else:
                 aux = 1
@@ -1026,11 +1009,11 @@ class ScalarBackwardFunc(torch.autograd.Function):
                 else:
                     backward = deepwave.dll.scalar_born_iso_8_double_backward_cuda
         else:
-            if deepwave.use_openmp:
+            if deepwave.USE_OPENMP:
                 aux = min(n_shots, torch.get_num_threads())
             else:
                 aux = 1
-            if v.requires_grad and not v_batched and aux > 1 and deepwave.use_openmp:
+            if v.requires_grad and not v_batched and aux > 1 and deepwave.USE_OPENMP:
                 grad_v_tmp.resize_(aux, *v.shape[-2:])
                 grad_v_tmp.fill_(0)
                 grad_v_tmp_ptr = grad_v_tmp.data_ptr()
@@ -1094,5 +1077,5 @@ class ScalarBackwardFunc(torch.autograd.Function):
                         s], None, None, None, None, None, None, None, None, None
 
 
-def scalar_func(*args):
+def scalar_func(*args: Any) -> Tuple[Tensor, ...]:
     return ScalarForwardFunc.apply(*args)

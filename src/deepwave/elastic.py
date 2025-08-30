@@ -3,20 +3,13 @@
 Velocity-stress formulation using C-PML.
 """
 
-from typing import Optional, Union, Sequence, Tuple
+from typing import Optional, Union, List, Tuple, Sequence, Any
 import torch
 from torch import Tensor
 from torch.autograd.function import once_differentiable
 import deepwave
-from deepwave.common import (
-    setup_propagator,
-    downsample_and_movedim,
-    create_or_pad,
-    lambmubuoyancy_to_vpvsrho,
-    IGNORE_LOCATION,
-    PMLConfig,
-    SurveyConfig,
-)
+from deepwave.common import (setup_propagator, downsample_and_movedim,
+                             PMLConfig, SurveyConfig, _as_list, IGNORE_LOCATION, lambmubuoyancy_to_vpvsrho, create_or_pad)
 from deepwave.staggered_grid import set_pml_profiles
 
 
@@ -35,13 +28,13 @@ class Elastic(torch.nn.Module):
 
     Args:
         lamb:
-            A 2D Tensor containing an initial guess of the first Lamé
+            A Tensor containing an initial guess of the first Lamé
             parameter (lambda).
         mu:
-            A 2D Tensor containing an initial guess of the second Lamé
+            A Tensor containing an initial guess of the second Lamé
             parameter.
         buoyancy:
-            A 2D Tensor containing an initial guess of the buoyancy
+            A Tensor containing an initial guess of the buoyancy
             (1/density).
         grid_spacing:
             The spatial grid cell size. It can be a single number (int or
@@ -69,13 +62,6 @@ class Elastic(torch.nn.Module):
         buoyancy_requires_grad: bool = False,
     ) -> None:
         super().__init__()
-        # Only checks unique to this class (not covered by setup_propagator)
-        if lamb.ndim != 2:
-            raise RuntimeError("lamb must have two dimensions")
-        if mu.ndim != 2:
-            raise RuntimeError("mu must have two dimensions")
-        if buoyancy.ndim != 2:
-            raise RuntimeError("buoyancy must have two dimensions")
         self.lamb = torch.nn.Parameter(lamb, requires_grad=lamb_requires_grad)
         self.mu = torch.nn.Parameter(mu, requires_grad=mu_requires_grad)
         self.buoyancy = torch.nn.Parameter(
@@ -121,7 +107,7 @@ class Elastic(torch.nn.Module):
         `mu`, `buoyancy`, and `grid_spacing` do not need to be provided again.
         See :func:`elastic` for a description of the inputs and outputs.
         """
-        pml_config = PMLConfig(pml_width, pml_freq)
+        pml_config = PMLConfig(_as_list(pml_width, 'pml_width', int), pml_freq)
         survey_config = SurveyConfig(
             source_locations=[source_locations_y, source_locations_x],
             receiver_locations=[receiver_locations_y, receiver_locations_x,
@@ -219,14 +205,14 @@ def elastic(
 
     Args:
         lamb:
-            A 2D Tensor containing the first Lamé parameter model, lambda.
+            A Tensor containing the first Lamé parameter model, lambda.
             Unlike the module interface (:class:`Elastic`), in this
             functional interface a copy is not made of the model, so gradients
             will propagate back into the provided Tensor.
         mu:
-            A 2D Tensor containing the second Lamé parameter model.
+            A Tensor containing the second Lamé parameter model.
         buoyancy:
-            A 2D Tensor containing the buoyancy (1/density) model.
+            A Tensor containing the buoyancy (1/density) model.
         grid_spacing:
             The spatial grid cell size. It can be a single number (int or
             float), a torch.Tensor (scalar or with two elements), or a
@@ -460,7 +446,7 @@ def elastic(
 
     """
     if pml_config is None:
-        pml_config = PMLConfig(pml_width, pml_freq)
+        pml_config = PMLConfig(_as_list(pml_width, 'pml_width', int), pml_freq)
     if survey_config is None:
         survey_config = SurveyConfig(
             source_locations=[source_locations_y, source_locations_x],
@@ -528,20 +514,20 @@ def elastic(
     max_model_vel = max(vp.abs().max().item(), vs.abs().max().item())
     try:
         min_nonzero_vp = vp[vp.nonzero(as_tuple=True)].abs().min().item()
-    except:
+    except Exception:
         min_nonzero_vp = 0
     try:
         min_nonzero_vs = vs[vs.nonzero(as_tuple=True)].abs().min().item()
-    except:
+    except Exception:
         min_nonzero_vs = 0
     if min_nonzero_vp == 0 and min_nonzero_vs == 0:
-        min_nonzero_model_vel = 0
+        min_nonzero_model_vel = 0.0
     elif min_nonzero_vp == 0:
-        min_nonzero_model_vel = min_nonzero_vs
+        min_nonzero_model_vel = float(min_nonzero_vs)
     elif min_nonzero_vs == 0:
-        min_nonzero_model_vel = min_nonzero_vp
+        min_nonzero_model_vel = float(min_nonzero_vp)
     else:
-        min_nonzero_model_vel = min(min_nonzero_vp, min_nonzero_vs)
+        min_nonzero_model_vel = float(min(min_nonzero_vp, min_nonzero_vs))
     fd_pad = [0] * 4
 
     (models, source_amplitudes_l, wavefields,
@@ -550,7 +536,7 @@ def elastic(
      step_ratio, model_gradient_sampling_interval,
      accuracy, pml_width_l, pml_freq, max_vel, resample_config, device, dtype) = \
         setup_propagator([lamb, mu, buoyancy], ['replicate'] * 3,
-                         grid_spacing, dt,
+                         _as_list(grid_spacing, 'grid_spacing', float), dt,
                          survey_config,
                          accuracy, fd_pad, pml_config,
                          max_vel, min_nonzero_model_vel, max_model_vel,
@@ -644,24 +630,24 @@ def elastic(
     )
 
 
-def zero_edges(tensor: Tensor, ny: int, nx: int):
+def zero_edges(tensor: Tensor, ny: int, nx: int) -> None:
     tensor[:, ny - 1, :] = 0
     tensor[:, :, nx - 1] = 0
     tensor[:, 0, :] = 0
     tensor[:, :, 0] = 0
 
 
-def zero_edge_top(tensor: Tensor):
+def zero_edge_top(tensor: Tensor) -> None:
     tensor[:, 0, :] = 0
 
 
-def zero_edge_right(tensor: Tensor, nx: int):
+def zero_edge_right(tensor: Tensor, nx: int) -> None:
     tensor[:, :, nx - 1] = 0
 
 
 def zero_interior(
     tensor: Tensor, ybegin: int, yend: int, xbegin: int, xend: int
-):
+) -> Tensor:
     tensor = tensor.clone()
     tensor[:, ybegin:yend, xbegin:xend] = 0
     return tensor
@@ -671,47 +657,48 @@ class ElasticForwardFunc(torch.autograd.Function):
 
     @staticmethod
     def forward(
-        ctx,
-        lamb,
-        mu,
-        buoyancy,
-        source_amplitudes_y,
-        source_amplitudes_x,
-        vy,
-        vx,
-        sigmayy,
-        sigmaxy,
-        sigmaxx,
-        m_vyy,
-        m_vyx,
-        m_vxy,
-        m_vxx,
-        m_sigmayyy,
-        m_sigmaxyy,
-        m_sigmaxyx,
-        m_sigmaxxx,
-        ay,
-        ayh,
-        ax,
-        axh,
-        by,
-        byh,
-        bx,
-        bxh,
-        sources_y_i,
-        sources_x_i,
-        receivers_y_i,
-        receivers_x_i,
-        receivers_p_i,
-        dy,
-        dx,
-        dt,
-        nt,
-        step_ratio,
-        accuracy,
-        pml_width,
-        n_shots,
-    ):
+        ctx: Any,
+        lamb: Tensor,
+        mu: Tensor,
+        buoyancy: Tensor,
+        source_amplitudes_y: Tensor,
+        source_amplitudes_x: Tensor,
+        vy: Tensor,
+        vx: Tensor,
+        sigmayy: Tensor,
+        sigmaxy: Tensor,
+        sigmaxx: Tensor,
+        m_vyy: Tensor,
+        m_vyx: Tensor,
+        m_vxy: Tensor,
+        m_vxx: Tensor,
+        m_sigmayyy: Tensor,
+        m_sigmaxyy: Tensor,
+        m_sigmaxyx: Tensor,
+        m_sigmaxxx: Tensor,
+        ay: Tensor,
+        ayh: Tensor,
+        ax: Tensor,
+        axh: Tensor,
+        by: Tensor,
+        byh: Tensor,
+        bx: Tensor,
+        bxh: Tensor,
+        sources_y_i: Tensor,
+        sources_x_i: Tensor,
+        receivers_y_i: Tensor,
+        receivers_x_i: Tensor,
+        receivers_p_i: Tensor,
+        dy: float,
+        dx: float,
+        dt: float,
+        nt: int,
+        step_ratio: int,
+        accuracy: int,
+        pml_width: List[int],
+        n_shots: int,
+    ) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor,
+               Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
 
         lamb = lamb.contiguous()
         mu = mu.contiguous()
@@ -750,10 +737,10 @@ class ElasticForwardFunc(torch.autograd.Function):
         receiver_amplitudes_x = torch.empty(0, device=device, dtype=dtype)
         receiver_amplitudes_p = torch.empty(0, device=device, dtype=dtype)
 
-        pml_y0 = max(pml_width[0], accuracy // 2)
-        pml_y1 = min(ny - pml_width[1], ny - accuracy // 2)
-        pml_x0 = max(pml_width[2], accuracy // 2)
-        pml_x1 = min(nx - pml_width[3], nx - accuracy // 2)
+        pml_y0 = int(max(pml_width[0], accuracy // 2))
+        pml_y1 = int(min(ny - pml_width[1], ny - accuracy // 2))
+        pml_x0 = int(max(pml_width[2], accuracy // 2))
+        pml_x1 = int(min(nx - pml_width[3], nx - accuracy // 2))
 
         size_with_batch = (n_shots, *lamb.shape[-2:])
         vy = create_or_pad(vy, 0, lamb.device, lamb.dtype, size_with_batch)
@@ -846,7 +833,7 @@ class ElasticForwardFunc(torch.autograd.Function):
                 elif accuracy == 4:
                     forward = deepwave.dll.elastic_iso_4_double_forward_cuda
         else:
-            if deepwave.use_openmp:
+            if deepwave.USE_OPENMP:
                 aux = min(n_shots, torch.get_num_threads())
             else:
                 aux = 1
@@ -927,24 +914,24 @@ class ElasticForwardFunc(torch.autograd.Function):
     @staticmethod
     @once_differentiable
     def backward(
-        ctx,
-        vy,
-        vx,
-        sigmayy,
-        sigmaxy,
-        sigmaxx,
-        m_vyy,
-        m_vyx,
-        m_vxy,
-        m_vxx,
-        m_sigmayyy,
-        m_sigmaxyy,
-        m_sigmaxyx,
-        m_sigmaxxx,
-        grad_r_p,
-        grad_r_y,
-        grad_r_x,
-    ):
+        ctx: Any,
+        vy: Tensor,
+        vx: Tensor,
+        sigmayy: Tensor,
+        sigmaxy: Tensor,
+        sigmaxx: Tensor,
+        m_vyy: Tensor,
+        m_vyx: Tensor,
+        m_vxy: Tensor,
+        m_vxx: Tensor,
+        m_sigmayyy: Tensor,
+        m_sigmaxyy: Tensor,
+        m_sigmaxyx: Tensor,
+        m_sigmaxxx: Tensor,
+        grad_r_p: Tensor,
+        grad_r_y: Tensor,
+        grad_r_x: Tensor,
+    ) -> Tuple[Optional[Tensor], ...]:
         (lamb, mu, buoyancy, ay, ayh, ax, axh, by, byh, bx, bxh, sources_y_i,
          sources_x_i, receivers_y_i, receivers_x_i, receivers_p_i,
          dvydbuoyancy, dvxdbuoyancy, dvydy_store, dvxdx_store,
@@ -1013,10 +1000,10 @@ class ElasticForwardFunc(torch.autograd.Function):
         grad_f_y = torch.empty(0, device=device, dtype=dtype)
         grad_f_x = torch.empty(0, device=device, dtype=dtype)
 
-        pml_y0 = max(pml_width[0], accuracy // 2)
-        pml_y1 = min(ny - pml_width[1], ny - accuracy // 2)
-        pml_x0 = max(pml_width[2], accuracy // 2)
-        pml_x1 = min(nx - pml_width[3], nx - accuracy // 2)
+        pml_y0 = int(max(pml_width[0], accuracy // 2))
+        pml_y1 = int(min(ny - pml_width[1], ny - accuracy // 2))
+        pml_x0 = int(max(pml_width[2], accuracy // 2))
+        pml_x1 = int(min(nx - pml_width[3], nx - accuracy // 2))
         spml_y0 = max(pml_width[0], accuracy + 1)
         spml_y1 = min(ny - pml_width[1], ny - (accuracy + 1))
         spml_x0 = max(pml_width[2], accuracy + 1)
@@ -1117,19 +1104,19 @@ class ElasticForwardFunc(torch.autograd.Function):
                 elif accuracy == 4:
                     backward = deepwave.dll.elastic_iso_4_double_backward_cuda
         else:
-            if deepwave.use_openmp:
+            if deepwave.USE_OPENMP:
                 aux = min(n_shots, torch.get_num_threads())
             else:
                 aux = 1
-            if lamb.requires_grad and not lamb_batched and aux > 1 and deepwave.use_openmp:
+            if lamb.requires_grad and not lamb_batched and aux > 1 and deepwave.USE_OPENMP:
                 grad_lamb_tmp.resize_(n_shots, *lamb.shape[-2:])
                 grad_lamb_tmp.fill_(0)
                 grad_lamb_tmp_ptr = grad_lamb_tmp.data_ptr()
-            if mu.requires_grad and not mu_batched and aux > 1 and deepwave.use_openmp:
+            if mu.requires_grad and not mu_batched and aux > 1 and deepwave.USE_OPENMP:
                 grad_mu_tmp.resize_(n_shots, *mu.shape[-2:])
                 grad_mu_tmp.fill_(0)
                 grad_mu_tmp_ptr = grad_mu_tmp.data_ptr()
-            if buoyancy.requires_grad and not buoyancy_batched and aux > 1 and deepwave.use_openmp:
+            if buoyancy.requires_grad and not buoyancy_batched and aux > 1 and deepwave.USE_OPENMP:
                 grad_buoyancy_tmp.resize_(n_shots, *buoyancy.shape[-2:])
                 grad_buoyancy_tmp.fill_(0)
                 grad_buoyancy_tmp_ptr = grad_buoyancy_tmp.data_ptr()
@@ -1206,5 +1193,5 @@ class ElasticForwardFunc(torch.autograd.Function):
             )
 
 
-def elastic_func(*args):
+def elastic_func(*args: Any) -> Tuple[Tensor, ...]:
     return ElasticForwardFunc.apply(*args)
