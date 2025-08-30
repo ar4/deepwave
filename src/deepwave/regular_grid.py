@@ -37,7 +37,6 @@ def set_pml_profiles(
         pml_start[:2],
         max_pml,
         dt,
-        grid_spacing[0],
         ny,
         max_vel,
         dtype,
@@ -49,15 +48,12 @@ def set_pml_profiles(
         pml_start[2:],
         max_pml,
         dt,
-        grid_spacing[1],
         nx,
         max_vel,
         dtype,
         device,
         pml_freq,
     )
-    # ay[fd_pad[0] + pml_width[0]:ny-(fd_pad[1] + pml_width[1])] = 0
-    # ax[fd_pad[2] + pml_width[2]:nx-(fd_pad[3] + pml_width[3])] = 0
     dbydy = diff(by, accuracy, grid_spacing[0])
     dbxdx = diff(bx, accuracy, grid_spacing[1])
     ay = ay[None, :, None]

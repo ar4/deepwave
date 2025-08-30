@@ -631,7 +631,7 @@ def elastic(
         2,
     )
 
-    if any([s <= (accuracy + 1) * 2 for s in models[0].shape[1:]]):
+    if any(s <= (accuracy + 1) * 2 for s in models[0].shape[1:]):
         raise RuntimeError(
             "The model must have at least "
             + str((accuracy + 1) * 2 + 1)
@@ -1177,8 +1177,6 @@ class ElasticForwardFunc(torch.autograd.Function):
         grad_r_p: Tensor,
         grad_r_y: Tensor,
         grad_r_x: Tensor,
-        *args: Any,
-        **kwargs: Any,
     ) -> Tuple[Optional[Tensor], ...]:
         backward = None # Initialize to None to prevent E0601
         (
@@ -1540,52 +1538,51 @@ class ElasticForwardFunc(torch.autograd.Function):
                 None,
                 None,
             )
-        else:
-            m_sigmayyyn = zero_interior(m_sigmayyyn, pml_y0, pml_y1, 0, nx)
-            m_sigmaxyxn = zero_interior(m_sigmaxyxn, 0, ny, pml_x0, pml_x1 - 1)
-            m_sigmaxyyn = zero_interior(m_sigmaxyyn, pml_y0 + 1, pml_y1, 0, nx)
-            m_sigmaxxxn = zero_interior(m_sigmaxxxn, 0, ny, pml_x0, pml_x1)
-            return (
-                grad_lamb,
-                grad_mu,
-                grad_buoyancy,
-                grad_f_y,
-                grad_f_x,
-                vy,
-                vx,
-                sigmayy,
-                sigmaxy,
-                sigmaxx,
-                m_vyy,
-                m_vyx,
-                m_vxy,
-                m_vxx,
-                m_sigmayyyn,
-                m_sigmaxyyn,
-                m_sigmaxyxn,
-                m_sigmaxxxn,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-            )
+        m_sigmayyyn = zero_interior(m_sigmayyyn, pml_y0, pml_y1, 0, nx)
+        m_sigmaxyxn = zero_interior(m_sigmaxyxn, 0, ny, pml_x0, pml_x1 - 1)
+        m_sigmaxyyn = zero_interior(m_sigmaxyyn, pml_y0 + 1, pml_y1, 0, nx)
+        m_sigmaxxxn = zero_interior(m_sigmaxxxn, 0, ny, pml_x0, pml_x1)
+        return (
+            grad_lamb,
+            grad_mu,
+            grad_buoyancy,
+            grad_f_y,
+            grad_f_x,
+            vy,
+            vx,
+            sigmayy,
+            sigmaxy,
+            sigmaxx,
+            m_vyy,
+            m_vyx,
+            m_vxy,
+            m_vxx,
+            m_sigmayyyn,
+            m_sigmaxyyn,
+            m_sigmaxyxn,
+            m_sigmaxxxn,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
 
 
 def elastic_func(*args: Any) -> Tuple[Tensor, ...]:

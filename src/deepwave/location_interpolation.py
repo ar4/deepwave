@@ -257,7 +257,7 @@ class Hicks:
         if free_surfaces is not None and (
             not isinstance(free_surfaces, list)
             or len(free_surfaces) != 4
-            or any([not isinstance(f, bool) for f in free_surfaces])
+            or any(not isinstance(f, bool) for f in free_surfaces)
         ):
             raise RuntimeError("free_surface must be a list of four bools")
         if any(free_surfaces) and model_shape is None:

@@ -450,30 +450,30 @@ def test_set_nt_negative_step_ratio():
 
 # Tests for set_model_gradient_sampling_interval
 def test_set_model_gradient_sampling_interval_valid_value():
-    assert set_model_gradient_sampling_interval(1, 1) == 1
-    assert set_model_gradient_sampling_interval(10, 2) == 10
+    assert set_model_gradient_sampling_interval(1) == 1
+    assert set_model_gradient_sampling_interval(10) == 10
 
 
 def test_set_model_gradient_sampling_interval_negative_value():
     with pytest.raises(
         ValueError, match=re.escape("model_gradient_sampling_interval must be >= 0")
     ):
-        set_model_gradient_sampling_interval(-1, 1)
+        set_model_gradient_sampling_interval(-1)
 
 
 def test_set_model_gradient_sampling_interval_invalid_type():
     with pytest.raises(
         TypeError, match=re.escape("model_gradient_sampling_interval must be an int.")
     ):
-        set_model_gradient_sampling_interval(1.0, 1)
+        set_model_gradient_sampling_interval(1.0)
     with pytest.raises(
         TypeError, match=re.escape("model_gradient_sampling_interval must be an int.")
     ):
-        set_model_gradient_sampling_interval("invalid", 1)
+        set_model_gradient_sampling_interval("invalid")
 
 
 def test_set_model_gradient_sampling_interval_zero_value():
-    assert set_model_gradient_sampling_interval(0, 1) == 0
+    assert set_model_gradient_sampling_interval(0) == 0
 
 
 # Tests for set_freq_taper_frac

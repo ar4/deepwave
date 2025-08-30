@@ -147,29 +147,6 @@ def scalar(
     pml_config: Optional[PMLConfig] = None,
     survey_config: Optional[SurveyConfig] = None,
 ) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
-    """
-    Scalar wave propagation (functional interface).
-
-    See the full docstring above for details.
-    """
-    if pml_config is None:
-        pml_config = PMLConfig(_as_list(pml_width, "pml_width", int), pml_freq)
-    if survey_config is None:
-        survey_config = SurveyConfig(
-            source_locations=[source_locations],
-            receiver_locations=[receiver_locations],
-            source_amplitudes=[source_amplitudes],
-            wavefields=[
-                wavefield_0,
-                wavefield_m1,
-                psiy_m1,
-                psix_m1,
-                zetay_m1,
-                zetax_m1,
-            ],
-            survey_pad=survey_pad,
-            origin=origin,
-        )
     """Scalar wave propagation (functional interface).
 
     This function performs forward modelling with the scalar wave equation.
@@ -391,6 +368,24 @@ def scalar(
                 this Tensor will be empty.
 
     """
+    if pml_config is None:
+        pml_config = PMLConfig(_as_list(pml_width, "pml_width", int), pml_freq)
+    if survey_config is None:
+        survey_config = SurveyConfig(
+            source_locations=[source_locations],
+            receiver_locations=[receiver_locations],
+            source_amplitudes=[source_amplitudes],
+            wavefields=[
+                wavefield_0,
+                wavefield_m1,
+                psiy_m1,
+                psix_m1,
+                zetay_m1,
+                zetax_m1,
+            ],
+            survey_pad=survey_pad,
+            origin=origin,
+        )
     # Convert Sequence arguments to List for compatibility with
     # setup_propagator
     try:
@@ -717,16 +712,15 @@ class ScalarForwardFunc(torch.autograd.Function):
                 zetax[s],
                 receiver_amplitudes,
             )
-        else:
-            return (
-                wfp[s],
-                wfc[s],
-                psiyn[s],
-                psixn[s],
-                zetay[s],
-                zetax[s],
-                receiver_amplitudes,
-            )
+        return (
+            wfp[s],
+            wfc[s],
+            psiyn[s],
+            psixn[s],
+            zetay[s],
+            zetax[s],
+            receiver_amplitudes,
+        )
 
     @staticmethod
     def backward(
@@ -1054,17 +1048,16 @@ class ScalarBackwardFunc(torch.autograd.Function):
                 gzetay[s],
                 gzetax[s],
             )
-        else:
-            return (
-                grad_v,
-                grad_f,
-                gwfp[s],
-                -gwfc[s],
-                gpsiyn[s],
-                gpsixn[s],
-                gzetayn[s],
-                gzetaxn[s],
-            )
+        return (
+            grad_v,
+            grad_f,
+            gwfp[s],
+            -gwfc[s],
+            gpsiyn[s],
+            gpsixn[s],
+            gzetayn[s],
+            gzetaxn[s],
+        )
 
     @staticmethod
     @once_differentiable
@@ -1078,8 +1071,6 @@ class ScalarBackwardFunc(torch.autograd.Function):
         ggpsix: Tensor,
         ggzetay: Tensor,
         ggzetax: Tensor,
-        *args: Any,
-        **kwargs: Any,
     ) -> Tuple[Optional[Tensor], ...]:
         (
             gwfc,
@@ -1343,9 +1334,6 @@ class ScalarBackwardFunc(torch.autograd.Function):
         grad_v = torch.empty(0, device=device, dtype=dtype)
         grad_v_tmp = torch.empty(0, device=device, dtype=dtype)
         grad_v_tmp_ptr = grad_v.data_ptr()
-        grad_scatter = torch.empty(0, device=device, dtype=dtype)
-        grad_scatter_tmp = torch.empty(0, device=device, dtype=dtype)
-        grad_scatter_tmp_ptr = grad_scatter.data_ptr()
         if v.requires_grad:
             grad_v.resize_(v.shape)
             grad_v.fill_(0)
@@ -1522,42 +1510,41 @@ class ScalarBackwardFunc(torch.autograd.Function):
                 None,
                 None,
             )
-        else:
-            return (
-                ggwfp[s],
-                ggwfc[s],
-                ggpsiyn[s],
-                ggpsixn[s],
-                ggzetay[s],
-                ggzetax[s],
-                ggreceiver_amplitudes,
-                grad_v,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                grad_f,
-                wfp[s],
-                -wfc[s],
-                psiyn[s],
-                psixn[s],
-                zetayn[s],
-                zetaxn[s],
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-            )
+        return (
+            ggwfp[s],
+            ggwfc[s],
+            ggpsiyn[s],
+            ggpsixn[s],
+            ggzetay[s],
+            ggzetax[s],
+            ggreceiver_amplitudes,
+            grad_v,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            grad_f,
+            wfp[s],
+            -wfc[s],
+            psiyn[s],
+            psixn[s],
+            zetayn[s],
+            zetaxn[s],
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
 
 
 def scalar_func(*args: Any) -> Tuple[Tensor, ...]:

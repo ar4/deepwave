@@ -64,7 +64,6 @@ def _as_list(
 def _validate_propagator_inputs(
     models: Sequence[Tensor],
     model_pad_modes: Sequence[str],
-    grid_spacing: Union[float, Sequence[float]],
     dt: float,
     survey_config: SurveyConfig,
     accuracy: int,
@@ -216,7 +215,6 @@ def setup_propagator(
     dt, freq_taper_frac, time_pad_frac = _validate_propagator_inputs(
         models,
         model_pad_modes,
-        grid_spacing,
         dt,
         survey_config,
         accuracy,
@@ -245,7 +243,7 @@ def setup_propagator(
     dt, step_ratio = cfl_condition_n(grid_spacing, dt, max_vel)
     nt = set_nt(nt, survey_config.source_amplitudes, step_ratio)
     model_gradient_sampling_interval = set_model_gradient_sampling_interval(
-        model_gradient_sampling_interval, step_ratio
+        model_gradient_sampling_interval
     )
     freq_taper_frac = set_freq_taper_frac(freq_taper_frac)
     time_pad_frac = set_time_pad_frac(time_pad_frac)
@@ -479,7 +477,7 @@ def set_nt(
 
 
 def set_model_gradient_sampling_interval(
-    model_gradient_sampling_interval: int, step_ratio: int
+    model_gradient_sampling_interval: int
 ) -> int:
     """
     Validate model gradient sampling interval.
@@ -497,7 +495,7 @@ def set_freq_taper_frac(freq_taper_frac: float) -> float:
     """
     if not isinstance(freq_taper_frac, (int, float)):
         raise TypeError("freq_taper_frac must be a float or an int.")
-    if not (0.0 <= freq_taper_frac <= 1.0):
+    if not 0.0 <= freq_taper_frac <= 1.0:
         raise ValueError(f"freq_taper_frac must be in [0, 1], got {freq_taper_frac}.")
     return freq_taper_frac
 
@@ -508,7 +506,7 @@ def set_time_pad_frac(time_pad_frac: float) -> float:
     """
     if not isinstance(time_pad_frac, (int, float)):
         raise TypeError("time_pad_frac must be a float or an int.")
-    if not (0.0 <= time_pad_frac <= 1.0):
+    if not 0.0 <= time_pad_frac <= 1.0:
         raise ValueError(f"time_pad_frac must be in [0, 1], got {time_pad_frac}.")
     return time_pad_frac
 
@@ -699,11 +697,11 @@ def upsample(
         raise ValueError("step_ratio must be positive.")
     if not isinstance(freq_taper_frac, (int, float)):
         raise TypeError("freq_taper_frac must be a float or an int.")
-    if not (0.0 <= freq_taper_frac <= 1.0):
+    if not 0.0 <= freq_taper_frac <= 1.0:
         raise ValueError(f"freq_taper_frac must be in [0, 1], got {freq_taper_frac}.")
     if not isinstance(time_pad_frac, (int, float)):
         raise TypeError("time_pad_frac must be a float or an int.")
-    if not (0.0 <= time_pad_frac <= 1.0):
+    if not 0.0 <= time_pad_frac <= 1.0:
         raise ValueError(f"time_pad_frac must be in [0, 1], got {time_pad_frac}.")
     if not isinstance(time_taper, bool):
         raise TypeError("time_taper must be a bool.")
@@ -794,11 +792,11 @@ def downsample(
         raise ValueError("step_ratio must be positive.")
     if not isinstance(freq_taper_frac, (int, float)):
         raise TypeError("freq_taper_frac must be a float or an int.")
-    if not (0.0 <= freq_taper_frac <= 1.0):
+    if not 0.0 <= freq_taper_frac <= 1.0:
         raise ValueError(f"freq_taper_frac must be in [0, 1], got {freq_taper_frac}.")
     if not isinstance(time_pad_frac, (int, float)):
         raise TypeError("time_pad_frac must be a float or an int.")
-    if not (0.0 <= time_pad_frac <= 1.0):
+    if not 0.0 <= time_pad_frac <= 1.0:
         raise ValueError(f"time_pad_frac must be in [0, 1], got {time_pad_frac}.")
     if not isinstance(time_taper, bool):
         raise TypeError("time_taper must be a bool.")
@@ -1278,13 +1276,12 @@ def extract_models(
             torch.empty(0, *model[region].shape[1:], device=device, dtype=dtype)
             for model in models
         ]
-    else:
-        return [
-            torch.nn.functional.pad(
-                model[region], pad=reversed_pad, mode=pad_mode
-            ).contiguous()
-            for model, pad_mode in zip(models, pad_modes)
-        ]
+    return [
+        torch.nn.functional.pad(
+            model[region], pad=reversed_pad, mode=pad_mode
+        ).contiguous()
+        for model, pad_mode in zip(models, pad_modes)
+    ]
 
 
 def extract_locations(
@@ -1589,7 +1586,6 @@ def setup_pml(
     pml_start: Sequence[float],
     max_pml: float,
     dt: float,
-    dx: float,
     n: int,
     max_vel: float,
     dtype: torch.dtype,
@@ -1608,7 +1604,6 @@ def setup_pml(
         max_pml: Float specifying the length (in distance units) of the longest
                  PML over all sides and dimensions.
         dt: Time step interval
-        dx: Grid spacing
         n: Integer specifying desired profile length, including fd_pad and
            pml_width
         max_vel: Maximum wave speed
