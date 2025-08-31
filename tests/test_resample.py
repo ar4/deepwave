@@ -40,7 +40,7 @@ def test_downsample_invalid_signal_type():
             upsample,
             "freq_taper_frac",
             "invalid",
-            "freq_taper_frac must be a float or an int.",
+            "freq_taper_frac must be a float.",
             TypeError,
         ),
         (
@@ -61,7 +61,7 @@ def test_downsample_invalid_signal_type():
             upsample,
             "time_pad_frac",
             "invalid",
-            "time_pad_frac must be a float or an int.",
+            "time_pad_frac must be a float.",
             TypeError,
         ),
         (upsample, "time_taper", "invalid", "time_taper must be a bool.", TypeError),
@@ -86,7 +86,7 @@ def test_downsample_invalid_signal_type():
             downsample,
             "freq_taper_frac",
             "invalid",
-            "freq_taper_frac must be a float or an int.",
+            "freq_taper_frac must be a float.",
             TypeError,
         ),
         (
@@ -107,11 +107,11 @@ def test_downsample_invalid_signal_type():
             downsample,
             "time_pad_frac",
             "invalid",
-            "time_pad_frac must be a float or an int.",
+            "time_pad_frac must be a float.",
             TypeError,
         ),
         (downsample, "time_taper", "invalid", "time_taper must be a bool.", TypeError),
-        (downsample, "shift", "invalid", "shift must be a float or an int.", TypeError),
+        (downsample, "shift", "invalid", "shift must be a float.", TypeError),
     ],
 )
 def test_resample_invalid_args(

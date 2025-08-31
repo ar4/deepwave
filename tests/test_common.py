@@ -983,13 +983,13 @@ def test_cfl_condition_n_invalid_type_grid_spacing():
 
 
 def test_cfl_condition_n_invalid_type_dt():
-    with pytest.raises(TypeError, match=re.escape("dt must be a float or an int.")):
+    with pytest.raises(TypeError, match=re.escape("dt must be a float.")):
         cfl_condition_n([5.0, 5.0], "invalid", 1500.0)
 
 
 def test_cfl_condition_n_invalid_type_max_vel():
     with pytest.raises(
-        TypeError, match=re.escape("max_abs_vel must be a float or an int.")
+        TypeError, match=re.escape("max_abs_vel must be a float.")
     ):
         cfl_condition_n([5.0, 5.0], 0.004, "invalid")
 

@@ -534,13 +534,17 @@ def upsample(
         raise TypeError("step_ratio must be an int.")
     if step_ratio <= 0:
         raise ValueError("step_ratio must be positive.")
-    if not isinstance(freq_taper_frac, (int, float)):
-        raise TypeError("freq_taper_frac must be a float or an int.")
+    try:
+        freq_taper_frac = float(freq_taper_frac)
+    except:
+        raise TypeError("freq_taper_frac must be a float.")
     if not 0.0 <= freq_taper_frac <= 1.0:
         raise ValueError(
             f"freq_taper_frac must be in [0, 1], got {freq_taper_frac}.")
-    if not isinstance(time_pad_frac, (int, float)):
-        raise TypeError("time_pad_frac must be a float or an int.")
+    try:
+        time_pad_frac = float(time_pad_frac)
+    except:
+        raise TypeError("time_pad_frac must be a float.")
     if not 0.0 <= time_pad_frac <= 1.0:
         raise ValueError(
             f"time_pad_frac must be in [0, 1], got {time_pad_frac}.")
@@ -631,20 +635,26 @@ def downsample(
         raise TypeError("step_ratio must be an int.")
     if step_ratio <= 0:
         raise ValueError("step_ratio must be positive.")
-    if not isinstance(freq_taper_frac, (int, float)):
-        raise TypeError("freq_taper_frac must be a float or an int.")
+    try:
+        freq_taper_frac = float(freq_taper_frac)
+    except:
+        raise TypeError("freq_taper_frac must be a float.")
     if not 0.0 <= freq_taper_frac <= 1.0:
         raise ValueError(
             f"freq_taper_frac must be in [0, 1], got {freq_taper_frac}.")
-    if not isinstance(time_pad_frac, (int, float)):
-        raise TypeError("time_pad_frac must be a float or an int.")
+    try:
+        time_pad_frac = float(time_pad_frac)
+    except:
+        raise TypeError("time_pad_frac must be a float.")
     if not 0.0 <= time_pad_frac <= 1.0:
         raise ValueError(
             f"time_pad_frac must be in [0, 1], got {time_pad_frac}.")
     if not isinstance(time_taper, bool):
         raise TypeError("time_taper must be a bool.")
-    if not isinstance(shift, (int, float)):
-        raise TypeError("shift must be a float or an int.")
+    try:
+        shift = float(shift)
+    except:
+        raise TypeError("shift must be a float.")
 
     if step_ratio == 1 and shift == 0.0:
         return signal
@@ -1296,10 +1306,14 @@ def cfl_condition_n(
     for g in grid_spacing:
         if g <= 0:
             raise ValueError("grid_spacing elements must be positive.")
-    if not isinstance(dt, (int, float)):
-        raise TypeError("dt must be a float or an int.")
-    if not isinstance(max_abs_vel, (int, float)):
-        raise TypeError("max_abs_vel must be a float or an int.")
+    try:
+        dt = float(dt)
+    except:
+        raise TypeError("dt must be a float.")
+    try:
+        max_abs_vel = float(max_abs_vel)
+    except:
+        raise TypeError("max_abs_vel must be a float.")
     if max_abs_vel <= 0:
         raise RuntimeError("max_abs_vel must be greater than zero.")
 
