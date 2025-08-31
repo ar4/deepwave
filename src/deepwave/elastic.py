@@ -11,9 +11,6 @@ from deepwave.backend_utils import dll, USE_OPENMP
 from deepwave.common import (
     setup_propagator,
     downsample_and_movedim,
-    PMLConfig,
-    SurveyConfig,
-    _as_list,
     IGNORE_LOCATION,
     lambmubuoyancy_to_vpvsrho,
     create_or_pad,
@@ -45,9 +42,8 @@ class Elastic(torch.nn.Module):
             A Tensor containing an initial guess of the buoyancy
             (1/density).
         grid_spacing:
-            The spatial grid cell size. It can be a single number (int or
-            float), a torch.Tensor (scalar or with two elements), or a
-            sequence (list or tuple) of two numbers.
+            The spatial grid cell size. It can be a single number that will be
+            used for all dimensions, or a number for each dimension.
         lamb_requires_grad:
             Optional bool specifying how to set the `requires_grad`
             attribute of lamb, and so whether the necessary
@@ -64,12 +60,30 @@ class Elastic(torch.nn.Module):
         lamb: Tensor,
         mu: Tensor,
         buoyancy: Tensor,
-        grid_spacing: Union[int, float, torch.Tensor, Sequence[Union[int, float]]],
+        grid_spacing: Union[float, Sequence[float]],
         lamb_requires_grad: bool = False,
         mu_requires_grad: bool = False,
         buoyancy_requires_grad: bool = False,
     ) -> None:
         super().__init__()
+        if not isinstance(lamb_requires_grad, bool):
+            raise TypeError(
+                f"lamb_requires_grad must be bool, got {type(lamb_requires_grad).__name__}"
+            )
+        if not isinstance(lamb, Tensor):
+            raise RuntimeError("lamb must be a torch.Tensor.")
+        if not isinstance(mu_requires_grad, bool):
+            raise TypeError(
+                f"mu_requires_grad must be bool, got {type(mu_requires_grad).__name__}"
+            )
+        if not isinstance(mu, Tensor):
+            raise RuntimeError("mu must be a torch.Tensor.")
+        if not isinstance(buoyancy_requires_grad, bool):
+            raise TypeError(
+                f"buoyancy_requires_grad must be bool, got {type(buoyancy_requires_grad).__name__}"
+            )
+        if not isinstance(buoyancy, Tensor):
+            raise RuntimeError("buoyancy must be a torch.Tensor.")
         self.lamb = torch.nn.Parameter(lamb, requires_grad=lamb_requires_grad)
         self.mu = torch.nn.Parameter(mu, requires_grad=mu_requires_grad)
         self.buoyancy = torch.nn.Parameter(
@@ -79,7 +93,7 @@ class Elastic(torch.nn.Module):
 
     def forward(
         self,
-        dt: Union[int, float],
+        dt: float,
         source_amplitudes_y: Optional[Tensor] = None,
         source_amplitudes_x: Optional[Tensor] = None,
         source_locations_y: Optional[Tensor] = None,
@@ -88,9 +102,9 @@ class Elastic(torch.nn.Module):
         receiver_locations_x: Optional[Tensor] = None,
         receiver_locations_p: Optional[Tensor] = None,
         accuracy: int = 4,
-        pml_width: Union[int, float, torch.Tensor, Sequence[Union[int, float]]] = 20,
-        pml_freq: Optional[Union[int, float]] = None,
-        max_vel: Optional[Union[int, float]] = None,
+        pml_width: Union[int, Sequence[int]] = 20,
+        pml_freq: Optional[float] = None,
+        max_vel: Optional[float] = None,
         survey_pad: Optional[Union[int, Sequence[Optional[int]]]] = None,
         vy_0: Optional[Tensor] = None,
         vx_0: Optional[Tensor] = None,
@@ -108,6 +122,9 @@ class Elastic(torch.nn.Module):
         origin: Optional[Sequence[int]] = None,
         nt: Optional[int] = None,
         model_gradient_sampling_interval: int = 1,
+        freq_taper_frac: float = 0.0,
+        time_pad_frac: float = 0.0,
+        time_taper: bool = False,
     ) -> Tuple[
         Tensor,
         Tensor,
@@ -132,45 +149,43 @@ class Elastic(torch.nn.Module):
         `mu`, `buoyancy`, and `grid_spacing` do not need to be provided again.
         See :func:`elastic` for a description of the inputs and outputs.
         """
-        pml_config = PMLConfig(_as_list(pml_width, "pml_width", int), pml_freq)
-        survey_config = SurveyConfig(
-            source_locations=[source_locations_y, source_locations_x],
-            receiver_locations=[
-                receiver_locations_y,
-                receiver_locations_x,
-                receiver_locations_p,
-            ],
-            source_amplitudes=[source_amplitudes_y, source_amplitudes_x],
-            wavefields=[
-                vy_0,
-                vx_0,
-                sigmayy_0,
-                sigmaxy_0,
-                sigmaxx_0,
-                m_vyy_0,
-                m_vyx_0,
-                m_vxy_0,
-                m_vxx_0,
-                m_sigmayyy_0,
-                m_sigmaxyy_0,
-                m_sigmaxyx_0,
-                m_sigmaxxx_0,
-            ],
-            survey_pad=survey_pad,
-            origin=origin,
-        )
         return elastic(
             self.lamb,
             self.mu,
             self.buoyancy,
             self.grid_spacing,
             dt,
+            source_amplitudes_y=source_amplitudes_y,
+            source_amplitudes_x=source_amplitudes_x,
+            source_locations_y=source_locations_y,
+            source_locations_x=source_locations_x,
+            receiver_locations_y=receiver_locations_y,
+            receiver_locations_x=receiver_locations_x,
+            receiver_locations_p=receiver_locations_p,
             accuracy=accuracy,
-            pml_config=pml_config,
+            pml_width=pml_width,
+            pml_freq=pml_freq,
             max_vel=max_vel,
-            survey_config=survey_config,
+            survey_pad=survey_pad,
+            vy_0=vy_0,
+            vx_0=vx_0,
+            sigmayy_0=sigmayy_0,
+            sigmaxy_0=sigmaxy_0,
+            sigmaxx_0=sigmaxx_0,
+            m_vyy_0=m_vyy_0,
+            m_vyx_0=m_vyx_0,
+            m_vxy_0=m_vxy_0,
+            m_vxx_0=m_vxx_0,
+            m_sigmayyy_0=m_sigmayyy_0,
+            m_sigmaxyy_0=m_sigmaxyy_0,
+            m_sigmaxyx_0=m_sigmaxyx_0,
+            m_sigmaxxx_0=m_sigmaxxx_0,
+            origin=origin,
             nt=nt,
             model_gradient_sampling_interval=model_gradient_sampling_interval,
+            freq_taper_frac=freq_taper_frac,
+            time_pad_frac=time_pad_frac,
+            time_taper=time_taper,
         )
 
 
@@ -178,8 +193,8 @@ def elastic(
     lamb: Tensor,
     mu: Tensor,
     buoyancy: Tensor,
-    grid_spacing: Union[int, float, torch.Tensor, Sequence[Union[int, float]]],
-    dt: Union[int, float],
+    grid_spacing: Union[float, Sequence[float]],
+    dt: float,
     source_amplitudes_y: Optional[Tensor] = None,
     source_amplitudes_x: Optional[Tensor] = None,
     source_locations_y: Optional[Tensor] = None,
@@ -188,9 +203,9 @@ def elastic(
     receiver_locations_x: Optional[Tensor] = None,
     receiver_locations_p: Optional[Tensor] = None,
     accuracy: int = 4,
-    pml_width: Union[int, float, torch.Tensor, Sequence[Union[int, float]]] = 20,
-    pml_freq: Optional[Union[int, float]] = None,
-    max_vel: Optional[Union[int, float]] = None,
+    pml_width: Union[int, Sequence[int]] = 20,
+    pml_freq: Optional[float] = None,
+    max_vel: Optional[float] = None,
     survey_pad: Optional[Union[int, Sequence[Optional[int]]]] = None,
     vy_0: Optional[Tensor] = None,
     vx_0: Optional[Tensor] = None,
@@ -211,8 +226,6 @@ def elastic(
     freq_taper_frac: float = 0.0,
     time_pad_frac: float = 0.0,
     time_taper: bool = False,
-    pml_config: Optional[PMLConfig] = None,
-    survey_config: Optional[SurveyConfig] = None,
 ) -> Tuple[
     Tensor,
     Tensor,
@@ -258,13 +271,12 @@ def elastic(
         buoyancy:
             A Tensor containing the buoyancy (1/density) model.
         grid_spacing:
-            The spatial grid cell size. It can be a single number (int or
-            float), a torch.Tensor (scalar or with two elements), or a
-            sequence (list or tuple) of two numbers.
+            The spatial grid cell size. It can be a single number that will be
+            used for all dimensions, or a number for each dimension.
         dt:
-            A number (int or float) specifying the time step interval of
-            the input and output (internally a smaller interval may be
-            used in propagation to obey the CFL condition for stability).
+            A float specifying the time step interval of the input and
+            output (internally a smaller interval may be used in
+            propagation to obey the CFL condition for stability).
         source_amplitudes_y:
             A Tensor with dimensions [shot, source, time] containing time
             samples of the source wavelets for sources oriented in the
@@ -314,10 +326,10 @@ def elastic(
             accurate results but greater computational cost. Optional, with
             a default of 4.
         pml_width:
-            A number (int or float), a torch.Tensor, or a sequence of
-            numbers specifying the width (in number of cells) of the PML
-            that prevents reflections from the edges of the model. Floats
-            will be truncated to integers. If a single value is provided,
+            A single number, or two numbers for each dimension,
+            specifying the width (in number of cells) of the PML
+            that prevents reflections from the edges of the model.
+            If a single value is provided,
             it will be used for all edges. If a sequence is provided, it
             should contain the values for the edges in the following order:
             [the beginning of the first dimension,
@@ -334,19 +346,19 @@ def elastic(
             are obtained by replicating the values on the edge of the
             model. Optional, default 20.
         pml_freq:
-            A number (int or float) specifying the frequency that you wish
-            to use when constructing the PML. This is usually the dominant
-            frequency of the source wavelet. Choosing this value poorly
-            will result in the edges becoming more reflective. Optional,
-            default 25 Hz (assuming `dt` is in seconds).
+            A float specifying the frequency that you wish to use when
+            constructing the PML. This is usually the dominant frequency
+            of the source wavelet. Choosing this value poorly will
+            result in the edges becoming more reflective. Optional, default
+            25 Hz (assuming `dt` is in seconds).
         max_vel:
-            A number (int or float) specifying the maximum velocity, which
-            is used when applying the CFL condition and when constructing
-            the PML. If not specified, the actual maximum absolute
-            wavespeed in the model (or portion of it that is used) will be
-            used. The option to specify this is provided to allow you to
-            ensure consistency between runs even if there are changes in
-            the wavespeed. Optional, default None.
+            A float specifying the maximum velocity, which is used when
+            applying the CFL condition and when constructing the PML. If
+            not specified, the actual maximum absolute wavespeed in the
+            model (or portion of it that is used) will be used. The option
+            to specify this is provided to allow you to ensure consistency
+            between runs even if there are changes in the wavespeed.
+            Optional, default None.
         survey_pad:
             A single value or list of four values, all of which are either
             an int or None, specifying whether the simulation domain
@@ -489,87 +501,43 @@ def elastic(
                 oriented in the second spatial dimension.
 
     """
-    if pml_config is None:
-        pml_config = PMLConfig(_as_list(pml_width, "pml_width", int), pml_freq)
-    if survey_config is None:
-        survey_config = SurveyConfig(
-            source_locations=[source_locations_y, source_locations_x],
-            receiver_locations=[
-                receiver_locations_y,
-                receiver_locations_x,
-                receiver_locations_p,
-            ],
-            source_amplitudes=[source_amplitudes_y, source_amplitudes_x],
-            wavefields=[
-                vy_0,
-                vx_0,
-                sigmayy_0,
-                sigmaxy_0,
-                sigmaxx_0,
-                m_vyy_0,
-                m_vyx_0,
-                m_vxy_0,
-                m_vxx_0,
-                m_sigmayyy_0,
-                m_sigmaxyy_0,
-                m_sigmaxyx_0,
-                m_sigmaxxx_0,
-            ],
-            survey_pad=survey_pad,
-            origin=origin,
-        )
     # Check that sources and receivers are not on the last row or column,
     # as these are not used
-    if (
-        survey_config.source_locations[0] is not None
-        and survey_config.source_locations[0][..., 1].max() >= lamb.shape[1] - 1
-    ):
-        raise RuntimeError(
-            "With the provided model, the maximum y source "
-            "location in the second dimension must be less "
-            "than " + str(lamb.shape[1] - 1) + "."
-        )
-    if (
-        survey_config.receiver_locations[0] is not None
-        and survey_config.receiver_locations[0][..., 1].max() >= lamb.shape[1] - 1
-    ):
-        raise RuntimeError(
-            "With the provided model, the maximum y "
-            "receiver location in the second dimension "
-            "must be less than " + str(lamb.shape[1] - 1) + "."
-        )
-    if survey_config.source_locations[1] is not None:
-        dim_location = survey_config.source_locations[1][..., 0]
+    if (source_locations_y is not None
+            and source_locations_y[..., 1].max() >= lamb.shape[1] - 1):
+        raise RuntimeError("With the provided model, the maximum y source "
+                           "location in the second dimension must be less "
+                           "than " + str(lamb.shape[1] - 1) + ".")
+    if (receiver_locations_y is not None
+            and receiver_locations_y[..., 1].max() >= lamb.shape[1] - 1):
+        raise RuntimeError("With the provided model, the maximum y "
+                           "receiver location in the second dimension "
+                           "must be less than " + str(lamb.shape[1] - 1) + ".")
+    if (source_locations_x is not None):
+        dim_location = source_locations_x[..., 0]
         dim_location = dim_location[dim_location != IGNORE_LOCATION]
-        if dim_location.min() <= 0:
-            raise RuntimeError(
-                "The minimum x source "
-                "location in the first dimension must be "
-                "greater than 0."
-            )
-    if survey_config.receiver_locations[1] is not None:
-        dim_location = survey_config.receiver_locations[1][..., 0]
+        if (dim_location.min() <= 0):
+            raise RuntimeError("The minimum x source "
+                               "location in the first dimension must be "
+                               "greater than 0.")
+    if (receiver_locations_x is not None):
+        dim_location = receiver_locations_x[..., 0]
         dim_location = dim_location[dim_location != IGNORE_LOCATION]
-        if dim_location.min() <= 0:
-            raise RuntimeError(
-                "The minimum x receiver "
-                "location in the first dimension must be "
-                "greater than 0."
-            )
-    if survey_config.receiver_locations[2] is not None:
-        dim_location = survey_config.receiver_locations[2][..., 0]
+        if (dim_location.min() <= 0):
+            raise RuntimeError("The minimum x receiver "
+                               "location in the first dimension must be "
+                               "greater than 0.")
+    if (receiver_locations_p is not None):
+        dim_location = receiver_locations_p[..., 0]
         dim_location = dim_location[dim_location != IGNORE_LOCATION]
-        if (
-            survey_config.receiver_locations[2][..., 1].max() >= lamb.shape[1] - 1
-            or dim_location.min() <= 0
-        ):
-            raise RuntimeError(
-                "With the provided model, the pressure "
-                "receiver locations in the second dimension "
-                "must be less than " + str(lamb.shape[1] - 1) + " and "
-                "in the first dimension must be "
-                "greater than 0."
-            )
+        if (receiver_locations_p[..., 1].max() >= lamb.shape[1] - 1
+                or dim_location.min() <= 0):
+            raise RuntimeError("With the provided model, the pressure "
+                               "receiver locations in the second dimension "
+                               "must be less than " + str(lamb.shape[1] - 1) +
+                               " and "
+                               "in the first dimension must be "
+                               "greater than 0.")
     if accuracy not in [2, 4]:
         raise RuntimeError("The accuracy must be 2 or 4.")
     vp, vs, _ = lambmubuoyancy_to_vpvsrho(lamb.abs(), mu.abs(), buoyancy.abs())
@@ -592,44 +560,25 @@ def elastic(
         min_nonzero_model_vel = float(min(min_nonzero_vp, min_nonzero_vs))
     fd_pad = [0] * 4
 
-    (
-        models,
-        source_amplitudes_l,
-        wavefields,
-        sources_i_l,
-        receivers_i_l,
-        grid_spacing,
-        dt,
-        nt,
-        n_shots,
-        step_ratio,
-        model_gradient_sampling_interval,
-        accuracy,
-        pml_width_l,
-        pml_freq,
-        max_vel,
-        resample_config,
-        device,
-        dtype,
-    ) = setup_propagator(
-        [lamb, mu, buoyancy],
-        ["replicate"] * 3,
-        _as_list(grid_spacing, "grid_spacing", float),
-        dt,
-        survey_config,
-        accuracy,
-        fd_pad,
-        pml_config,
-        max_vel,
-        min_nonzero_model_vel,
-        max_model_vel,
-        nt,
-        model_gradient_sampling_interval,
-        freq_taper_frac,
-        time_pad_frac,
-        time_taper,
-        2,
-    )
+    (models, source_amplitudes, wavefields,
+     sources_i, receivers_i,
+     grid_spacing, dt, nt, n_shots,
+     step_ratio, model_gradient_sampling_interval,
+     accuracy, pml_width, pml_freq, max_vel, step_ratio, freq_taper_frac, time_pad_frac, time_taper, device, dtype) = \
+        setup_propagator([lamb, mu, buoyancy], ['replicate'] * 3,
+                         grid_spacing, dt,
+                         [source_amplitudes_y, source_amplitudes_x],
+                         [source_locations_y, source_locations_x],
+                         [receiver_locations_y, receiver_locations_x,
+                          receiver_locations_p],
+                         accuracy, fd_pad, pml_width, pml_freq,
+                         max_vel, min_nonzero_model_vel, max_model_vel, survey_pad,
+                         [vy_0, vx_0, sigmayy_0, sigmaxy_0, sigmaxx_0,
+                          m_vyy_0, m_vyx_0, m_vxy_0, m_vxx_0,
+                          m_sigmayyy_0, m_sigmaxyy_0,
+                          m_sigmaxyx_0, m_sigmaxxx_0],
+                         origin, nt, model_gradient_sampling_interval,
+                         freq_taper_frac, time_pad_frac, time_taper, 2)
 
     if any(s <= (accuracy + 1) * 2 for s in models[0].shape[1:]):
         raise RuntimeError(
@@ -641,13 +590,13 @@ def elastic(
     ny, nx = models[0].shape[-2:]
     # source_amplitudes_y
     # Need to interpolate buoyancy to vy
-    mask = sources_i_l[0] == IGNORE_LOCATION
-    sources_i_masked = sources_i_l[0].clone()
+    mask = sources_i[0] == IGNORE_LOCATION
+    sources_i_masked = sources_i[0].clone()
     sources_i_masked[mask] = 0
-    if source_amplitudes_l[0].numel() > 0:
-        source_amplitudes_l[0] = (
+    if source_amplitudes[0].numel() > 0:
+        source_amplitudes[0] = (
             (
-                source_amplitudes_l[0]
+                source_amplitudes[0]
                 * (
                     models[2]
                     .view(-1, ny * nx)
@@ -671,12 +620,12 @@ def elastic(
             * dt
         )
     # source_amplitudes_x
-    mask = sources_i_l[1] == IGNORE_LOCATION
-    sources_i_masked = sources_i_l[1].clone()
+    mask = sources_i[1] == IGNORE_LOCATION
+    sources_i_masked = sources_i[1].clone()
     sources_i_masked[mask] = 0
-    if source_amplitudes_l[1].numel() > 0:
-        source_amplitudes_l[1] = (
-            source_amplitudes_l[1]
+    if source_amplitudes[1].numel() > 0:
+        source_amplitudes[1] = (
+            source_amplitudes[1]
             * (
                 models[2]
                 .view(-1, ny * nx)
@@ -687,7 +636,7 @@ def elastic(
         )
 
     pml_profiles = set_pml_profiles(
-        pml_width_l,
+        pml_width,
         accuracy,
         fd_pad,
         dt,
@@ -720,17 +669,17 @@ def elastic(
         receiver_amplitudes_x,
     ) = elastic_func(
         *models,
-        *source_amplitudes_l,
+        *source_amplitudes,
         *wavefields,
         *pml_profiles,
-        *sources_i_l,
-        *receivers_i_l,
+        *sources_i,
+        *receivers_i,
         *grid_spacing,
         dt,
         nt,
         step_ratio * model_gradient_sampling_interval,
         accuracy,
-        pml_width_l,
+        pml_width,
         n_shots,
     )
 
@@ -745,24 +694,24 @@ def elastic(
     receiver_amplitudes_x = average_adjacent(receiver_amplitudes_x)
     receiver_amplitudes_y = downsample_and_movedim(
         receiver_amplitudes_y,
-        resample_config.step_ratio,
-        resample_config.freq_taper_frac,
-        resample_config.time_pad_frac,
-        resample_config.time_taper,
+        step_ratio,
+        freq_taper_frac,
+        time_pad_frac,
+        time_taper,
     )
     receiver_amplitudes_x = downsample_and_movedim(
         receiver_amplitudes_x,
-        resample_config.step_ratio,
-        resample_config.freq_taper_frac,
-        resample_config.time_pad_frac,
-        resample_config.time_taper,
+        step_ratio,
+        freq_taper_frac,
+        time_pad_frac,
+        time_taper,
     )
     receiver_amplitudes_p = downsample_and_movedim(
         receiver_amplitudes_p,
-        resample_config.step_ratio,
-        resample_config.freq_taper_frac,
-        resample_config.time_pad_frac,
-        resample_config.time_taper,
+        step_ratio,
+        freq_taper_frac,
+        time_pad_frac,
+        time_taper,
     )
 
     return (
@@ -851,8 +800,6 @@ class ElasticForwardFunc(torch.autograd.Function):
         accuracy: int,
         pml_width: List[int],
         n_shots: int,
-        *args: Any,
-        **kwargs: Any,
     ) -> Tuple[
         Tensor,
         Tensor,
@@ -871,7 +818,6 @@ class ElasticForwardFunc(torch.autograd.Function):
         Tensor,
         Tensor,
     ]:
-        forward = None # Initialize to None to prevent E0601
         lamb = lamb.contiguous()
         mu = mu.contiguous()
         buoyancy = buoyancy.contiguous()
@@ -1178,7 +1124,6 @@ class ElasticForwardFunc(torch.autograd.Function):
         grad_r_y: Tensor,
         grad_r_x: Tensor,
     ) -> Tuple[Optional[Tensor], ...]:
-        backward = None # Initialize to None to prevent E0601
         (
             lamb,
             mu,

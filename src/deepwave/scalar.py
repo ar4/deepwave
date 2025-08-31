@@ -3,7 +3,12 @@ Scalar wave propagation module for Deepwave.
 
 Implements scalar wave equation propagation using finite differences in time (2nd order)
 and space (user-selectable order: 2, 4, 6, or 8). Supports PML boundaries and adjoint mode
-for gradient computation. See Pasalic & McGarry (SEG 2010) for PML details.
+for gradient computation. For PML details, see
+
+    Pasalic, Damir, and Ray McGarry. "Convolutional perfectly matched
+    layer for isotropic and anisotropic acoustic wave equations."
+    SEG Technical Program Expanded Abstracts 2010.
+    Society of Exploration Geophysicists, 2010. 2925-2929.
 
 Required inputs: wavespeed model (`v`), grid cell size (`dx`), time step (`dt`), and either
 source term (`source_amplitudes` and `source_locations`) or number of time steps (`nt`).
@@ -22,9 +27,6 @@ from deepwave.common import (
     zero_interior,
     create_or_pad,
     IGNORE_LOCATION,
-    PMLConfig,
-    SurveyConfig,
-    _as_list,
 )
 from deepwave.regular_grid import set_pml_profiles
 
@@ -33,14 +35,14 @@ class Scalar(torch.nn.Module):
     """
     Convenience nn.Module wrapper for scalar wave propagation.
 
-    Stores `v` and `grid_spacing` for repeated use. Gradients do not propagate to the
-    initial guess wavespeed. Use the module's `v` attribute to access the wavespeed.
+    Stores `v` and `grid_spacing`. Gradients do not propagate to the
+    provided wavespeed. Use the module's `v` attribute to access the wavespeed.
     """
 
     def __init__(
         self,
         v: Tensor,
-        grid_spacing: Union[int, float, torch.Tensor, Sequence[Union[int, float]]],
+        grid_spacing: Union[float, Sequence[float]],
         v_requires_grad: bool = False,
     ) -> None:
         """
@@ -48,7 +50,7 @@ class Scalar(torch.nn.Module):
 
         Args:
             v (Tensor): Wavespeed model.
-            grid_spacing (int, float, torch.Tensor, or sequence of them): Grid cell size(s).
+            grid_spacing (float or sequence of them): Grid cell size(s).
             v_requires_grad (bool, optional): If True, gradients will be computed for v. Default: False.
         """
         super().__init__()
@@ -57,20 +59,20 @@ class Scalar(torch.nn.Module):
                 f"v_requires_grad must be bool, got {type(v_requires_grad).__name__}"
             )
         if not isinstance(v, Tensor):
-            raise RuntimeError("model must be a torch.Tensor.")
+            raise RuntimeError("v must be a torch.Tensor.")
         self.v = torch.nn.Parameter(v, requires_grad=v_requires_grad)
         self.grid_spacing = grid_spacing
 
     def forward(
         self,
-        dt: Union[int, float],
+        dt: float,
         source_amplitudes: Optional[Tensor] = None,
         source_locations: Optional[Tensor] = None,
         receiver_locations: Optional[Tensor] = None,
         accuracy: int = 4,
-        pml_width: Union[int, float, torch.Tensor, Sequence[Union[int, float]]] = 20,
-        pml_freq: Optional[Union[int, float]] = None,
-        max_vel: Optional[Union[int, float]] = None,
+        pml_width: Union[int, Sequence[int]] = 20,
+        pml_freq: Optional[float] = None,
+        max_vel: Optional[float] = None,
         survey_pad: Optional[Union[int, Sequence[Optional[int]]]] = None,
         wavefield_0: Optional[Tensor] = None,
         wavefield_m1: Optional[Tensor] = None,
@@ -88,30 +90,25 @@ class Scalar(torch.nn.Module):
         """
         Perform forward propagation/modelling. See `scalar` for details.
         """
-        pml_config = PMLConfig(_as_list(pml_width, "pml_width", int), pml_freq)
-        survey_config = SurveyConfig(
-            source_locations=[source_locations],
-            receiver_locations=[receiver_locations],
-            source_amplitudes=[source_amplitudes],
-            wavefields=[
-                wavefield_0,
-                wavefield_m1,
-                psiy_m1,
-                psix_m1,
-                zetay_m1,
-                zetax_m1,
-            ],
-            survey_pad=survey_pad,
-            origin=origin,
-        )
         return scalar(
             self.v,
             self.grid_spacing,
             dt,
+            source_amplitudes=source_amplitudes,
+            source_locations=source_locations,
+            receiver_locations=receiver_locations,
             accuracy=accuracy,
-            pml_config=pml_config,
+            pml_width=pml_width,
+            pml_freq=pml_freq,
             max_vel=max_vel,
-            survey_config=survey_config,
+            survey_pad=survey_pad,
+            wavefield_0=wavefield_0,
+            wavefield_m1=wavefield_m1,
+            psiy_m1=psiy_m1,
+            psix_m1=psix_m1,
+            zetay_m1=zetay_m1,
+            zetax_m1=zetax_m1,
+            origin=origin,
             nt=nt,
             model_gradient_sampling_interval=model_gradient_sampling_interval,
             freq_taper_frac=freq_taper_frac,
@@ -122,15 +119,15 @@ class Scalar(torch.nn.Module):
 
 def scalar(
     v: Tensor,
-    grid_spacing: Union[int, float, torch.Tensor, Sequence[Union[int, float]]],
-    dt: Union[int, float],
+    grid_spacing: Union[float, Sequence[float]],
+    dt: float,
     source_amplitudes: Optional[Tensor] = None,
     source_locations: Optional[Tensor] = None,
     receiver_locations: Optional[Tensor] = None,
     accuracy: int = 4,
-    pml_width: Union[int, float, torch.Tensor, Sequence[Union[int, float]]] = 20,
-    pml_freq: Optional[Union[int, float]] = None,
-    max_vel: Optional[Union[int, float]] = None,
+    pml_width: Union[int, Sequence[int]] = 20,
+    pml_freq: Optional[float] = None,
+    max_vel: Optional[float] = None,
     survey_pad: Optional[Union[int, Sequence[Optional[int]]]] = None,
     wavefield_0: Optional[Tensor] = None,
     wavefield_m1: Optional[Tensor] = None,
@@ -144,8 +141,6 @@ def scalar(
     freq_taper_frac: float = 0.0,
     time_pad_frac: float = 0.0,
     time_taper: bool = False,
-    pml_config: Optional[PMLConfig] = None,
-    survey_config: Optional[SurveyConfig] = None,
 ) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
     """Scalar wave propagation (functional interface).
 
@@ -171,13 +166,12 @@ def scalar(
             not made of the model, so gradients will propagate back into
             the provided Tensor.
         grid_spacing:
-            The spatial grid cell size. It can be a single number (int or
-            float), a torch.Tensor (scalar or with two elements), or a
-            sequence (list or tuple) of two numbers.
+            The spatial grid cell size. It can be a single number that will be
+            used for all dimensions, or a number for each dimension.
         dt:
-            A number (int or float) specifying the time step interval of
-            the input and output (internally a smaller interval may be
-            used in propagation to obey the CFL condition for stability).
+            A float specifying the time step interval of the input and
+            output (internally a smaller interval may be used in
+            propagation to obey the CFL condition for stability).
         source_amplitudes:
             A Tensor with dimensions [shot, source, time]. If two shots
             are being propagated simultaneously, each containing three
@@ -207,10 +201,10 @@ def scalar(
             accurate results but greater computational cost. Optional, with
             a default of 4.
         pml_width:
-            A number (int or float), a torch.Tensor, or a sequence of
-            numbers specifying the width (in number of cells) of the PML
-            that prevents reflections from the edges of the model. Floats
-            will be truncated to integers. If a single value is provided,
+            A single number, or two numbers for each dimension,
+            specifying the width (in number of cells) of the PML
+            that prevents reflections from the edges of the model.
+            If a single value is provided,
             it will be used for all edges. If a sequence is provided, it
             should contain the values for the edges in the following order:
             [the beginning of the first dimension,
@@ -226,19 +220,19 @@ def scalar(
             is obtained by replicating the values on the edge of the
             model. Optional, default 20.
         pml_freq:
-            A number (int or float) specifying the frequency that you wish
-            to use when constructing the PML. This is usually the dominant
-            frequency of the source wavelet. Choosing this value poorly
-            will result in the edges becoming more reflective. Optional,
-            default 25 Hz (assuming `dt` is in seconds).
+            A float specifying the frequency that you wish to use when
+            constructing the PML. This is usually the dominant frequency
+            of the source wavelet. Choosing this value poorly will
+            result in the edges becoming more reflective. Optional, default
+            25 Hz (assuming `dt` is in seconds).
         max_vel:
-            A number (int or float) specifying the maximum velocity, which
-            is used when applying the CFL condition and when constructing
-            the PML. If not specified, the actual maximum absolute
-            wavespeed in the model (or portion of it that is used) will be
-            used. The option to specify this is provided to allow you to
-            ensure consistency between runs even if there are changes in
-            the wavespeed. Optional, default None.
+            A float specifying the maximum velocity, which is used when
+            applying the CFL condition and when constructing the PML. If
+            not specified, the actual maximum absolute wavespeed in the
+            model (or portion of it that is used) will be used. The option
+            to specify this is provided to allow you to ensure consistency
+            between runs even if there are changes in the wavespeed.
+            Optional, default None.
         survey_pad:
             A single value or list of four values, all of which are either
             an int or None, specifying whether the simulation domain
@@ -368,70 +362,26 @@ def scalar(
                 this Tensor will be empty.
 
     """
-    if pml_config is None:
-        pml_config = PMLConfig(_as_list(pml_width, "pml_width", int), pml_freq)
-    if survey_config is None:
-        survey_config = SurveyConfig(
-            source_locations=[source_locations],
-            receiver_locations=[receiver_locations],
-            source_amplitudes=[source_amplitudes],
-            wavefields=[
-                wavefield_0,
-                wavefield_m1,
-                psiy_m1,
-                psix_m1,
-                zetay_m1,
-                zetax_m1,
-            ],
-            survey_pad=survey_pad,
-            origin=origin,
-        )
-    # Convert Sequence arguments to List for compatibility with
-    # setup_propagator
     try:
         min_nonzero_model_vel = v[v != 0].abs().min().item()
     except RuntimeError:
         min_nonzero_model_vel = 0.0
     max_model_vel = v.abs().max().item()
     fd_pad = [accuracy // 2] * 4
-    (
-        models,
-        source_amplitudes_l,
-        wavefields,
-        sources_i_l,
-        receivers_i_l,
-        grid_spacing,
-        dt,
-        nt,
-        n_shots,
-        step_ratio,
-        model_gradient_sampling_interval,
-        accuracy,
-        pml_width_l,
-        pml_freq,
-        max_vel,
-        resample_config,
-        device,
-        dtype,
-    ) = setup_propagator(
-        [v],
-        ["replicate"],
-        _as_list(grid_spacing, "grid_spacing", float),
-        dt,
-        survey_config,
-        accuracy,
-        fd_pad,
-        pml_config,
-        max_vel,
-        min_nonzero_model_vel,
-        max_model_vel,
-        nt,
-        model_gradient_sampling_interval,
-        freq_taper_frac,
-        time_pad_frac,
-        time_taper,
-        2,
-    )
+    (models, source_amplitudes, wavefields,
+     sources_i, receivers_i,
+     grid_spacing, dt, nt, n_shots,
+     step_ratio, model_gradient_sampling_interval,
+     accuracy, pml_width, pml_freq, max_vel, 
+     step_ratio, freq_taper_frac, time_pad_frac, time_taper, device, dtype) = \
+        setup_propagator([v], ['replicate'], grid_spacing, dt,
+                         [source_amplitudes], [source_locations],
+                         [receiver_locations], accuracy, fd_pad, pml_width, pml_freq,
+                         max_vel, min_nonzero_model_vel, max_model_vel, survey_pad,
+                         [wavefield_0, wavefield_m1, psiy_m1, psix_m1,
+                          zetay_m1, zetax_m1], origin, nt,
+                         model_gradient_sampling_interval, freq_taper_frac,
+                         time_pad_frac, time_taper, 2)
 
     # In the finite difference implementation, the source amplitudes we
     # add to the wavefield each time step are multiplied by
@@ -441,54 +391,28 @@ def scalar(
     # avoid out-of-bounds accesses to the model. Since these sources will not be
     # used, their amplitudes are not important.
     ny, nx = models[0].shape[-2:]
-    mask = sources_i_l[0] == IGNORE_LOCATION
-    sources_i_masked = sources_i_l[0].clone()
+    mask = sources_i[0] == IGNORE_LOCATION
+    sources_i_masked = sources_i[0].clone()
     sources_i_masked[mask] = 0
-    # Multiply source amplitudes by -v^2 * dt^2 at source locations
-    source_amplitudes_l[0] = (
-        -source_amplitudes_l[0]
-        * (models[0].view(-1, ny * nx).expand(n_shots, -1).gather(1, sources_i_masked))
-        ** 2
-        * dt**2
-    )
+    source_amplitudes[0] = (-source_amplitudes[0] * (models[0].view(
+        -1, ny * nx).expand(n_shots, -1).gather(1, sources_i_masked))**2 *
+                              dt**2)
 
-    pml_profiles = set_pml_profiles(
-        pml_width_l,
-        accuracy,
-        fd_pad,
-        dt,
-        grid_spacing,
-        max_vel,
-        dtype,
-        device,
-        pml_freq,
-        ny,
-        nx,
-    )
+    pml_profiles = set_pml_profiles(pml_width, accuracy, fd_pad, dt,
+                                    grid_spacing, max_vel, dtype, device,
+                                    pml_freq, ny, nx)
 
-    (wfc, wfp, psiy, psix, zetay, zetax, receiver_amplitudes) = scalar_func(
-        *models,
-        *source_amplitudes_l,
-        *wavefields,
-        *pml_profiles,
-        *sources_i_l,
-        *receivers_i_l,
-        *grid_spacing,
-        dt,
-        nt,
-        step_ratio * model_gradient_sampling_interval,
-        accuracy,
-        pml_width_l,
-        n_shots,
-    )
+    (wfc, wfp, psiy, psix, zetay, zetax, receiver_amplitudes) = \
+        scalar_func(
+            *models, *source_amplitudes, *wavefields, *pml_profiles, *sources_i, *receivers_i, *grid_spacing, dt, nt, step_ratio * model_gradient_sampling_interval, accuracy, pml_width, n_shots
+        )
 
-    receiver_amplitudes = downsample_and_movedim(
-        receiver_amplitudes,
-        resample_config.step_ratio,
-        resample_config.freq_taper_frac,
-        resample_config.time_pad_frac,
-        resample_config.time_taper,
-    )
+    receiver_amplitudes = downsample_and_movedim(receiver_amplitudes,
+        step_ratio,
+        freq_taper_frac,
+        time_pad_frac,
+        time_taper)
+
     return wfc, wfp, psiy, psix, zetay, zetax, receiver_amplitudes
 
 
@@ -520,10 +444,7 @@ class ScalarForwardFunc(torch.autograd.Function):
         accuracy: int,
         pml_width: List[int],
         n_shots: int,
-        *args: Any,
-        **kwargs: Any,
     ) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
-        forward = None # Initialize to None to prevent E0601
         if (
             v.requires_grad
             or source_amplitudes.requires_grad
@@ -839,10 +760,7 @@ class ScalarBackwardFunc(torch.autograd.Function):
         accuracy: int,
         pml_width: List[int],
         source_amplitudes_requires_grad: bool,
-        *args: Any,
-        **kwargs: Any,
     ) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
-        backward = None # Initialize to None to prevent E0601
         ctx.save_for_backward(
             gwfc,
             gwfp,

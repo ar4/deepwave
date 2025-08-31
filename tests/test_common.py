@@ -1,7 +1,6 @@
 import pytest
 import torch
 from deepwave.common import (
-    _as_list,
     get_n_batch,
     set_grid_spacing,
     set_accuracy,
@@ -14,61 +13,12 @@ from deepwave.common import (
     set_time_pad_frac,
     check_source_amplitudes_locations_match,
     set_source_amplitudes,
-    ResampleConfig,
     check_points_per_wavelength,
     cosine_taper_end,
     zero_last_element_of_final_dimension,
     cfl_condition_n,
 )
 import re
-
-
-def test_as_list_int():
-    assert _as_list(1, "test_param", int) == [1]
-
-
-def test_as_list_float():
-    assert _as_list(1.0, "test_param", float) == [1.0]
-
-
-def test_as_list_tensor_scalar():
-    assert _as_list(torch.tensor(1), "test_param", int) == [1]
-
-
-def test_as_list_tensor_1d():
-    assert _as_list(torch.tensor([1, 2]), "test_param", int) == [1, 2]
-
-
-def test_as_list_list_int():
-    assert _as_list([1, 2], "test_param", int) == [1, 2]
-
-
-def test_as_list_list_float():
-    assert _as_list([1.0, 2.0], "test_param", float) == [1.0, 2.0]
-
-
-def test_as_list_mixed_list_to_float():
-    assert _as_list([1, 2.0], "test_param", float) == [1.0, 2.0]
-
-
-def test_as_list_invalid_type():
-    with pytest.raises(
-        TypeError,
-        match=re.escape(
-            "test_param must be a float, int, torch.Tensor, or a sequence of floats/ints, got <class 'str'>."
-        ),
-    ):
-        _as_list("invalid", "test_param", int)
-
-
-def test_as_list_list_invalid_element_type():
-    with pytest.raises(
-        TypeError,
-        match=re.escape(
-            "Elements in test_param could not be converted to int. Original error: invalid literal for int() with base 10: 'invalid'"
-        ),
-    ):
-        _as_list([1, "invalid"], "test_param", int)
 
 
 # Tests for get_n_batch
@@ -167,7 +117,7 @@ def test_set_grid_spacing_invalid_type():
     with pytest.raises(
         TypeError,
         match=re.escape(
-            "grid_spacing must be a float, int, torch.Tensor, or a sequence of floats/ints, got <class 'str'>."
+            "grid_spacing must be a float or sequence of floats."
         ),
     ):
         set_grid_spacing("invalid", 2)
@@ -267,7 +217,7 @@ def test_set_pml_width_invalid_type():
     with pytest.raises(
         TypeError,
         match=re.escape(
-            "pml_width must be a float, int, torch.Tensor, or a sequence of floats/ints, got <class 'str'>."
+            "pml_width must be an int or sequence of ints."
         ),
     ):
         set_pml_width("invalid", 2)
@@ -277,7 +227,7 @@ def test_set_pml_width_list_invalid_element_type():
     with pytest.raises(
         TypeError,
         match=re.escape(
-            "Elements in pml_width could not be converted to int. Original error: invalid literal for int() with base 10: 'invalid'"
+            "pml_width must be an int or sequence of ints."
         ),
     ):
         set_pml_width([1, "invalid"], 2)
@@ -331,7 +281,7 @@ def test_set_pml_freq_above_nyquist():
 
 def test_set_pml_freq_invalid_type():
     with pytest.raises(
-        TypeError, match=re.escape("pml_freq must be a float, int, or None.")
+        TypeError, match=re.escape("pml_freq must be None or convertible to a float.")
     ):
         set_pml_freq("invalid", 0.004)
 
@@ -368,7 +318,7 @@ def test_set_max_vel_negative_value():
 
 def test_set_max_vel_invalid_type():
     with pytest.raises(
-        TypeError, match=re.escape("max_vel must be a float, int, or None.")
+        TypeError, match=re.escape("max_vel must be None or convertible to a float.")
     ):
         set_max_vel("invalid", 1500.0)
 
@@ -496,7 +446,7 @@ def test_set_freq_taper_frac_out_of_range():
 
 def test_set_freq_taper_frac_invalid_type():
     with pytest.raises(
-        TypeError, match=re.escape("freq_taper_frac must be a float or an int.")
+        TypeError, match=re.escape("freq_taper_frac must be convertible to a float.")
     ):
         set_freq_taper_frac("invalid")
 
@@ -521,7 +471,7 @@ def test_set_time_pad_frac_out_of_range():
 
 def test_set_time_pad_frac_invalid_type():
     with pytest.raises(
-        TypeError, match=re.escape("time_pad_frac must be a float or an int.")
+        TypeError, match=re.escape("time_pad_frac must be convertible to a float.")
     ):
         set_time_pad_frac("invalid")
 
@@ -586,11 +536,14 @@ def test_set_source_amplitudes_none():
     source_amplitudes = [None]
     n_batch = 2
     nt = 100
-    resample_config = ResampleConfig()
+    step_ratio = 1
+    freq_taper_frac = 0.0
+    time_pad_frac = 0.0
+    time_taper = False
     device = torch.device("cpu")
     dtype = torch.float32
     result = set_source_amplitudes(
-        source_amplitudes, n_batch, nt, resample_config, device, dtype
+        source_amplitudes, n_batch, nt, step_ratio, freq_taper_frac, time_pad_frac, time_taper, device, dtype
     )
     assert len(result) == 1
     assert result[0].shape == (nt, n_batch, 0)
@@ -602,11 +555,14 @@ def test_set_source_amplitudes_valid():
     source_amplitudes = [torch.randn(2, 3, 50)]
     n_batch = 2
     nt = 100
-    resample_config = ResampleConfig(step_ratio=2)
+    step_ratio = 2
+    freq_taper_frac = 0.0
+    time_pad_frac = 0.0
+    time_taper = False
     device = torch.device("cpu")
     dtype = torch.float32
     result = set_source_amplitudes(
-        source_amplitudes, n_batch, nt, resample_config, device, dtype
+        source_amplitudes, n_batch, nt, step_ratio, freq_taper_frac, time_pad_frac, time_taper, device, dtype
     )
     assert len(result) == 1
     assert result[0].shape == (nt, n_batch, 3)
@@ -618,7 +574,10 @@ def test_set_source_amplitudes_invalid_ndim():
     source_amplitudes = [torch.randn(2, 50)]  # Should be 3D
     n_batch = 2
     nt = 100
-    resample_config = ResampleConfig()
+    step_ratio = 1
+    freq_taper_frac = 0.0
+    time_pad_frac = 0.0
+    time_taper = False
     device = torch.device("cpu")
     dtype = torch.float32
     with pytest.raises(
@@ -628,7 +587,7 @@ def test_set_source_amplitudes_invalid_ndim():
         ),
     ):
         set_source_amplitudes(
-            source_amplitudes, n_batch, nt, resample_config, device, dtype
+            source_amplitudes, n_batch, nt, step_ratio, freq_taper_frac, time_pad_frac, time_taper, device, dtype
         )
 
 
@@ -640,7 +599,10 @@ def test_set_source_amplitudes_inconsistent_device():
     ]
     n_batch = 2
     nt = 100
-    resample_config = ResampleConfig()
+    step_ratio = 1
+    freq_taper_frac = 0.0
+    time_pad_frac = 0.0
+    time_taper = False
     device = torch.device("cpu")
     dtype = torch.float32
     if torch.cuda.is_available():
@@ -651,12 +613,12 @@ def test_set_source_amplitudes_inconsistent_device():
             ),
         ):
             set_source_amplitudes(
-                source_amplitudes, n_batch, nt, resample_config, device, dtype
+                source_amplitudes, n_batch, nt, step_ratio, freq_taper_frac, time_pad_frac, time_taper, device, dtype
             )
     else:
         # If CUDA is not available, the tensor will be on CPU, so no error should be raised.
         set_source_amplitudes(
-            source_amplitudes, n_batch, nt, resample_config, device, dtype
+            source_amplitudes, n_batch, nt, step_ratio, freq_taper_frac, time_pad_frac, time_taper, device, dtype
         )
 
 
@@ -664,7 +626,10 @@ def test_set_source_amplitudes_inconsistent_dtype():
     source_amplitudes = [torch.randn(2, 3, 50, dtype=torch.float64)]
     n_batch = 2
     nt = 100
-    resample_config = ResampleConfig()
+    step_ratio = 1
+    freq_taper_frac = 0.0
+    time_pad_frac = 0.0
+    time_taper = False
     device = torch.device("cpu")
     dtype = torch.float32
     with pytest.raises(
@@ -674,7 +639,7 @@ def test_set_source_amplitudes_inconsistent_dtype():
         ),
     ):
         set_source_amplitudes(
-            source_amplitudes, n_batch, nt, resample_config, device, dtype
+            source_amplitudes, n_batch, nt, step_ratio, freq_taper_frac, time_pad_frac, time_taper, device, dtype
         )
 
 
@@ -682,7 +647,10 @@ def test_set_source_amplitudes_inconsistent_batch_size():
     source_amplitudes = [torch.randn(3, 3, 50)]  # n_batch is 2, but tensor is 3
     n_batch = 2
     nt = 100
-    resample_config = ResampleConfig()
+    step_ratio = 1
+    freq_taper_frac = 0.0
+    time_pad_frac = 0.0
+    time_taper = False
     device = torch.device("cpu")
     dtype = torch.float32
     with pytest.raises(
@@ -692,7 +660,7 @@ def test_set_source_amplitudes_inconsistent_batch_size():
         ),
     ):
         set_source_amplitudes(
-            source_amplitudes, n_batch, nt, resample_config, device, dtype
+            source_amplitudes, n_batch, nt, step_ratio, freq_taper_frac, time_pad_frac, time_taper, device, dtype
         )
 
 
@@ -702,17 +670,20 @@ def test_set_source_amplitudes_inconsistent_nt():
     ]  # nt is 100, step_ratio is 1, so expected time samples is 100
     n_batch = 2
     nt = 100
-    resample_config = ResampleConfig(step_ratio=1)
+    step_ratio = 1
+    freq_taper_frac = 0.0
+    time_pad_frac = 0.0
+    time_taper = False
     device = torch.device("cpu")
     dtype = torch.float32
     with pytest.raises(
         RuntimeError,
         match=re.escape(
-            f"Inconsistent number of time samples: Expected source amplitudes to have {nt // resample_config.step_ratio} time samples, but found one with 40."
+            f"Inconsistent number of time samples: Expected source amplitudes to have {nt // step_ratio} time samples, but found one with 40."
         ),
     ):
         set_source_amplitudes(
-            source_amplitudes, n_batch, nt, resample_config, device, dtype
+            source_amplitudes, n_batch, nt, step_ratio, freq_taper_frac, time_pad_frac, time_taper, device, dtype
         )
 
 
@@ -720,11 +691,14 @@ def test_set_source_amplitudes_upsampling():
     source_amplitudes = [torch.randn(2, 3, 50)]
     n_batch = 2
     nt = 100
-    resample_config = ResampleConfig(step_ratio=2)
+    step_ratio = 2
+    freq_taper_frac = 0.0
+    time_pad_frac = 0.0
+    time_taper = False
     device = torch.device("cpu")
     dtype = torch.float32
     result = set_source_amplitudes(
-        source_amplitudes, n_batch, nt, resample_config, device, dtype
+        source_amplitudes, n_batch, nt, step_ratio, freq_taper_frac, time_pad_frac, time_taper, device, dtype
     )
     assert result[0].shape == (nt, n_batch, 3)
     # Further checks for upsampling correctness would require comparing with a known good upsampling, which is complex.
@@ -735,7 +709,10 @@ def test_set_source_amplitudes_zero_n_batch():
     source_amplitudes = [torch.randn(2, 3, 50)]
     n_batch = 0
     nt = 100
-    resample_config = ResampleConfig()
+    step_ratio = 1
+    freq_taper_frac = 0.0
+    time_pad_frac = 0.0
+    time_taper = False
     device = torch.device("cpu")
     dtype = torch.float32
     with pytest.raises(
@@ -745,7 +722,7 @@ def test_set_source_amplitudes_zero_n_batch():
         ),
     ):
         set_source_amplitudes(
-            source_amplitudes, n_batch, nt, resample_config, device, dtype
+            source_amplitudes, n_batch, nt, step_ratio, freq_taper_frac, time_pad_frac, time_taper, device, dtype
         )
 
 
@@ -753,7 +730,10 @@ def test_set_source_amplitudes_zero_nt():
     source_amplitudes = [torch.randn(2, 3, 50)]
     n_batch = 2
     nt = 0
-    resample_config = ResampleConfig()
+    step_ratio = 1
+    freq_taper_frac = 0.0
+    time_pad_frac = 0.0
+    time_taper = False
     device = torch.device("cpu")
     dtype = torch.float32
     with pytest.raises(
@@ -763,7 +743,7 @@ def test_set_source_amplitudes_zero_nt():
         ),
     ):
         set_source_amplitudes(
-            source_amplitudes, n_batch, nt, resample_config, device, dtype
+            source_amplitudes, n_batch, nt, step_ratio, freq_taper_frac, time_pad_frac, time_taper, device, dtype
         )
 
 
@@ -997,7 +977,7 @@ def test_cfl_condition_n_different_grid_spacing():
 
 def test_cfl_condition_n_invalid_type_grid_spacing():
     with pytest.raises(
-        TypeError, match=re.escape("grid_spacing must be a sequence of floats or ints.")
+        TypeError, match=re.escape("grid_spacing must be a list of floats.")
     ):
         cfl_condition_n("invalid", 0.004, 1500.0)
 

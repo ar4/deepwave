@@ -17,8 +17,6 @@ from deepwave.common import (
     zero_interior,
     create_or_pad,
     IGNORE_LOCATION,
-    PMLConfig,
-    SurveyConfig,
 )
 from deepwave.regular_grid import set_pml_profiles
 
@@ -43,9 +41,8 @@ class ScalarBorn(torch.nn.Module):
             A Tensor containing an initial guess of the scattering
             potential.
         grid_spacing:
-            The spatial grid cell size. It can be a single number (int or
-            float), a torch.Tensor (scalar or with two elements), or a
-            sequence (list or tuple) of two numbers.
+            The spatial grid cell size. It can be a single number that will be
+            used for all dimensions, or a number for each dimension.
         v_requires_grad:
             Optional bool specifying how to set the `requires_grad`
             attribute of the wavespeed, and so whether the necessary
@@ -59,26 +56,38 @@ class ScalarBorn(torch.nn.Module):
         self,
         v: Tensor,
         scatter: Tensor,
-        grid_spacing: Union[int, float, torch.Tensor, Sequence[Union[int, float]]],
+        grid_spacing: Union[float, Sequence[float]],
         v_requires_grad: bool = False,
         scatter_requires_grad: bool = False,
     ) -> None:
         super().__init__()
+        if not isinstance(v_requires_grad, bool):
+            raise TypeError(
+                f"v_requires_grad must be bool, got {type(v_requires_grad).__name__}"
+            )
+        if not isinstance(v, Tensor):
+            raise RuntimeError("v must be a torch.Tensor.")
+        if not isinstance(scatter_requires_grad, bool):
+            raise TypeError(
+                f"scatter_requires_grad must be bool, got {type(scatter_requires_grad).__name__}"
+            )
+        if not isinstance(scatter, Tensor):
+            raise RuntimeError("scatter must be a torch.Tensor.")
         self.v = torch.nn.Parameter(v, requires_grad=v_requires_grad)
         self.scatter = torch.nn.Parameter(scatter, requires_grad=scatter_requires_grad)
         self.grid_spacing = grid_spacing
 
     def forward(
         self,
-        dt: Union[int, float],
+        dt: float,
         source_amplitudes: Optional[Tensor] = None,
         source_locations: Optional[Tensor] = None,
         receiver_locations: Optional[Tensor] = None,
         bg_receiver_locations: Optional[Tensor] = None,
         accuracy: int = 4,
-        pml_width: Union[int, float, torch.Tensor, Sequence[Union[int, float]]] = 20,
-        pml_freq: Optional[Union[int, float]] = None,
-        max_vel: Optional[Union[int, float]] = None,
+        pml_width: Union[int, Sequence[int]] = 20,
+        pml_freq: Optional[float] = None,
+        max_vel: Optional[float] = None,
         survey_pad: Optional[Union[int, Sequence[Optional[int]]]] = None,
         wavefield_0: Optional[Tensor] = None,
         wavefield_m1: Optional[Tensor] = None,
@@ -95,6 +104,9 @@ class ScalarBorn(torch.nn.Module):
         origin: Optional[Sequence[int]] = None,
         nt: Optional[int] = None,
         model_gradient_sampling_interval: int = 1,
+        freq_taper_frac: float = 0.0,
+        time_pad_frac: float = 0.0,
+        time_taper: bool = False,
     ) -> Tuple[
         Tensor,
         Tensor,
@@ -117,59 +129,55 @@ class ScalarBorn(torch.nn.Module):
         `scatter`, and `grid_spacing` do not need to be provided again. See
         :func:`scalar_born` for a description of the inputs and outputs.
         """
-        pml_config = PMLConfig(cast(Union[int, Sequence[int]], pml_width), pml_freq)
-        survey_config = SurveyConfig(
-            source_locations=[source_locations, source_locations],
-            receiver_locations=[bg_receiver_locations, receiver_locations],
-            source_amplitudes=[source_amplitudes, source_amplitudes],
-            wavefields=[
-                wavefield_0,
-                wavefield_m1,
-                psiy_m1,
-                psix_m1,
-                zetay_m1,
-                zetax_m1,
-                wavefield_sc_0,
-                wavefield_sc_m1,
-                psiy_sc_m1,
-                psix_sc_m1,
-                zetay_sc_m1,
-                zetax_sc_m1,
-            ],
-            survey_pad=survey_pad,
-            origin=origin,
-        )
 
         return scalar_born(
-            cast(Tensor, self.v),
-            cast(Tensor, self.scatter),
-            cast(
-                Union[int, float, torch.Tensor, Sequence[Union[int, float]]],
-                self.grid_spacing,
-            ),
+            self.v,
+            self.scatter,
+            self.grid_spacing,
             dt,
+            source_amplitudes=source_amplitudes,
+            source_locations=source_locations,
+            receiver_locations=receiver_locations,
+            bg_receiver_locations=bg_receiver_locations,
             accuracy=accuracy,
-            pml_config=pml_config,
+            pml_width=pml_width,
+            pml_freq=pml_freq,
             max_vel=max_vel,
-            survey_config=survey_config,
+            survey_pad=survey_pad,
+            wavefield_0=wavefield_0,
+            wavefield_m1=wavefield_m1,
+            psiy_m1=psiy_m1,
+            psix_m1=psix_m1,
+            zetay_m1=zetay_m1,
+            zetax_m1=zetax_m1,
+            wavefield_sc_0=wavefield_sc_0,
+            wavefield_sc_m1=wavefield_sc_m1,
+            psiy_sc_m1=psiy_sc_m1,
+            psix_sc_m1=psix_sc_m1,
+            zetay_sc_m1=zetay_sc_m1,
+            zetax_sc_m1=zetax_sc_m1,
+            origin=origin,
             nt=nt,
             model_gradient_sampling_interval=model_gradient_sampling_interval,
+            freq_taper_frac=freq_taper_frac,
+            time_pad_frac=time_pad_frac,
+            time_taper=time_taper,
         )
 
 
 def scalar_born(
     v: Tensor,
     scatter: Tensor,
-    grid_spacing: Union[int, float, torch.Tensor, Sequence[Union[int, float]]],
-    dt: Union[int, float],
+    grid_spacing: Union[float, Sequence[float]],
+    dt: float,
     source_amplitudes: Optional[Tensor] = None,
     source_locations: Optional[Tensor] = None,
     receiver_locations: Optional[Tensor] = None,
     bg_receiver_locations: Optional[Tensor] = None,
     accuracy: int = 4,
-    pml_width: Union[int, float, torch.Tensor, Sequence[Union[int, float]]] = 20,
-    pml_freq: Optional[Union[int, float]] = None,
-    max_vel: Optional[Union[int, float]] = None,
+    pml_width: Union[int, Sequence[int]] = 20,
+    pml_freq: Optional[float] = None,
+    max_vel: Optional[float] = None,
     survey_pad: Optional[Union[int, Sequence[Optional[int]]]] = None,
     wavefield_0: Optional[Tensor] = None,
     wavefield_m1: Optional[Tensor] = None,
@@ -189,8 +197,6 @@ def scalar_born(
     freq_taper_frac: float = 0.0,
     time_pad_frac: float = 0.0,
     time_taper: bool = False,
-    pml_config: Optional[PMLConfig] = None,
-    survey_config: Optional[SurveyConfig] = None,
 ) -> Tuple[
     Tensor,
     Tensor,
@@ -291,101 +297,55 @@ def scalar_born(
                 empty.
 
     """
-    if pml_config is None:
-        pml_config = PMLConfig(cast(Union[int, Sequence[int]], pml_width), pml_freq)
-    if survey_config is None:
-        survey_config = SurveyConfig(
-            source_locations=[source_locations, source_locations],
-            receiver_locations=[bg_receiver_locations, receiver_locations],
-            source_amplitudes=[source_amplitudes, source_amplitudes],
-            wavefields=[
-                wavefield_0,
-                wavefield_m1,
-                psiy_m1,
-                psix_m1,
-                zetay_m1,
-                zetax_m1,
-                wavefield_sc_0,
-                wavefield_sc_m1,
-                psiy_sc_m1,
-                psix_sc_m1,
-                zetay_sc_m1,
-                zetax_sc_m1,
-            ],
-            survey_pad=survey_pad,
-            origin=origin,
-        )
-
     try:
         min_nonzero_model_vel = v[v.nonzero(as_tuple=True)].abs().min().item()
     except RuntimeError:
         min_nonzero_model_vel = 0
     max_model_vel = v.abs().max().item()
     fd_pad = [accuracy // 2] * 4
-    (
-        models,
-        source_amplitudes_l,
-        wavefields,
-        sources_i_l,
-        receivers_i_l,
-        grid_spacing,
-        dt,
-        nt,
-        n_shots,
-        step_ratio,
-        model_gradient_sampling_interval,
-        accuracy,
-        pml_width_l,
-        pml_freq,
-        max_vel,
-        resample_config,
-        device,
-        dtype,
-    ) = setup_propagator(
-        [v, scatter],
-        ["replicate", "constant"],
-        cast(Union[float, Sequence[float]], grid_spacing),
-        dt,
-        survey_config,
-        accuracy,
-        fd_pad,
-        pml_config,
-        max_vel,
-        min_nonzero_model_vel,
-        max_model_vel,
-        nt,
-        model_gradient_sampling_interval,
-        freq_taper_frac,
-        time_pad_frac,
-        time_taper,
-        2,
-    )
+    (models, source_amplitudes, wavefields,
+     sources_i, receivers_i,
+     grid_spacing, dt, nt, n_shots,
+     step_ratio, model_gradient_sampling_interval,
+     accuracy, pml_width, pml_freq, max_vel,
+     step_ratio, freq_taper_frac, time_pad_frac, time_taper, device, dtype) = \
+        setup_propagator([v, scatter], ['replicate', 'constant'], grid_spacing, dt,
+                         [source_amplitudes, source_amplitudes],
+                         [source_locations, source_locations],
+                         [bg_receiver_locations, receiver_locations],
+                         accuracy, fd_pad, pml_width, pml_freq, max_vel,
+                         min_nonzero_model_vel, max_model_vel, survey_pad,
+                         [wavefield_0, wavefield_m1, psiy_m1, psix_m1,
+                          zetay_m1, zetax_m1, wavefield_sc_0, wavefield_sc_m1,
+                          psiy_sc_m1, psix_sc_m1, zetay_sc_m1, zetax_sc_m1],
+                         origin, nt, model_gradient_sampling_interval,
+                         freq_taper_frac, time_pad_frac, time_taper, 2)
 
     ny, nx = models[0].shape[-2:]
     # Background (multiply source amplitudes by -v^2*dt^2)
-    mask = sources_i_l[0] == IGNORE_LOCATION
-    sources_i_masked = sources_i_l[0].clone()
+    mask = sources_i[0] == IGNORE_LOCATION
+    sources_i_masked = sources_i[0].clone()
     sources_i_masked[mask] = 0
-    source_amplitudes_l[0] = (
-        -source_amplitudes_l[0]
+    source_amplitudes[0] = (
+        -source_amplitudes[0]
         * (models[0].view(-1, ny * nx).expand(n_shots, -1).gather(1, sources_i_masked))
         ** 2
         * dt**2
     )
     # Scattered (multiply source amplitudes by -2*v*scatter*dt^2)
-    mask = sources_i_l[1] == IGNORE_LOCATION
-    sources_i_masked = sources_i_l[1].clone()
+    mask = sources_i[1] == IGNORE_LOCATION
+    sources_i_masked = sources_i[1].clone()
     sources_i_masked[mask] = 0
-    source_amplitudes_l[1] = (
+    source_amplitudes[1] = (
         -2
-        * source_amplitudes_l[1]
+        * source_amplitudes[1]
         * (models[0].view(-1, ny * nx).expand(n_shots, -1).gather(1, sources_i_masked))
         * (models[1].view(-1, ny * nx).expand(n_shots, -1).gather(1, sources_i_masked))
         * dt**2
     )
 
     pml_profiles = set_pml_profiles(
-        pml_width_l,
+        pml_width,
         accuracy,
         fd_pad,
         dt,
@@ -415,34 +375,30 @@ def scalar_born(
         receiver_amplitudessc,
     ) = scalar_born_func(
         *models,
-        *source_amplitudes_l,
+        *source_amplitudes,
         *wavefields,
         *pml_profiles,
-        *sources_i_l,
-        *receivers_i_l,
+        *sources_i,
+        *receivers_i,
         *grid_spacing,
         dt,
         nt,
         step_ratio * model_gradient_sampling_interval,
         accuracy,
-        pml_width_l,
+        pml_width,
         n_shots,
     )
 
-    receiver_amplitudes = downsample_and_movedim(
-        receiver_amplitudes,
-        resample_config.step_ratio,
-        resample_config.freq_taper_frac,
-        resample_config.time_pad_frac,
-        resample_config.time_taper,
-    )
-    receiver_amplitudessc = downsample_and_movedim(
-        receiver_amplitudessc,
-        resample_config.step_ratio,
-        resample_config.freq_taper_frac,
-        resample_config.time_pad_frac,
-        resample_config.time_taper,
-    )
+    receiver_amplitudes = downsample_and_movedim(receiver_amplitudes,
+        step_ratio,
+        freq_taper_frac,
+        time_pad_frac,
+        time_taper)
+    receiver_amplitudessc = downsample_and_movedim(receiver_amplitudessc,
+        step_ratio,
+        freq_taper_frac,
+        time_pad_frac,
+        time_taper)
 
     return (
         wfc,
@@ -500,8 +456,6 @@ class ScalarBornForwardFunc(torch.autograd.Function):
         accuracy: int,
         pml_width: List[int],
         n_shots: int,
-        *args: Any,
-        **kwargs: Any,
     ) -> Tuple[
         Tensor,
         Tensor,
@@ -840,8 +794,6 @@ class ScalarBornForwardFunc(torch.autograd.Function):
         Optional[Tensor],
         Optional[Tensor],
     ]:
-        backward = None # Initialize to None to prevent E0601
-        backward_sc = None # Initialize to None to prevent E0601
         (
             v,
             scatter,

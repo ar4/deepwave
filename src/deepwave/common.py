@@ -4,169 +4,12 @@ import math
 import warnings
 from typing import Any, List, Optional, Sequence, Tuple, Union, cast
 
-from dataclasses import dataclass
 import torch
 import torch.fft
 from torch import Tensor
 
 
-@dataclass
-class ResampleConfig:
-    step_ratio: int = 1
-    freq_taper_frac: float = 0.0
-    time_pad_frac: float = 0.0
-    time_taper: bool = False
-
-
-@dataclass
-class PMLConfig:
-    pml_width: Union[int, Sequence[int]]
-    pml_freq: Optional[float]
-
-
-@dataclass
-class SurveyConfig:
-    source_locations: Sequence[Optional[Tensor]]
-    receiver_locations: Sequence[Optional[Tensor]]
-    source_amplitudes: Sequence[Optional[Tensor]]
-    wavefields: Sequence[Optional[Tensor]]
-    survey_pad: Optional[Union[int, Sequence[Optional[int]]]]
-    origin: Optional[Sequence[int]]
-
-
 IGNORE_LOCATION = -1 << 31
-
-
-def _as_list(
-    value: Union[int, float, torch.Tensor, Sequence[Any]], name: str, target_type: type
-) -> List[Any]:
-    """Convert a value to a list of a target type."""
-    if isinstance(value, torch.Tensor):
-        if value.numel() == 1:
-            return [target_type(value.item())]
-        return [target_type(v) for v in value.flatten().tolist()]
-    if isinstance(value, (int, float)):
-        return [target_type(value)]
-    if isinstance(value, Sequence) and not isinstance(value, str):
-        try:
-            return [target_type(v) for v in value]
-        except ValueError as e:
-            raise TypeError(
-                f"Elements in {name} could not be converted to {target_type.__name__}. "
-                f"Original error: {e}"
-            ) from e
-    raise TypeError(
-        f"{name} must be a float, int, torch.Tensor, or a sequence of "
-        f"floats/ints, got {type(value)}."
-    )
-
-
-def _validate_propagator_inputs(
-    models: Sequence[Tensor],
-    model_pad_modes: Sequence[str],
-    dt: float,
-    survey_config: SurveyConfig,
-    accuracy: int,
-    fd_pad: Sequence[int],
-    pml_config: PMLConfig,
-    max_vel: Optional[float],
-    min_nonzero_model_vel: float,
-    max_model_vel: float,
-    nt: Optional[int],
-    model_gradient_sampling_interval: int,
-    freq_taper_frac: float,
-    time_pad_frac: float,
-    time_taper: bool,
-    n_dims: int,
-) -> Tuple[float, float, float]:
-    """Perform runtime type checking for propagator inputs."""
-    if not (
-        isinstance(models, Sequence) and all(isinstance(m, Tensor) for m in models)
-    ):
-        raise TypeError("models must be a sequence of torch.Tensor objects.")
-    if not (
-        isinstance(model_pad_modes, Sequence)
-        and all(isinstance(m, str) for m in model_pad_modes)
-    ):
-        raise TypeError("model_pad_modes must be a sequence of str.")
-    # grid_spacing is checked in set_grid_spacing
-    if not isinstance(dt, (int, float)):
-        raise TypeError("dt must be a float or an int.")
-
-    if not (
-        isinstance(survey_config.source_amplitudes, Sequence)
-        and all(
-            (a is None or isinstance(a, Tensor))
-            for a in survey_config.source_amplitudes
-        )
-    ):
-        raise TypeError("source_amplitudes must be a sequence of torch.Tensor or None.")
-    if not (
-        isinstance(survey_config.source_locations, Sequence)
-        and all(
-            (l is None or isinstance(l, Tensor)) for l in survey_config.source_locations
-        )
-    ):
-        raise TypeError("source_locations must be a sequence of torch.Tensor or None.")
-    if not (
-        isinstance(survey_config.receiver_locations, Sequence)
-        and all(
-            (l is None or isinstance(l, Tensor))
-            for l in survey_config.receiver_locations
-        )
-    ):
-        raise TypeError(
-            "receiver_locations must be a sequence of torch.Tensor or None."
-        )
-    if not isinstance(accuracy, int):
-        raise TypeError("accuracy must be an int.")
-    if not (isinstance(fd_pad, Sequence) and all(isinstance(f, int) for f in fd_pad)):
-        raise TypeError("fd_pad must be a sequence of int.")
-    # pml_width is checked in set_pml_width
-    if pml_config.pml_freq is not None and not isinstance(
-        pml_config.pml_freq, (int, float)
-    ):
-        raise TypeError("pml_freq must be a float, int, or None.")
-    if max_vel is not None and not isinstance(max_vel, (int, float)):
-        raise TypeError("max_vel must be a float, int, or None.")
-    if not isinstance(min_nonzero_model_vel, float):
-        raise TypeError("min_nonzero_model_vel must be a float.")
-    if not isinstance(max_model_vel, float):
-        raise TypeError("max_model_vel must be a float.")
-    if survey_config.survey_pad is not None and not (
-        isinstance(survey_config.survey_pad, int)
-        or (
-            isinstance(survey_config.survey_pad, Sequence)
-            and all((p is None or isinstance(p, int)) for p in survey_config.survey_pad)
-        )
-    ):
-        raise TypeError(
-            "survey_pad must be an int, a sequence of int or None, or a sequence of None and int."
-        )
-    if not (
-        isinstance(survey_config.wavefields, Sequence)
-        and all((w is None or isinstance(w, Tensor)) for w in survey_config.wavefields)
-    ):
-        raise TypeError("wavefields must be a sequence of torch.Tensor or None.")
-    if survey_config.origin is not None and not (
-        isinstance(survey_config.origin, Sequence)
-        and all(isinstance(o, int) for o in survey_config.origin)
-    ):
-        raise TypeError("origin must be a sequence of int or None.")
-    if nt is not None and not isinstance(nt, int):
-        raise TypeError("nt must be an int or None.")
-    if not isinstance(model_gradient_sampling_interval, int):
-        raise TypeError("model_gradient_sampling_interval must be an int.")
-    if not isinstance(freq_taper_frac, (int, float)):
-        raise TypeError("freq_taper_frac must be a float or an int.")
-    if not isinstance(time_pad_frac, (int, float)):
-        raise TypeError("time_pad_frac must be a float or an int.")
-    if not isinstance(time_taper, bool):
-        raise TypeError("time_taper must be a bool.")
-    if not isinstance(n_dims, int):
-        raise TypeError("n_dims must be an int.")
-
-    return float(dt), float(freq_taper_frac), float(time_pad_frac)
 
 
 def setup_propagator(
@@ -174,99 +17,66 @@ def setup_propagator(
     model_pad_modes: Sequence[str],
     grid_spacing: Union[float, Sequence[float]],
     dt: float,
-    survey_config: SurveyConfig,
+    source_amplitudes: Sequence[Optional[Tensor]],
+    source_locations: Sequence[Optional[Tensor]],
+    receiver_locations: Sequence[Optional[Tensor]],
     accuracy: int,
     fd_pad: Sequence[int],
-    pml_config: PMLConfig,
+    pml_width: Union[int, Sequence[int]],
+    pml_freq: Optional[float],
     max_vel: Optional[float],
     min_nonzero_model_vel: float,
     max_model_vel: float,
+    survey_pad: Optional[Union[int, Sequence[Optional[int]]]],
+    wavefields: Sequence[Optional[Tensor]],
+    origin: Optional[Sequence[int]],
     nt: Optional[int],
     model_gradient_sampling_interval: int,
     freq_taper_frac: float,
     time_pad_frac: float,
     time_taper: bool,
     n_dims: int,
-) -> Tuple[
-    List[Tensor],
-    List[Tensor],
-    List[Tensor],
-    List[Tensor],
-    List[Tensor],
-    List[float],
-    float,
-    int,
-    int,
-    int,
-    int,
-    int,
-    List[int],
-    float,
-    float,
-    ResampleConfig,
-    torch.device,
-    torch.dtype,
-]:
+) -> Tuple[List[Tensor], List[Tensor], List[Tensor], List[Tensor],
+           List[Tensor], List[float], float, int, int, int, int, int,
+           List[int], float, int, float, float, float, torch.device, torch.dtype]:
     """
     Common setup for all propagators.
 
     Performs input validation, calculates internal time step, sets up PML, and prepares source/receiver tensors.
     """
-    dt, freq_taper_frac, time_pad_frac = _validate_propagator_inputs(
-        models,
-        model_pad_modes,
-        dt,
-        survey_config,
-        accuracy,
-        fd_pad,
-        pml_config,
-        max_vel,
-        min_nonzero_model_vel,
-        max_model_vel,
-        nt,
-        model_gradient_sampling_interval,
-        freq_taper_frac,
-        time_pad_frac,
-        time_taper,
-        n_dims,
-    )
-
-    n_batch = get_n_batch(survey_config.source_locations, survey_config.wavefields)
+    if not all(isinstance(m, Tensor) for m in models):
+        raise TypeError("models must be torch.Tensor objects.")
     device = models[0].device
     dtype = models[0].dtype
+    n_batch = get_n_batch(source_locations, wavefields)
     grid_spacing = set_grid_spacing(grid_spacing, n_dims)
-    accuracy = set_accuracy(accuracy)
-    pml_width = set_pml_width(pml_config.pml_width, n_dims)
-    pml_freq = set_pml_freq(pml_config.pml_freq, dt)
-    check_points_per_wavelength(min_nonzero_model_vel, pml_freq, grid_spacing)
     max_vel = set_max_vel(max_vel, max_model_vel)
     dt, step_ratio = cfl_condition_n(grid_spacing, dt, max_vel)
-    nt = set_nt(nt, survey_config.source_amplitudes, step_ratio)
+    accuracy = set_accuracy(accuracy)
+    pml_width = set_pml_width(pml_width, n_dims)
+    pml_freq = set_pml_freq(pml_freq, dt)
+    check_points_per_wavelength(min_nonzero_model_vel, pml_freq, grid_spacing)
+    nt = set_nt(nt, source_amplitudes, step_ratio)
     model_gradient_sampling_interval = set_model_gradient_sampling_interval(
         model_gradient_sampling_interval
     )
     freq_taper_frac = set_freq_taper_frac(freq_taper_frac)
     time_pad_frac = set_time_pad_frac(time_pad_frac)
-    resample_config = ResampleConfig(
-        step_ratio=step_ratio,
-        freq_taper_frac=freq_taper_frac,
-        time_pad_frac=time_pad_frac,
-        time_taper=time_taper,
-    )
     check_source_amplitudes_locations_match(
-        survey_config.source_amplitudes, survey_config.source_locations
+        source_amplitudes, source_locations
     )
     source_amplitudes_out = set_source_amplitudes(
-        survey_config.source_amplitudes, n_batch, nt, resample_config, device, dtype
+        source_amplitudes, n_batch, nt, step_ratio, freq_taper_frac,
+        time_pad_frac, time_taper, device, dtype
     )
     models_out, source_locations_out, receiver_locations_out, wavefields_out = (
         extract_survey(
             models,
-            survey_config.source_locations,
-            survey_config.receiver_locations,
-            list(survey_config.wavefields),
-            survey_config.survey_pad,
-            survey_config.origin,
+            source_locations,
+            receiver_locations,
+            wavefields,
+            survey_pad,
+            origin,
             fd_pad,
             pml_width,
             model_pad_modes,
@@ -292,9 +102,12 @@ def setup_propagator(
         pml_width,
         pml_freq,
         max_vel,
-        resample_config,
+        step_ratio,
+        freq_taper_frac,
+        time_pad_frac,
+        time_taper,
         device,
-        dtype,
+        dtype
     )
 
 
@@ -317,6 +130,8 @@ def get_n_batch(
     tensors = list(source_locations) + list(wavefields)
     for tensor in tensors:
         if tensor is not None:
+            if not isinstance(tensor, torch.Tensor):
+                raise TypeError("Expected a torch.Tensor, but got {type(tensor).__name__}")
             return tensor.shape[0]
     raise RuntimeError(
         "At least one input source_locations or wavefield must be non-None."
@@ -369,14 +184,19 @@ def set_grid_spacing(
     """
     Ensure grid_spacing is a sequence of length n_dims.
     """
-    processed_grid_spacing = _as_list(grid_spacing, "grid_spacing", float)
+    try:
+        # grid_spacing is convertible to a float
+        processed_grid_spacing = [float(grid_spacing)] * n_dims
+    except:
+        try:
+            # grid_spacing is a sequence of elements convertible to floats
+            processed_grid_spacing = [float(spacing) for spacing in grid_spacing]
+        except:
+            raise TypeError("grid_spacing must be a float or sequence of floats.")
 
-    for g in processed_grid_spacing:
-        if g <= 0:
-            raise ValueError("grid_spacing elements must be positive.")
+    if any(spacing <= 0 for spacing in processed_grid_spacing):
+        raise ValueError("grid_spacing elements must be positive.")
 
-    if len(processed_grid_spacing) == 1:
-        return processed_grid_spacing * n_dims
     if len(processed_grid_spacing) != n_dims:
         raise RuntimeError(
             f"grid_spacing must have 1 or {n_dims} elements, got {len(processed_grid_spacing)}."
@@ -399,14 +219,19 @@ def set_pml_width(pml_width: Union[int, Sequence[int]], n_dims: int) -> List[int
     """
     Ensure pml_width is a sequence of length 2 * n_dims.
     """
-    processed_pml_width = _as_list(pml_width, "pml_width", int)
+    try:
+        # pml_width is convertible to an int
+        processed_pml_width = [int(pml_width)] * 2 * n_dims
+    except:
+        try:
+            # pml_width is a sequence of elements convertible to ints
+            processed_pml_width = [int(width) for width in pml_width]
+        except:
+            raise TypeError("pml_width must be an int or sequence of ints.")
 
-    for w in processed_pml_width:
-        if w < 0:
-            raise ValueError("pml_width must be non-negative.")
+    if any(width < 0 for width in processed_pml_width):
+        raise ValueError("pml_width must be non-negative.")
 
-    if len(processed_pml_width) == 1:
-        return processed_pml_width * (2 * n_dims)
     if len(processed_pml_width) != 2 * n_dims:
         raise RuntimeError(
             f"Expected pml_width to be of length 1 or {2 * n_dims}, got {len(processed_pml_width)}."
@@ -419,8 +244,11 @@ def set_pml_freq(pml_freq: Optional[float], dt: float) -> float:
     Set or validate PML frequency. Defaults to 25.0 Hz if not set.
     Warns if out of range.
     """
-    if pml_freq is not None and not isinstance(pml_freq, (int, float)):
-        raise TypeError("pml_freq must be a float, int, or None.")
+    if pml_freq is not None:
+        try:
+            pml_freq = float(pml_freq)
+        except ValueError:
+            raise TypeError("pml_freq must be None or convertible to a float.")
     if dt <= 0:
         raise ValueError("dt must be greater than zero to calculate Nyquist frequency.")
     nyquist = 0.5 / abs(dt)
@@ -433,15 +261,18 @@ def set_pml_freq(pml_freq: Optional[float], dt: float) -> float:
         warnings.warn(
             f"pml_freq {pml_freq} is greater than the Nyquist frequency {nyquist}."
         )
-    return float(pml_freq)
+    return pml_freq
 
 
 def set_max_vel(max_vel: Optional[float], max_model_vel: float) -> float:
     """
     Set or validate maximum velocity for CFL condition.
     """
-    if max_vel is not None and not isinstance(max_vel, (int, float)):
-        raise TypeError("max_vel must be a float, int, or None.")
+    if max_vel is not None:
+        try:
+            max_vel = float(max_vel)
+        except ValueError:
+            raise TypeError("max_vel must be None or convertible to a float.")
     if max_model_vel <= 0:
         raise ValueError("max_model_vel must be greater than zero.")
     if max_vel is None:
@@ -462,9 +293,14 @@ def set_nt(
         raise TypeError("nt must be an int or None.")
     if step_ratio < 1:
         raise ValueError("step_ratio must be >= 1")
-    source_amplitudes_nt = next(
-        (a.shape[-1] for a in source_amplitudes if a is not None), None
+    source_amplitudes_not_none = next(
+        (a for a in source_amplitudes if a is not None), None
     )
+    source_amplitudes_nt = None
+    if source_amplitudes_not_none is not None:
+        if not isinstance(source_amplitudes_not_none, torch.Tensor):
+            raise TypeError("source_amplitudes must be a torch.Tensor or None.")
+        source_amplitudes_nt = source_amplitudes_not_none.shape[-1]
     if nt is None:
         if source_amplitudes_nt is None:
             raise RuntimeError("nt or source amplitudes must be specified")
@@ -493,8 +329,10 @@ def set_freq_taper_frac(freq_taper_frac: float) -> float:
     """
     Validate frequency taper fraction.
     """
-    if not isinstance(freq_taper_frac, (int, float)):
-        raise TypeError("freq_taper_frac must be a float or an int.")
+    try:
+        freq_taper_frac = float(freq_taper_frac)
+    except ValueError:
+        raise TypeError("freq_taper_frac must be convertible to a float.")
     if not 0.0 <= freq_taper_frac <= 1.0:
         raise ValueError(f"freq_taper_frac must be in [0, 1], got {freq_taper_frac}.")
     return freq_taper_frac
@@ -504,8 +342,10 @@ def set_time_pad_frac(time_pad_frac: float) -> float:
     """
     Validate time padding fraction.
     """
-    if not isinstance(time_pad_frac, (int, float)):
-        raise TypeError("time_pad_frac must be a float or an int.")
+    try:
+        time_pad_frac = float(time_pad_frac)
+    except ValueError:
+        raise TypeError("time_pad_frac must be convertible to a float.")
     if not 0.0 <= time_pad_frac <= 1.0:
         raise ValueError(f"time_pad_frac must be in [0, 1], got {time_pad_frac}.")
     return time_pad_frac
@@ -528,6 +368,10 @@ def check_source_amplitudes_locations_match(
                 "Each pair of source locations and amplitudes must both be None or both be non-None."
             )
         if amplitudes is not None and locations is not None:
+            if not isinstance(amplitudes, torch.Tensor):
+                raise TypeError("source_amplitudes must be a torch.Tensor.")
+            if not isinstance(locations, torch.Tensor):
+                raise TypeError("source_locations must be a torch.Tensor.")
             if amplitudes.shape[1] != locations.shape[1]:
                 raise RuntimeError(
                     f"Expected source amplitudes and locations to be the same size in the n_sources_per_shot dimension, got {amplitudes.shape[1]} and {locations.shape[1]}."
@@ -538,7 +382,10 @@ def set_source_amplitudes(
     source_amplitudes: Sequence[Optional[Tensor]],
     n_batch: int,
     nt: int,
-    resample_config: ResampleConfig,
+    step_ratio: int,
+    freq_taper_frac: float,
+    time_pad_frac: float,
+    time_taper: bool,
     device: torch.device,
     dtype: torch.dtype,
 ) -> List[Tensor]:
@@ -547,6 +394,8 @@ def set_source_amplitudes(
         if amplitudes is None:
             result.append(torch.empty(nt, n_batch, 0, device=device, dtype=dtype))
             continue
+        if not isinstance(amplitudes, torch.Tensor):
+            raise TypeError("source_amplitudes must be a torch.Tensor.")
         if amplitudes.ndim != 3:
             raise RuntimeError(
                 f"source amplitudes Tensors should have 3 dimensions, but found one with {amplitudes.ndim}."
@@ -563,18 +412,18 @@ def set_source_amplitudes(
             raise RuntimeError(
                 f"Expected source amplitudes to have size {n_batch} in the batch dimension, but found one with size {amplitudes.shape[0]}."
             )
-        if amplitudes.shape[2] * resample_config.step_ratio != nt:
+        if amplitudes.shape[2] * step_ratio != nt:
             raise RuntimeError(
-                f"Inconsistent number of time samples: Expected source amplitudes to have {nt // resample_config.step_ratio} time samples, but found one with {amplitudes.shape[2]}."
+                f"Inconsistent number of time samples: Expected source amplitudes to have {nt // step_ratio} time samples, but found one with {amplitudes.shape[2]}."
             )
         result.append(
             torch.movedim(
                 upsample(
                     amplitudes,
-                    step_ratio=resample_config.step_ratio,
-                    freq_taper_frac=resample_config.freq_taper_frac,
-                    time_pad_frac=resample_config.time_pad_frac,
-                    time_taper=resample_config.time_taper,
+                    step_ratio=step_ratio,
+                    freq_taper_frac=freq_taper_frac,
+                    time_pad_frac=time_pad_frac,
+                    time_taper=time_taper,
                 ),
                 -1,
                 0,
@@ -620,6 +469,10 @@ def cosine_taper_end(signal: Tensor, n_taper: int) -> Tensor:
     Returns:
         The tapered signal.
     """
+    if not isinstance(signal, Tensor):
+        raise TypeError("signal must be a torch.Tensor.")
+    if not isinstance(n_taper, int):
+        raise TypeError("n_taper must be an int.")
     if n_taper < 0:
         raise ValueError("n_taper must be non-negative.")
     taper = torch.ones(signal.shape[-1], dtype=signal.dtype, device=signal.device)
@@ -636,6 +489,8 @@ def cosine_taper_end(signal: Tensor, n_taper: int) -> Tensor:
 
 
 def zero_last_element_of_final_dimension(signal: Tensor) -> Tensor:
+    if not isinstance(signal, Tensor):
+        raise TypeError("signal must be a torch.Tensor.")
     if signal.numel() == 0:
         return signal
     zeroer = torch.ones(signal.shape[-1], dtype=signal.dtype, device=signal.device)
@@ -713,7 +568,7 @@ def upsample(
         signal = torch.nn.functional.pad(signal, (0, n_time_pad))
     nt = signal.shape[-1]
     up_nt = nt * step_ratio
-    signal_f = torch.fft.rfft(signal, norm="ortho") * math.sqrt(step_ratio)  # pylint: disable=not-callable
+    signal_f = torch.fft.rfft(signal, norm="ortho") * math.sqrt(step_ratio)
     if freq_taper_frac > 0.0:
         freq_taper_len = int(freq_taper_frac * signal_f.shape[-1])
         signal_f = cosine_taper_end(signal_f, freq_taper_len)
@@ -722,7 +577,7 @@ def upsample(
     pad_len = up_nt // 2 + 1 - signal_f.shape[-1]
     if pad_len > 0:
         signal_f = torch.nn.functional.pad(signal_f, (0, pad_len))
-    signal = torch.fft.irfft(signal_f, n=up_nt, norm="ortho")  # pylint: disable=not-callable
+    signal = torch.fft.irfft(signal_f, n=up_nt, norm="ortho")
     if n_time_pad > 0:
         signal = signal[..., : signal.shape[-1] - n_time_pad * step_ratio]
     if time_taper:
@@ -818,18 +673,18 @@ def downsample(
         signal = torch.nn.functional.pad(signal, (0, n_time_pad * step_ratio))
     nt = signal.shape[-1]
     down_nt = nt // step_ratio
-    signal_f = torch.fft.rfft(signal, norm="ortho")[..., : down_nt // 2 + 1]  # pylint: disable=not-callable
+    signal_f = torch.fft.rfft(signal, norm="ortho")[..., : down_nt // 2 + 1]
     if freq_taper_frac > 0.0:
         freq_taper_len = int(freq_taper_frac * signal_f.shape[-1])
         signal_f = cosine_taper_end(signal_f, freq_taper_len)
     elif signal_f.shape[-1] > 1:
         signal_f = zero_last_element_of_final_dimension(signal_f)
     if shift != 0.0:
-        freqs = torch.fft.rfftfreq(signal.shape[-1], device=signal.device)[  # pylint: disable=not-callable
+        freqs = torch.fft.rfftfreq(signal.shape[-1], device=signal.device)[
             : down_nt // 2 + 1
         ]
         signal_f *= torch.exp(-1j * 2 * math.pi * freqs * shift)
-    signal = torch.fft.irfft(signal_f, n=down_nt, norm="ortho") / math.sqrt(step_ratio)  # pylint: disable=not-callable
+    signal = torch.fft.irfft(signal_f, n=down_nt, norm="ortho") / math.sqrt(step_ratio)
     if n_time_pad > 0:
         signal = signal[..., : signal.shape[-1] - n_time_pad]
     return signal
@@ -839,7 +694,7 @@ def extract_survey(
     models: Sequence[Tensor],
     source_locations: Sequence[Optional[Tensor]],
     receiver_locations: Sequence[Optional[Tensor]],
-    wavefields: List[Optional[Tensor]],  # Changed from Sequence to List
+    wavefields: List[Optional[Tensor]],
     survey_pad: Optional[Union[int, Sequence[Optional[int]]]],
     origin: Optional[Sequence[int]],
     fd_pad: Sequence[int],
@@ -866,11 +721,13 @@ def extract_survey(
     the device and dtype of all models and locations are checked and they are
     made contiguous, and locations that are None are changed to be empty Tensors.
     """
+    if any(not isinstance(m, Tensor) for m in models):
+        raise TypeError("Models must be a torch.Tensor.")
     if survey_pad is not None and origin is not None:
         raise RuntimeError("survey_pad and origin cannot both be specified.")
-    locations: List[Optional[Tensor]] = list(source_locations) + list(
-        receiver_locations
-    )  # Explicitly type as List
+    locations: List[Optional[Tensor]] = (
+            list(source_locations) + list(receiver_locations)
+    )
     model_spatial_shape = list(models[0].shape[-n_dims:])
     check_locations_are_within_model(model_spatial_shape, locations)
     pad = [fd + pml for fd, pml in zip(fd_pad, pml_width)]
@@ -1251,6 +1108,8 @@ def extract_models(
     # Check all models have correct dimensions and consistent attributes
     spatial_shape = models[0].shape[-n_dims:]
     for model in models:
+        if not isinstance(model, Tensor):
+            raise TypeError("Models must be a torch.Tensor.")
         if model.ndim not in (n_dims, n_dims + 1):
             raise RuntimeError(f"Models must have {n_dims} or {n_dims + 1} dimensions.")
         if model.device != device:
@@ -1270,7 +1129,6 @@ def extract_models(
     region = (slice(None),) + tuple(slice(begin, end) for begin, end in extents)
     reversed_pad = reverse_pad(pad)
 
-    # New logic to handle n_batch = 0
     if n_batch == 0:
         return [
             torch.empty(0, *model[region].shape[1:], device=device, dtype=dtype)
@@ -1315,11 +1173,9 @@ def extract_locations(
     extracted_locations: List[Tensor] = []
     for location in locations:
         if location is not None:
-            # if location.device != device:
-            #    raise RuntimeError("Inconsistent device: Expected all Tensors be on device " + str(device) + ", but found a locations Tensor on device " + str(location.device) + ".")
 
-            # if location.dtype != dtype:
-            #    raise RuntimeError("Locations must have dtype " + str(dtype) + ", but found one with dtype " + str(location.dtype) + ".")
+            if not isinstance(location, Tensor):
+                raise TypeError("locations must be a torch.Tensor.")
             if location.numel() > 0 and eps < (location - location.long()).abs().max():
                 warnings.warn(
                     "Locations should be specified as integer numbers "
@@ -1381,7 +1237,7 @@ def extract_locations(
             for batch_idx in range(n_batch):
                 shot_locations = location_1d[batch_idx]
                 shot_locations = shot_locations[shot_locations != IGNORE_LOCATION]
-                if len(shot_locations) != len(shot_locations.unique()):  # type: ignore[no-untyped-call]
+                if len(shot_locations) != len(shot_locations.unique()):
                     raise RuntimeError(
                         name
                         + " locations must be unique within each shot. You cannot have two in the same cell, but in shot "
@@ -1393,7 +1249,7 @@ def extract_locations(
                         + " locations while only "
                         + str(len(shot_locations.unique()))
                         + " is/are unique."
-                    )  # type: ignore[no-untyped-call]
+                    )
 
             extracted_locations.append(location_1d.contiguous())
         else:
@@ -1404,7 +1260,7 @@ def extract_locations(
 
 
 def prepare_wavefields(
-    wavefields: List[Optional[Tensor]],  # Changed from Sequence to List
+    wavefields: List[Optional[Tensor]],
     extents: Sequence[Tuple[int, int]],
     pad: Sequence[int],
     n_batch: int,
@@ -1419,6 +1275,8 @@ def prepare_wavefields(
     ]
     for i, wavefield in enumerate(wavefields):
         if wavefield is not None:
+            if not isinstance(wavefield, Tensor):
+                raise TypeError("Wavefields must be a torch.Tensor.")
             if wavefield.device != device:
                 raise RuntimeError(
                     f"Inconsistent device: Expected all Tensors be on device {device}, but found a wavefield Tensor on device {wavefield.device}."
@@ -1481,10 +1339,15 @@ def cfl_condition_n(
             step_ratio:
                 The integer dt / inner_dt.
     """
-    if not isinstance(grid_spacing, Sequence) or not all(
-        isinstance(g, (int, float)) for g in grid_spacing
-    ):
-        raise TypeError("grid_spacing must be a sequence of floats or ints.")
+    try:
+        grid_spacing = list(grid_spacing)
+    except TypeError:
+        raise TypeError("grid_spacing must be a list of floats.")
+    for i, spacing in enumerate(grid_spacing):
+        try:
+            grid_spacing[i] = float(spacing)
+        except ValueError:
+            raise TypeError("grid_spacing must be a list of floats.")
     if not grid_spacing:
         raise ValueError("grid_spacing must not be empty.")
     for g in grid_spacing:
@@ -1509,7 +1372,7 @@ def cfl_condition_n(
 
 def cfl_condition(
     dy: float, dx: float, *args: Any, **kwargs: Any
-) -> Tuple[float, int]:  # Added type hints for *args and **kwargs
+) -> Tuple[float, int]:
     """Calculates the time step interval to obey the CFL condition for 2D models."""
     return cfl_condition_n([dy, dx], *args, **kwargs)
 
