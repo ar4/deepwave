@@ -6,7 +6,7 @@ described in the scalar module, with the addition of a scattered
 wavefield that uses 2 / v * scatter * dt^2 * wavefield as the source term.
 """
 
-from typing import Optional, Union, Tuple, Sequence, cast, List, Any
+from typing import Optional, Union, Tuple, Sequence, List, Any
 import torch
 from torch import Tensor
 from torch.autograd.function import once_differentiable
@@ -74,7 +74,8 @@ class ScalarBorn(torch.nn.Module):
         if not isinstance(scatter, Tensor):
             raise RuntimeError("scatter must be a torch.Tensor.")
         self.v = torch.nn.Parameter(v, requires_grad=v_requires_grad)
-        self.scatter = torch.nn.Parameter(scatter, requires_grad=scatter_requires_grad)
+        self.scatter = torch.nn.Parameter(scatter,
+                                          requires_grad=scatter_requires_grad)
         self.grid_spacing = grid_spacing
 
     def forward(
@@ -108,20 +109,20 @@ class ScalarBorn(torch.nn.Module):
         time_pad_frac: float = 0.0,
         time_taper: bool = False,
     ) -> Tuple[
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
     ]:
         """Perform forward propagation/modelling.
 
@@ -198,20 +199,20 @@ def scalar_born(
     time_pad_frac: float = 0.0,
     time_taper: bool = False,
 ) -> Tuple[
-    Tensor,
-    Tensor,
-    Tensor,
-    Tensor,
-    Tensor,
-    Tensor,
-    Tensor,
-    Tensor,
-    Tensor,
-    Tensor,
-    Tensor,
-    Tensor,
-    Tensor,
-    Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
 ]:
     """Scalar Born wave propagation (functional interface).
 
@@ -326,23 +327,18 @@ def scalar_born(
     mask = sources_i[0] == IGNORE_LOCATION
     sources_i_masked = sources_i[0].clone()
     sources_i_masked[mask] = 0
-    source_amplitudes[0] = (
-        -source_amplitudes[0]
-        * (models[0].view(-1, ny * nx).expand(n_shots, -1).gather(1, sources_i_masked))
-        ** 2
-        * dt**2
-    )
+    source_amplitudes[0] = (-source_amplitudes[0] * (models[0].view(
+        -1, ny * nx).expand(n_shots, -1).gather(1, sources_i_masked))**2 *
+                            dt**2)
     # Scattered (multiply source amplitudes by -2*v*scatter*dt^2)
     mask = sources_i[1] == IGNORE_LOCATION
     sources_i_masked = sources_i[1].clone()
     sources_i_masked[mask] = 0
-    source_amplitudes[1] = (
-        -2
-        * source_amplitudes[1]
-        * (models[0].view(-1, ny * nx).expand(n_shots, -1).gather(1, sources_i_masked))
-        * (models[1].view(-1, ny * nx).expand(n_shots, -1).gather(1, sources_i_masked))
-        * dt**2
-    )
+    source_amplitudes[1] = (-2 * source_amplitudes[1] * (models[0].view(
+        -1, ny * nx).expand(n_shots, -1).gather(1, sources_i_masked)) *
+                            (models[1].view(-1, ny * nx).expand(
+                                n_shots, -1).gather(1, sources_i_masked)) *
+                            dt**2)
 
     pml_profiles = set_pml_profiles(
         pml_width,
@@ -390,15 +386,11 @@ def scalar_born(
     )
 
     receiver_amplitudes = downsample_and_movedim(receiver_amplitudes,
-        step_ratio,
-        freq_taper_frac,
-        time_pad_frac,
-        time_taper)
+                                                 step_ratio, freq_taper_frac,
+                                                 time_pad_frac, time_taper)
     receiver_amplitudessc = downsample_and_movedim(receiver_amplitudessc,
-        step_ratio,
-        freq_taper_frac,
-        time_pad_frac,
-        time_taper)
+                                                   step_ratio, freq_taper_frac,
+                                                   time_pad_frac, time_taper)
 
     return (
         wfc,
@@ -419,6 +411,7 @@ def scalar_born(
 
 
 class ScalarBornForwardFunc(torch.autograd.Function):
+
     @staticmethod
     def forward(
         ctx: Any,
@@ -457,22 +450,22 @@ class ScalarBornForwardFunc(torch.autograd.Function):
         pml_width: List[int],
         n_shots: int,
     ) -> Tuple[
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
     ]:
-        forward = None # Initialize to None to prevent E0601
+        forward = None  # Initialize to None to prevent E0601
         v = v.contiguous()
         scatter = scatter.contiguous()
         source_amplitudes = source_amplitudes.contiguous()
@@ -493,14 +486,22 @@ class ScalarBornForwardFunc(torch.autograd.Function):
         wfp = create_or_pad(wfp, fd_pad, v.device, v.dtype, size_with_batch)
         psiy = create_or_pad(psiy, fd_pad, v.device, v.dtype, size_with_batch)
         psix = create_or_pad(psix, fd_pad, v.device, v.dtype, size_with_batch)
-        zetay = create_or_pad(zetay, fd_pad, v.device, v.dtype, size_with_batch)
-        zetax = create_or_pad(zetax, fd_pad, v.device, v.dtype, size_with_batch)
-        wfcsc = create_or_pad(wfcsc, fd_pad, v.device, v.dtype, size_with_batch)
-        wfpsc = create_or_pad(wfpsc, fd_pad, v.device, v.dtype, size_with_batch)
-        psiysc = create_or_pad(psiysc, fd_pad, v.device, v.dtype, size_with_batch)
-        psixsc = create_or_pad(psixsc, fd_pad, v.device, v.dtype, size_with_batch)
-        zetaysc = create_or_pad(zetaysc, fd_pad, v.device, v.dtype, size_with_batch)
-        zetaxsc = create_or_pad(zetaxsc, fd_pad, v.device, v.dtype, size_with_batch)
+        zetay = create_or_pad(zetay, fd_pad, v.device, v.dtype,
+                              size_with_batch)
+        zetax = create_or_pad(zetax, fd_pad, v.device, v.dtype,
+                              size_with_batch)
+        wfcsc = create_or_pad(wfcsc, fd_pad, v.device, v.dtype,
+                              size_with_batch)
+        wfpsc = create_or_pad(wfpsc, fd_pad, v.device, v.dtype,
+                              size_with_batch)
+        psiysc = create_or_pad(psiysc, fd_pad, v.device, v.dtype,
+                               size_with_batch)
+        psixsc = create_or_pad(psixsc, fd_pad, v.device, v.dtype,
+                               size_with_batch)
+        zetaysc = create_or_pad(zetaysc, fd_pad, v.device, v.dtype,
+                                size_with_batch)
+        zetaxsc = create_or_pad(zetaxsc, fd_pad, v.device, v.dtype,
+                                size_with_batch)
         psiy = zero_interior(psiy, fd_pad, pml_width, True)
         psix = zero_interior(psix, fd_pad, pml_width, False)
         zetay = zero_interior(zetay, fd_pad, pml_width, True)
@@ -651,24 +652,15 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                 aux,
             )
 
-        if (
-            v.requires_grad
-            or scatter.requires_grad
-            or source_amplitudes.requires_grad
-            or source_amplitudessc.requires_grad
-            or wfc.requires_grad
-            or wfp.requires_grad
-            or psiy.requires_grad
-            or psix.requires_grad
-            or zetay.requires_grad
-            or zetax.requires_grad
-            or wfcsc.requires_grad
-            or wfpsc.requires_grad
-            or psiysc.requires_grad
-            or psixsc.requires_grad
-            or zetaysc.requires_grad
-            or zetaxsc.requires_grad
-        ):
+        if (v.requires_grad or scatter.requires_grad
+                or source_amplitudes.requires_grad
+                or source_amplitudessc.requires_grad or wfc.requires_grad
+                or wfp.requires_grad or psiy.requires_grad
+                or psix.requires_grad or zetay.requires_grad
+                or zetax.requires_grad or wfcsc.requires_grad
+                or wfpsc.requires_grad or psiysc.requires_grad
+                or psixsc.requires_grad or zetaysc.requires_grad
+                or zetaxsc.requires_grad):
             ctx.save_for_backward(
                 v,
                 scatter,
@@ -694,16 +686,10 @@ class ScalarBornForwardFunc(torch.autograd.Function):
             ctx.pml_width = pml_width
             ctx.source_amplitudes_requires_grad = source_amplitudes.requires_grad
             ctx.source_amplitudessc_requires_grad = source_amplitudessc.requires_grad
-            ctx.non_sc = (
-                v.requires_grad
-                or source_amplitudes.requires_grad
-                or wfc.requires_grad
-                or wfp.requires_grad
-                or psiy.requires_grad
-                or psix.requires_grad
-                or zetay.requires_grad
-                or zetax.requires_grad
-            )
+            ctx.non_sc = (v.requires_grad or source_amplitudes.requires_grad
+                          or wfc.requires_grad or wfp.requires_grad
+                          or psiy.requires_grad or psix.requires_grad
+                          or zetay.requires_grad or zetax.requires_grad)
 
         s = (slice(None), slice(fd_pad, -fd_pad), slice(fd_pad, -fd_pad))
         if nt % 2 == 0:
@@ -759,40 +745,40 @@ class ScalarBornForwardFunc(torch.autograd.Function):
         grad_r: Tensor,
         grad_rsc: Tensor,
     ) -> Tuple[
-        Optional[Tensor],
-        Optional[Tensor],
-        Optional[Tensor],
-        Optional[Tensor],
-        Optional[Tensor],
-        Optional[Tensor],
-        Optional[Tensor],
-        Optional[Tensor],
-        Optional[Tensor],
-        Optional[Tensor],
-        Optional[Tensor],
-        Optional[Tensor],
-        Optional[Tensor],
-        Optional[Tensor],
-        Optional[Tensor],
-        Optional[Tensor],
-        Optional[Tensor],
-        Optional[Tensor],
-        Optional[Tensor],
-        Optional[Tensor],
-        Optional[Tensor],
-        Optional[Tensor],
-        Optional[Tensor],
-        Optional[Tensor],
-        Optional[Tensor],
-        Optional[Tensor],
-        Optional[Tensor],
-        Optional[Tensor],
-        Optional[Tensor],
-        Optional[Tensor],
-        Optional[Tensor],
-        Optional[Tensor],
-        Optional[Tensor],
-        Optional[Tensor],
+            Optional[Tensor],
+            Optional[Tensor],
+            Optional[Tensor],
+            Optional[Tensor],
+            Optional[Tensor],
+            Optional[Tensor],
+            Optional[Tensor],
+            Optional[Tensor],
+            Optional[Tensor],
+            Optional[Tensor],
+            Optional[Tensor],
+            Optional[Tensor],
+            Optional[Tensor],
+            Optional[Tensor],
+            Optional[Tensor],
+            Optional[Tensor],
+            Optional[Tensor],
+            Optional[Tensor],
+            Optional[Tensor],
+            Optional[Tensor],
+            Optional[Tensor],
+            Optional[Tensor],
+            Optional[Tensor],
+            Optional[Tensor],
+            Optional[Tensor],
+            Optional[Tensor],
+            Optional[Tensor],
+            Optional[Tensor],
+            Optional[Tensor],
+            Optional[Tensor],
+            Optional[Tensor],
+            Optional[Tensor],
+            Optional[Tensor],
+            Optional[Tensor],
     ]:
         (
             v,
@@ -846,12 +832,18 @@ class ScalarBornForwardFunc(torch.autograd.Function):
 
         size_with_batch = (n_shots, *v.shape[-2:])
         if non_sc:
-            wfc = create_or_pad(wfc, fd_pad, v.device, v.dtype, size_with_batch)
-            wfp = create_or_pad(wfp, fd_pad, v.device, v.dtype, size_with_batch)
-            psiy = create_or_pad(psiy, fd_pad, v.device, v.dtype, size_with_batch)
-            psix = create_or_pad(psix, fd_pad, v.device, v.dtype, size_with_batch)
-            zetay = create_or_pad(zetay, fd_pad, v.device, v.dtype, size_with_batch)
-            zetax = create_or_pad(zetax, fd_pad, v.device, v.dtype, size_with_batch)
+            wfc = create_or_pad(wfc, fd_pad, v.device, v.dtype,
+                                size_with_batch)
+            wfp = create_or_pad(wfp, fd_pad, v.device, v.dtype,
+                                size_with_batch)
+            psiy = create_or_pad(psiy, fd_pad, v.device, v.dtype,
+                                 size_with_batch)
+            psix = create_or_pad(psix, fd_pad, v.device, v.dtype,
+                                 size_with_batch)
+            zetay = create_or_pad(zetay, fd_pad, v.device, v.dtype,
+                                  size_with_batch)
+            zetax = create_or_pad(zetax, fd_pad, v.device, v.dtype,
+                                  size_with_batch)
             psiy = zero_interior(psiy, fd_pad, pml_width, True)
             psix = zero_interior(psix, fd_pad, pml_width, False)
             zetay = zero_interior(zetay, fd_pad, pml_width, True)
@@ -860,12 +852,18 @@ class ScalarBornForwardFunc(torch.autograd.Function):
             psixn = torch.zeros_like(psix)
             zetayn = torch.zeros_like(zetay)
             zetaxn = torch.zeros_like(zetax)
-        wfcsc = create_or_pad(wfcsc, fd_pad, v.device, v.dtype, size_with_batch)
-        wfpsc = create_or_pad(wfpsc, fd_pad, v.device, v.dtype, size_with_batch)
-        psiysc = create_or_pad(psiysc, fd_pad, v.device, v.dtype, size_with_batch)
-        psixsc = create_or_pad(psixsc, fd_pad, v.device, v.dtype, size_with_batch)
-        zetaysc = create_or_pad(zetaysc, fd_pad, v.device, v.dtype, size_with_batch)
-        zetaxsc = create_or_pad(zetaxsc, fd_pad, v.device, v.dtype, size_with_batch)
+        wfcsc = create_or_pad(wfcsc, fd_pad, v.device, v.dtype,
+                              size_with_batch)
+        wfpsc = create_or_pad(wfpsc, fd_pad, v.device, v.dtype,
+                              size_with_batch)
+        psiysc = create_or_pad(psiysc, fd_pad, v.device, v.dtype,
+                               size_with_batch)
+        psixsc = create_or_pad(psixsc, fd_pad, v.device, v.dtype,
+                               size_with_batch)
+        zetaysc = create_or_pad(zetaysc, fd_pad, v.device, v.dtype,
+                                size_with_batch)
+        zetaxsc = create_or_pad(zetaxsc, fd_pad, v.device, v.dtype,
+                                size_with_batch)
         psiysc = zero_interior(psiysc, fd_pad, pml_width, True)
         psixsc = zero_interior(psixsc, fd_pad, pml_width, False)
         zetaysc = zero_interior(zetaysc, fd_pad, pml_width, True)
@@ -950,12 +948,8 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                 grad_v_tmp.resize_(aux, *v.shape[-2:])
                 grad_v_tmp.fill_(0)
                 grad_v_tmp_ptr = grad_v_tmp.data_ptr()
-            if (
-                scatter.requires_grad
-                and not scatter_batched
-                and aux > 1
-                and USE_OPENMP
-            ):
+            if (scatter.requires_grad and not scatter_batched and aux > 1
+                    and USE_OPENMP):
                 grad_scatter_tmp.resize_(aux, *scatter.shape[-2:])
                 grad_scatter_tmp.fill_(0)
                 grad_scatter_tmp_ptr = grad_scatter_tmp.data_ptr()
@@ -1183,44 +1177,7 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                 None,
                 None,
             )
-        else:
-            if nt % 2 == 0:
-                return (
-                    None,
-                    grad_scatter,
-                    None,
-                    grad_fsc,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    wfcsc[s],
-                    -wfpsc[s],
-                    psiysc[s],
-                    psixsc[s],
-                    zetaysc[s],
-                    zetaxsc[s],
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                )
+        if nt % 2 == 0:
             return (
                 None,
                 grad_scatter,
@@ -1232,12 +1189,12 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                 None,
                 None,
                 None,
-                wfpsc[s],
-                -wfcsc[s],
-                psiynsc[s],
-                psixnsc[s],
-                zetaynsc[s],
-                zetaxnsc[s],
+                wfcsc[s],
+                -wfpsc[s],
+                psiysc[s],
+                psixsc[s],
+                zetaysc[s],
+                zetaxsc[s],
                 None,
                 None,
                 None,
@@ -1257,24 +1214,60 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                 None,
                 None,
             )
+        return (
+            None,
+            grad_scatter,
+            None,
+            grad_fsc,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            wfpsc[s],
+            -wfcsc[s],
+            psiynsc[s],
+            psixnsc[s],
+            zetaynsc[s],
+            zetaxnsc[s],
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
 
 
 def scalar_born_func(
     *args: Any,
 ) -> Tuple[
-    Tensor,
-    Tensor,
-    Tensor,
-    Tensor,
-    Tensor,
-    Tensor,
-    Tensor,
-    Tensor,
-    Tensor,
-    Tensor,
-    Tensor,
-    Tensor,
-    Tensor,
-    Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
 ]:
     return ScalarBornForwardFunc.apply(*args)

@@ -372,7 +372,7 @@ def scalar(
      sources_i, receivers_i,
      grid_spacing, dt, nt, n_shots,
      step_ratio, model_gradient_sampling_interval,
-     accuracy, pml_width, pml_freq, max_vel, 
+     accuracy, pml_width, pml_freq, max_vel,
      step_ratio, freq_taper_frac, time_pad_frac, time_taper, device, dtype) = \
         setup_propagator([v], ['replicate'], grid_spacing, dt,
                          [source_amplitudes], [source_locations],
@@ -396,7 +396,7 @@ def scalar(
     sources_i_masked[mask] = 0
     source_amplitudes[0] = (-source_amplitudes[0] * (models[0].view(
         -1, ny * nx).expand(n_shots, -1).gather(1, sources_i_masked))**2 *
-                              dt**2)
+                            dt**2)
 
     pml_profiles = set_pml_profiles(pml_width, accuracy, fd_pad, dt,
                                     grid_spacing, max_vel, dtype, device,
@@ -408,15 +408,14 @@ def scalar(
         )
 
     receiver_amplitudes = downsample_and_movedim(receiver_amplitudes,
-        step_ratio,
-        freq_taper_frac,
-        time_pad_frac,
-        time_taper)
+                                                 step_ratio, freq_taper_frac,
+                                                 time_pad_frac, time_taper)
 
     return wfc, wfp, psiy, psix, zetay, zetax, receiver_amplitudes
 
 
 class ScalarForwardFunc(torch.autograd.Function):
+
     @staticmethod
     def forward(
         ctx: Any,
@@ -445,16 +444,10 @@ class ScalarForwardFunc(torch.autograd.Function):
         pml_width: List[int],
         n_shots: int,
     ) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
-        if (
-            v.requires_grad
-            or source_amplitudes.requires_grad
-            or wfc.requires_grad
-            or wfp.requires_grad
-            or psiy.requires_grad
-            or psix.requires_grad
-            or zetay.requires_grad
-            or zetax.requires_grad
-        ):
+        if (v.requires_grad or source_amplitudes.requires_grad
+                or wfc.requires_grad or wfp.requires_grad or psiy.requires_grad
+                or psix.requires_grad or zetay.requires_grad
+                or zetax.requires_grad):
             ctx.save_for_backward(
                 v,
                 ay,
@@ -500,8 +493,10 @@ class ScalarForwardFunc(torch.autograd.Function):
         wfp = create_or_pad(wfp, fd_pad, v.device, v.dtype, size_with_batch)
         psiy = create_or_pad(psiy, fd_pad, v.device, v.dtype, size_with_batch)
         psix = create_or_pad(psix, fd_pad, v.device, v.dtype, size_with_batch)
-        zetay = create_or_pad(zetay, fd_pad, v.device, v.dtype, size_with_batch)
-        zetax = create_or_pad(zetax, fd_pad, v.device, v.dtype, size_with_batch)
+        zetay = create_or_pad(zetay, fd_pad, v.device, v.dtype,
+                              size_with_batch)
+        zetax = create_or_pad(zetax, fd_pad, v.device, v.dtype,
+                              size_with_batch)
         psiy = zero_interior(psiy, fd_pad, pml_width, True)
         psix = zero_interior(psix, fd_pad, pml_width, False)
         zetay = zero_interior(zetay, fd_pad, pml_width, True)
@@ -683,47 +678,45 @@ class ScalarForwardFunc(torch.autograd.Function):
         source_amplitudes_requires_grad = ctx.source_amplitudes_requires_grad
         dwdv = ctx.dwdv
 
-        return (
-            ScalarBackwardFunc.apply(
-                gwfc,
-                gwfp,
-                gpsiy,
-                gpsix,
-                gzetay,
-                gzetax,
-                grad_r,
-                v,
-                ay,
-                ax,
-                by,
-                bx,
-                dbydy,
-                dbxdx,
-                sources_i,
-                receivers_i,
-                dwdv,
-                source_amplitudes,
-                wfc,
-                wfp,
-                psiy,
-                psix,
-                zetay,
-                zetax,
-                dy,
-                dx,
-                dt,
-                nt,
-                n_shots,
-                step_ratio,
-                accuracy,
-                pml_width,
-                source_amplitudes_requires_grad,
-            )
-            + (None,) * 16
-        )
+        return (ScalarBackwardFunc.apply(
+            gwfc,
+            gwfp,
+            gpsiy,
+            gpsix,
+            gzetay,
+            gzetax,
+            grad_r,
+            v,
+            ay,
+            ax,
+            by,
+            bx,
+            dbydy,
+            dbxdx,
+            sources_i,
+            receivers_i,
+            dwdv,
+            source_amplitudes,
+            wfc,
+            wfp,
+            psiy,
+            psix,
+            zetay,
+            zetax,
+            dy,
+            dx,
+            dt,
+            nt,
+            n_shots,
+            step_ratio,
+            accuracy,
+            pml_width,
+            source_amplitudes_requires_grad,
+        ) + (None, ) * 16)
 
 
 class ScalarBackwardFunc(torch.autograd.Function):
+
     @staticmethod
     def forward(
         ctx: Any,
@@ -819,10 +812,14 @@ class ScalarBackwardFunc(torch.autograd.Function):
         size_with_batch = (n_shots, *v.shape[-2:])
         gwfc = create_or_pad(gwfc, fd_pad, v.device, v.dtype, size_with_batch)
         gwfp = create_or_pad(gwfp, fd_pad, v.device, v.dtype, size_with_batch)
-        gpsiy = create_or_pad(gpsiy, fd_pad, v.device, v.dtype, size_with_batch)
-        gpsix = create_or_pad(gpsix, fd_pad, v.device, v.dtype, size_with_batch)
-        gzetay = create_or_pad(gzetay, fd_pad, v.device, v.dtype, size_with_batch)
-        gzetax = create_or_pad(gzetax, fd_pad, v.device, v.dtype, size_with_batch)
+        gpsiy = create_or_pad(gpsiy, fd_pad, v.device, v.dtype,
+                              size_with_batch)
+        gpsix = create_or_pad(gpsix, fd_pad, v.device, v.dtype,
+                              size_with_batch)
+        gzetay = create_or_pad(gzetay, fd_pad, v.device, v.dtype,
+                               size_with_batch)
+        gzetax = create_or_pad(gzetax, fd_pad, v.device, v.dtype,
+                               size_with_batch)
         gpsiy = zero_interior(gpsiy, fd_pad, pml_width, True)
         gpsix = zero_interior(gpsix, fd_pad, pml_width, False)
         gzetay = zero_interior(gzetay, fd_pad, pml_width, True)
@@ -1051,14 +1048,22 @@ class ScalarBackwardFunc(torch.autograd.Function):
         wfp = create_or_pad(wfp, fd_pad, v.device, v.dtype, size_with_batch)
         psiy = create_or_pad(psiy, fd_pad, v.device, v.dtype, size_with_batch)
         psix = create_or_pad(psix, fd_pad, v.device, v.dtype, size_with_batch)
-        zetay = create_or_pad(zetay, fd_pad, v.device, v.dtype, size_with_batch)
-        zetax = create_or_pad(zetax, fd_pad, v.device, v.dtype, size_with_batch)
-        ggwfc = create_or_pad(ggwfc, fd_pad, v.device, v.dtype, size_with_batch)
-        ggwfp = create_or_pad(ggwfp, fd_pad, v.device, v.dtype, size_with_batch)
-        ggpsiy = create_or_pad(ggpsiy, fd_pad, v.device, v.dtype, size_with_batch)
-        ggpsix = create_or_pad(ggpsix, fd_pad, v.device, v.dtype, size_with_batch)
-        ggzetay = create_or_pad(ggzetay, fd_pad, v.device, v.dtype, size_with_batch)
-        ggzetax = create_or_pad(ggzetax, fd_pad, v.device, v.dtype, size_with_batch)
+        zetay = create_or_pad(zetay, fd_pad, v.device, v.dtype,
+                              size_with_batch)
+        zetax = create_or_pad(zetax, fd_pad, v.device, v.dtype,
+                              size_with_batch)
+        ggwfc = create_or_pad(ggwfc, fd_pad, v.device, v.dtype,
+                              size_with_batch)
+        ggwfp = create_or_pad(ggwfp, fd_pad, v.device, v.dtype,
+                              size_with_batch)
+        ggpsiy = create_or_pad(ggpsiy, fd_pad, v.device, v.dtype,
+                               size_with_batch)
+        ggpsix = create_or_pad(ggpsix, fd_pad, v.device, v.dtype,
+                               size_with_batch)
+        ggzetay = create_or_pad(ggzetay, fd_pad, v.device, v.dtype,
+                                size_with_batch)
+        ggzetax = create_or_pad(ggzetax, fd_pad, v.device, v.dtype,
+                                size_with_batch)
         psiy = zero_interior(psiy, fd_pad, pml_width, True)
         psix = zero_interior(psix, fd_pad, pml_width, False)
         zetay = zero_interior(zetay, fd_pad, pml_width, True)
@@ -1217,16 +1222,18 @@ class ScalarBackwardFunc(torch.autograd.Function):
         n_receivers_per_shot = bwd_receivers_i.numel() // n_shots
         n_greceivers_per_shot = bwd_greceivers_i.numel() // n_shots
 
-        wfc = create_or_pad(torch.empty(0), fd_pad, v.device, v.dtype, size_with_batch)
-        wfp = create_or_pad(torch.empty(0), fd_pad, v.device, v.dtype, size_with_batch)
-        psiy = create_or_pad(torch.empty(0), fd_pad, v.device, v.dtype, size_with_batch)
-        psix = create_or_pad(torch.empty(0), fd_pad, v.device, v.dtype, size_with_batch)
-        zetay = create_or_pad(
-            torch.empty(0), fd_pad, v.device, v.dtype, size_with_batch
-        )
-        zetax = create_or_pad(
-            torch.empty(0), fd_pad, v.device, v.dtype, size_with_batch
-        )
+        wfc = create_or_pad(torch.empty(0), fd_pad, v.device, v.dtype,
+                            size_with_batch)
+        wfp = create_or_pad(torch.empty(0), fd_pad, v.device, v.dtype,
+                            size_with_batch)
+        psiy = create_or_pad(torch.empty(0), fd_pad, v.device, v.dtype,
+                             size_with_batch)
+        psix = create_or_pad(torch.empty(0), fd_pad, v.device, v.dtype,
+                             size_with_batch)
+        zetay = create_or_pad(torch.empty(0), fd_pad, v.device, v.dtype,
+                              size_with_batch)
+        zetax = create_or_pad(torch.empty(0), fd_pad, v.device, v.dtype,
+                              size_with_batch)
         psiy = zero_interior(psiy, fd_pad, pml_width, True)
         psix = zero_interior(psix, fd_pad, pml_width, False)
         zetay = zero_interior(zetay, fd_pad, pml_width, True)
@@ -1237,10 +1244,14 @@ class ScalarBackwardFunc(torch.autograd.Function):
         zetaxn = torch.zeros_like(zetax)
         gwfc = create_or_pad(gwfc, fd_pad, v.device, v.dtype, size_with_batch)
         gwfp = create_or_pad(gwfp, fd_pad, v.device, v.dtype, size_with_batch)
-        gpsiy = create_or_pad(gpsiy, fd_pad, v.device, v.dtype, size_with_batch)
-        gpsix = create_or_pad(gpsix, fd_pad, v.device, v.dtype, size_with_batch)
-        gzetay = create_or_pad(gzetay, fd_pad, v.device, v.dtype, size_with_batch)
-        gzetax = create_or_pad(gzetax, fd_pad, v.device, v.dtype, size_with_batch)
+        gpsiy = create_or_pad(gpsiy, fd_pad, v.device, v.dtype,
+                              size_with_batch)
+        gpsix = create_or_pad(gpsix, fd_pad, v.device, v.dtype,
+                              size_with_batch)
+        gzetay = create_or_pad(gzetay, fd_pad, v.device, v.dtype,
+                               size_with_batch)
+        gzetax = create_or_pad(gzetax, fd_pad, v.device, v.dtype,
+                               size_with_batch)
         gpsiy = zero_interior(gpsiy, fd_pad, pml_width, True)
         gpsix = zero_interior(gpsix, fd_pad, pml_width, False)
         gzetay = zero_interior(gzetay, fd_pad, pml_width, True)

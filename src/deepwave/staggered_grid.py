@@ -23,14 +23,12 @@ def set_pml_profiles(
         pml_width[2],
         nx - 1 - pml_width[3],
     ]
-    max_pml = max(
-        [
-            pml_width[0] * grid_spacing[0],
-            pml_width[1] * grid_spacing[0],
-            pml_width[2] * grid_spacing[1],
-            pml_width[3] * grid_spacing[1],
-        ]
-    )
+    max_pml = max([
+        pml_width[0] * grid_spacing[0],
+        pml_width[1] * grid_spacing[0],
+        pml_width[2] * grid_spacing[1],
+        pml_width[3] * grid_spacing[1],
+    ])
 
     ay, by = setup_pml(
         pml_width[:2],

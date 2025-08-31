@@ -26,11 +26,8 @@ def _get_hicks_for_one_location_dim(
         raise RuntimeError("halfwidth must be in [1, 10].")
     if beta < 0:
         raise RuntimeError("beta must be non-negative.")
-    if (
-        not isinstance(free_surface_loc, List)
-        or len(free_surface_loc) != 2
-        or not all(isinstance(f, (int, float)) for f in free_surface_loc)
-    ):
+    if (not isinstance(free_surface_loc, List) or len(free_surface_loc) != 2
+            or not all(isinstance(f, (int, float)) for f in free_surface_loc)):
         raise RuntimeError("extent must be a list of two floats.")
     if size <= 0:
         raise RuntimeError("n_grid_points must be positive.")
@@ -39,57 +36,45 @@ def _get_hicks_for_one_location_dim(
         weights = torch.ones(1, dtype=beta.dtype, device=beta.device)
     else:
         key = (int((location - int(location)) / eps), halfwidth, int(monopole))
-        x = (
-            torch.arange(
-                -halfwidth + 1, halfwidth + 1, dtype=beta.dtype, device=beta.device
-            )
-            - location
-            + int(location)
-        )
+        x = (torch.arange(-halfwidth + 1,
+                          halfwidth + 1,
+                          dtype=beta.dtype,
+                          device=beta.device) - location + int(location))
         locations = (location + x).long()
 
         if key in hicks_weight_cache:
             weights = hicks_weight_cache[key].clone()
         else:
             if monopole:
-                weights = (
-                    torch.sinc(x)
-                    * torch.i0(beta * (1 - (x / halfwidth) ** 2).sqrt())
-                    / torch.i0(beta)
-                )
+                weights = (torch.sinc(x) *
+                           torch.i0(beta * (1 - (x / halfwidth)**2).sqrt()) /
+                           torch.i0(beta))
             else:
-                weights = (
-                    (torch.cos(math.pi * x) - torch.sinc(x))
-                    / (x**2 + eps)
-                    * x
-                    * torch.i0(beta * (1 - (x / halfwidth) ** 2).sqrt())
-                    / torch.i0(beta)
-                )
+                weights = ((torch.cos(math.pi * x) - torch.sinc(x)) /
+                           (x**2 + eps) * x *
+                           torch.i0(beta * (1 - (x / halfwidth)**2).sqrt()) /
+                           torch.i0(beta))
             hicks_weight_cache[key] = weights
         if free_surface[0] and locations[0].item() < free_surface_loc[0]:
             # idx0: first index at, or on model side of, free surface
             # idx1: first index on model side of free surface
             idx0 = int(math.ceil(free_surface_loc[0] - locations[0].item()))
             idx1 = idx0 + int(
-                math.isclose(round(free_surface_loc[0]), free_surface_loc[0])
-            )
+                math.isclose(round(free_surface_loc[0]), free_surface_loc[0]))
             locations = locations[idx0:]
             flipped_weights = weights[:idx1].flip(0)
-            weights[idx0 : idx0 + len(flipped_weights)] -= flipped_weights
+            weights[idx0:idx0 + len(flipped_weights)] -= flipped_weights
             weights = weights[idx0:]
         if free_surface[1] and locations[-1].item() > free_surface_loc[1]:
-            idx0 = (
-                len(weights)
-                - 1
-                - int(math.ceil(locations[-1].item() - free_surface_loc[1]))
-            )
+            idx0 = (len(weights) - 1 -
+                    int(math.ceil(locations[-1].item() - free_surface_loc[1])))
             idx1 = idx0 - int(
-                math.isclose(round(free_surface_loc[1]), free_surface_loc[1])
-            )
-            locations = locations[: idx0 + 1]
-            flipped_weights = weights[idx1 + 1 :].flip(0)
-            weights[idx0 + 1 - len(flipped_weights) : idx0 + 1] -= flipped_weights
-            weights = weights[: idx0 + 1]
+                math.isclose(round(free_surface_loc[1]), free_surface_loc[1]))
+            locations = locations[:idx0 + 1]
+            flipped_weights = weights[idx1 + 1:].flip(0)
+            weights[idx0 + 1 - len(flipped_weights):idx0 +
+                    1] -= flipped_weights
+            weights = weights[:idx0 + 1]
     return locations, weights
 
 
@@ -161,21 +146,22 @@ def _get_hicks_locations_and_weights(
         weights.append(shot_weights)
         n_per_shot_hicks = max(n_per_shot_hicks, n_hicks_locations)
         hicks_locations_list.append(list(locations_dict.keys()))
-    hicks_locations = (
-        torch.ones(
-            n_shots, n_per_shot_hicks, 2, dtype=torch.long, device=locations.device
-        )
-        * IGNORE_LOCATION
-    )
+    hicks_locations = (torch.ones(n_shots,
+                                  n_per_shot_hicks,
+                                  2,
+                                  dtype=torch.long,
+                                  device=locations.device) * IGNORE_LOCATION)
     for shotidx in range(n_shots):
         for i, loc in enumerate(hicks_locations_list[shotidx]):
-            hicks_locations[shotidx, i] = torch.tensor(loc).to(locations.device)
+            hicks_locations[shotidx,
+                            i] = torch.tensor(loc).to(locations.device)
 
     return hicks_locations, hicks_idxs, weights
 
 
-def _check_shot_idxs(amplitudes: Tensor, shot_idxs: Optional[Tensor] = None) -> None:
-    if shot_idxs is not None and shot_idxs.shape != (len(amplitudes),):
+def _check_shot_idxs(amplitudes: Tensor,
+                     shot_idxs: Optional[Tensor] = None) -> None:
+    if shot_idxs is not None and shot_idxs.shape != (len(amplitudes), ):
         raise RuntimeError("shot_idxs must have the same length as amplitudes")
 
 
@@ -254,11 +240,10 @@ class Hicks:
             raise RuntimeError("halfwidth must be in [1, 10]")
         if free_surfaces is None:
             free_surfaces = [False, False, False, False]
-        if free_surfaces is not None and (
-            not isinstance(free_surfaces, list)
-            or len(free_surfaces) != 4
-            or any(not isinstance(f, bool) for f in free_surfaces)
-        ):
+        if free_surfaces is not None and (not isinstance(free_surfaces, list)
+                                          or len(free_surfaces) != 4
+                                          or any(not isinstance(f, bool)
+                                                 for f in free_surfaces)):
             raise RuntimeError("free_surface must be a list of four bools")
         if any(free_surfaces) and model_shape is None:
             raise RuntimeError(
@@ -266,16 +251,18 @@ class Hicks:
             )
         if model_shape is not None:
             if not isinstance(model_shape, list) or len(model_shape) != 2:
-                raise RuntimeError("model_shape must be a list with two int entries")
+                raise RuntimeError(
+                    "model_shape must be a list with two int entries")
             try:
                 model_shape = [int(v) for v in model_shape]
             except (ValueError, TypeError) as exc:
                 raise TypeError(
-                    "model_shape entries must be convertible to int"
-                ) from exc
+                    "model_shape entries must be convertible to int") from exc
         if free_surface_locs is not None:
-            if not isinstance(free_surface_locs, list) or len(free_surface_locs) != 4:
-                raise RuntimeError("free_surface_locs must be a list of four floats")
+            if not isinstance(free_surface_locs,
+                              list) or len(free_surface_locs) != 4:
+                raise RuntimeError(
+                    "free_surface_locs must be a list of four floats")
             try:
                 free_surface_locs = [float(v) for v in free_surface_locs]
             except (ValueError, TypeError) as exc:
@@ -285,19 +272,22 @@ class Hicks:
         if model_shape is None:
             model_shape = [-1, -1]
         if free_surface_locs is None:
-            free_surface_locs = [-0.5, model_shape[0] - 0.5, -0.5, model_shape[1] - 0.5]
-        if isinstance(monopole, Tensor) and (
-            monopole.shape[0] != locations.shape[0]
-            or monopole.shape[1] != locations.shape[1]
-        ):
-            raise RuntimeError("monopole must have dimensions [shot, per_shot]")
-        if isinstance(dipole_dim, Tensor) and (
-            dipole_dim.shape[0] != locations.shape[0]
-            or dipole_dim.shape[1] != locations.shape[1]
-        ):
-            raise RuntimeError("dipole_dim must have dimensions [shot, per_shot]")
+            free_surface_locs = [
+                -0.5, model_shape[0] - 0.5, -0.5, model_shape[1] - 0.5
+            ]
+        if isinstance(monopole,
+                      Tensor) and (monopole.shape[0] != locations.shape[0]
+                                   or monopole.shape[1] != locations.shape[1]):
+            raise RuntimeError(
+                "monopole must have dimensions [shot, per_shot]")
+        if isinstance(dipole_dim,
+                      Tensor) and (dipole_dim.shape[0] != locations.shape[0] or
+                                   dipole_dim.shape[1] != locations.shape[1]):
+            raise RuntimeError(
+                "dipole_dim must have dimensions [shot, per_shot]")
         betas = [0.0, 1.84, 3.04, 4.14, 5.26, 6.40, 7.51, 8.56, 9.56, 10.64]
-        beta = torch.tensor(betas[halfwidth - 1]).to(dtype).to(locations.device)
+        beta = torch.tensor(betas[halfwidth - 1]).to(dtype).to(
+            locations.device)
         self.locations = locations
         self.hicks_locations, self.idxs, self.weights = (
             _get_hicks_locations_and_weights(
@@ -310,8 +300,7 @@ class Hicks:
                 monopole,
                 dipole_dim,
                 eps,
-            )
-        )
+            ))
 
     def get_locations(self, shot_idxs: Optional[Tensor] = None) -> Tensor:
         """Get the interpolated locations.
@@ -334,7 +323,9 @@ class Hicks:
             return self.hicks_locations[shot_idxs]
         return self.hicks_locations
 
-    def source(self, amplitudes: Tensor, shot_idxs: Optional[Tensor] = None) -> Tensor:
+    def source(self,
+               amplitudes: Tensor,
+               shot_idxs: Optional[Tensor] = None) -> Tensor:
         """Calculate the amplitudes of the interpolated sources.
 
         Args:
@@ -378,17 +369,15 @@ class Hicks:
                 hicks_shotidx = shotidx
             for i in range(n_per_shot):
                 out[shotidx, self.idxs[hicks_shotidx][i], :] += (
-                    amplitudes[shotidx, i][None]
-                    * (
-                        self.weights[hicks_shotidx][i][0].reshape(-1, 1)
-                        * self.weights[hicks_shotidx][i][1].reshape(1, -1)
-                    ).reshape(-1)[..., None]
-                ).cpu()
+                    amplitudes[shotidx, i][None] *
+                    (self.weights[hicks_shotidx][i][0].reshape(-1, 1) *
+                     self.weights[hicks_shotidx][i][1].reshape(
+                         1, -1)).reshape(-1)[..., None]).cpu()
         return out.to(amplitudes.device)
 
-    def receiver(
-        self, amplitudes: Tensor, shot_idxs: Optional[Tensor] = None
-    ) -> Tensor:
+    def receiver(self,
+                 amplitudes: Tensor,
+                 shot_idxs: Optional[Tensor] = None) -> Tensor:
         """Convert receiver amplitudes from interpolated to original locations.
 
         Args:
@@ -413,24 +402,22 @@ class Hicks:
         _check_shot_idxs(amplitudes, shot_idxs)
         n_shots, _, nt = amplitudes.shape
         n_per_shot = self.locations.shape[1]
-        out = torch.zeros(
-            n_shots, n_per_shot, nt, dtype=amplitudes.dtype, device=amplitudes.device
-        )
+        out = torch.zeros(n_shots,
+                          n_per_shot,
+                          nt,
+                          dtype=amplitudes.dtype,
+                          device=amplitudes.device)
         for shotidx in range(n_shots):
             if shot_idxs is not None:
                 hicks_shotidx = int(shot_idxs[shotidx])
             else:
                 hicks_shotidx = shotidx
             for i in range(n_per_shot):
-                out[shotidx, i, :] = (
-                    amplitudes[shotidx, self.idxs[hicks_shotidx][i]]
-                    * (
-                        self.weights[hicks_shotidx][i][0]
-                        .to(amplitudes.device)
-                        .reshape(-1, 1)
-                        * self.weights[hicks_shotidx][i][1]
-                        .to(amplitudes.device)
-                        .reshape(1, -1)
-                    ).reshape(-1)[..., None]
-                ).sum(dim=0)
+                out[shotidx,
+                    i, :] = (amplitudes[shotidx, self.idxs[hicks_shotidx][i]] *
+                             (self.weights[hicks_shotidx][i][0].to(
+                                 amplitudes.device).reshape(-1, 1) *
+                              self.weights[hicks_shotidx][i][1].to(
+                                  amplitudes.device).reshape(1, -1)
+                              ).reshape(-1)[..., None]).sum(dim=0)
         return out

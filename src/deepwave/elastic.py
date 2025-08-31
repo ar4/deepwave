@@ -87,8 +87,7 @@ class Elastic(torch.nn.Module):
         self.lamb = torch.nn.Parameter(lamb, requires_grad=lamb_requires_grad)
         self.mu = torch.nn.Parameter(mu, requires_grad=mu_requires_grad)
         self.buoyancy = torch.nn.Parameter(
-            buoyancy, requires_grad=buoyancy_requires_grad
-        )
+            buoyancy, requires_grad=buoyancy_requires_grad)
         self.grid_spacing = grid_spacing
 
     def forward(
@@ -126,22 +125,22 @@ class Elastic(torch.nn.Module):
         time_pad_frac: float = 0.0,
         time_taper: bool = False,
     ) -> Tuple[
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
     ]:
         """Perform forward propagation/modelling.
 
@@ -227,22 +226,22 @@ def elastic(
     time_pad_frac: float = 0.0,
     time_taper: bool = False,
 ) -> Tuple[
-    Tensor,
-    Tensor,
-    Tensor,
-    Tensor,
-    Tensor,
-    Tensor,
-    Tensor,
-    Tensor,
-    Tensor,
-    Tensor,
-    Tensor,
-    Tensor,
-    Tensor,
-    Tensor,
-    Tensor,
-    Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
 ]:
     """Elastic wave propagation (functional interface).
 
@@ -513,21 +512,21 @@ def elastic(
         raise RuntimeError("With the provided model, the maximum y "
                            "receiver location in the second dimension "
                            "must be less than " + str(lamb.shape[1] - 1) + ".")
-    if (source_locations_x is not None):
+    if source_locations_x is not None:
         dim_location = source_locations_x[..., 0]
         dim_location = dim_location[dim_location != IGNORE_LOCATION]
         if (dim_location.min() <= 0):
             raise RuntimeError("The minimum x source "
                                "location in the first dimension must be "
                                "greater than 0.")
-    if (receiver_locations_x is not None):
+    if receiver_locations_x is not None:
         dim_location = receiver_locations_x[..., 0]
         dim_location = dim_location[dim_location != IGNORE_LOCATION]
         if (dim_location.min() <= 0):
             raise RuntimeError("The minimum x receiver "
                                "location in the first dimension must be "
                                "greater than 0.")
-    if (receiver_locations_p is not None):
+    if receiver_locations_p is not None:
         dim_location = receiver_locations_p[..., 0]
         dim_location = dim_location[dim_location != IGNORE_LOCATION]
         if (receiver_locations_p[..., 1].max() >= lamb.shape[1] - 1
@@ -581,11 +580,9 @@ def elastic(
                          freq_taper_frac, time_pad_frac, time_taper, 2)
 
     if any(s <= (accuracy + 1) * 2 for s in models[0].shape[1:]):
-        raise RuntimeError(
-            "The model must have at least "
-            + str((accuracy + 1) * 2 + 1)
-            + " elements in each dimension (including PML)."
-        )
+        raise RuntimeError("The model must have at least " +
+                           str((accuracy + 1) * 2 + 1) +
+                           " elements in each dimension (including PML).")
 
     ny, nx = models[0].shape[-2:]
     # source_amplitudes_y
@@ -595,45 +592,21 @@ def elastic(
     sources_i_masked[mask] = 0
     if source_amplitudes[0].numel() > 0:
         source_amplitudes[0] = (
-            (
-                source_amplitudes[0]
-                * (
-                    models[2]
-                    .view(-1, ny * nx)
-                    .expand(n_shots, -1)
-                    .gather(1, sources_i_masked)
-                    + models[2]
-                    .view(-1, ny * nx)
-                    .expand(n_shots, -1)
-                    .gather(1, sources_i_masked + 1)
-                    + models[2]
-                    .view(-1, ny * nx)
-                    .expand(n_shots, -1)
-                    .gather(1, sources_i_masked + nx)
-                    + models[2]
-                    .view(-1, ny * nx)
-                    .expand(n_shots, -1)
-                    .gather(1, sources_i_masked + nx + 1)
-                )
-            )
-            / 4
-            * dt
-        )
+            (source_amplitudes[0] *
+             (models[2].view(-1, ny * nx).expand(n_shots, -1).gather(
+                 1, sources_i_masked) + models[2].view(-1, ny * nx).expand(
+                     n_shots, -1).gather(1, sources_i_masked + 1) +
+              models[2].view(-1, ny * nx).expand(n_shots, -1).gather(
+                  1, sources_i_masked + nx) + models[2].view(-1, ny * nx).
+              expand(n_shots, -1).gather(1, sources_i_masked + nx + 1))) / 4 *
+            dt)
     # source_amplitudes_x
     mask = sources_i[1] == IGNORE_LOCATION
     sources_i_masked = sources_i[1].clone()
     sources_i_masked[mask] = 0
     if source_amplitudes[1].numel() > 0:
-        source_amplitudes[1] = (
-            source_amplitudes[1]
-            * (
-                models[2]
-                .view(-1, ny * nx)
-                .expand(n_shots, -1)
-                .gather(1, sources_i_masked)
-            )
-            * dt
-        )
+        source_amplitudes[1] = (source_amplitudes[1] * (models[2].view(
+            -1, ny * nx).expand(n_shots, -1).gather(1, sources_i_masked)) * dt)
 
     pml_profiles = set_pml_profiles(
         pml_width,
@@ -749,15 +722,15 @@ def zero_edge_right(tensor: Tensor, nx: int) -> None:
     tensor[:, :, nx - 1] = 0
 
 
-def zero_interior(
-    tensor: Tensor, ybegin: int, yend: int, xbegin: int, xend: int
-) -> Tensor:
+def zero_interior(tensor: Tensor, ybegin: int, yend: int, xbegin: int,
+                  xend: int) -> Tensor:
     tensor = tensor.clone()
     tensor[:, ybegin:yend, xbegin:xend] = 0
     return tensor
 
 
 class ElasticForwardFunc(torch.autograd.Function):
+
     @staticmethod
     def forward(
         ctx: Any,
@@ -801,22 +774,22 @@ class ElasticForwardFunc(torch.autograd.Function):
         pml_width: List[int],
         n_shots: int,
     ) -> Tuple[
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
     ]:
         lamb = lamb.contiguous()
         mu = mu.contiguous()
@@ -863,25 +836,28 @@ class ElasticForwardFunc(torch.autograd.Function):
         size_with_batch = (n_shots, *lamb.shape[-2:])
         vy = create_or_pad(vy, 0, lamb.device, lamb.dtype, size_with_batch)
         vx = create_or_pad(vx, 0, lamb.device, lamb.dtype, size_with_batch)
-        sigmayy = create_or_pad(sigmayy, 0, lamb.device, lamb.dtype, size_with_batch)
-        sigmaxy = create_or_pad(sigmaxy, 0, lamb.device, lamb.dtype, size_with_batch)
-        sigmaxx = create_or_pad(sigmaxx, 0, lamb.device, lamb.dtype, size_with_batch)
-        m_vyy = create_or_pad(m_vyy, 0, lamb.device, lamb.dtype, size_with_batch)
-        m_vyx = create_or_pad(m_vyx, 0, lamb.device, lamb.dtype, size_with_batch)
-        m_vxy = create_or_pad(m_vxy, 0, lamb.device, lamb.dtype, size_with_batch)
-        m_vxx = create_or_pad(m_vxx, 0, lamb.device, lamb.dtype, size_with_batch)
-        m_sigmayyy = create_or_pad(
-            m_sigmayyy, 0, lamb.device, lamb.dtype, size_with_batch
-        )
-        m_sigmaxyy = create_or_pad(
-            m_sigmaxyy, 0, lamb.device, lamb.dtype, size_with_batch
-        )
-        m_sigmaxyx = create_or_pad(
-            m_sigmaxyx, 0, lamb.device, lamb.dtype, size_with_batch
-        )
-        m_sigmaxxx = create_or_pad(
-            m_sigmaxxx, 0, lamb.device, lamb.dtype, size_with_batch
-        )
+        sigmayy = create_or_pad(sigmayy, 0, lamb.device, lamb.dtype,
+                                size_with_batch)
+        sigmaxy = create_or_pad(sigmaxy, 0, lamb.device, lamb.dtype,
+                                size_with_batch)
+        sigmaxx = create_or_pad(sigmaxx, 0, lamb.device, lamb.dtype,
+                                size_with_batch)
+        m_vyy = create_or_pad(m_vyy, 0, lamb.device, lamb.dtype,
+                              size_with_batch)
+        m_vyx = create_or_pad(m_vyx, 0, lamb.device, lamb.dtype,
+                              size_with_batch)
+        m_vxy = create_or_pad(m_vxy, 0, lamb.device, lamb.dtype,
+                              size_with_batch)
+        m_vxx = create_or_pad(m_vxx, 0, lamb.device, lamb.dtype,
+                              size_with_batch)
+        m_sigmayyy = create_or_pad(m_sigmayyy, 0, lamb.device, lamb.dtype,
+                                   size_with_batch)
+        m_sigmaxyy = create_or_pad(m_sigmaxyy, 0, lamb.device, lamb.dtype,
+                                   size_with_batch)
+        m_sigmaxyx = create_or_pad(m_sigmaxyx, 0, lamb.device, lamb.dtype,
+                                   size_with_batch)
+        m_sigmaxxx = create_or_pad(m_sigmaxxx, 0, lamb.device, lamb.dtype,
+                                   size_with_batch)
         zero_edges(sigmaxy, ny, nx)
         zero_edges(m_vxy, ny, nx)
         zero_edges(m_vyx, ny, nx)
@@ -924,10 +900,12 @@ class ElasticForwardFunc(torch.autograd.Function):
             dvydxdvxdy_store.resize_(nt // step_ratio, n_shots, ny, nx)
 
         if receivers_y_i.numel() > 0:
-            receiver_amplitudes_y.resize_(nt + 1, n_shots, n_receivers_y_per_shot)
+            receiver_amplitudes_y.resize_(nt + 1, n_shots,
+                                          n_receivers_y_per_shot)
             receiver_amplitudes_y.fill_(0)
         if receivers_x_i.numel() > 0:
-            receiver_amplitudes_x.resize_(nt + 1, n_shots, n_receivers_x_per_shot)
+            receiver_amplitudes_x.resize_(nt + 1, n_shots,
+                                          n_receivers_x_per_shot)
             receiver_amplitudes_x.fill_(0)
         if receivers_p_i.numel() > 0:
             receiver_amplitudes_p.resize_(nt, n_shots, n_receivers_p_per_shot)
@@ -1030,26 +1008,15 @@ class ElasticForwardFunc(torch.autograd.Function):
                 aux,
             )
 
-        if (
-            lamb.requires_grad
-            or mu.requires_grad
-            or buoyancy.requires_grad
-            or source_amplitudes_y.requires_grad
-            or source_amplitudes_x.requires_grad
-            or vy.requires_grad
-            or vx.requires_grad
-            or sigmayy.requires_grad
-            or sigmaxy.requires_grad
-            or sigmaxx.requires_grad
-            or m_vyy.requires_grad
-            or m_vyx.requires_grad
-            or m_vxy.requires_grad
-            or m_vxx.requires_grad
-            or m_sigmayyy.requires_grad
-            or m_sigmaxyy.requires_grad
-            or m_sigmaxyx.requires_grad
-            or m_sigmaxxx.requires_grad
-        ):
+        if (lamb.requires_grad or mu.requires_grad or buoyancy.requires_grad
+                or source_amplitudes_y.requires_grad
+                or source_amplitudes_x.requires_grad or vy.requires_grad
+                or vx.requires_grad or sigmayy.requires_grad
+                or sigmaxy.requires_grad or sigmaxx.requires_grad
+                or m_vyy.requires_grad or m_vyx.requires_grad
+                or m_vxy.requires_grad or m_vxx.requires_grad
+                or m_sigmayyy.requires_grad or m_sigmaxyy.requires_grad
+                or m_sigmaxyx.requires_grad or m_sigmaxxx.requires_grad):
             ctx.save_for_backward(
                 lamb,
                 mu,
@@ -1231,25 +1198,28 @@ class ElasticForwardFunc(torch.autograd.Function):
         size_with_batch = (n_shots, *lamb.shape[-2:])
         vy = create_or_pad(vy, 0, lamb.device, lamb.dtype, size_with_batch)
         vx = create_or_pad(vx, 0, lamb.device, lamb.dtype, size_with_batch)
-        sigmayy = create_or_pad(sigmayy, 0, lamb.device, lamb.dtype, size_with_batch)
-        sigmaxy = create_or_pad(sigmaxy, 0, lamb.device, lamb.dtype, size_with_batch)
-        sigmaxx = create_or_pad(sigmaxx, 0, lamb.device, lamb.dtype, size_with_batch)
-        m_vyy = create_or_pad(m_vyy, 0, lamb.device, lamb.dtype, size_with_batch)
-        m_vyx = create_or_pad(m_vyx, 0, lamb.device, lamb.dtype, size_with_batch)
-        m_vxy = create_or_pad(m_vxy, 0, lamb.device, lamb.dtype, size_with_batch)
-        m_vxx = create_or_pad(m_vxx, 0, lamb.device, lamb.dtype, size_with_batch)
-        m_sigmayyy = create_or_pad(
-            m_sigmayyy, 0, lamb.device, lamb.dtype, size_with_batch
-        )
-        m_sigmaxyy = create_or_pad(
-            m_sigmaxyy, 0, lamb.device, lamb.dtype, size_with_batch
-        )
-        m_sigmaxyx = create_or_pad(
-            m_sigmaxyx, 0, lamb.device, lamb.dtype, size_with_batch
-        )
-        m_sigmaxxx = create_or_pad(
-            m_sigmaxxx, 0, lamb.device, lamb.dtype, size_with_batch
-        )
+        sigmayy = create_or_pad(sigmayy, 0, lamb.device, lamb.dtype,
+                                size_with_batch)
+        sigmaxy = create_or_pad(sigmaxy, 0, lamb.device, lamb.dtype,
+                                size_with_batch)
+        sigmaxx = create_or_pad(sigmaxx, 0, lamb.device, lamb.dtype,
+                                size_with_batch)
+        m_vyy = create_or_pad(m_vyy, 0, lamb.device, lamb.dtype,
+                              size_with_batch)
+        m_vyx = create_or_pad(m_vyx, 0, lamb.device, lamb.dtype,
+                              size_with_batch)
+        m_vxy = create_or_pad(m_vxy, 0, lamb.device, lamb.dtype,
+                              size_with_batch)
+        m_vxx = create_or_pad(m_vxx, 0, lamb.device, lamb.dtype,
+                              size_with_batch)
+        m_sigmayyy = create_or_pad(m_sigmayyy, 0, lamb.device, lamb.dtype,
+                                   size_with_batch)
+        m_sigmaxyy = create_or_pad(m_sigmaxyy, 0, lamb.device, lamb.dtype,
+                                   size_with_batch)
+        m_sigmaxyx = create_or_pad(m_sigmaxyx, 0, lamb.device, lamb.dtype,
+                                   size_with_batch)
+        m_sigmaxxx = create_or_pad(m_sigmaxxx, 0, lamb.device, lamb.dtype,
+                                   size_with_batch)
         m_sigmayyyn = torch.zeros_like(m_sigmayyy)
         m_sigmaxyyn = torch.zeros_like(m_sigmaxyy)
         m_sigmaxyxn = torch.zeros_like(m_sigmaxyx)
@@ -1316,12 +1286,8 @@ class ElasticForwardFunc(torch.autograd.Function):
                 aux = min(n_shots, torch.get_num_threads())
             else:
                 aux = 1
-            if (
-                lamb.requires_grad
-                and not lamb_batched
-                and aux > 1
-                and USE_OPENMP
-            ):
+            if (lamb.requires_grad and not lamb_batched and aux > 1
+                    and USE_OPENMP):
                 grad_lamb_tmp.resize_(n_shots, *lamb.shape[-2:])
                 grad_lamb_tmp.fill_(0)
                 grad_lamb_tmp_ptr = grad_lamb_tmp.data_ptr()
@@ -1329,12 +1295,8 @@ class ElasticForwardFunc(torch.autograd.Function):
                 grad_mu_tmp.resize_(n_shots, *mu.shape[-2:])
                 grad_mu_tmp.fill_(0)
                 grad_mu_tmp_ptr = grad_mu_tmp.data_ptr()
-            if (
-                buoyancy.requires_grad
-                and not buoyancy_batched
-                and aux > 1
-                and USE_OPENMP
-            ):
+            if (buoyancy.requires_grad and not buoyancy_batched and aux > 1
+                    and USE_OPENMP):
                 grad_buoyancy_tmp.resize_(n_shots, *buoyancy.shape[-2:])
                 grad_buoyancy_tmp.fill_(0)
                 grad_buoyancy_tmp_ptr = grad_buoyancy_tmp.data_ptr()
