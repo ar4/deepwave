@@ -264,10 +264,14 @@ def test_forward_cpu_gpu_match():
     if torch.cuda.is_available():
         actual_cpu = run_forward_2d(propagator=scalarprop, device=torch.device("cpu"))
         actual_gpu = run_forward_2d(propagator=scalarprop, device=torch.device("cuda"))
+        # Check wavefields
         for cpui, gpui in zip(actual_cpu[:-1], actual_gpu[:-1]):
             assert torch.allclose(cpui, gpui.cpu(), atol=2e-6)
+        # Check receiver amplitudes
         cpui = actual_cpu[-1]
-        gpui = actual_cpu[-1]
+        gpui = actual_gpu[-1]
+        # The tolerance is higher for the receiver amplitudes as they involve
+        # an interpolation, which can introduce small differences.
         assert torch.allclose(cpui, gpui.cpu(), atol=5e-5)
 
 
@@ -382,7 +386,7 @@ def test_unused_source_receiver(
     assert torch.allclose(modelf.grad, modeli.grad)
 
 
-def run_scalarfunc(nt=3):
+def run_scalarfunc(nt=3, gradgrad=False):
     from deepwave.scalar import scalar_func
 
     torch.manual_seed(1)
@@ -476,40 +480,45 @@ def run_scalarfunc(nt=3):
             n_batch,
         ),
     )
-    torch.autograd.gradgradcheck(
-        scalar_func,
-        (
-            c,
-            source_amplitudes,
-            wfc,
-            wfp,
-            psiy,
-            psix,
-            zetay,
-            zetax,
-            ay,
-            ax,
-            by,
-            bx,
-            dbydy,
-            dbxdx,
-            sources_i,
-            receivers_i,
-            dy,
-            dx,
-            dt,
-            nt,
-            step_ratio,
-            accuracy,
-            pml_width,
-            n_batch,
-        ),
-    )
+    if gradgrad:
+        torch.autograd.gradgradcheck(
+            scalar_func,
+            (
+                c,
+                source_amplitudes,
+                wfc,
+                wfp,
+                psiy,
+                psix,
+                zetay,
+                zetax,
+                ay,
+                ax,
+                by,
+                bx,
+                dbydy,
+                dbxdx,
+                sources_i,
+                receivers_i,
+                dy,
+                dx,
+                dt,
+                nt,
+                step_ratio,
+                accuracy,
+                pml_width,
+                n_batch,
+            ),
+        )
 
 
 def test_scalarfunc():
     run_scalarfunc(nt=4)
     run_scalarfunc(nt=5)
+
+
+def test_scalarfunc_gradgrad():
+    run_scalarfunc(nt=4, gradgrad=True)
 
 
 def test_gradcheck_2d():

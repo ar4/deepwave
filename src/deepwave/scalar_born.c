@@ -51,18 +51,30 @@
   (V2DT2(dy, dx) * WFC(dy, dx) + \
    2 * VDT2(dy, dx) * SCATTER(dy, dx) * WFCSC(dy, dx))
 #define V2DT2_WFCSC(dy, dx) V2DT2(dy, dx) * WFCSC(dy, dx)
+/* Update term for the y-derivative of the wavefield in the PML region, used
+ * in the backward pass. This corresponds to the first term in the update
+ * equation for the auxiliary wavefield psi.
+ */
 #define UT_TERMY1(dy, dx)                                                      \
   (dbydy[y + dy] * ((1 + by[y + dy]) *                                         \
                         (V2DT2(dy, dx) * WFC(dy, dx) +                         \
                          2 * VDT2(dy, dx) * SCATTER(dy, dx) * WFCSC(dy, dx)) + \
                     by[y + dy] * zetay[i + dy * nx]) +                         \
    by[y + dy] * psiy[i + dy * nx])
+/* Update term for the x-derivative of the wavefield in the PML region, used
+ * in the backward pass. This corresponds to the first term in the update
+ * equation for the auxiliary wavefield psi.
+ */
 #define UT_TERMX1(dy, dx)                                                      \
   (dbxdx[x + dx] * ((1 + bx[x + dx]) *                                         \
                         (V2DT2(dy, dx) * WFC(dy, dx) +                         \
                          2 * VDT2(dy, dx) * SCATTER(dy, dx) * WFCSC(dy, dx)) + \
                     bx[x + dx] * zetax[i + dx]) +                              \
    bx[x + dx] * psix[i + dx])
+/* Update term for the y-derivative of the wavefield in the PML region, used
+ * in the backward pass. This corresponds to the second term in the update
+ * equation for the auxiliary wavefield psi.
+ */
 #define UT_TERMY2(dy, dx)                                                     \
   ((1 + by[y + dy]) *                                                         \
    ((1 + by[y + dy]) * (V2DT2(dy, dx) * WFC(dy, dx) +                         \

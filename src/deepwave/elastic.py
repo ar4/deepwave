@@ -45,14 +45,20 @@ class Elastic(torch.nn.Module):
             The spatial grid cell size. It can be a single number that will be
             used for all dimensions, or a number for each dimension.
         lamb_requires_grad:
-            Optional bool specifying how to set the `requires_grad`
-            attribute of lamb, and so whether the necessary
-            data should be stored to calculate the gradient with respect
-            to `lamb` during backpropagation. Default False.
+            A bool specifying whether the `requires_grad` attribute of `lamb`
+            should be set, and thus whether the necessary data should be stored
+            to calculate the gradient with respect to `lamb` during backpropagation.
+            Defaults to False.
         mu_requires_grad:
-            Same as lamb_requires_grad, but for mu.
+            A bool specifying whether the `requires_grad` attribute of `mu`
+            should be set, and thus whether the necessary data should be stored
+            to calculate the gradient with respect to `mu` during backpropagation.
+            Defaults to False.
         buoyancy_requires_grad:
-            Same as lamb_requires_grad, but for buoyancy.
+            A bool specifying whether the `requires_grad` attribute of `buoyancy`
+            should be set, and thus whether the necessary data should be stored
+            to calculate the gradient with respect to `buoyancy` during backpropagation.
+            Defaults to False.
     """
 
     def __init__(
@@ -71,19 +77,19 @@ class Elastic(torch.nn.Module):
                 f"lamb_requires_grad must be bool, got {type(lamb_requires_grad).__name__}"
             )
         if not isinstance(lamb, Tensor):
-            raise RuntimeError("lamb must be a torch.Tensor.")
+            raise TypeError("lamb must be a torch.Tensor.")
         if not isinstance(mu_requires_grad, bool):
             raise TypeError(
                 f"mu_requires_grad must be bool, got {type(mu_requires_grad).__name__}"
             )
         if not isinstance(mu, Tensor):
-            raise RuntimeError("mu must be a torch.Tensor.")
+            raise TypeError("mu must be a torch.Tensor.")
         if not isinstance(buoyancy_requires_grad, bool):
             raise TypeError(
                 f"buoyancy_requires_grad must be bool, got {type(buoyancy_requires_grad).__name__}"
             )
         if not isinstance(buoyancy, Tensor):
-            raise RuntimeError("buoyancy must be a torch.Tensor.")
+            raise TypeError("buoyancy must be a torch.Tensor.")
         self.lamb = torch.nn.Parameter(lamb, requires_grad=lamb_requires_grad)
         self.mu = torch.nn.Parameter(mu, requires_grad=mu_requires_grad)
         self.buoyancy = torch.nn.Parameter(
@@ -279,11 +285,11 @@ def elastic(
         source_amplitudes_y:
             A Tensor with dimensions [shot, source, time] containing time
             samples of the source wavelets for sources oriented in the
-            first spatial dimension. If two shots are being propagated
+            first spatial dimension. For example, if two shots are propagated
             simultaneously, each containing three sources, oriented in the
-            first spatial dimension, of one hundred time samples, it would
-            have shape [2, 3, 100]. The time length will be the number of
-            time steps in the simulation. Optional. If provided,
+            first spatial dimension, of one hundred time samples, the shape
+            would be [2, 3, 100]. The time dimension length corresponds to the
+            number of time samples in the source wavelet. Optional. If provided,
             `source_locations_y` must also be specified. If not provided
             (and `source_amplitudes_x` is also not specified), `nt`
             must be specified.
@@ -328,13 +334,11 @@ def elastic(
             A single number, or two numbers for each dimension,
             specifying the width (in number of cells) of the PML
             that prevents reflections from the edges of the model.
-            If a single value is provided,
-            it will be used for all edges. If a sequence is provided, it
-            should contain the values for the edges in the following order:
-            [the beginning of the first dimension,
-            the end of the first dimension,
-            the beginning of the second dimension,
-            the end of the second dimension].
+            If a single value is provided, it will be used for all edges.
+            If a sequence is provided, it should contain values for the
+            edges in the following order:
+            [beginning of first dimension, end of first dimension,
+            beginning of second dimension, end of second dimension].
             Larger values result in smaller reflections, with values of 10
             to 20 being typical. For a reflective or "free" surface, set the
             value for that edge to be zero. For example, if your model is
@@ -379,10 +383,8 @@ def elastic(
             cells of padding in each direction around sources and receivers
             if possible. The padding will end if the edge of the model is
             encountered. Specifying a list, in the following order:
-            [towards the beginning of the first dimension,
-            towards the end of the first dimension,
-            towards the beginning of the second dimension,
-            towards the end of the second dimension]
+            [beginning of first dimension, end of first dimension,
+            beginning of second dimension, end of second dimension]
             allows the padding in each direction to be controlled. Ints and
             `None` may be mixed, so a `survey_pad` of [5, None, None, 10]
             means that there should be at least 5 cells of padding towards
@@ -541,14 +543,16 @@ def elastic(
         raise RuntimeError("The accuracy must be 2 or 4.")
     vp, vs, _ = lambmubuoyancy_to_vpvsrho(lamb.abs(), mu.abs(), buoyancy.abs())
     max_model_vel = max(vp.abs().max().item(), vs.abs().max().item())
-    try:
-        min_nonzero_vp = vp[vp.nonzero(as_tuple=True)].abs().min().item()
-    except RuntimeError:
-        min_nonzero_vp = 0
-    try:
-        min_nonzero_vs = vs[vs.nonzero(as_tuple=True)].abs().min().item()
-    except RuntimeError:
-        min_nonzero_vs = 0
+    vp_nonzero = vp[vp != 0]
+    if vp_nonzero.numel() > 0:
+        min_nonzero_vp = vp_nonzero.abs().min().item()
+    else:
+        min_nonzero_vp = 0.0
+    vs_nonzero = vs[vs != 0]
+    if vs_nonzero.numel() > 0:
+        min_nonzero_vs = vs_nonzero.abs().min().item()
+    else:
+        min_nonzero_vs = 0.0
     if min_nonzero_vp == 0 and min_nonzero_vs == 0:
         min_nonzero_model_vel = 0.0
     elif min_nonzero_vp == 0:
@@ -563,7 +567,7 @@ def elastic(
      sources_i, receivers_i,
      grid_spacing, dt, nt, n_shots,
      step_ratio, model_gradient_sampling_interval,
-     accuracy, pml_width, pml_freq, max_vel, step_ratio, freq_taper_frac, time_pad_frac, time_taper, device, dtype) = \
+     accuracy, pml_width, pml_freq, max_vel, freq_taper_frac, time_pad_frac, time_taper, device, dtype) = \
         setup_propagator([lamb, mu, buoyancy], ['replicate'] * 3,
                          grid_spacing, dt,
                          [source_amplitudes_y, source_amplitudes_x],

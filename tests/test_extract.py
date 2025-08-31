@@ -15,21 +15,21 @@ def test_set_survey_pad():
     assert survey_pad == [1, 2, 3, 4]
     survey_pad = deepwave.common.set_survey_pad([1, None, None, 4], 2)
     assert survey_pad == [1, -1, -1, 4]
-    with pytest.raises(RuntimeError):
+    with pytest.raises(RuntimeError, match="survey_pad must have length 2 \* dims in model, but got 1."):
         deepwave.common.set_survey_pad([1], 2)
-    with pytest.raises(RuntimeError):
+    with pytest.raises(RuntimeError, match="survey_pad must have length 2 \* dims in model, but got 2."):
         deepwave.common.set_survey_pad([1, 2], 2)
-    with pytest.raises(RuntimeError):
+    with pytest.raises(RuntimeError, match="survey_pad must have length 2 \* dims in model, but got 3."):
         deepwave.common.set_survey_pad([1, 2, 3], 2)
-    with pytest.raises(RuntimeError):
+    with pytest.raises(RuntimeError, match="survey_pad must have length 2 \* dims in model, but got 5."):
         deepwave.common.set_survey_pad([1, 2, 3, 4, 5], 2)
-    with pytest.raises(RuntimeError):
+    with pytest.raises(RuntimeError, match="survey_pad must have length 2 \* dims in model, but got 6."):
         deepwave.common.set_survey_pad([1, 2, 3, 4, 5, 6], 2)
-    with pytest.raises(RuntimeError):
+    with pytest.raises(RuntimeError, match="survey_pad entries must be None or non-negative ints."):
         deepwave.common.set_survey_pad([-1, 2, 3, 4], 2)
-    with pytest.raises(RuntimeError):
+    with pytest.raises(RuntimeError, match="survey_pad entries must be None or non-negative ints."):
         deepwave.common.set_survey_pad([1, 2, 3, -4], 2)
-    with pytest.raises(RuntimeError):
+    with pytest.raises(RuntimeError, match="survey_pad must be non-negative."):
         deepwave.common.set_survey_pad(-1, 2)
     with pytest.raises(RuntimeError, match="ndim must be positive."):
         deepwave.common.set_survey_pad(1, 0)

@@ -1,5 +1,6 @@
 import torch
 import pytest
+import re
 import deepwave
 
 NZ = 5
@@ -116,7 +117,7 @@ def test_input_shape_mismatch(
     source_locations = torch.zeros(source_locations_shape, dtype=torch.long)
     receiver_locations = torch.zeros(receiver_locations_shape, dtype=torch.long)
     dt = 0.004
-    with pytest.raises(RuntimeError, match=expected_error_match):
+    with pytest.raises(RuntimeError, match=re.escape(expected_error_match)):
         prop(dt, source_amplitudes, source_locations, receiver_locations)
 
 
@@ -169,7 +170,7 @@ def test_wavefield_shape_mismatch(prop, wavefield_shape, expected_error_match):
     receiver_locations = torch.zeros(2, 1, 2, dtype=torch.long)
     dt = 0.004
     wavefield_0 = torch.zeros(wavefield_shape)
-    with pytest.raises(RuntimeError, match=expected_error_match):
+    with pytest.raises(RuntimeError, match=re.escape(expected_error_match)):
         prop(
             dt,
             source_amplitudes,

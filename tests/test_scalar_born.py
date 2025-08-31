@@ -10,6 +10,8 @@ def test_born_scatter_2d():
         propagator=scalarbornprop, dt=0.001, prop_kwargs={"pml_width": 30}
     )
     diff = (expected - actual.cpu()).flatten()
+    # The tolerance is relatively high because the analytical solution is an
+    # approximation.
     assert diff.norm() < 0.0025
 
 
@@ -22,6 +24,8 @@ def test_born_scatter_v_batched_2d():
         prop_kwargs={"pml_width": 30},
     )
     diff = (expected - actual.cpu()).flatten()
+    # The tolerance is relatively high because the analytical solution is an
+    # approximation.
     assert diff.norm() < 0.0025
 
 
@@ -34,6 +38,8 @@ def test_born_scatter_scatter_batched_2d():
         prop_kwargs={"pml_width": 30},
     )
     diff = (expected - actual.cpu()).flatten()
+    # The tolerance is relatively high because the analytical solution is an
+    # approximation.
     assert diff.norm() < 0.0025
 
 
@@ -79,6 +85,8 @@ def test_born_scatter_2d_module():
         functional=False,
     )
     diff = (expected - actual.cpu()).flatten()
+    # The tolerance is relatively high because the analytical solution is an
+    # approximation.
     assert diff.norm() < 0.0025
 
 
@@ -447,7 +455,6 @@ def run_born_scatter(
         scatter[..., x_p[0], x_p[1]] = dscatter.flatten()
     else:
         scatter[..., x_p[0], x_p[1]] = dscatter
-    # scatter[torch.split((x_p).long(), 1)] = dc
     sources = _set_sources(x_s, freq, dt, nt, dtype)
 
     if len(nx) == 2:

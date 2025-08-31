@@ -1,3 +1,10 @@
+"""Backend utilities for Deepwave's C/CUDA interface.
+
+This module handles the loading of the compiled C/CUDA shared library
+and the dynamic assignment of argument types (argtypes) to the C functions
+using ctypes. It ensures proper data marshalling between Python (PyTorch Tensors)
+and the underlying C/CUDA implementations.
+"""
 import platform
 import ctypes
 from ctypes import c_void_p, c_int64, c_float, c_double, c_bool

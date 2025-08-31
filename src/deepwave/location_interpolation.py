@@ -20,6 +20,22 @@ def _get_hicks_for_one_location_dim(
     monopole: bool = True,
     eps: float = DEFAULT_EPS,
 ) -> Tuple[Tensor, Tensor]:
+    """Calculate Hicks interpolation locations and weights for one dimension.
+
+    Args:
+        hicks_weight_cache: Cache for Hicks weights to avoid recomputing.
+        location: The floating-point location to interpolate.
+        halfwidth: Halfwidth of the interpolation window.
+        beta: Kaiser window parameter.
+        free_surface: List of two booleans indicating free surface presence at boundaries.
+        free_surface_loc: List of two floats indicating free surface locations.
+        size: Size of the grid in this dimension.
+        monopole: If True, calculate for a monopole; otherwise, for a dipole.
+        eps: Small value to prevent division by zero.
+
+    Returns:
+        Tuple[Tensor, Tensor]: Locations and corresponding weights.
+    """
     if not isinstance(halfwidth, int):
         raise TypeError("halfwidth must be an int.")
     if halfwidth < 1 or halfwidth > 10:
@@ -89,6 +105,23 @@ def _get_hicks_locations_and_weights(
     dipole_dim: Union[Tensor, int] = 0,
     eps: float = DEFAULT_EPS,
 ) -> Tuple[Tensor, List[List[List[int]]], List[List[List[Tensor]]]]:
+    """Calculate Hicks interpolation locations and weights for all shots/sources.
+
+    Args:
+        locations: A Tensor of original source/receiver locations.
+        halfwidth: Halfwidth of the interpolation window.
+        beta: Kaiser window parameter.
+        free_surfaces: List of four booleans indicating free surface presence.
+        free_surface_locs: List of four floats indicating free surface locations.
+        model_shape: Shape of the model grid.
+        monopole: Boolean or Tensor indicating if sources/receivers are monopoles.
+        dipole_dim: Integer or Tensor indicating dipole orientation dimension.
+        eps: Small value to prevent division by zero.
+
+    Returns:
+        Tuple[Tensor, List[List[List[int]]], List[List[List[Tensor]]]]:
+            Interpolated locations, indices, and weights.
+    """
     hicks_weight_cache: Dict[Tuple[int, int, int], Tensor] = {}
     n_shots, n_per_shot, _ = locations.shape
     hicks_locations_list: List[List[Tuple[int, int]]] = []
@@ -189,13 +222,13 @@ class Hicks:
             be used. Possible values are in [1, 10].
         free_surfaces:
             A list of four booleans specifying whether the corresponding
-            edge of the grid is a free surface, in the order [beginning
-            of first dimension, end of first dimension, beginning of
-            second dimension, end of second dimension].
-            [True, False, False, True] therefore means that the beginning
+            edge of the grid is a free surface, in the order:
+            [beginning of first dimension, end of first dimension,
+            beginning of second dimension, end of second dimension].
+            For example, `[True, False, False, True]` means that the beginning
             of the first dimension and end of the second dimension are
-            free surfaces, while the other two edges are not, for example.
-            The default is for no edges to be free surfaces.
+            free surfaces, while the other two edges are not.
+            Defaults to no edges being free surfaces.
         model_shape:
             A list of two integers specifying the size of the grid. This
             is only used when the model contains free surfaces.

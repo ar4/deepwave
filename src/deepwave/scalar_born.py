@@ -38,18 +38,20 @@ class ScalarBorn(torch.nn.Module):
         v:
             A Tensor containing an initial guess of the wavespeed.
         scatter:
-            A Tensor containing an initial guess of the scattering
-            potential.
+            A Tensor containing an initial guess of the scattering potential.
         grid_spacing:
             The spatial grid cell size. It can be a single number that will be
             used for all dimensions, or a number for each dimension.
         v_requires_grad:
-            Optional bool specifying how to set the `requires_grad`
-            attribute of the wavespeed, and so whether the necessary
-            data should be stored to calculate the gradient with respect
-            to `v` during backpropagation. Default False.
+            A bool specifying whether the `requires_grad` attribute of the
+            wavespeed should be set, and thus whether the necessary data
+            should be stored to calculate the gradient with respect to `v`
+            during backpropagation. Defaults to False.
         scatter_requires_grad:
-            Similar, for the scattering potential.
+            A bool specifying whether the `requires_grad` attribute of the
+            scattering potential should be set, and thus whether the necessary
+            data should be stored to calculate the gradient with respect to
+            `scatter` during backpropagation. Defaults to False.
     """
 
     def __init__(
@@ -66,13 +68,13 @@ class ScalarBorn(torch.nn.Module):
                 f"v_requires_grad must be bool, got {type(v_requires_grad).__name__}"
             )
         if not isinstance(v, Tensor):
-            raise RuntimeError("v must be a torch.Tensor.")
+            raise TypeError("v must be a torch.Tensor.")
         if not isinstance(scatter_requires_grad, bool):
             raise TypeError(
                 f"scatter_requires_grad must be bool, got {type(scatter_requires_grad).__name__}"
             )
         if not isinstance(scatter, Tensor):
-            raise RuntimeError("scatter must be a torch.Tensor.")
+            raise TypeError("scatter must be a torch.Tensor.")
         self.v = torch.nn.Parameter(v, requires_grad=v_requires_grad)
         self.scatter = torch.nn.Parameter(scatter,
                                           requires_grad=scatter_requires_grad)
@@ -248,10 +250,10 @@ def scalar_born(
 
     Args:
         scatter:
-            A Tensor containing an initial guess of the scattering
-            potential. Unlike the module interface (:class:`ScalarBorn`),
-            in this functional interface a copy is not made of the model,
-            so gradients will propagate back into the provided Tensor.
+            A Tensor containing an initial guess of the scattering potential.
+            Unlike the module interface (:class:`ScalarBorn`), in this
+            functional interface a copy of the model is not made, so gradients
+            will propagate back into the provided Tensor.
         bg_receiver_locations:
             A Tensor with dimensions [shot, receiver, 2], containing
             the coordinates of the cell containing each receiver of the
@@ -298,10 +300,11 @@ def scalar_born(
                 empty.
 
     """
-    try:
-        min_nonzero_model_vel = v[v.nonzero(as_tuple=True)].abs().min().item()
-    except RuntimeError:
-        min_nonzero_model_vel = 0
+    v_nonzero = v[v != 0]
+    if v_nonzero.numel() > 0:
+        min_nonzero_model_vel = v_nonzero.abs().min().item()
+    else:
+        min_nonzero_model_vel = 0.0
     max_model_vel = v.abs().max().item()
     fd_pad = [accuracy // 2] * 4
     (models, source_amplitudes, wavefields,
@@ -309,7 +312,7 @@ def scalar_born(
      grid_spacing, dt, nt, n_shots,
      step_ratio, model_gradient_sampling_interval,
      accuracy, pml_width, pml_freq, max_vel,
-     step_ratio, freq_taper_frac, time_pad_frac, time_taper, device, dtype) = \
+     freq_taper_frac, time_pad_frac, time_taper, device, dtype) = \
         setup_propagator([v, scatter], ['replicate', 'constant'], grid_spacing, dt,
                          [source_amplitudes, source_amplitudes],
                          [source_locations, source_locations],
@@ -465,7 +468,6 @@ class ScalarBornForwardFunc(torch.autograd.Function):
             Tensor,
             Tensor,
     ]:
-        forward = None  # Initialize to None to prevent E0601
         v = v.contiguous()
         scatter = scatter.contiguous()
         source_amplitudes = source_amplitudes.contiguous()

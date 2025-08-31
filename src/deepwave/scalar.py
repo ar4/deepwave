@@ -49,9 +49,14 @@ class Scalar(torch.nn.Module):
         Initialize the Scalar propagator module.
 
         Args:
-            v (Tensor): Wavespeed model.
-            grid_spacing (float or sequence of them): Grid cell size(s).
-            v_requires_grad (bool, optional): If True, gradients will be computed for v. Default: False.
+            v:
+                A Tensor containing the wavespeed model.
+            grid_spacing:
+                The spatial grid cell size. It can be a single number that will be
+                used for all dimensions, or a number for each dimension.
+            v_requires_grad:
+                A bool specifying whether gradients will be computed for `v`.
+                Defaults to False.
         """
         super().__init__()
         if not isinstance(v_requires_grad, bool):
@@ -59,7 +64,7 @@ class Scalar(torch.nn.Module):
                 f"v_requires_grad must be bool, got {type(v_requires_grad).__name__}"
             )
         if not isinstance(v, Tensor):
-            raise RuntimeError("v must be a torch.Tensor.")
+            raise TypeError("v must be a torch.Tensor.")
         self.v = torch.nn.Parameter(v, requires_grad=v_requires_grad)
         self.grid_spacing = grid_spacing
 
@@ -173,12 +178,12 @@ def scalar(
             output (internally a smaller interval may be used in
             propagation to obey the CFL condition for stability).
         source_amplitudes:
-            A Tensor with dimensions [shot, source, time]. If two shots
-            are being propagated simultaneously, each containing three
-            sources of one hundred time samples, it would have shape
-            [2, 3, 100]. The time length will be the number of time steps
-            in the simulation. Optional. If provided, `source_locations` must
-            also be specified. If not provided, `nt` must be specified.
+            A Tensor with dimensions [shot, source, time]. For example, if two
+            shots are propagated simultaneously, each containing three sources
+            of one hundred time samples, the shape would be [2, 3, 100]. The
+            time dimension length corresponds to the number of time samples
+            in the source wavelet. Optional. If provided, `source_locations`
+            must also be specified. If not provided, `nt` must be specified.
         source_locations:
             A Tensor with dimensions [shot, source, 2], containing the
             index in the two spatial dimensions of the cell that each
@@ -204,13 +209,11 @@ def scalar(
             A single number, or two numbers for each dimension,
             specifying the width (in number of cells) of the PML
             that prevents reflections from the edges of the model.
-            If a single value is provided,
-            it will be used for all edges. If a sequence is provided, it
-            should contain the values for the edges in the following order:
-            [the beginning of the first dimension,
-            the end of the first dimension,
-            the beginning of the second dimension,
-            the end of the second dimension].
+            If a single value is provided, it will be used for all edges.
+            If a sequence is provided, it should contain values for the
+            edges in the following order:
+            [beginning of first dimension, end of first dimension,
+            beginning of second dimension, end of second dimension].
             Larger values result in smaller reflections, with values of 10
             to 20 being typical. For a reflective or "free" surface, set the
             value for that edge to be zero. For example, if your model is
@@ -254,10 +257,8 @@ def scalar(
             cells of padding in each direction around sources and receivers
             if possible. The padding will end if the edge of the model is
             encountered. Specifying a list, in the following order:
-            [towards the beginning of the first dimension,
-            towards the end of the first dimension,
-            towards the beginning of the second dimension,
-            towards the end of the second dimension]
+            [beginning of first dimension, end of first dimension,
+            beginning of second dimension, end of second dimension]
             allows the padding in each direction to be controlled. Ints and
             `None` may be mixed, so a `survey_pad` of [5, None, None, 10]
             means that there should be at least 5 cells of padding towards
@@ -362,9 +363,10 @@ def scalar(
                 this Tensor will be empty.
 
     """
-    try:
-        min_nonzero_model_vel = v[v != 0].abs().min().item()
-    except RuntimeError:
+    v_nonzero = v[v != 0]
+    if v_nonzero.numel() > 0:
+        min_nonzero_model_vel = v_nonzero.abs().min().item()
+    else:
         min_nonzero_model_vel = 0.0
     max_model_vel = v.abs().max().item()
     fd_pad = [accuracy // 2] * 4
@@ -373,7 +375,7 @@ def scalar(
      grid_spacing, dt, nt, n_shots,
      step_ratio, model_gradient_sampling_interval,
      accuracy, pml_width, pml_freq, max_vel,
-     step_ratio, freq_taper_frac, time_pad_frac, time_taper, device, dtype) = \
+     freq_taper_frac, time_pad_frac, time_taper, device, dtype) = \
         setup_propagator([v], ['replicate'], grid_spacing, dt,
                          [source_amplitudes], [source_locations],
                          [receiver_locations], accuracy, fd_pad, pml_width, pml_freq,

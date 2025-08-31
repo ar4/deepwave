@@ -118,37 +118,24 @@ def test_resample_invalid_args(
     func, arg_name, arg_value, expected_error_match, expected_error_type
 ):
     signal = torch.randn(10)
-    kwargs = {arg_name: arg_value}
 
-    # Handle step_ratio separately to avoid passing it twice
     if arg_name == "step_ratio":
         step_ratio_val = arg_value
-        # Remove step_ratio from kwargs if it's there
-        if "step_ratio" in kwargs:
-            del kwargs["step_ratio"]
-        # Call func with step_ratio as positional arg
-        if expected_error_type == UserWarning:
-            with pytest.warns(
-                expected_error_type, match=re.escape(expected_error_match)
-            ):
-                func(signal, step_ratio_val, **kwargs)
-        else:
-            with pytest.raises(
-                expected_error_type, match=re.escape(expected_error_match)
-            ):
-                func(signal, step_ratio_val, **kwargs)
+        kwargs = {}
     else:
-        # For other arguments, pass step_ratio as default (2)
-        if expected_error_type == UserWarning:
-            with pytest.warns(
-                expected_error_type, match=re.escape(expected_error_match)
-            ):
-                func(signal, 2, **kwargs)
-        else:
-            with pytest.raises(
-                expected_error_type, match=re.escape(expected_error_match)
-            ):
-                func(signal, 2, **kwargs)
+        step_ratio_val = 2
+        kwargs = {arg_name: arg_value}
+
+    if expected_error_type == UserWarning:
+        with pytest.warns(
+            expected_error_type, match=re.escape(expected_error_match)
+        ):
+            func(signal, step_ratio_val, **kwargs)
+    else:
+        with pytest.raises(
+            expected_error_type, match=re.escape(expected_error_match)
+        ):
+            func(signal, step_ratio_val, **kwargs)
 
 
 def test_spike_upsample(n=128, step_ratio=2, dtype=torch.double, device=None):

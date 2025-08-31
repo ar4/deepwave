@@ -16,9 +16,19 @@ If you find any mistakes (even a typo or broken link), anything that doesn't beh
 Building from source
 ^^^^^^^^^^^^^^^^^^^^
 
-I have tried to make it so that the precompiled version of Deepwave (what you get if you just run `pip install deepwave`) will work for common setups, but it does make some assumptions and so the installed package may fail to run (possibly with an error about an illegal operation or instruction) if your system does not conform to those assumptions. In that case you will need to compile the code yourself. First, `download the code (.zip or .tar.gz) of the latest release tag <https://github.com/ar4/deepwave/tags>`_ and extract it. In the extracted result, descend to the `src/deepwave` directory. Here, you will find `build_[linux, macos, windows].sh` text files that contain the compiler commands that are used to build the precompiled releases. Use the one that is closest to your setup, after making any necessary modifications, to compile the code for your system. You should then return to the base extracted directory and run `pip install .` to install the package. I am very happy to help, so please `let me know <mailto:alan@ausargeo.com>`_ if you need assistance with any of this. Please also tell me if you think your system should be included in those targeted by the precompiled releases.
+Deepwave uses `cibuildwheel` and `scikit-build-core` to manage its build process. This means that when you run `pip install deepwave`, `pip` will first attempt to download a precompiled wheel if one is available for your system. If a suitable precompiled wheel is not found, `pip` will automatically download the source distribution and attempt to compile it on your system.
 
-(The assumptions made by the precompiled version include that you are running either Linux (with a glibc version of at least 2.17), or a recent version of MacOS or Windows, and using an x86-64 processor that supports AVX2 (Linux and Windows) or an x86-64 or ARM64 (MacOS).)
+The precompiled wheels still make certain assumptions, such as on the `glibc` version and AVX2 support. If the installed package fails to run (possibly with an error about an illegal operation or instruction) due to your system not conforming to these assumptions, you should install from the source distribution instead. To do this, you can run:
+
+.. code-block:: bash
+
+    pip install --no-binary :all: deepwave
+
+This command forces `pip` to download the source distribution and compile it on your system, bypassing any precompiled wheels. You may need to ensure your build environment is correctly set up for `scikit-build-core` to compile from source.
+
+(Assumptions for the precompiled version include: Linux (glibc >= 2.17), recent MacOS or Windows, and an x86-64 processor with AVX2 support (Linux and Windows) or x86-64/ARM64 (MacOS).)
+
+If you encounter any issues during installation or compilation, please `file an issue <https://github.com/ar4/deepwave/issues>`_ or `send me an email <mailto:alan@ausargeo.com>`_. I am happy to assist.
 
 Other issues
 ^^^^^^^^^^^^

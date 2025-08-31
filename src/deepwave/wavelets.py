@@ -17,13 +17,13 @@ def ricker(
 
     Args:
         freq:
-            A number (int or float) specifying the central frequency
+            The central frequency.
         length:
-            An int specifying the number of time samples
+            The number of time samples
         dt:
-            A number (int or float) specifying the time sample spacing
+            The time sample spacing
         peak_time:
-            A number (int or float) specifying the time (in secs) of the peak amplitude
+            The time (in secs) of the peak amplitude
         dtype:
             The PyTorch datatype to use. Optional, defaults to PyTorch's
             default (float32).

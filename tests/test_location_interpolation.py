@@ -170,7 +170,6 @@ def test_free_surface_right(halfwidth=8):
     )
     assert len(l0) == 2 * halfwidth
     assert l0[-1] == 19 + halfwidth - 1
-    print(l1)
     assert len(l1) == halfwidth + 1
     assert l1[-1] == 19
     assert w0[0] == w1[0]

@@ -37,7 +37,7 @@ def setup_propagator(
     n_dims: int,
 ) -> Tuple[List[Tensor], List[Tensor], List[Tensor], List[Tensor],
            List[Tensor], List[float], float, int, int, int, int, int,
-           List[int], float, float, int, float, float, float, torch.device,
+           List[int], float, float, float, float, float, torch.device,
            torch.dtype]:
     """
     Common setup for all propagators.
@@ -87,7 +87,7 @@ def setup_propagator(
     return (models_out, source_amplitudes_out, wavefields_out,
             source_locations_out, receiver_locations_out, grid_spacing, dt, nt,
             n_batch, step_ratio, model_gradient_sampling_interval, accuracy,
-            pml_width, pml_freq, max_vel, step_ratio, freq_taper_frac,
+            pml_width, pml_freq, max_vel, freq_taper_frac,
             time_pad_frac, time_taper, device, dtype)
 
 
@@ -111,7 +111,7 @@ def get_n_batch(source_locations: Sequence[Optional[Tensor]],
         if tensor is not None:
             if not isinstance(tensor, torch.Tensor):
                 raise TypeError(
-                    "Expected a torch.Tensor, but got {type(tensor).__name__}")
+                    f"Expected a torch.Tensor, but got {type(tensor).__name__}")
             return tensor.shape[0]
     raise RuntimeError(
         "At least one input source_locations or wavefield must be non-None.")
@@ -165,13 +165,13 @@ def set_grid_spacing(grid_spacing: Union[float, Sequence[float]],
     try:
         # grid_spacing is convertible to a float
         processed_grid_spacing = [float(grid_spacing)] * n_dims
-    except:
+    except (TypeError, ValueError):
         try:
             # grid_spacing is a sequence of elements convertible to floats
             processed_grid_spacing = [
                 float(spacing) for spacing in grid_spacing
             ]
-        except:
+        except (TypeError, ValueError):
             raise TypeError(
                 "grid_spacing must be a float or sequence of floats.")
 
@@ -204,11 +204,11 @@ def set_pml_width(pml_width: Union[int, Sequence[int]],
     try:
         # pml_width is convertible to an int
         processed_pml_width = [int(pml_width)] * 2 * n_dims
-    except:
+    except (TypeError, ValueError):
         try:
             # pml_width is a sequence of elements convertible to ints
             processed_pml_width = [int(width) for width in pml_width]
-        except:
+        except (TypeError, ValueError):
             raise TypeError("pml_width must be an int or sequence of ints.")
 
     if any(width < 0 for width in processed_pml_width):
@@ -229,7 +229,7 @@ def set_pml_freq(pml_freq: Optional[float], dt: float) -> float:
     if pml_freq is not None:
         try:
             pml_freq = float(pml_freq)
-        except ValueError:
+        except (TypeError, ValueError):
             raise TypeError("pml_freq must be None or convertible to a float.")
     if dt <= 0:
         raise ValueError(
@@ -254,8 +254,12 @@ def set_max_vel(max_vel: Optional[float], max_model_vel: float) -> float:
     if max_vel is not None:
         try:
             max_vel = float(max_vel)
-        except ValueError:
+        except (TypeError, ValueError):
             raise TypeError("max_vel must be None or convertible to a float.")
+    try:
+        max_model_vel = float(max_model_vel)
+    except (TypeError, ValueError):
+        raise TypeError("max_model_vel must be convertible to a float.")
     if max_model_vel <= 0:
         raise ValueError("max_model_vel must be greater than zero.")
     if max_vel is None:
@@ -536,14 +540,14 @@ def upsample(
         raise ValueError("step_ratio must be positive.")
     try:
         freq_taper_frac = float(freq_taper_frac)
-    except:
+    except (TypeError, ValueError):
         raise TypeError("freq_taper_frac must be a float.")
     if not 0.0 <= freq_taper_frac <= 1.0:
         raise ValueError(
             f"freq_taper_frac must be in [0, 1], got {freq_taper_frac}.")
     try:
         time_pad_frac = float(time_pad_frac)
-    except:
+    except (TypeError, ValueError):
         raise TypeError("time_pad_frac must be a float.")
     if not 0.0 <= time_pad_frac <= 1.0:
         raise ValueError(
@@ -637,14 +641,14 @@ def downsample(
         raise ValueError("step_ratio must be positive.")
     try:
         freq_taper_frac = float(freq_taper_frac)
-    except:
+    except (TypeError, ValueError):
         raise TypeError("freq_taper_frac must be a float.")
     if not 0.0 <= freq_taper_frac <= 1.0:
         raise ValueError(
             f"freq_taper_frac must be in [0, 1], got {freq_taper_frac}.")
     try:
         time_pad_frac = float(time_pad_frac)
-    except:
+    except (TypeError, ValueError):
         raise TypeError("time_pad_frac must be a float.")
     if not 0.0 <= time_pad_frac <= 1.0:
         raise ValueError(
@@ -653,7 +657,7 @@ def downsample(
         raise TypeError("time_taper must be a bool.")
     try:
         shift = float(shift)
-    except:
+    except (TypeError, ValueError):
         raise TypeError("shift must be a float.")
 
     if step_ratio == 1 and shift == 0.0:
@@ -852,7 +856,7 @@ def get_survey_extents_from_locations(
 
 def get_survey_extents_one_side(pad: int, side: str, dim: int,
                                 locations: Sequence[Optional[Tensor]],
-                                shape: int) -> int:  # Added return type
+                                shape: int) -> int:
     """Get the survey extent for the left or right side of one dimension.
 
     Args:
@@ -1225,7 +1229,8 @@ def prepare_wavefields(
         extents[dim][1] - extents[dim][0] + pad[2 * dim] + pad[2 * dim + 1]
         for dim in range(n_dims)
     ]
-    for i, wavefield in enumerate(wavefields):
+    prepared_wavefields: List[Tensor] = []
+    for wavefield in wavefields:
         if wavefield is not None:
             if not isinstance(wavefield, Tensor):
                 raise TypeError("Wavefields must be a torch.Tensor.")
@@ -1249,12 +1254,14 @@ def prepare_wavefields(
                 raise RuntimeError(
                     f"Inconsistent spatial shape: Expected wavefield to have spatial shape {spatial_shape} but found one with spatial shape {list(wavefield.shape[1:])}."
                 )
+            prepared_wavefields.append(wavefield)
         else:
-            wavefields[i] = torch.zeros(n_batch,
-                                        *spatial_shape,
-                                        device=device,
-                                        dtype=dtype)
-    return cast(List[Tensor], wavefields)
+            prepared_wavefields.append(
+                torch.zeros(n_batch,
+                            *spatial_shape,
+                            device=device,
+                            dtype=dtype))
+    return prepared_wavefields
 
 
 def cfl_condition_n(
@@ -1308,11 +1315,11 @@ def cfl_condition_n(
             raise ValueError("grid_spacing elements must be positive.")
     try:
         dt = float(dt)
-    except:
+    except (TypeError, ValueError):
         raise TypeError("dt must be a float.")
     try:
         max_abs_vel = float(max_abs_vel)
-    except:
+    except (TypeError, ValueError):
         raise TypeError("max_abs_vel must be a float.")
     if max_abs_vel <= 0:
         raise RuntimeError("max_abs_vel must be greater than zero.")
@@ -1415,6 +1422,8 @@ def setup_pml(
     pml_freq: float,
     start: float = 0.0,
     eps: float = 1e-9,
+    r_val: float = 0.001,
+    n_power: int = 2,
 ) -> Tuple[Tensor, Tensor]:
     """Creates a and b profiles for C-PML
 
@@ -1441,8 +1450,6 @@ def setup_pml(
     elements of the profiles will be non-zero.
 
     """
-    r_val = 0.001
-    n_power = 2
     alpha0 = math.pi * pml_freq
     if max_pml == 0:
         a = torch.zeros(n, device=device, dtype=dtype)
