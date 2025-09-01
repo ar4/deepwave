@@ -3,23 +3,22 @@
 from typing import List, Optional, Union, Dict, Tuple
 import math
 import torch
-from torch import Tensor
-from deepwave.common import IGNORE_LOCATION
+import deepwave
 
 DEFAULT_EPS = 1e-5
 
 
 def _get_hicks_for_one_location_dim(
-    hicks_weight_cache: Dict[Tuple[int, int, int], Tensor],
+    hicks_weight_cache: Dict[Tuple[int, int, int], torch.Tensor],
     location: float,
     halfwidth: int,
-    beta: Tensor,
+    beta: torch.Tensor,
     free_surface: List[bool],
     free_surface_loc: List[float],
     size: int,
     monopole: bool = True,
     eps: float = DEFAULT_EPS,
-) -> Tuple[Tensor, Tensor]:
+) -> Tuple[torch.Tensor, torch.Tensor]:
     """Calculate Hicks interpolation locations and weights for one dimension.
 
     Args:
@@ -27,14 +26,15 @@ def _get_hicks_for_one_location_dim(
         location: The floating-point location to interpolate.
         halfwidth: Halfwidth of the interpolation window.
         beta: Kaiser window parameter.
-        free_surface: List of two booleans indicating free surface presence at boundaries.
+        free_surface: List of two booleans indicating free surface presence at
+            boundaries.
         free_surface_loc: List of two floats indicating free surface locations.
         size: Size of the grid in this dimension.
         monopole: If True, calculate for a monopole; otherwise, for a dipole.
         eps: Small value to prevent division by zero.
 
     Returns:
-        Tuple[Tensor, Tensor]: Locations and corresponding weights.
+        Tuple[torch.Tensor, torch.Tensor]: Locations and corresponding weights.
     """
     if not isinstance(halfwidth, int):
         raise TypeError("halfwidth must be an int.")
@@ -42,8 +42,8 @@ def _get_hicks_for_one_location_dim(
         raise RuntimeError("halfwidth must be in [1, 10].")
     if beta < 0:
         raise RuntimeError("beta must be non-negative.")
-    if (not isinstance(free_surface_loc, List) or len(free_surface_loc) != 2
-            or not all(isinstance(f, (int, float)) for f in free_surface_loc)):
+    if (not isinstance(free_surface_loc, List) or len(free_surface_loc) != 2 or
+            not all(isinstance(f, (int, float)) for f in free_surface_loc)):
         raise RuntimeError("extent must be a list of two floats.")
     if size <= 0:
         raise RuntimeError("n_grid_points must be positive.")
@@ -95,50 +95,50 @@ def _get_hicks_for_one_location_dim(
 
 
 def _get_hicks_locations_and_weights(
-    locations: Tensor,
+    locations: torch.Tensor,
     halfwidth: int,
-    beta: Tensor,
+    beta: torch.Tensor,
     free_surfaces: List[bool],
     free_surface_locs: List[float],
     model_shape: List[int],
-    monopole: Union[Tensor, bool] = True,
-    dipole_dim: Union[Tensor, int] = 0,
+    monopole: Union[torch.Tensor, bool] = True,
+    dipole_dim: Union[torch.Tensor, int] = 0,
     eps: float = DEFAULT_EPS,
-) -> Tuple[Tensor, List[List[List[int]]], List[List[List[Tensor]]]]:
+) -> Tuple[torch.Tensor, List[List[List[int]]], List[List[List[torch.Tensor]]]]:
     """Calculate Hicks interpolation locations and weights for all shots/sources.
 
     Args:
-        locations: A Tensor of original source/receiver locations.
+        locations: A torch.Tensor of original source/receiver locations.
         halfwidth: Halfwidth of the interpolation window.
         beta: Kaiser window parameter.
         free_surfaces: List of four booleans indicating free surface presence.
         free_surface_locs: List of four floats indicating free surface locations.
         model_shape: Shape of the model grid.
-        monopole: Boolean or Tensor indicating if sources/receivers are monopoles.
-        dipole_dim: Integer or Tensor indicating dipole orientation dimension.
+        monopole: Boolean or torch.Tensor indicating if sources/receivers are monopoles.
+        dipole_dim: Integer or torch.Tensor indicating dipole orientation dimension.
         eps: Small value to prevent division by zero.
 
     Returns:
-        Tuple[Tensor, List[List[List[int]]], List[List[List[Tensor]]]]:
+        Tuple[torch.Tensor, List[List[List[int]]], List[List[List[torch.Tensor]]]]:
             Interpolated locations, indices, and weights.
     """
-    hicks_weight_cache: Dict[Tuple[int, int, int], Tensor] = {}
+    hicks_weight_cache: Dict[Tuple[int, int, int], torch.Tensor] = {}
     n_shots, n_per_shot, _ = locations.shape
     hicks_locations_list: List[List[Tuple[int, int]]] = []
     hicks_idxs: List[List[List[int]]] = []
-    weights: List[List[List[Tensor]]] = []
+    weights: List[List[List[torch.Tensor]]] = []
     n_per_shot_hicks = 0
     for shotidx in range(n_shots):
         shot_location_idxs: List[List[int]] = []
-        shot_weights: List[List[Tensor]] = []
+        shot_weights: List[List[torch.Tensor]] = []
         n_hicks_locations = 0
         locations_dict: Dict[Tuple[int, int], int] = {}
         for i in range(n_per_shot):
-            if isinstance(monopole, Tensor):
+            if isinstance(monopole, torch.Tensor):
                 monopole_i = bool(monopole[shotidx, i].item())
             else:
                 monopole_i = monopole
-            if isinstance(dipole_dim, Tensor):
+            if isinstance(dipole_dim, torch.Tensor):
                 dipole_dim_i = int(dipole_dim[shotidx, i].item())
             else:
                 dipole_dim_i = dipole_dim
@@ -150,7 +150,8 @@ def _get_hicks_locations_and_weights(
                 free_surfaces[:2],
                 free_surface_locs[:2],
                 model_shape[0],
-                monopole_i or (not monopole_i and dipole_dim_i == 1),
+                monopole_i or (
+                    not monopole_i and dipole_dim_i == 1),
                 eps=eps,
             )
             locations1, weights1 = _get_hicks_for_one_location_dim(
@@ -161,7 +162,8 @@ def _get_hicks_locations_and_weights(
                 free_surfaces[2:],
                 free_surface_locs[2:],
                 model_shape[1],
-                monopole_i or (not monopole_i and dipole_dim_i == 0),
+                monopole_i or (
+                    not monopole_i and dipole_dim_i == 0),
                 eps=eps,
             )
             shot_weights.append([weights0, weights1])
@@ -179,11 +181,12 @@ def _get_hicks_locations_and_weights(
         weights.append(shot_weights)
         n_per_shot_hicks = max(n_per_shot_hicks, n_hicks_locations)
         hicks_locations_list.append(list(locations_dict.keys()))
-    hicks_locations = (torch.ones(n_shots,
-                                  n_per_shot_hicks,
-                                  2,
-                                  dtype=torch.long,
-                                  device=locations.device) * IGNORE_LOCATION)
+    hicks_locations = (
+        torch.ones(n_shots,
+                   n_per_shot_hicks,
+                   2,
+                   dtype=torch.long,
+                   device=locations.device) * deepwave.common.IGNORE_LOCATION)
     for shotidx in range(n_shots):
         for i, loc in enumerate(hicks_locations_list[shotidx]):
             hicks_locations[shotidx,
@@ -192,8 +195,8 @@ def _get_hicks_locations_and_weights(
     return hicks_locations, hicks_idxs, weights
 
 
-def _check_shot_idxs(amplitudes: Tensor,
-                     shot_idxs: Optional[Tensor] = None) -> None:
+def _check_shot_idxs(amplitudes: torch.Tensor,
+                     shot_idxs: Optional[torch.Tensor] = None) -> None:
     if shot_idxs is not None and shot_idxs.shape != (len(amplitudes), ):
         raise RuntimeError("shot_idxs must have the same length as amplitudes")
 
@@ -210,7 +213,7 @@ class Hicks:
 
     Args:
         locations:
-            A three dimensional Tensor [shot, per_shot, 2] specifying
+            A three dimensional torch.Tensor [shot, per_shot, 2] specifying
             the locations to interpolate, provided as float values in
             units of cells relative to the origin of the grid, so
             [[[0.5, 0.5]]] corresponds to the point half a cell from
@@ -233,11 +236,11 @@ class Hicks:
             A list of two integers specifying the size of the grid. This
             is only used when the model contains free surfaces.
         monopole:
-            A boolean or Tensor of booleans (of shape [shot, per_shot])
+            A boolean or torch.Tensor of booleans (of shape [shot, per_shot])
             specifying whether the source/receiver is a monopole. If
             False, the point will be a dipole. Default True.
         dipole_dim:
-            An integer or Tensor of integers (of shape [shot, per_shot])
+            An integer or torch.Tensor of integers (of shape [shot, per_shot])
             of value 0 or 1 specifying the dimension in which the
             dipole is oriented. This is only used for points that are
             dipoles (not monopoles). Default 0.
@@ -251,17 +254,17 @@ class Hicks:
 
     def __init__(
         self,
-        locations: Tensor,
+        locations: torch.Tensor,
         halfwidth: int = 4,
         free_surfaces: Optional[List[bool]] = None,
         free_surface_locs: Optional[List[float]] = None,
         model_shape: Optional[List[int]] = None,
-        monopole: Union[Tensor, bool] = True,
-        dipole_dim: Union[Tensor, int] = 0,
+        monopole: Union[torch.Tensor, bool] = True,
+        dipole_dim: Union[torch.Tensor, int] = 0,
         dtype: torch.dtype = torch.float,
         eps: float = DEFAULT_EPS,
     ):
-        if not isinstance(locations, Tensor):
+        if not isinstance(locations, torch.Tensor):
             raise TypeError("locations must be a torch.Tensor.")
         if locations.ndim != 3:
             raise RuntimeError("locations must have three dimensions.")
@@ -273,10 +276,10 @@ class Hicks:
             raise RuntimeError("halfwidth must be in [1, 10]")
         if free_surfaces is None:
             free_surfaces = [False, False, False, False]
-        if free_surfaces is not None and (not isinstance(free_surfaces, list)
-                                          or len(free_surfaces) != 4
-                                          or any(not isinstance(f, bool)
-                                                 for f in free_surfaces)):
+        if (free_surfaces is not None and
+                (not isinstance(free_surfaces, list) or
+                 len(free_surfaces) != 4 or
+                 any(not isinstance(f, bool) for f in free_surfaces))):
             raise RuntimeError("free_surface must be a list of four bools")
         if any(free_surfaces) and model_shape is None:
             raise RuntimeError(
@@ -308,21 +311,21 @@ class Hicks:
             free_surface_locs = [
                 -0.5, model_shape[0] - 0.5, -0.5, model_shape[1] - 0.5
             ]
-        if isinstance(monopole,
-                      Tensor) and (monopole.shape[0] != locations.shape[0]
-                                   or monopole.shape[1] != locations.shape[1]):
+        if (isinstance(monopole, torch.Tensor) and
+                (monopole.shape[0] != locations.shape[0] or
+                 monopole.shape[1] != locations.shape[1])):
             raise RuntimeError(
                 "monopole must have dimensions [shot, per_shot]")
-        if isinstance(dipole_dim,
-                      Tensor) and (dipole_dim.shape[0] != locations.shape[0] or
-                                   dipole_dim.shape[1] != locations.shape[1]):
+        if (isinstance(dipole_dim, torch.Tensor) and
+                (dipole_dim.shape[0] != locations.shape[0] or
+                 dipole_dim.shape[1] != locations.shape[1])):
             raise RuntimeError(
                 "dipole_dim must have dimensions [shot, per_shot]")
         betas = [0.0, 1.84, 3.04, 4.14, 5.26, 6.40, 7.51, 8.56, 9.56, 10.64]
-        beta = torch.tensor(betas[halfwidth - 1]).to(dtype).to(
-            locations.device)
+        beta = (torch.tensor(betas[halfwidth - 1]).to(dtype)
+                .to(locations.device))
         self.locations = locations
-        self.hicks_locations, self.idxs, self.weights = (
+        self.hicks_locations, self.idxs, self.weights = \
             _get_hicks_locations_and_weights(
                 locations,
                 halfwidth,
@@ -333,9 +336,9 @@ class Hicks:
                 monopole,
                 dipole_dim,
                 eps,
-            ))
+            )
 
-    def get_locations(self, shot_idxs: Optional[Tensor] = None) -> Tensor:
+    def get_locations(self, shot_idxs: Optional[torch.Tensor] = None) -> torch.Tensor:
         """Get the interpolated locations.
 
         The interpolated locations can be provided to a Deepwave
@@ -343,30 +346,30 @@ class Hicks:
 
         Args:
             shot_idxs:
-                A 1D Tensor containing the indices of the shots that
+                A 1D torch.Tensor containing the indices of the shots that
                 amplitudes are being provided for, within the locations
                 provided at initialisation. This is useful if shots are
                 being used in batches, so only some of the shots are
                 needed now. Default (None) means all shots.
 
         Returns:
-            A Tensor containing the interpolated locations.
+            A torch.Tensor containing the interpolated locations.
         """
         if shot_idxs is not None:
             return self.hicks_locations[shot_idxs]
         return self.hicks_locations
 
     def source(self,
-               amplitudes: Tensor,
-               shot_idxs: Optional[Tensor] = None) -> Tensor:
+               amplitudes: torch.Tensor,
+               shot_idxs: Optional[torch.Tensor] = None) -> torch.Tensor:
         """Calculate the amplitudes of the interpolated sources.
 
         Args:
             amplitudes:
-                A Tensor containing the amplitudes of the sources at the
+                A torch.Tensor containing the amplitudes of the sources at the
                 original locations.
             shot_idxs:
-                A 1D Tensor containing the indices of the shots that
+                A 1D torch.Tensor containing the indices of the shots that
                 amplitudes are being provided for, within the locations
                 provided at initialisation. This is useful if shots are
                 being used in batches, so only some of the shots are
@@ -377,7 +380,7 @@ class Hicks:
             to a Deepwave propagator.
         """
 
-        if not isinstance(amplitudes, Tensor):
+        if not isinstance(amplitudes, torch.Tensor):
             raise TypeError("amplitudes must be a torch.Tensor.")
         if amplitudes.ndim != 3:
             raise RuntimeError("amplitudes must have three dimensions.")
@@ -404,21 +407,21 @@ class Hicks:
                 out[shotidx, self.idxs[hicks_shotidx][i], :] += (
                     amplitudes[shotidx, i][None] *
                     (self.weights[hicks_shotidx][i][0].reshape(-1, 1) *
-                     self.weights[hicks_shotidx][i][1].reshape(
-                         1, -1)).reshape(-1)[..., None]).cpu()
+                     self.weights[hicks_shotidx][i][1].reshape(1, -1))
+                    .reshape(-1)[..., None]).cpu()
         return out.to(amplitudes.device)
 
     def receiver(self,
-                 amplitudes: Tensor,
-                 shot_idxs: Optional[Tensor] = None) -> Tensor:
+                 amplitudes: torch.Tensor,
+                 shot_idxs: Optional[torch.Tensor] = None) -> torch.Tensor:
         """Convert receiver amplitudes from interpolated to original locations.
 
         Args:
             amplitudes:
-                A Tensor containing the amplitudes recorded at interpolated
+                A torch.Tensor containing the amplitudes recorded at interpolated
                 receiver locations.
             shot_idxs:
-                A 1D Tensor containing the indices of the shots that
+                A 1D torch.Tensor containing the indices of the shots that
                 amplitudes are being provided for, within the locations
                 provided at initialisation. This is useful if shots are
                 being used in batches, so only some of the shots are
@@ -427,7 +430,7 @@ class Hicks:
         Returns:
             The amplitudes of receivers at the original locations.
         """
-        if not isinstance(amplitudes, Tensor):
+        if not isinstance(amplitudes, torch.Tensor):
             raise TypeError("amplitudes must be a torch.Tensor.")
         if amplitudes.ndim != 3:
             raise RuntimeError("amplitudes must have three dimensions.")
@@ -451,6 +454,6 @@ class Hicks:
                              (self.weights[hicks_shotidx][i][0].to(
                                  amplitudes.device).reshape(-1, 1) *
                               self.weights[hicks_shotidx][i][1].to(
-                                  amplitudes.device).reshape(1, -1)
-                              ).reshape(-1)[..., None]).sum(dim=0)
+                                  amplitudes.device).reshape(1, -1))
+                             .reshape(-1)[..., None]).sum(dim=0)
         return out

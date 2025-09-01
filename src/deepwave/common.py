@@ -1,24 +1,28 @@
-"""Common helper functions for Deepwave propagators."""
+"""Common helper functions for Deepwave propagators.
+
+This module provides a collection of utility functions used across various
+Deepwave propagators. These functions handle tasks such as input validation,
+PML setup, and data preparation for wave propagation simulations.
+"""
 
 import math
 import warnings
-from typing import Any, List, Optional, Sequence, Tuple, Union, cast
+from typing import Any, List, Optional, Sequence, Tuple, Union
 
 import torch
 import torch.fft
-from torch import Tensor
 
 IGNORE_LOCATION = -1 << 31
 
 
 def setup_propagator(
-    models: Sequence[Tensor],
+    models: Sequence[torch.Tensor],
     model_pad_modes: Sequence[str],
     grid_spacing: Union[float, Sequence[float]],
     dt: float,
-    source_amplitudes: Sequence[Optional[Tensor]],
-    source_locations: Sequence[Optional[Tensor]],
-    receiver_locations: Sequence[Optional[Tensor]],
+    source_amplitudes: Sequence[Optional[torch.Tensor]],
+    source_locations: Sequence[Optional[torch.Tensor]],
+    receiver_locations: Sequence[Optional[torch.Tensor]],
     accuracy: int,
     fd_pad: Sequence[int],
     pml_width: Union[int, Sequence[int]],
@@ -27,7 +31,7 @@ def setup_propagator(
     min_nonzero_model_vel: float,
     max_model_vel: float,
     survey_pad: Optional[Union[int, Sequence[Optional[int]]]],
-    wavefields: Sequence[Optional[Tensor]],
+    wavefields: Sequence[Optional[torch.Tensor]],
     origin: Optional[Sequence[int]],
     nt: Optional[int],
     model_gradient_sampling_interval: int,
@@ -35,91 +39,129 @@ def setup_propagator(
     time_pad_frac: float,
     time_taper: bool,
     n_dims: int,
-) -> Tuple[List[Tensor], List[Tensor], List[Tensor], List[Tensor],
-           List[Tensor], List[float], float, int, int, int, int, int,
-           List[int], float, float, float, float, float, torch.device,
-           torch.dtype]:
+) -> Tuple[
+    List[torch.Tensor],
+    List[torch.Tensor],
+    List[torch.Tensor],
+    List[torch.Tensor],
+    List[torch.Tensor],
+    List[float],
+    float,
+    int,
+    int,
+    int,
+    int,
+    int,
+    List[int],
+    float,
+    float,
+    float,
+    float,
+    float,
+    torch.device,
+    torch.dtype,
+]:
     """Performs common setup for all propagators.
 
     This includes input validation, calculation of the internal time step,
     PML setup, and preparation of source and receiver tensors.
 
     Args:
-        models: A sequence of PyTorch Tensors representing the model
+        models:
+            A sequence of PyTorch Tensors representing the model
             parameters (e.g., velocity, density).
-        model_pad_modes: A sequence of strings specifying the padding mode
+        model_pad_modes:
+            A sequence of strings specifying the padding mode
             for each model (e.g., 'constant', 'reflect', 'replicate', 'circular').
-        grid_spacing: The spacing between grid points in each dimension.
+        grid_spacing:
+            The spacing between grid points in each dimension.
             Can be a single float (for isotropic spacing) or a sequence of
             floats (for anisotropic spacing).
-        dt: The desired time step interval for the simulation.
-        source_amplitudes: A sequence of optional Tensors, where each Tensor
+        dt:
+            The desired time step interval for the simulation.
+        source_amplitudes:
+            A sequence of optional Tensors, where each torch.Tensor
             contains the amplitudes of the sources for a given shot.
-        source_locations: A sequence of optional Tensors, where each Tensor
+        source_locations:
+            A sequence of optional Tensors, where each torch.Tensor
             contains the locations of the sources for a given shot.
-        receiver_locations: A sequence of optional Tensors, where each Tensor
+        receiver_locations:
+            A sequence of optional Tensors, where each torch.Tensor
             contains the locations of the receivers for a given shot.
-        accuracy: The finite-difference accuracy order (e.g., 2, 4, 6, 8).
-        fd_pad: A sequence of integers specifying the padding for finite
+        accuracy:
+            The finite-difference accuracy order (e.g., 2, 4, 6, 8).
+        fd_pad:
+            A sequence of integers specifying the padding for finite
             difference stencils in each dimension.
-        pml_width: The width of the PML (Perfectly Matched Layer) in grid
+        pml_width:
+            The width of the PML (Perfectly Matched Layer) in grid
             cells. Can be a single integer or a sequence of integers for
             each side of each dimension.
-        pml_freq: The dominant frequency for PML absorption. If None, defaults
+        pml_freq:
+            The dominant frequency for PML absorption. If None, defaults
             to 25.0 Hz.
-        max_vel: The maximum velocity in the model. Used for CFL condition
+        max_vel:
+            The maximum velocity in the model. Used for CFL condition
             calculation. If None, inferred from `max_model_vel`.
-        min_nonzero_model_vel: The minimum non-zero velocity in the model.
+        min_nonzero_model_vel:
+            The minimum non-zero velocity in the model.
             Used for warning about points per wavelength.
-        max_model_vel: The maximum velocity in the model. Used for CFL
+        max_model_vel:
+            The maximum velocity in the model. Used for CFL
             condition calculation.
-        survey_pad: Optional padding around the survey area. Can be an int
+        survey_pad:
+            Optional padding around the survey area. Can be an int
             or a sequence of optional ints.
-        wavefields: A sequence of optional Tensors representing initial
+        wavefields:
+            A sequence of optional Tensors representing initial
             wavefields.
-        origin: Optional sequence of integers specifying the origin of the
+        origin:
+            Optional sequence of integers specifying the origin of the
             survey within the full model.
-        nt: Optional integer specifying the number of time steps. If None,
+        nt:
+            Optional integer specifying the number of time steps. If None,
             inferred from `source_amplitudes`.
-        model_gradient_sampling_interval: The interval at which to sample
+        model_gradient_sampling_interval:
+            The interval at which to sample
             the wavefield for model gradient calculation.
-        freq_taper_frac: The fraction of the frequency spectrum to taper.
-        time_pad_frac: The fraction of the time axis to pad with zeros.
-        time_taper: Whether to apply a Hann window in time.
-        n_dims: The number of spatial dimensions of the model.
+        freq_taper_frac:
+            The fraction of the frequency spectrum to taper.
+        time_pad_frac:
+            The fraction of the time axis to pad with zeros.
+        time_taper:
+            Whether to apply a Hann window in time.
+        n_dims:
+            The number of spatial dimensions of the model.
 
     Returns:
-        Tuple[List[Tensor], List[Tensor], List[Tensor], List[Tensor],
-              List[Tensor], List[float], float, int, int, int, int, int,
-              List[int], float, float, float, float, float, torch.device,
-              torch.dtype]: A tuple containing:
-            - models_out: Processed model Tensors.
-            - source_amplitudes_out: Processed source amplitude Tensors.
-            - wavefields_out: Processed wavefield Tensors.
-            - source_locations_out: Processed source location Tensors.
-            - receiver_locations_out: Processed receiver location Tensors.
-            - grid_spacing: Processed grid spacing.
-            - dt: Internal time step.
-            - nt: Number of time steps.
-            - n_batch: Batch size.
-            - step_ratio: Ratio between user dt and internal dt.
-            - model_gradient_sampling_interval: Model gradient sampling interval.
-            - accuracy: Finite difference accuracy.
-            - pml_width: PML width.
-            - pml_freq: PML frequency.
-            - max_vel: Maximum velocity.
-            - freq_taper_frac: Frequency taper fraction.
-            - time_pad_frac: Time padding fraction.
-            - time_taper: Time taper flag.
-            - device: PyTorch device.
-            - dtype: PyTorch data type.
+        A tuple containing processed inputs and calculated parameters:
+        - models_out: Processed model Tensors.
+        - source_amplitudes_out: Processed source amplitude Tensors.
+        - wavefields_out: Processed wavefield Tensors.
+        - source_locations_out: Processed source location Tensors.
+        - receiver_locations_out: Processed receiver location Tensors.
+        - grid_spacing: Processed grid spacing.
+        - dt: Internal time step.
+        - nt: Number of time steps.
+        - n_batch: Batch size.
+        - step_ratio: Ratio between user dt and internal dt.
+        - model_gradient_sampling_interval: Model gradient sampling interval.
+        - accuracy: Finite difference accuracy.
+        - pml_width: PML width.
+        - pml_freq: PML frequency.
+        - max_vel: Maximum velocity.
+        - freq_taper_frac: Frequency taper fraction.
+        - time_pad_frac: Time padding fraction.
+        - time_taper: Time taper flag.
+        - device: PyTorch device.
+        - dtype: PyTorch data type.
 
     Raises:
         TypeError: If any input is of an incorrect type.
         ValueError: If any input has an invalid value.
         RuntimeError: If there are inconsistencies between inputs.
     """
-    if not all(isinstance(m, Tensor) for m in models):
+    if not all(isinstance(m, torch.Tensor) for m in models):
         raise TypeError("models must be torch.Tensor objects.")
     device = models[0].device
     dtype = models[0].dtype
@@ -159,24 +201,40 @@ def setup_propagator(
             device,
             dtype,
         ))
-    return (models_out, source_amplitudes_out, wavefields_out,
-            source_locations_out, receiver_locations_out, grid_spacing, dt, nt,
-            n_batch, step_ratio, model_gradient_sampling_interval, accuracy,
-            pml_width, pml_freq, max_vel, freq_taper_frac,
-            time_pad_frac, time_taper, device, dtype)
+    return (
+        models_out,
+        source_amplitudes_out,
+        wavefields_out,
+        source_locations_out,
+        receiver_locations_out,
+        grid_spacing,
+        dt,
+        nt,
+        n_batch,
+        step_ratio,
+        model_gradient_sampling_interval,
+        accuracy,
+        pml_width,
+        pml_freq,
+        max_vel,
+        freq_taper_frac,
+        time_pad_frac,
+        time_taper,
+        device,
+        dtype,
+    )
 
 
-def get_n_batch(source_locations: Sequence[Optional[Tensor]],
-                wavefields: Sequence[Optional[Tensor]]) -> int:
-    """
-    Get the batch size from source_locations or wavefields.
+def get_n_batch(source_locations: Sequence[Optional[torch.Tensor]],
+                wavefields: Sequence[Optional[torch.Tensor]]) -> int:
+    """Get the batch size from source_locations or wavefields.
 
     Args:
         source_locations: Sequence of source location tensors (or None).
         wavefields: Sequence of wavefield tensors (or None).
 
     Returns:
-        int: Batch size (first dimension of any non-None tensor).
+        Batch size (first dimension of any non-None tensor).
 
     Raises:
         RuntimeError: If all tensors are None.
@@ -193,25 +251,24 @@ def get_n_batch(source_locations: Sequence[Optional[Tensor]],
 
 
 def downsample_and_movedim(
-    receiver_amplitudes: Tensor,
+    receiver_amplitudes: torch.Tensor,
     step_ratio: int,
     freq_taper_frac: float = 0.0,
     time_pad_frac: float = 0.0,
     time_taper: bool = False,
     shift: float = 0.0,
-) -> Tensor:
-    """
-    Downsample receiver data and move the time dimension to the last axis.
+) -> torch.Tensor:
+    """Downsample receiver data and move the time dimension to the last axis.
 
     This is a convenience function that combines the downsampling of
     receiver data (if `step_ratio` > 1) with moving the time dimension
     to be the last dimension, which is the format expected by the user.
 
     Args:
-        receiver_amplitudes: A Tensor containing the receiver amplitudes.
+        receiver_amplitudes: A torch.Tensor containing the receiver amplitudes.
         step_ratio: The integer factor by which to downsample.
         freq_taper_frac: The fraction of the end of the frequency spectrum
-                         to taper.
+            to taper.
         time_pad_frac: The fraction of the time axis to pad with zeros.
         time_taper: Whether to apply a Hann window in time.
         shift: The amount to shift the data in time before downsampling.
@@ -234,8 +291,21 @@ def downsample_and_movedim(
 
 def set_grid_spacing(grid_spacing: Union[float, Sequence[float]],
                      n_dims: int) -> List[float]:
-    """
-    Ensure grid_spacing is a sequence of length n_dims.
+    """Ensures grid_spacing is a sequence of length n_dims.
+
+    Args:
+        grid_spacing: The spacing between grid points in each dimension.
+            Can be a single float (for isotropic spacing) or a sequence of
+            floats (for anisotropic spacing).
+        n_dims: The number of spatial dimensions.
+
+    Returns:
+        A list of floats representing the grid spacing for each dimension.
+
+    Raises:
+        TypeError: If `grid_spacing` is not a float or sequence of floats.
+        ValueError: If any element of `grid_spacing` is not positive.
+        RuntimeError: If the length of `grid_spacing` is not 1 or `n_dims`.
     """
     try:
         # grid_spacing is convertible to a float
@@ -255,14 +325,24 @@ def set_grid_spacing(grid_spacing: Union[float, Sequence[float]],
 
     if len(processed_grid_spacing) != n_dims:
         raise RuntimeError(
-            f"grid_spacing must have 1 or {n_dims} elements, got {len(processed_grid_spacing)}."
+            f"grid_spacing must have 1 or {n_dims} elements, "
+            f"got {len(processed_grid_spacing)}."
         )
     return processed_grid_spacing
 
 
 def set_accuracy(accuracy: int) -> int:
-    """
-    Validate finite difference accuracy.
+    """Validates finite difference accuracy.
+
+    Args:
+        accuracy: The finite-difference accuracy order (e.g., 2, 4, 6, 8).
+
+    Returns:
+        The validated accuracy.
+
+    Raises:
+        TypeError: If `accuracy` is not an integer.
+        ValueError: If `accuracy` is not one of 2, 4, 6, or 8.
     """
     if not isinstance(accuracy, int):
         raise TypeError("accuracy must be an int.")
@@ -273,8 +353,22 @@ def set_accuracy(accuracy: int) -> int:
 
 def set_pml_width(pml_width: Union[int, Sequence[int]],
                   n_dims: int) -> List[int]:
-    """
-    Ensure pml_width is a sequence of length 2 * n_dims.
+    """Ensures pml_width is a sequence of length 2 * n_dims.
+
+    Args:
+        pml_width: The width of the PML (Perfectly Matched Layer) in grid
+            cells. Can be a single integer or a sequence of integers for
+            each side of each dimension.
+        n_dims: The number of spatial dimensions.
+
+    Returns:
+        A list of integers representing the PML width for each side of each
+        dimension.
+
+    Raises:
+        TypeError: If `pml_width` is not an int or sequence of ints.
+        ValueError: If any element of `pml_width` is negative.
+        RuntimeError: If the length of `pml_width` is not 1 or `2 * n_dims`.
     """
     try:
         # pml_width is convertible to an int
@@ -291,15 +385,28 @@ def set_pml_width(pml_width: Union[int, Sequence[int]],
 
     if len(processed_pml_width) != 2 * n_dims:
         raise RuntimeError(
-            f"Expected pml_width to be of length 1 or {2 * n_dims}, got {len(processed_pml_width)}."
+            f"Expected pml_width to be of length 1 or {2 * n_dims}, "
+            f"got {len(processed_pml_width)}."
         )
     return processed_pml_width
 
 
 def set_pml_freq(pml_freq: Optional[float], dt: float) -> float:
-    """
-    Set or validate PML frequency. Defaults to 25.0 Hz if not set.
-    Warns if out of range.
+    """Sets or validates the PML frequency.
+
+    Defaults to 25.0 Hz if not set. Warns if the frequency is out of range.
+
+    Args:
+        pml_freq: The dominant frequency for PML absorption. If None, defaults
+            to 25.0 Hz.
+        dt: The time step interval. Used to calculate the Nyquist frequency.
+
+    Returns:
+        The validated PML frequency.
+
+    Raises:
+        TypeError: If `pml_freq` is not None or convertible to a float.
+        ValueError: If `dt` is not positive or `pml_freq` is negative.
     """
     if pml_freq is not None:
         try:
@@ -317,14 +424,26 @@ def set_pml_freq(pml_freq: Optional[float], dt: float) -> float:
         raise ValueError("pml_freq must be non-negative.")
     if pml_freq > nyquist:
         warnings.warn(
-            f"pml_freq {pml_freq} is greater than the Nyquist frequency {nyquist}."
+            f"pml_freq {pml_freq} is greater than the Nyquist "
+            f"frequency {nyquist}."
         )
     return pml_freq
 
 
 def set_max_vel(max_vel: Optional[float], max_model_vel: float) -> float:
-    """
-    Set or validate maximum velocity for CFL condition.
+    """Sets or validates the maximum velocity for the CFL condition.
+
+    Args:
+        max_vel: The maximum velocity in the model. If None, `max_model_vel`
+            is used.
+        max_model_vel: The maximum velocity present in the model.
+
+    Returns:
+        The validated maximum velocity.
+
+    Raises:
+        TypeError: If `max_vel` or `max_model_vel` are not convertible to a float.
+        ValueError: If `max_model_vel` is not positive.
     """
     if max_vel is not None:
         try:
@@ -345,10 +464,28 @@ def set_max_vel(max_vel: Optional[float], max_model_vel: float) -> float:
     return max_vel
 
 
-def set_nt(nt: Optional[int], source_amplitudes: Sequence[Optional[Tensor]],
+def set_nt(nt: Optional[int],
+           source_amplitudes: Sequence[Optional[torch.Tensor]],
            step_ratio: int) -> int:
-    """
-    Set or validate number of time steps.
+    """Sets or validates the number of time steps.
+
+    Args:
+        nt: The desired number of time steps. If None, it is inferred from
+            `source_amplitudes`.
+        source_amplitudes: A sequence of optional Tensors, where each torch.Tensor
+            contains the amplitudes of the sources for a given shot.
+        step_ratio: The ratio between the user-specified time step and the
+            internal time step.
+
+    Returns:
+        The total number of time steps, adjusted by `step_ratio`.
+
+    Raises:
+        TypeError: If `nt` is not an int or None, or if `source_amplitudes`
+            contains non-torch.Tensor elements.
+        ValueError: If `step_ratio` is less than 1.
+        RuntimeError: If `nt` and `source_amplitudes` are both None, or if
+            they are inconsistent, or if `nt` is negative.
     """
     if nt is not None and not isinstance(nt, int):
         raise TypeError("nt must be an int or None.")
@@ -376,8 +513,18 @@ def set_nt(nt: Optional[int], source_amplitudes: Sequence[Optional[Tensor]],
 
 def set_model_gradient_sampling_interval(
         model_gradient_sampling_interval: int) -> int:
-    """
-    Validate model gradient sampling interval.
+    """Validates the model gradient sampling interval.
+
+    Args:
+        model_gradient_sampling_interval: The interval at which to sample
+            the wavefield for model gradient calculation.
+
+    Returns:
+        The validated sampling interval.
+
+    Raises:
+        TypeError: If `model_gradient_sampling_interval` is not an integer.
+        ValueError: If `model_gradient_sampling_interval` is negative.
     """
     if not isinstance(model_gradient_sampling_interval, int):
         raise TypeError("model_gradient_sampling_interval must be an int.")
@@ -387,8 +534,17 @@ def set_model_gradient_sampling_interval(
 
 
 def set_freq_taper_frac(freq_taper_frac: float) -> float:
-    """
-    Validate frequency taper fraction.
+    """Validates the frequency taper fraction.
+
+    Args:
+        freq_taper_frac: The fraction of the frequency spectrum to taper.
+
+    Returns:
+        The validated frequency taper fraction.
+
+    Raises:
+        TypeError: If `freq_taper_frac` is not convertible to a float.
+        ValueError: If `freq_taper_frac` is not within the range [0, 1].
     """
     try:
         freq_taper_frac = float(freq_taper_frac)
@@ -401,8 +557,17 @@ def set_freq_taper_frac(freq_taper_frac: float) -> float:
 
 
 def set_time_pad_frac(time_pad_frac: float) -> float:
-    """
-    Validate time padding fraction.
+    """Validates the time padding fraction.
+
+    Args:
+        time_pad_frac: The fraction of the time axis to pad with zeros.
+
+    Returns:
+        The validated time padding fraction.
+
+    Raises:
+        TypeError: If `time_pad_frac` is not convertible to a float.
+        ValueError: If `time_pad_frac` is not within the range [0, 1].
     """
     try:
         time_pad_frac = float(time_pad_frac)
@@ -415,20 +580,41 @@ def set_time_pad_frac(time_pad_frac: float) -> float:
 
 
 def check_source_amplitudes_locations_match(
-    source_amplitudes: Sequence[Optional[Tensor]],
-    source_locations: Sequence[Optional[Tensor]],
+    source_amplitudes: Sequence[Optional[torch.Tensor]],
+    source_locations: Sequence[Optional[torch.Tensor]],
 ) -> None:
-    """
-    Ensure source_amplitudes and source_locations match in length and structure.
+    """Ensures source_amplitudes and source_locations match.
+
+    This function verifies that the number of source amplitude tensors matches
+    the number of source location tensors, and that for each pair, they are
+    either both None or both non-None. If non-None, it checks that they are
+    `torch.Tensor` objects and have matching sizes in their
+    `n_sources_per_shot` dimension.
+
+    Args:
+        source_amplitudes: A sequence of optional Tensors, where each
+            torch.Tensor contains the amplitudes of the sources for a given shot.
+        source_locations: A sequence of optional Tensors, where each
+            torch.Tensor contains the locations of the sources for a given shot.
+
+    Raises:
+        RuntimeError: If the lengths of `source_amplitudes` and
+            `source_locations` do not match, or if a pair of
+            amplitude/location is inconsistent (one is None and the other is
+            not), or if their `n_sources_per_shot` dimensions do not match.
+        TypeError: If `source_amplitudes` or `source_locations` are not
+            `torch.Tensor` when expected to be.
     """
     if len(source_amplitudes) != len(source_locations):
         raise RuntimeError(
-            f"The same number of source_amplitudes ({len(source_amplitudes)}) and source_locations ({len(source_locations)}) must be provided."
+            f"The same number of source_amplitudes ({len(source_amplitudes)}) "
+            f"and source_locations ({len(source_locations)}) must be provided."
         )
     for amplitudes, locations in zip(source_amplitudes, source_locations):
         if (amplitudes is None) != (locations is None):
             raise RuntimeError(
-                "Each pair of source locations and amplitudes must both be None or both be non-None."
+                "Each pair of source locations and amplitudes must both be "
+                "None or both be non-None."
             )
         if amplitudes is not None and locations is not None:
             if not isinstance(amplitudes, torch.Tensor):
@@ -437,12 +623,14 @@ def check_source_amplitudes_locations_match(
                 raise TypeError("source_locations must be a torch.Tensor.")
             if amplitudes.shape[1] != locations.shape[1]:
                 raise RuntimeError(
-                    f"Expected source amplitudes and locations to be the same size in the n_sources_per_shot dimension, got {amplitudes.shape[1]} and {locations.shape[1]}."
+                    "Expected source amplitudes and locations to be the same "
+                    "size in the n_sources_per_shot dimension, got "
+                    f"{amplitudes.shape[1]} and {locations.shape[1]}."
                 )
 
 
 def set_source_amplitudes(
-    source_amplitudes: Sequence[Optional[Tensor]],
+    source_amplitudes: Sequence[Optional[torch.Tensor]],
     n_batch: int,
     nt: int,
     step_ratio: int,
@@ -451,15 +639,15 @@ def set_source_amplitudes(
     time_taper: bool,
     device: torch.device,
     dtype: torch.dtype,
-) -> List[Tensor]:
+) -> List[torch.Tensor]:
     """Prepares source amplitudes for propagation.
 
     This function validates the input source amplitudes, ensures consistency
     in device, dtype, and shape, and upsamples them if necessary.
 
     Args:
-        source_amplitudes: A sequence of optional Tensors, where each Tensor
-            contains the amplitudes of the sources for a given shot.
+        source_amplitudes: A sequence of optional Tensors, where each
+            torch.Tensor contains the amplitudes of the sources for a given shot.
         n_batch: The batch size.
         nt: The total number of time steps.
         step_ratio: The ratio between the user-specified time step and the
@@ -471,7 +659,7 @@ def set_source_amplitudes(
         dtype: The PyTorch data type to which the tensors should be cast.
 
     Returns:
-        List[Tensor]: A list of processed source amplitude Tensors.
+        List[torch.Tensor]: A list of processed source amplitude Tensors.
 
     Raises:
         TypeError: If `source_amplitudes` contains elements that are not
@@ -479,7 +667,7 @@ def set_source_amplitudes(
         RuntimeError: If there are inconsistencies in the dimensions, device,
             dtype, or batch size of the source amplitudes.
     """
-    result: List[Tensor] = []
+    result: List[torch.Tensor] = []
     for amplitudes in source_amplitudes:
         if amplitudes is None:
             result.append(
@@ -489,23 +677,32 @@ def set_source_amplitudes(
             raise TypeError("source_amplitudes must be a torch.Tensor.")
         if amplitudes.ndim != 3:
             raise RuntimeError(
-                f"source amplitudes Tensors should have 3 dimensions, but found one with {amplitudes.ndim}."
+                "source amplitudes Tensors should have 3 dimensions, but "
+                f"found one with {amplitudes.ndim}."
             )
         if amplitudes.device != device:
             raise RuntimeError(
-                f"Inconsistent device: Expected all Tensors be on device {device}, but found a source amplitudes Tensor on device {amplitudes.device}."
+                "Inconsistent device: Expected all Tensors be on device "
+                f"{device}, but found a source amplitudes torch.Tensor on "
+                f"device {amplitudes.device}."
             )
         if amplitudes.dtype != dtype:
             raise RuntimeError(
-                f"Inconsistent dtype: Expected source amplitudes to have datatype {dtype}, but found one with dtype {amplitudes.dtype}."
+                "Inconsistent dtype: Expected source amplitudes to have "
+                f"datatype {dtype}, but found one with dtype "
+                f"{amplitudes.dtype}."
             )
         if amplitudes.shape[0] != n_batch:
             raise RuntimeError(
-                f"Expected source amplitudes to have size {n_batch} in the batch dimension, but found one with size {amplitudes.shape[0]}."
+                f"Expected source amplitudes to have size {n_batch} in the "
+                "batch dimension, but found one with size "
+                f"{amplitudes.shape[0]}."
             )
         if amplitudes.shape[2] * step_ratio != nt:
             raise RuntimeError(
-                f"Inconsistent number of time samples: Expected source amplitudes to have {nt // step_ratio} time samples, but found one with {amplitudes.shape[2]}."
+                "Inconsistent number of time samples: Expected source "
+                f"amplitudes to have {nt // step_ratio} time samples, but "
+                f"found one with {amplitudes.shape[2]}."
             )
         result.append(
             torch.movedim(
@@ -522,8 +719,9 @@ def set_source_amplitudes(
     return result
 
 
-def check_points_per_wavelength(min_nonzero_vel: float, pml_freq: float,
-                                grid_spacing: Sequence[float]) -> None:
+def check_points_per_wavelength(
+    min_nonzero_vel: float, pml_freq: float, grid_spacing: Sequence[float]
+) -> None:
     """Checks if there are enough grid points per wavelength.
 
     Warns the user if the number of grid cells per wavelength falls below
@@ -554,25 +752,28 @@ def check_points_per_wavelength(min_nonzero_vel: float, pml_freq: float,
     cells_per_wavelength = min_wavelength / max_spacing
     if cells_per_wavelength < 6:
         warnings.warn(
-            f"At least six grid cells per wavelength is recommended, but at a frequency of {pml_freq}, a minimum non-zero velocity of {min_nonzero_vel}, and a grid cell spacing of {max_spacing}, there are only {cells_per_wavelength:.2f}."
+            "At least six grid cells per wavelength is recommended, but at a "
+            f"frequency of {pml_freq}, a minimum non-zero velocity of "
+            f"{min_nonzero_vel}, and a grid cell spacing of {max_spacing}, "
+            f"there are only {cells_per_wavelength:.2f}."
         )
 
 
-def cosine_taper_end(signal: Tensor, n_taper: int) -> Tensor:
-    """Tapers the end of the final dimension of a Tensor using a cosine.
+def cosine_taper_end(signal: torch.Tensor, n_taper: int) -> torch.Tensor:
+    """Tapers the end of the final dimension of a torch.Tensor using a cosine.
 
     A half period, shifted and scaled to taper from 1 to 0, is used.
 
     Args:
         signal:
-            The Tensor that will have its final dimension tapered.
+            The torch.Tensor that will have its final dimension tapered.
         n_taper:
             The length of the cosine taper, in number of samples.
 
     Returns:
         The tapered signal.
     """
-    if not isinstance(signal, Tensor):
+    if not isinstance(signal, torch.Tensor):
         raise TypeError("signal must be a torch.Tensor.")
     if not isinstance(n_taper, int):
         raise TypeError("n_taper must be an int.")
@@ -590,19 +791,20 @@ def cosine_taper_end(signal: Tensor, n_taper: int) -> Tensor:
     return signal * taper
 
 
-def zero_last_element_of_final_dimension(signal: Tensor) -> Tensor:
-    """Sets the last element of the final dimension of a Tensor to zero.
+def zero_last_element_of_final_dimension(signal: torch.Tensor) -> torch.Tensor:
+    """Sets the last element of the final dimension of a torch.Tensor to zero.
 
     Args:
-        signal: The Tensor to modify.
+        signal: The torch.Tensor to modify.
 
     Returns:
-        The modified Tensor with the last element of its final dimension set to zero.
+        The modified torch.Tensor with the last element of its final dimension
+        set to zero.
 
     Raises:
         TypeError: If `signal` is not a `torch.Tensor`.
     """
-    if not isinstance(signal, Tensor):
+    if not isinstance(signal, torch.Tensor):
         raise TypeError("signal must be a torch.Tensor.")
     if signal.numel() == 0:
         return signal
@@ -614,13 +816,13 @@ def zero_last_element_of_final_dimension(signal: Tensor) -> Tensor:
 
 
 def upsample(
-    signal: Tensor,
+    signal: torch.Tensor,
     step_ratio: int,
     freq_taper_frac: float = 0.0,
     time_pad_frac: float = 0.0,
     time_taper: bool = False,
-) -> Tensor:
-    """Upsamples the final dimension of a Tensor by a factor.
+) -> torch.Tensor:
+    """Upsamples the final dimension of a torch.Tensor by a factor.
 
     Low-pass upsampling is used to produce an upsampled signal without
     introducing higher frequencies than were present in the input. The
@@ -628,7 +830,7 @@ def upsample(
 
     Args:
         signal:
-            The Tensor that will have its final dimension upsampled.
+            The torch.Tensor that will have its final dimension upsampled.
         step_ratio:
             The integer factor by which the signal will be upsampled.
             The input signal is returned if this is 1 (freq_taper_frac,
@@ -638,14 +840,14 @@ def upsample(
             amplitude in the frequency domain to cosine taper. This
             might be useful to reduce ringing. A value of 0.1 means
             that the top 10% of frequencies will be tapered before
-            upsampling. Default 0.0 (no tapering).
+            upsampling. Defaults to 0.0 (no tapering).
         time_pad_frac:
             A float specifying the amount of zero padding that will
             be added to the signal before upsampling and removed
             afterwards, as a fraction of the length of the final
             dimension of the input signal. This might be useful to reduce
             wraparound artifacts. A value of 0.1 means that zero padding
-            of 10% of the length of the signal will be used. Default 0.0.
+            of 10% of the length of the signal will be used. Defaults to 0.0.
         time_taper:
             A bool specifying whether to apply a Hann window in time.
             This is useful during correctness tests of the propagators
@@ -656,7 +858,7 @@ def upsample(
     Returns:
         The signal after upsampling.
     """
-    if not isinstance(signal, Tensor):
+    if not isinstance(signal, torch.Tensor):
         raise TypeError("signal must be a torch.Tensor.")
     if signal.numel() == 0:
         return signal
@@ -709,21 +911,21 @@ def upsample(
 
 
 def downsample(
-    signal: Tensor,
+    signal: torch.Tensor,
     step_ratio: int,
     freq_taper_frac: float = 0.0,
     time_pad_frac: float = 0.0,
     time_taper: bool = False,
     shift: float = 0.0,
-) -> Tensor:
-    """Downsamples the final dimension of a Tensor by a factor.
+) -> torch.Tensor:
+    """Downsamples the final dimension of a torch.Tensor by a factor.
 
     Frequencies higher than or equal to the Nyquist frequency of the
     downsampled signal will be zeroed before downsampling.
 
     Args:
         signal:
-            The Tensor that will have its final dimension downsampled.
+            The torch.Tensor that will have its final dimension downsampled.
         step_ratio:
             The integer factor by which the signal will be downsampled.
             The input signal is returned if this is 1 and shift is 0
@@ -734,7 +936,7 @@ def downsample(
             amplitude in the frequency domain to cosine taper. This
             might be useful to reduce ringing. A value of 0.1 means
             that the top 10% of frequencies will be tapered after
-            downsampling. Default 0.0 (no tapering).
+            downsampling. Defaults to 0.0 (no tapering).
         time_pad_frac:
             A float specifying the amount of zero padding that will
             be added to the signal before downsampling and removed
@@ -742,7 +944,7 @@ def downsample(
             dimension of the output signal. This might be useful to reduce
             wraparound artifacts. A value of 0.1 means that zero padding
             of 10% of the length of the output signal will be used.
-            Default 0.0.
+            Defaults to 0.0.
         time_taper:
             A bool specifying whether to apply a Hann window in time.
             This is useful during correctness tests of the propagators
@@ -752,12 +954,12 @@ def downsample(
         shift:
             Amount (in units of time samples) to shift the data in time
             before downsampling.
-            Default 0.0.
+            Defaults to 0.0.
 
     Returns:
         The signal after downsampling.
     """
-    if not isinstance(signal, Tensor):
+    if not isinstance(signal, torch.Tensor):
         raise TypeError("signal must be a torch.Tensor.")
     if signal.numel() == 0:
         return signal
@@ -816,10 +1018,10 @@ def downsample(
 
 
 def extract_survey(
-    models: Sequence[Tensor],
-    source_locations: Sequence[Optional[Tensor]],
-    receiver_locations: Sequence[Optional[Tensor]],
-    wavefields: Sequence[Optional[Tensor]],
+    models: Sequence[torch.Tensor],
+    source_locations: Sequence[Optional[torch.Tensor]],
+    receiver_locations: Sequence[Optional[torch.Tensor]],
+    wavefields: Sequence[Optional[torch.Tensor]],
     survey_pad: Optional[Union[int, Sequence[Optional[int]]]],
     origin: Optional[Sequence[int]],
     fd_pad: Sequence[int],
@@ -829,8 +1031,9 @@ def extract_survey(
     n_dims: int,
     device: torch.device,
     dtype: torch.dtype,
-) -> Tuple[List[Tensor], List[Tensor], List[Tensor], List[Tensor]]:
-    """Extract a region of the model to reduce simulation computations, and pad.
+) -> Tuple[List[torch.Tensor], List[torch.Tensor], List[torch.Tensor],
+           List[torch.Tensor]]:
+    """Extracts a region of the model, pads it and prepares related tensors.
 
     The region can either be chosen based on `survey_pad` and the
     source and receiver locations, or using `origin` and initial
@@ -840,18 +1043,50 @@ def extract_survey(
     adjusts source and receiver locations to be relative to the
     new origin.
 
-    This function does any necessary processing to prepare the models and locations.
-    Padding is added to the models, and the locations are adjusted appropriately.
-    A batch dimension is added to the models if they don't already have one,
-    the device and dtype of all models and locations are checked and they are
-    made contiguous, and locations that are None are changed to be empty Tensors.
+    This function performs necessary processing to prepare the models and
+    locations. Padding is added to the models, and the locations are adjusted
+    appropriately. A batch dimension is added to the models if they don't
+    already have one. The device and dtype of all models and locations are
+    checked and they are made contiguous. Locations that are None are changed
+    to be empty Tensors.
+
+    Args:
+        models: A sequence of PyTorch Tensors representing the model
+            parameters (e.g., velocity, density).
+        source_locations: A sequence of optional Tensors, where each
+            torch.Tensor contains the locations of the sources for a given shot.
+        receiver_locations: A sequence of optional Tensors, where each
+            torch.Tensor contains the locations of the receivers for a given shot.
+        wavefields: A sequence of optional Tensors representing initial
+            wavefields.
+        survey_pad: Optional padding around the survey area. Can be an int
+            or a sequence of optional ints.
+        origin: Optional sequence of integers specifying the origin of the
+            survey within the full model.
+        fd_pad: A sequence of integers specifying the padding for finite
+            difference stencils in each dimension.
+        pml_width: The width of the PML (Perfectly Matched Layer) in grid
+            cells.
+        model_pad_modes: A sequence of strings specifying the padding mode
+            for each model.
+        n_batch: The batch size.
+        n_dims: The number of spatial dimensions of the model.
+        device: The PyTorch device to which the tensors should be moved.
+        dtype: The PyTorch data type to which the tensors should be cast.
+
+    Returns:
+        A tuple containing:
+        - models_out: Processed model Tensors.
+        - source_locations_out: Processed source location Tensors.
+        - receiver_locations_out: Processed receiver location Tensors.
+        - wavefields_out: Processed wavefield Tensors.
     """
-    if any(not isinstance(m, Tensor) for m in models):
+    if any(not isinstance(m, torch.Tensor) for m in models):
         raise TypeError("Models must be a torch.Tensor.")
     if survey_pad is not None and origin is not None:
         raise RuntimeError("survey_pad and origin cannot both be specified.")
-    locations: List[Optional[Tensor]] = (list(source_locations) +
-                                         list(receiver_locations))
+    locations: List[Optional[torch.Tensor]] = (list(source_locations) +
+                                               list(receiver_locations))
     model_spatial_shape = list(models[0].shape[-n_dims:])
     check_locations_are_within_model(model_spatial_shape, locations)
     pad = [fd + pml for fd, pml in zip(fd_pad, pml_width)]
@@ -882,18 +1117,20 @@ def extract_survey(
 
 
 def check_locations_are_within_model(
-        model_shape: Sequence[int],
-        locations: Sequence[Optional[Tensor]]) -> None:
+    model_shape: Sequence[int],
+    locations: Sequence[Optional[torch.Tensor]],
+) -> None:
     """Checks if all locations are within the bounds of the model.
 
     Args:
-        model_shape: A sequence of integers representing the spatial shape of the model.
-        locations: A sequence of optional Tensors, where each Tensor contains
-            the locations to check.
+        model_shape: A sequence of integers representing the spatial shape
+            of the model.
+        locations: A sequence of optional Tensors, where each torch.Tensor
+            contains the locations to check.
 
     Raises:
-        RuntimeError: If `model_shape` is empty, contains non-positive elements,
-            or if any location is outside the model bounds.
+        RuntimeError: If `model_shape` is empty, contains non-positive
+            elements, or if any location is outside the model bounds.
     """
     if not model_shape:
         raise RuntimeError("model_shape must not be empty.")
@@ -914,9 +1151,24 @@ def check_locations_are_within_model(
                     raise RuntimeError("Locations must be within model.")
 
 
-def set_survey_pad(survey_pad: Optional[Union[int, Sequence[Optional[int]]]],
-                   ndim: int) -> List[int]:
-    """Check survey_pad, and convert to a list if it is a scalar."""
+def set_survey_pad(
+    survey_pad: Optional[Union[int, Sequence[Optional[int]]]], ndim: int
+) -> List[int]:
+    """Checks `survey_pad` and converts it to a list if it is a scalar.
+
+    Args:
+        survey_pad: Optional padding around the survey area. Can be an int
+            or a sequence of optional ints.
+        ndim: The number of spatial dimensions.
+
+    Returns:
+        A list of integers representing the padding for each side of each
+        dimension. Negative values indicate padding to the model edge.
+
+    Raises:
+        RuntimeError: If `ndim` is not positive, or if `survey_pad` contains
+            invalid values or has an incorrect length.
+    """
     if ndim <= 0:
         raise RuntimeError("ndim must be positive.")
 
@@ -944,14 +1196,15 @@ def set_survey_pad(survey_pad: Optional[Union[int, Sequence[Optional[int]]]],
                     "survey_pad entries must be None or non-negative ints.")
     if len(survey_pad_list) != 2 * ndim:
         raise RuntimeError(
-            f"survey_pad must have length 2 * dims in model, but got {len(survey_pad_list)}."
+            f"survey_pad must have length 2 * dims in model, but got "
+            f"{len(survey_pad_list)}."
         )
     return survey_pad_list
 
 
 def get_survey_extents_from_locations(
     model_shape: Sequence[int],
-    locations: Sequence[Optional[Tensor]],
+    locations: Sequence[Optional[torch.Tensor]],
     survey_pad: Optional[Union[int, Sequence[Optional[int]]]],
 ) -> List[Tuple[int, int]]:
     """Calculate the extents of the model to use for the survey.
@@ -992,9 +1245,13 @@ def get_survey_extents_from_locations(
     return extents
 
 
-def get_survey_extents_one_side(pad: int, side: str, dim: int,
-                                locations: Sequence[Optional[Tensor]],
-                                shape: int) -> int:
+def get_survey_extents_one_side(
+    pad: int,
+    side: str,
+    dim: int,
+    locations: Sequence[Optional[torch.Tensor]],
+    shape: int,
+) -> int:
     """Get the survey extent for the left or right side of one dimension.
 
     Args:
@@ -1015,8 +1272,8 @@ def get_survey_extents_one_side(pad: int, side: str, dim: int,
     """
     # if pad < 0, return the edge of the model in that direction (0 if left,
     # the model shape if right). Otherwise, initialise extreme_location to
-    # the other side of the model so that we can find the min (left) or max (right)
-    # location below.
+    # the other side of the model so that we can find the min (left) or
+    # max (right) location below.
     if side == "left":
         if pad < 0 or not any(location is not None for location in locations):
             return 0
@@ -1034,8 +1291,9 @@ def get_survey_extents_one_side(pad: int, side: str, dim: int,
             dim_location = dim_location[dim_location != IGNORE_LOCATION]
             if dim_location.numel() == 0:
                 continue
-            # Check if the location is within the model bounds. This check is duplicated from check_locations_are_within_model
-            # but is necessary here to ensure that the extents are calculated
+            # Check if the location is within the model bounds. This check is
+            # duplicated from check_locations_are_within_model but is
+            # necessary here to ensure that the extents are calculated
             # correctly.
             if dim_location.min() < 0:
                 raise RuntimeError("Locations must be >= 0.")
@@ -1051,19 +1309,19 @@ def get_survey_extents_one_side(pad: int, side: str, dim: int,
                 extreme_location = max(extreme_location,
                                        int(dim_location.max().item()) + pad)
     # The right side of the extent is not included - it is one past the end. It
-    # currently holds the largest value that should be included, though, so we add
-    # 1.
+    # currently holds the largest value that should be included, though, so we
+    # add 1.
     if side == "right":
         extreme_location += 1
-    # The extents should not be outside the model, so we clip them to the extents
-    # of the model.
+    # The extents should not be outside the model, so we clip them to the
+    # extents of the model.
     extreme_location = max(extreme_location, 0)
     extreme_location = min(extreme_location, shape)
     return extreme_location
 
 
 def get_survey_extents_from_wavefields(
-    wavefields: Sequence[Optional[Tensor]],
+    wavefields: Sequence[Optional[torch.Tensor]],
     origin: Optional[Sequence[int]],
     pml_width: Sequence[int],
 ) -> List[Tuple[int, int]]:
@@ -1076,7 +1334,8 @@ def get_survey_extents_from_wavefields(
             A list containing the coordinates of the origin of the wavefields.
             Optional, default all zero.
         pml_width:
-            A list containing the padding to add on each side for the PML, using the specified pad mode.
+            A list containing the padding to add on each side for the PML,
+            using the specified pad mode.
 
     Returns:
         A list of length equal to the number of dimensions in the model,
@@ -1101,7 +1360,8 @@ def get_survey_extents_from_wavefields(
         if wavefield is not None:
             if wavefield.ndim != ndims + 1:
                 raise RuntimeError(
-                    f"wavefields must have {ndims + 1} dimensions (batch + spatial)."
+                    f"wavefields must have {ndims + 1} dimensions "
+                    "(batch + spatial)."
                 )
             for dim in range(ndims):
                 dim_origin = 0 if origin is None else origin[dim]
@@ -1110,20 +1370,23 @@ def get_survey_extents_from_wavefields(
                 extents.append((dim_origin, dim_origin + extent_size))
             if origin is None:
                 warnings.warn(
-                    f"Survey extents were inferred from the wavefield shape to be {extents} because origin was not provided."
+                    "Survey extents were inferred from the wavefield shape to "
+                    f"be {extents} because origin was not provided."
                 )
             return extents
     raise RuntimeError("At least one wavefield must be non-None.")
 
 
-def check_extents_within_model(extents: Sequence[Tuple[int, int]],
-                               model_shape: Sequence[int]) -> None:
+def check_extents_within_model(
+    extents: Sequence[Tuple[int, int]], model_shape: Sequence[int]
+) -> None:
     """Checks if the survey extents are within the bounds of the model.
 
     Args:
-        extents: A sequence of tuples, where each tuple represents the (start, end)
-            coordinates of the survey extent for a dimension.
-        model_shape: A sequence of integers representing the spatial shape of the model.
+        extents: A sequence of tuples, where each tuple represents the
+            (start, end) coordinates of the survey extent for a dimension.
+        model_shape: A sequence of integers representing the spatial shape
+            of the model.
 
     Raises:
         RuntimeError: If any survey extent is outside the model bounds.
@@ -1136,15 +1399,16 @@ def check_extents_within_model(extents: Sequence[Tuple[int, int]],
 
 
 def check_locations_within_extents(
-        extents: Sequence[Tuple[int, int]],
-        locations: Sequence[Optional[Tensor]]) -> None:
+    extents: Sequence[Tuple[int, int]],
+    locations: Sequence[Optional[torch.Tensor]],
+) -> None:
     """Checks if all locations are within the specified survey extents.
 
     Args:
-        extents: A sequence of tuples, where each tuple represents the (start, end)
-            coordinates of the survey extent for a dimension.
-        locations: A sequence of optional Tensors, where each Tensor contains
-            the locations to check.
+        extents: A sequence of tuples, where each tuple represents the
+            (start, end) coordinates of the survey extent for a dimension.
+        locations: A sequence of optional Tensors, where each torch.Tensor
+            contains the locations to check.
 
     Raises:
         RuntimeError: If any location is outside the specified survey extents.
@@ -1158,23 +1422,23 @@ def check_locations_within_extents(
                         or extents[dim][1] <= dim_location.max()):
                     raise RuntimeError(
                         "Locations are not within "
-                        "survey extents. This probably occurred " +
-                        "because you provided an " +
-                        "initial wavefield that does not cover all " +
-                        "source and receiver locations, given the " +
+                        "survey extents. This probably occurred "
+                        "because you provided an "
+                        "initial wavefield that does not cover all "
+                        "source and receiver locations, given the "
                         "specified origin.")
 
 
 def check_extents_match_wavefields_shape(
     extents: Sequence[Tuple[int, int]],
-    wavefields: Sequence[Optional[Tensor]],
+    wavefields: Sequence[Optional[torch.Tensor]],
     pad: Sequence[int],
 ) -> None:
-    """Checks if the wavefield shapes match the calculated extents and padding.
+    """Checks if wavefield shapes match the calculated extents and padding.
 
     Args:
-        extents: A sequence of tuples, where each tuple represents the (start, end)
-            coordinates of the survey extent for a dimension.
+        extents: A sequence of tuples, where each tuple represents the
+            (start, end) coordinates of the survey extent for a dimension.
         wavefields: A sequence of optional Tensors representing initial
             wavefields.
         pad: A sequence of integers specifying the padding for finite
@@ -1196,26 +1460,30 @@ def check_extents_match_wavefields_shape(
                             pad[2 * dim + 1] + pad[2 * dim])
                 if wavefield.shape[1 + dim] != expected:
                     raise RuntimeError(
-                        "The shape of the provided wavefield, " +
-                        "in dimension " + str(dim) + ", " +
-                        str(wavefield.shape[1 + dim]) + ", does not match "
-                        "the extent determined by the specified "
-                        "survey_pad, " + str(expected) + ".")
+                        "The shape of the provided wavefield, "
+                        f"in dimension {dim}, {wavefield.shape[1+dim]}, "
+                        "does not match the extent determined by the "
+                        f"specified survey_pad, {expected}."
+                    )
 
 
 def reverse_pad(pad: Sequence[int]) -> List[int]:
     """Reverses the order of padding for each dimension.
 
-    Given a sequence of padding values in the order [dim0_start, dim0_end, dim1_start, dim1_end, ...],
-    this function returns a new list with the padding for each dimension reversed.
+    Given a sequence of padding values in the order
+    [dim0_start, dim0_end, dim1_start, dim1_end, ...], this function returns
+    a new list with the padding for each dimension reversed.
 
     Args:
-        pad: A sequence of integers representing padding values for each dimension.
-            Expected format: [dim0_start, dim0_end, dim1_start, dim1_end, ...]
+        pad: A sequence of integers representing padding values for each
+            dimension. Expected format:
+            [dim0_start, dim0_end, dim1_start, dim1_end, ...]
 
     Returns:
-        List[int]: A new list with the padding order reversed for each dimension.
-            Format: [dim_N_start, dim_N_end, ..., dim1_start, dim1_end, dim0_start, dim0_end].
+        List[int]: A new list with the padding order reversed for each
+            dimension. Format:
+            [dim_N_start, dim_N_end, ..., dim1_start, dim1_end,
+             dim0_start, dim0_end].
     """
     n_dims = len(pad) // 2
     reversed_pad: List[int] = []
@@ -1225,14 +1493,14 @@ def reverse_pad(pad: Sequence[int]) -> List[int]:
 
 
 def extract_models(
-    models: Sequence[Tensor],
+    models: Sequence[torch.Tensor],
     extents: Sequence[Tuple[int, int]],
     pad: Sequence[int],
     pad_modes: Sequence[str],
     n_batch: int,
     device: torch.device,
     dtype: torch.dtype,
-) -> List[Tensor]:
+) -> List[torch.Tensor]:
     """Extract the specified portion of the models and prepares them.
 
     Args:
@@ -1243,7 +1511,8 @@ def extract_models(
         pad:
             An list of integers specifying the padding to add on each side
         pad_modes:
-            A list of strings specifying the pad mode to use for the PML region of each model.
+            A list of strings specifying the pad mode to use for the PML
+            region of each model.
         n_batch:
             An integer specifying the size of the batch dimension.
         device:
@@ -1252,8 +1521,8 @@ def extract_models(
             The datatype that the models should have.
 
     Returns:
-        A list containing the desired portion of the models, with padding applied
-        and a batch dimension of size either 1 or n_batch.
+        A list containing the desired portion of the models, with padding
+        applied and a batch dimension of size either 1 or n_batch.
     """
     n_dims = len(pad) // 2
     assert len(models) == len(pad_modes)
@@ -1262,7 +1531,7 @@ def extract_models(
     # Check all models have correct dimensions and consistent attributes
     spatial_shape = models[0].shape[-n_dims:]
     for model in models:
-        if not isinstance(model, Tensor):
+        if not isinstance(model, torch.Tensor):
             raise TypeError("Models must be a torch.Tensor.")
         if model.ndim not in (n_dims, n_dims + 1):
             raise RuntimeError(
@@ -1278,7 +1547,8 @@ def extract_models(
     for m in models:
         if m.shape[0] not in (1, n_batch):
             raise RuntimeError(
-                f"The batch dimension of models must be of size 1 or {n_batch}."
+                "The batch dimension of models must be of size 1 or "
+                f"{n_batch}."
             )
 
     region = (slice(None), ) + tuple(
@@ -1301,48 +1571,51 @@ def extract_models(
 
 def extract_locations(
     name: str,
-    locations: Sequence[Optional[Tensor]],
+    locations: Sequence[Optional[torch.Tensor]],
     extents: Sequence[Tuple[int, int]],
     pad: Sequence[int],
     n_batch: int,
     device: torch.device,
     dtype: torch.dtype = torch.long,
     eps: float = 0.1,
-) -> List[Tensor]:
+) -> List[torch.Tensor]:
     """Sets locations relative to the extracted model and prepares them.
 
     Locations are returned as 1D indices into each batch.
 
     Args:
-        name: A string indicating the type of locations (e.g., "Source", "Receiver").
-        locations: A sequence of optional Tensors, where each Tensor contains
-            the locations to process.
-        extents: A sequence of tuples, where each tuple represents the (start, end)
-            coordinates of the survey extent for a dimension.
+        name: A string indicating the type of locations
+            (e.g., "Source", "Receiver").
+        locations: A sequence of optional Tensors, where each torch.Tensor
+            contains the locations to process.
+        extents: A sequence of tuples, where each tuple represents the
+            (start, end) coordinates of the survey extent for a dimension.
         pad: A sequence of integers specifying the padding for finite
             difference stencils and PML in each dimension.
         n_batch: The batch size.
         device: The PyTorch device to which the tensors should be moved.
         dtype: The PyTorch data type to which the tensors should be cast.
             Defaults to `torch.long`.
-        eps: A small float value used for checking if locations are integer-like.
-            Defaults to 0.1.
+        eps: A small float value used for checking if locations are
+            integer-like. Defaults to 0.1.
 
     Returns:
-        List[Tensor]: A list of processed location Tensors, where each location
-            is converted to a 1D index relative to the extracted and padded model.
+        List[torch.Tensor]: A list of processed location Tensors, where each
+            location is converted to a 1D index relative to the extracted
+            and padded model.
 
     Raises:
-        TypeError: If `locations` contains elements that are not `torch.Tensor` or `None`.
-        RuntimeError: If there are inconsistencies in the dimensions, batch size,
-            or if locations are not unique within a shot.
+        TypeError: If `locations` contains elements that are not
+            `torch.Tensor` or `None`.
+        RuntimeError: If there are inconsistencies in the dimensions, batch
+            size, or if locations are not unique within a shot.
     """
     n_dims = len(extents)
     origin: List[int] = []  # origin of extracted survey, including padding
     shape: List[int] = []  # shape of extracted survey, including padding
     stride: List[int] = [
         1
-    ] * n_dims  # stride of each dimension in the extracted survey, including padding
+    ] * n_dims  # stride of each dim in extracted survey, including padding
     for dim in range(n_dims):
         origin.append(extents[dim][0] - pad[2 * dim])
         shape.append(extents[dim][1] - extents[dim][0] + pad[2 * dim] +
@@ -1350,11 +1623,11 @@ def extract_locations(
     for dim in range(n_dims - 2, -1, -1):
         stride[dim] = stride[dim + 1] * shape[dim + 1]
 
-    extracted_locations: List[Tensor] = []
+    extracted_locations: List[torch.Tensor] = []
     for location in locations:
         if location is not None:
 
-            if not isinstance(location, Tensor):
+            if not isinstance(location, torch.Tensor):
                 raise TypeError("locations must be a torch.Tensor.")
             if location.numel() > 0 and eps < (location -
                                                location.long()).abs().max():
@@ -1371,19 +1644,20 @@ def extract_locations(
 
             if location.shape[0] != n_batch:
                 raise RuntimeError(
-                    "Inconsistent batch size: Expected all Tensors to have a batch size of "
-                    + str(n_batch) + ", but found a " + name.lower() +
-                    " locations Tensor with a batch size of " +
-                    str(location.shape[0]) + ".")
+                    "Inconsistent batch size: Expected all Tensors to have a "
+                    f"batch size of {n_batch}, but found a {name.lower()} "
+                    "locations torch.Tensor with a batch size of "
+                    f"{location.shape[0]}."
+                )
 
             if location.shape[-1] != n_dims:
                 raise RuntimeError(
-                    name + " locations must have " + str(n_dims) +
-                    " dimensional coordinates, but found one with " +
-                    str(location.shape[-1]) + ".")
+                    f"{name} locations must have {n_dims} dimensional "
+                    f"coordinates, but found one with {location.shape[-1]}."
+                )
 
-            # Shift locations to be relative to new origin in extracted (and padded)
-            # model
+            # Shift locations to be relative to new origin in extracted
+            # (and padded) model
             shifted_location = location.clone().long().to(device)
             for dim in range(n_dims):
                 shifted_location[..., dim] = torch.where(
@@ -1411,12 +1685,12 @@ def extract_locations(
                                                 IGNORE_LOCATION]
                 if len(shot_locations) != len(shot_locations.unique()):
                     raise RuntimeError(
-                        name +
-                        " locations must be unique within each shot. You cannot have two in the same cell, but in shot "
-                        + str(batch_idx) + " there is/are " +
-                        str(len(shot_locations)) + " active " + name.lower() +
-                        " locations while only " +
-                        str(len(shot_locations.unique())) + " is/are unique.")
+                        f"{name} locations must be unique within each shot. "
+                        "You cannot have two in the same cell, but in shot "
+                        f"{batch_idx} there is/are {len(shot_locations)} "
+                        f"active {name.lower()} locations while only "
+                        f"{len(shot_locations.unique())} is/are unique."
+                    )
 
             extracted_locations.append(location_1d.contiguous())
         else:
@@ -1426,13 +1700,13 @@ def extract_locations(
 
 
 def prepare_wavefields(
-    wavefields: Sequence[Optional[Tensor]],
+    wavefields: Sequence[Optional[torch.Tensor]],
     extents: Sequence[Tuple[int, int]],
     pad: Sequence[int],
     n_batch: int,
     device: torch.device,
     dtype: torch.dtype,
-) -> List[Tensor]:  # Return type is List[Tensor] as Nones are replaced
+) -> List[torch.Tensor]:
     """Checks and prepares initial wavefields.
 
     This function validates the input wavefields, ensures consistency
@@ -1442,8 +1716,8 @@ def prepare_wavefields(
     Args:
         wavefields: A sequence of optional Tensors representing initial
             wavefields.
-        extents: A sequence of tuples, where each tuple represents the (start, end)
-            coordinates of the survey extent for a dimension.
+        extents: A sequence of tuples, where each tuple represents the
+            (start, end) coordinates of the survey extent for a dimension.
         pad: A sequence of integers specifying the padding for finite
             difference stencils and PML in each dimension.
         n_batch: The batch size.
@@ -1451,11 +1725,12 @@ def prepare_wavefields(
         dtype: The PyTorch data type to which the tensors should be cast.
 
     Returns:
-        List[Tensor]: A list of processed wavefield Tensors, with `None` values
-            replaced by zero tensors.
+        A list of processed wavefield Tensors, with `None` values
+        replaced by zero tensors.
 
     Raises:
-        TypeError: If `wavefields` contains elements that are not `torch.Tensor` or `None`.
+        TypeError: If `wavefields` contains elements that are not
+            `torch.Tensor` or `None`.
         RuntimeError: If there are inconsistencies in the dimensions, device,
             dtype, batch size, or spatial shape of the wavefields.
     """
@@ -1464,30 +1739,39 @@ def prepare_wavefields(
         extents[dim][1] - extents[dim][0] + pad[2 * dim] + pad[2 * dim + 1]
         for dim in range(n_dims)
     ]
-    prepared_wavefields: List[Tensor] = []
+    prepared_wavefields: List[torch.Tensor] = []
     for wavefield in wavefields:
         if wavefield is not None:
-            if not isinstance(wavefield, Tensor):
+            if not isinstance(wavefield, torch.Tensor):
                 raise TypeError("Wavefields must be a torch.Tensor.")
             if wavefield.device != device:
                 raise RuntimeError(
-                    f"Inconsistent device: Expected all Tensors be on device {device}, but found a wavefield Tensor on device {wavefield.device}."
+                    "Inconsistent device: Expected all Tensors be on device "
+                    f"{device}, but found a wavefield torch.Tensor on device "
+                    f"{wavefield.device}."
                 )
             if wavefield.dtype != dtype:
                 raise RuntimeError(
-                    f"Inconsistent dtype: Expected wavefields to have datatype {dtype}, but found one with dtype {wavefield.dtype}."
+                    "Inconsistent dtype: Expected wavefields to have "
+                    f"datatype {dtype}, but found one with dtype "
+                    f"{wavefield.dtype}."
                 )
             if wavefield.ndim != n_dims + 1:
                 raise RuntimeError(
-                    f"Wavefields must have {n_dims + 1} dimensions, but found one with {wavefield.ndim}."
+                    f"Wavefields must have {n_dims + 1} dimensions, but found "
+                    f"one with {wavefield.ndim}."
                 )
             if wavefield.shape[0] != n_batch:
                 raise RuntimeError(
-                    f"Inconsistent batch size: Expected all Tensors to have a batch size of {n_batch}, but found a wavefield with a batch size of {wavefield.shape[0]}."
+                    "Inconsistent batch size: Expected all Tensors to have a "
+                    f"batch size of {n_batch}, but found a wavefield with a "
+                    f"batch size of {wavefield.shape[0]}."
                 )
             if list(wavefield.shape[1:]) != spatial_shape:
                 raise RuntimeError(
-                    f"Inconsistent spatial shape: Expected wavefield to have spatial shape {spatial_shape} but found one with spatial shape {list(wavefield.shape[1:])}."
+                    "Inconsistent spatial shape: Expected wavefield to have "
+                    f"spatial shape {spatial_shape} but found one with "
+                    f"spatial shape {list(wavefield.shape[1:])}."
                 )
             prepared_wavefields.append(wavefield)
         else:
@@ -1515,24 +1799,18 @@ def cfl_condition_n(
     less than or equal to this value.
 
     Args:
-        grid_spacing:
-            A List specifying the grid spacing in each spatial dimension.
-        dt:
-            The time step interval.
-        max_abs_vel:
-            The maximum absolute wavespeed in the model.
-        eps:
-            A small quantity to prevent division by zero. Default 1e-15.
-        c_max:
-            The maximum allowable Courant number.
+        grid_spacing: A List specifying the grid spacing in each spatial
+            dimension.
+        dt: The time step interval.
+        max_abs_vel: The maximum absolute wavespeed in the model.
+        eps: A small quantity to prevent division by zero. Default 1e-15.
+        c_max: The maximum allowable Courant number.
 
     Returns:
-        Tuple[float, int]:
-
-            inner_dt:
-                A time step interval that obeys the CFL condition.
-            step_ratio:
-                The integer dt / inner_dt.
+        A tuple containing:
+            inner_dt (float): A time step interval that obeys the CFL
+                condition.
+            step_ratio (int): The integer dt / inner_dt.
     """
     try:
         grid_spacing = list(grid_spacing)
@@ -1568,40 +1846,49 @@ def cfl_condition_n(
     return inner_dt, step_ratio
 
 
-def cfl_condition(dy: float, dx: float, *args: Any,
-                  **kwargs: Any) -> Tuple[float, int]:
-    """Calculates the time step interval to obey the CFL condition for 2D models."""
+def cfl_condition(
+    dy: float, dx: float, *args: Any, **kwargs: Any
+) -> Tuple[float, int]:
+    """Calculates the time step interval for 2D models.
+
+    This is a convenience wrapper around `cfl_condition_n` for 2D models.
+
+    Args:
+        dy: The grid spacing in the y-dimension.
+        dx: The grid spacing in the x-dimension.
+        *args: Additional positional arguments to pass to `cfl_condition_n`.
+        **kwargs: Additional keyword arguments to pass to `cfl_condition_n`.
+
+    Returns:
+        A tuple containing:
+            inner_dt (float): A time step interval that obeys the CFL
+                condition.
+            step_ratio (int): The integer dt / inner_dt.
+    """
     return cfl_condition_n([dy, dx], *args, **kwargs)
 
 
 def vpvsrho_to_lambmubuoyancy(
-        vp: Tensor,
-        vs: Tensor,
-        rho: Tensor,
-        eps: float = 1e-15) -> Tuple[Tensor, Tensor, Tensor]:
+    vp: torch.Tensor,
+    vs: torch.Tensor,
+    rho: torch.Tensor,
+    eps: float = 1e-15,
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Converts vp, vs, rho to lambda, mu, buoyancy.
 
     All input Tensors must have the same shape.
 
     Args:
-        vp:
-            A Tensor containing the p wavespeed.
-        vs:
-            A Tensor containing the s wavespeed.
-        rho:
-            A Tensor containing the density.
-        eps:
-            An optional float to avoid division by zero. Default 1e-15.
+        vp: A torch.Tensor containing the p wavespeed.
+        vs: A torch.Tensor containing the s wavespeed.
+        rho: A torch.Tensor containing the density.
+        eps: An optional float to avoid division by zero. Default 1e-15.
 
     Returns:
-        Tuple[Tensor, Tensor, Tensor]:
-
-            lambda:
-                A Tensor containing the first Lamé parameter.
-            mu:
-                A Tensor containing the second Lamé parameter.
-            buoyancy:
-                A Tensor containing the reciprocal of density.
+        A tuple containing:
+            lambda: A torch.Tensor containing the first Lamé parameter.
+            mu: A torch.Tensor containing the second Lamé parameter.
+            buoyancy: A torch.Tensor containing the reciprocal of density.
     """
 
     lamb = (vp**2 - 2 * vs**2) * rho
@@ -1611,33 +1898,26 @@ def vpvsrho_to_lambmubuoyancy(
 
 
 def lambmubuoyancy_to_vpvsrho(
-        lamb: Tensor,
-        mu: Tensor,
-        buoyancy: Tensor,
-        eps: float = 1e-15) -> Tuple[Tensor, Tensor, Tensor]:
+    lamb: torch.Tensor,
+    mu: torch.Tensor,
+    buoyancy: torch.Tensor,
+    eps: float = 1e-15,
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Converts lambda, mu, buoyancy to vp, vs, rho.
 
     All input Tensors must have the same shape.
 
     Args:
-        lamb:
-            A Tensor containing the first Lamé parameter.
-        mu:
-            A Tensor containing the second Lamé parameter.
-        buoyancy:
-            A Tensor containing the reciprocal of density.
-        eps:
-            An optional float to avoid division by zero. Default 1e-15.
+        lamb: A torch.Tensor containing the first Lamé parameter.
+        mu: A torch.Tensor containing the second Lamé parameter.
+        buoyancy: A torch.Tensor containing the reciprocal of density.
+        eps: An optional float to avoid division by zero. Default 1e-15.
 
     Returns:
-        Tuple[Tensor, Tensor, Tensor]:
-
-            vp:
-                A Tensor containing the p wavespeed.
-            vs:
-                A Tensor containing the s wavespeed.
-            rho:
-                A Tensor containing the density.
+        A tuple containing:
+            vp: A torch.Tensor containing the p wavespeed.
+            vs: A torch.Tensor containing the s wavespeed.
+            rho: A torch.Tensor containing the density.
     """
     vs = (mu * buoyancy).sqrt()
     vp = (lamb * buoyancy + 2 * vs**2).sqrt()
@@ -1659,31 +1939,36 @@ def setup_pml(
     eps: float = 1e-9,
     r_val: float = 0.001,
     n_power: int = 2,
-) -> Tuple[Tensor, Tensor]:
-    """Creates a and b profiles for C-PML
-
-    Args:
-        pml_width: List of two integers specifying the width of the PML
-                   region.
-        pml_start: List of two floats specifying the coordinates (in grid cells) of the
-                   start of the PML regions.
-        max_pml: Float specifying the length (in distance units) of the longest
-                 PML over all sides and dimensions.
-        dt: Time step interval
-        n: Integer specifying desired profile length, including fd_pad and
-           pml_width
-        max_vel: Maximum wave speed
-        dtype: PyTorch datatype to use
-        device: PyTorch device to use
-        pml_freq: The frequency value to use for the profile, usually the
-                  dominant frequency in the wavefield.
-        start: Float specifying the coordinate (in grid cells) of the first element.
-                    Optional, default 0.
-        eps: A small number to prevent division by zero. Optional, default 1e-9.
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Creates a and b profiles for C-PML.
 
     Only the first fd_pad[0]+pml_width[0] and last fd_pad[1]+pml_width[1]
     elements of the profiles will be non-zero.
 
+    Args:
+        pml_width: List of two integers specifying the width of the PML
+            region.
+        pml_start: List of two floats specifying the coordinates (in grid
+            cells) of the start of the PML regions.
+        max_pml: Float specifying the length (in distance units) of the
+            longest PML over all sides and dimensions.
+        dt: Time step interval.
+        n: Integer specifying desired profile length, including fd_pad and
+           pml_width.
+        max_vel: Maximum wave speed.
+        dtype: PyTorch datatype to use.
+        device: PyTorch device to use.
+        pml_freq: The frequency value to use for the profile, usually the
+            dominant frequency in the wavefield.
+        start: Float specifying the coordinate (in grid cells) of the first
+            element. Optional, default 0.
+        eps: A small number to prevent division by zero. Optional,
+            default 1e-9.
+        r_val: The reflection coefficient. Optional, default 0.001.
+        n_power: The power for the profile. Optional, default 2.
+
+    Returns:
+        A tuple containing the a and b profiles as Tensors.
     """
     alpha0 = math.pi * pml_freq
     if max_pml == 0:
@@ -1711,12 +1996,12 @@ def setup_pml(
 
 
 def create_or_pad(
-    tensor: Tensor,
+    tensor: torch.Tensor,
     fd_pad: Union[int, Sequence[int]],
     device: torch.device,
     dtype: torch.dtype,
     size: Sequence[int],
-) -> Tensor:
+) -> torch.Tensor:
     """Creates a zero tensor of a specified size or pads an existing tensor.
 
     If the input `tensor` is empty (numel == 0), a new zero tensor with the
@@ -1724,7 +2009,7 @@ def create_or_pad(
     `fd_pad`.
 
     Args:
-        tensor: The input Tensor to be created or padded.
+        tensor: The input torch.Tensor to be created or padded.
         fd_pad: The padding to apply. Can be an integer (for uniform padding)
             or a sequence of integers (for per-dimension padding).
         device: The PyTorch device for the tensor.
@@ -1732,7 +2017,7 @@ def create_or_pad(
         size: The desired size of the tensor if it needs to be created.
 
     Returns:
-        Tensor: The created or padded Tensor.
+        torch.Tensor: The created or padded torch.Tensor.
     """
     if isinstance(fd_pad, int):
         fd_pad = [fd_pad] * len(size) * 2
@@ -1749,23 +2034,28 @@ def create_or_pad(
             tensor.requires_grad)
 
 
-def zero_interior(tensor: Tensor, fd_pad: Union[int, Sequence[int]],
-                  pml_width: Sequence[int], y: bool) -> Tensor:
-    """Zeros out the interior region of a 2D tensor, leaving only the padded and PML regions.
+def zero_interior(
+    tensor: torch.Tensor,
+    fd_pad: Union[int, Sequence[int]],
+    pml_width: Sequence[int],
+    y: bool,
+) -> torch.Tensor:
+    """Zeros out the interior region of a 2D tensor.
 
     This function is typically used for debugging or visualization purposes to
     inspect the effects of padding and PML.
 
     Args:
-        tensor: The input 2D Tensor.
+        tensor: The input 2D torch.Tensor.
         fd_pad: The finite-difference padding. Can be an integer or a sequence
             of integers [top, bottom, left, right].
-        pml_width: The width of the PML regions for each side [top, bottom, left, right].
+        pml_width: The width of the PML regions for each side
+            [top, bottom, left, right].
         y: A boolean indicating whether to zero along the y-dimension (True)
             or x-dimension (False).
 
     Returns:
-        Tensor: A new Tensor with the interior region zeroed out.
+        torch.Tensor: A new torch.Tensor with the interior region zeroed out.
     """
     ny = tensor.shape[1]
     nx = tensor.shape[2]
@@ -1781,29 +2071,31 @@ def zero_interior(tensor: Tensor, fd_pad: Union[int, Sequence[int]],
     return tensor
 
 
-def diff(a: Tensor, accuracy: int, grid_spacing: float) -> Tensor:
-    """Calculates the spatial derivative of a 1D tensor using finite differences.
+def diff(a: torch.Tensor, accuracy: int, grid_spacing: float) -> torch.Tensor:
+    """Calculates the spatial derivative of a 1D tensor.
 
     Args:
-        a: The input 1D Tensor.
-        accuracy: The finite-difference accuracy order (e.g., 2, 4, 6, 8).
+        a: The input 1D torch.Tensor.
+        accuracy: The finite-difference accuracy order (2, 4, 6, or 8).
         grid_spacing: The spacing between grid points.
 
     Returns:
-        Tensor: The calculated spatial derivative.
+        The spatial derivative of the input tensor.
     """
     if accuracy == 2:
-        a = torch.nn.functional.pad(a, (1, 1))
-        return (1 / 2 * (a[2:] - a[:-2])) / grid_spacing
-    if accuracy == 4:
-        a = torch.nn.functional.pad(a, (2, 2))
-        return (8 / 12 * (a[3:-1] - a[1:-3]) + -1 / 12 *
-                (a[4:] - a[:-4])) / grid_spacing
-    if accuracy == 6:
-        a = torch.nn.functional.pad(a, (3, 3))
-        return (3 / 4 * (a[4:-2] - a[2:-4]) + -3 / 20 *
-                (a[5:-1] - a[1:-5]) + 1 / 60 * (a[6:] - a[:-6])) / grid_spacing
-    a = torch.nn.functional.pad(a, (4, 4))
-    return (4 / 5 * (a[5:-3] - a[3:-5]) + -1 / 5 *
-            (a[6:-2] - a[2:-6]) + 4 / 105 * (a[7:-1] - a[1:-7]) + -1 / 280 *
-            (a[8:] - a[:-8])) / grid_spacing
+        # Coefficients from Wikipedia
+        # https://en.wikipedia.org/wiki/Finite_difference_coefficient
+        coeffs = [-1 / 2, 1 / 2]
+        stencil = [-1, 1]
+    elif accuracy == 4:
+        coeffs = [1 / 12, -2 / 3, 2 / 3, -1 / 12]
+        stencil = [-2, -1, 1, 2]
+    elif accuracy == 6:
+        coeffs = [-1 / 60, 3 / 20, -3 / 4, 3 / 4, -3 / 20, 1 / 60]
+        stencil = [-3, -2, -1, 1, 2, 3]
+    else:
+        coeffs = [1 / 280, -4 / 105, 1 / 5, -4 / 5, 4 / 5, -1 / 5, 4 / 105, -1 / 280]
+        stencil = [-4, -3, -2, -1, 1, 2, 3, 4]
+    return sum(
+        c * torch.roll(a, -s, dims=-1)
+        for c, s in zip(coeffs, stencil)) / grid_spacing

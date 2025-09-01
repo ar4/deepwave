@@ -656,7 +656,7 @@ def test_set_source_amplitudes_inconsistent_batch_size():
     with pytest.raises(
         RuntimeError,
         match=re.escape(
-            f"Expected source amplitudes to have size {n_batch} in the batch dimension, but found one with size 3."
+            "Expected source amplitudes to have size 2 in the batch dimension, but found one with size 3."
         ),
     ):
         set_source_amplitudes(

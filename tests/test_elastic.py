@@ -484,7 +484,7 @@ def test_unused_source_receiver(
     propagator=elasticprop,
     prop_kwargs=None,
     device=None,
-    dtype=None,
+    dtype=torch.double,
     dlamb=DEFAULT_LAMB / 10,
     dmu=DEFAULT_MU / 10,
     dbuoyancy=DEFAULT_BUOYANCY / 10,

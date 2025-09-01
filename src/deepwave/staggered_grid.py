@@ -1,7 +1,11 @@
+"""Utility functions for staggered grid PML setup.
+
+This module provides functions to set up Perfectly Matched Layers (PML)
+profiles for wave propagation simulations on a staggered grid.
+"""
 from typing import List
 import torch
-from torch import Tensor
-from deepwave.common import setup_pml
+import deepwave
 
 
 def set_pml_profiles(
@@ -16,7 +20,27 @@ def set_pml_profiles(
     pml_freq: float,
     ny: int,
     nx: int,
-) -> List[Tensor]:
+) -> List[torch.Tensor]:
+    """Sets up PML profiles for a staggered grid.
+
+    Args:
+        pml_width: A list of integers specifying the width of the PML
+            on each side (top, bottom, left, right).
+        accuracy: The finite-difference accuracy order.
+        fd_pad: A list of integers specifying the padding for finite-difference.
+        dt: The time step.
+        grid_spacing: A list of floats specifying the grid spacing in
+            y and x directions.
+        max_vel: The maximum velocity in the model.
+        dtype: The data type of the tensors (e.g., torch.float32).
+        device: The device on which the tensors will be (e.g., 'cuda', 'cpu').
+        pml_freq: The PML frequency.
+        ny: The number of grid points in the y direction.
+        nx: The number of grid points in the x direction.
+
+    Returns:
+        A list of torch.Tensors representing the PML profiles (ay, ayh, ax, axh, by, byh, bx, bxh).
+    """
     pml_start: List[float] = [
         pml_width[0],
         ny - 1 - pml_width[1],
@@ -30,7 +54,7 @@ def set_pml_profiles(
         pml_width[3] * grid_spacing[1],
     ])
 
-    ay, by = setup_pml(
+    ay, by = deepwave.common.setup_pml(
         pml_width[:2],
         pml_start[:2],
         max_pml,
@@ -42,7 +66,7 @@ def set_pml_profiles(
         pml_freq,
         start=-0.5,
     )
-    ax, bx = setup_pml(
+    ax, bx = deepwave.common.setup_pml(
         pml_width[2:],
         pml_start[2:],
         max_pml,
@@ -55,7 +79,7 @@ def set_pml_profiles(
         start=0.0,
     )
 
-    ayh, byh = setup_pml(
+    ayh, byh = deepwave.common.setup_pml(
         pml_width[:2],
         pml_start[:2],
         max_pml,
@@ -67,7 +91,7 @@ def set_pml_profiles(
         pml_freq,
         start=0.0,
     )
-    axh, bxh = setup_pml(
+    axh, bxh = deepwave.common.setup_pml(
         pml_width[2:],
         pml_start[2:],
         max_pml,

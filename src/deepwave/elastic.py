@@ -11,110 +11,65 @@ wave simulations. The outputs are differentiable with respect to the
 material parameters (Lam'e parameters and buoyancy) and source amplitudes.
 """
 
-from typing import Optional, Union, List, Tuple, Sequence, Any
+from typing import Any, List, Optional, Sequence, Tuple, Union
 import torch
-from torch import Tensor
-from torch.autograd.function import once_differentiable
-from deepwave.backend_utils import dll, USE_OPENMP
-from deepwave.common import (
-    setup_propagator,
-    downsample_and_movedim,
-    IGNORE_LOCATION,
-    lambmubuoyancy_to_vpvsrho,
-    create_or_pad,
-)
-from deepwave.staggered_grid import set_pml_profiles
+import deepwave.backend_utils
+import deepwave.common
+import deepwave.staggered_grid
 
 
 class Elastic(torch.nn.Module):
-    """A Module wrapper around :func:`elastic`.
+    """A PyTorch Module for elastic wave propagation.
 
-    This is a convenience module that allows you to only specify
-    `lamb`, `mu`, `buoyancy`, and `grid_spacing` once. They will then be
-    added to the list of arguments passed to :func:`elastic` when you call
-    the forward method.
-
-    Note that a copy will be made of the provided models. Gradients
-    will not backpropagate to the initial guess models that are
-    provided. You can use the module's `lamb`, `mu`, and `buoyancy`
-    attributes to access the models.
+    This Module provides a convenient way to perform elastic wave propagation.
+    It stores the Lamé parameters (`lamb` and `mu`) and buoyancy (`buoyancy`)
+    as `torch.nn.Parameter` objects, allowing gradients to be computed with
+    respect to them if desired.
 
     Args:
-        lamb:
-            A Tensor containing an initial guess of the first Lam'e
-            parameter (lambda).
-        mu:
-            A Tensor containing an initial guess of the second Lam'e
-            parameter.
-        buoyancy:
-            A Tensor containing an initial guess of the buoyancy
-            (1/density).
-        grid_spacing:
-            The spatial grid cell size. It can be a single number that will be
-            used for all dimensions, or a number for each dimension.
-        lamb_requires_grad:
-            A bool specifying whether the `requires_grad` attribute of `lamb`
-            should be set, and thus whether the necessary data should be stored
-            to calculate the gradient with respect to `lamb` during backpropagation.
-            Defaults to False.
-        mu_requires_grad:
-            A bool specifying whether the `requires_grad` attribute of `mu`
-            should be set, and thus whether the necessary data should be stored
-            to calculate the gradient with respect to `mu` during backpropagation.
-            Defaults to False.
-        buoyancy_requires_grad:
-            A bool specifying whether the `requires_grad` attribute of `buoyancy`
-            should be set, and thus whether the necessary data should be stored
-            to calculate the gradient with respect to `buoyancy` during backpropagation.
-            Defaults to False.
+        lamb: A torch.Tensor containing the first Lamé parameter.
+        mu: A torch.Tensor containing the second Lamé parameter (mu).
+        buoyancy: A torch.Tensor containing the buoyancy (1/density).
+        grid_spacing: The spatial grid cell size. It can be a single number
+            (for isotropic grids) or a sequence of numbers (for anisotropic
+            grids).
+        lamb_requires_grad: A bool specifying whether gradients should be
+            computed for `lamb`. Defaults to False.
+        mu_requires_grad: A bool specifying whether gradients should be
+            computed for `mu`. Defaults to False.
+        buoyancy_requires_grad: A bool specifying whether gradients should be
+            computed for `buoyancy`. Defaults to False.
     """
 
     def __init__(
         self,
-        lamb: Tensor,
-        mu: Tensor,
-        buoyancy: Tensor,
+        lamb: torch.Tensor,
+        mu: torch.Tensor,
+        buoyancy: torch.Tensor,
         grid_spacing: Union[float, Sequence[float]],
         lamb_requires_grad: bool = False,
         mu_requires_grad: bool = False,
         buoyancy_requires_grad: bool = False,
     ) -> None:
-        """Initializes the Elastic propagator module.
-
-        Args:
-            lamb: A Tensor containing an initial guess of the first Lam'e
-                parameter (lambda).
-            mu: A Tensor containing an initial guess of the second Lam'e
-                parameter.
-            buoyancy: A Tensor containing an initial guess of the buoyancy
-                (1/density).
-            grid_spacing: The spatial grid cell size. It can be a single number that will be
-                used for all dimensions, or a number for each dimension.
-            lamb_requires_grad: A bool specifying whether gradients will be
-                computed for `lamb`. Defaults to False.
-            mu_requires_grad: A bool specifying whether gradients will be
-                computed for `mu`. Defaults to False.
-            buoyancy_requires_grad: A bool specifying whether gradients will be
-                computed for `buoyancy`. Defaults to False.
-        """
+        """Initializes the Module."""
         super().__init__()
         if not isinstance(lamb_requires_grad, bool):
             raise TypeError(
                 f"lamb_requires_grad must be bool, got {type(lamb_requires_grad).__name__}"
             )
-        if not isinstance(lamb, Tensor):
+        if not isinstance(lamb, torch.Tensor):
             raise TypeError("lamb must be a torch.Tensor.")
         if not isinstance(mu_requires_grad, bool):
             raise TypeError(
                 f"mu_requires_grad must be bool, got {type(mu_requires_grad).__name__}"
             )
-        if not isinstance(mu, Tensor):
+        if not isinstance(mu, torch.Tensor):
             raise TypeError("mu must be a torch.Tensor.")
         if not isinstance(buoyancy_requires_grad, bool):
             raise TypeError(
                 f"buoyancy_requires_grad must be bool, got {type(buoyancy_requires_grad).__name__}"
             )
-        if not isinstance(buoyancy, Tensor):
+        if not isinstance(buoyancy, torch.Tensor):
             raise TypeError("buoyancy must be a torch.Tensor.")
         self.lamb = torch.nn.Parameter(lamb, requires_grad=lamb_requires_grad)
         self.mu = torch.nn.Parameter(mu, requires_grad=mu_requires_grad)
@@ -125,31 +80,31 @@ class Elastic(torch.nn.Module):
     def forward(
         self,
         dt: float,
-        source_amplitudes_y: Optional[Tensor] = None,
-        source_amplitudes_x: Optional[Tensor] = None,
-        source_locations_y: Optional[Tensor] = None,
-        source_locations_x: Optional[Tensor] = None,
-        receiver_locations_y: Optional[Tensor] = None,
-        receiver_locations_x: Optional[Tensor] = None,
-        receiver_locations_p: Optional[Tensor] = None,
+        source_amplitudes_y: Optional[torch.Tensor] = None,
+        source_amplitudes_x: Optional[torch.Tensor] = None,
+        source_locations_y: Optional[torch.Tensor] = None,
+        source_locations_x: Optional[torch.Tensor] = None,
+        receiver_locations_y: Optional[torch.Tensor] = None,
+        receiver_locations_x: Optional[torch.Tensor] = None,
+        receiver_locations_p: Optional[torch.Tensor] = None,
         accuracy: int = 4,
         pml_width: Union[int, Sequence[int]] = 20,
         pml_freq: Optional[float] = None,
         max_vel: Optional[float] = None,
         survey_pad: Optional[Union[int, Sequence[Optional[int]]]] = None,
-        vy_0: Optional[Tensor] = None,
-        vx_0: Optional[Tensor] = None,
-        sigmayy_0: Optional[Tensor] = None,
-        sigmaxy_0: Optional[Tensor] = None,
-        sigmaxx_0: Optional[Tensor] = None,
-        m_vyy_0: Optional[Tensor] = None,
-        m_vyx_0: Optional[Tensor] = None,
-        m_vxy_0: Optional[Tensor] = None,
-        m_vxx_0: Optional[Tensor] = None,
-        m_sigmayyy_0: Optional[Tensor] = None,
-        m_sigmaxyy_0: Optional[Tensor] = None,
-        m_sigmaxyx_0: Optional[Tensor] = None,
-        m_sigmaxxx_0: Optional[Tensor] = None,
+        vy_0: Optional[torch.Tensor] = None,
+        vx_0: Optional[torch.Tensor] = None,
+        sigmayy_0: Optional[torch.Tensor] = None,
+        sigmaxy_0: Optional[torch.Tensor] = None,
+        sigmaxx_0: Optional[torch.Tensor] = None,
+        m_vyy_0: Optional[torch.Tensor] = None,
+        m_vyx_0: Optional[torch.Tensor] = None,
+        m_vxy_0: Optional[torch.Tensor] = None,
+        m_vxx_0: Optional[torch.Tensor] = None,
+        m_sigmayyy_0: Optional[torch.Tensor] = None,
+        m_sigmaxyy_0: Optional[torch.Tensor] = None,
+        m_sigmaxyx_0: Optional[torch.Tensor] = None,
+        m_sigmaxxx_0: Optional[torch.Tensor] = None,
         origin: Optional[Sequence[int]] = None,
         nt: Optional[int] = None,
         model_gradient_sampling_interval: int = 1,
@@ -157,22 +112,22 @@ class Elastic(torch.nn.Module):
         time_pad_frac: float = 0.0,
         time_taper: bool = False,
     ) -> Tuple[
-            Tensor,
-            Tensor,
-            Tensor,
-            Tensor,
-            Tensor,
-            Tensor,
-            Tensor,
-            Tensor,
-            Tensor,
-            Tensor,
-            Tensor,
-            Tensor,
-            Tensor,
-            Tensor,
-            Tensor,
-            Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
     ]:
         """Perform forward propagation/modelling.
 
@@ -220,37 +175,54 @@ class Elastic(torch.nn.Module):
         )
 
 
+def _average_adjacent(receiver_amplitudes: torch.Tensor) -> torch.Tensor:
+    """Averages adjacent elements in a tensor.
+
+    This is used to average velocity receiver samples at t-1/2 and t+1/2
+    to approximately get samples at t.
+
+    Args:
+        receiver_amplitudes: A torch.Tensor.
+
+    Returns:
+        A torch.Tensor with the averaged values.
+    """
+    if receiver_amplitudes.numel() == 0:
+        return receiver_amplitudes
+    return (receiver_amplitudes[1:] + receiver_amplitudes[:-1]) / 2
+
+
 def elastic(
-    lamb: Tensor,
-    mu: Tensor,
-    buoyancy: Tensor,
+    lamb: torch.Tensor,
+    mu: torch.Tensor,
+    buoyancy: torch.Tensor,
     grid_spacing: Union[float, Sequence[float]],
     dt: float,
-    source_amplitudes_y: Optional[Tensor] = None,
-    source_amplitudes_x: Optional[Tensor] = None,
-    source_locations_y: Optional[Tensor] = None,
-    source_locations_x: Optional[Tensor] = None,
-    receiver_locations_y: Optional[Tensor] = None,
-    receiver_locations_x: Optional[Tensor] = None,
-    receiver_locations_p: Optional[Tensor] = None,
+    source_amplitudes_y: Optional[torch.Tensor] = None,
+    source_amplitudes_x: Optional[torch.Tensor] = None,
+    source_locations_y: Optional[torch.Tensor] = None,
+    source_locations_x: Optional[torch.Tensor] = None,
+    receiver_locations_y: Optional[torch.Tensor] = None,
+    receiver_locations_x: Optional[torch.Tensor] = None,
+    receiver_locations_p: Optional[torch.Tensor] = None,
     accuracy: int = 4,
     pml_width: Union[int, Sequence[int]] = 20,
     pml_freq: Optional[float] = None,
     max_vel: Optional[float] = None,
     survey_pad: Optional[Union[int, Sequence[Optional[int]]]] = None,
-    vy_0: Optional[Tensor] = None,
-    vx_0: Optional[Tensor] = None,
-    sigmayy_0: Optional[Tensor] = None,
-    sigmaxy_0: Optional[Tensor] = None,
-    sigmaxx_0: Optional[Tensor] = None,
-    m_vyy_0: Optional[Tensor] = None,
-    m_vyx_0: Optional[Tensor] = None,
-    m_vxy_0: Optional[Tensor] = None,
-    m_vxx_0: Optional[Tensor] = None,
-    m_sigmayyy_0: Optional[Tensor] = None,
-    m_sigmaxyy_0: Optional[Tensor] = None,
-    m_sigmaxyx_0: Optional[Tensor] = None,
-    m_sigmaxxx_0: Optional[Tensor] = None,
+    vy_0: Optional[torch.Tensor] = None,
+    vx_0: Optional[torch.Tensor] = None,
+    sigmayy_0: Optional[torch.Tensor] = None,
+    sigmaxy_0: Optional[torch.Tensor] = None,
+    sigmaxx_0: Optional[torch.Tensor] = None,
+    m_vyy_0: Optional[torch.Tensor] = None,
+    m_vyx_0: Optional[torch.Tensor] = None,
+    m_vxy_0: Optional[torch.Tensor] = None,
+    m_vxx_0: Optional[torch.Tensor] = None,
+    m_sigmayyy_0: Optional[torch.Tensor] = None,
+    m_sigmaxyy_0: Optional[torch.Tensor] = None,
+    m_sigmaxyx_0: Optional[torch.Tensor] = None,
+    m_sigmaxxx_0: Optional[torch.Tensor] = None,
     origin: Optional[Sequence[int]] = None,
     nt: Optional[int] = None,
     model_gradient_sampling_interval: int = 1,
@@ -258,33 +230,34 @@ def elastic(
     time_pad_frac: float = 0.0,
     time_taper: bool = False,
 ) -> Tuple[
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
 ]:
     """Elastic wave propagation (functional interface).
 
     This function performs forward modelling with the elastic wave equation.
-    The outputs are differentiable with respect to the input float Tensors.
+    The outputs are differentiable with respect to the input float torch.Tensors.
 
     For computational performance, multiple shots may be propagated
     simultaneously.
 
     The elastic wave equation is:
-        `rho * d^2u/dt^2 = nabla . (lambda * I * (nabla . u) + mu * (nabla*u + (nabla*u).T)) + f`
+        `rho * d^2u/dt^2 = nabla . (lambda * I * (nabla . u) +
+         mu * (nabla*u + (nabla*u).T)) + f`
     where `u` is the displacement vector, `t` is time, `rho` is density,
     `lambda` and `mu` are the Lame parameters, and `f` is the source vector.
 
@@ -292,282 +265,134 @@ def elastic(
     https://ausargeo.com/deepwave/elastic for a description.
 
     Args:
-        lamb:
-            A Tensor containing the first Lam'e parameter model, lambda.
-            Unlike the module interface (:class:`Elastic`), in this
-            functional interface a copy is not made of the model, so gradients
-            will propagate back into the provided Tensor.
-        mu:
-            A Tensor containing the second Lam'e parameter model.
-        buoyancy:
-            A Tensor containing the buoyancy (1/density) model.
-        grid_spacing:
-            The spatial grid cell size. It can be a single number that will be
-            used for all dimensions, or a number for each dimension.
-        dt:
-            A float specifying the time step interval of the input and
-            output (internally a smaller interval may be used in
-            propagation to obey the CFL condition for stability).
-        source_amplitudes_y:
-            A Tensor with dimensions [shot, source, time] containing time
-            samples of the source wavelets for sources oriented in the
-            first spatial dimension. For example, if two shots are propagated
-            simultaneously, each containing three sources, oriented in the
-            first spatial dimension, of one hundred time samples, the shape
-            would be [2, 3, 100]. The time dimension length corresponds to the
-            number of time samples in the source wavelet. Optional. If provided,
-            `source_locations_y` must also be specified. If not provided
-            (and `source_amplitudes_x` is also not specified), `nt`
-            must be specified.
-        source_amplitudes_x:
-            A Tensor containing source wavelet time samples for sources
-            oriented in the second spatial dimension. If `source_amplitudes_y`
-            is also specified, both must have the same length in the
-            shot and time dimensions.
-        source_locations_y:
-            A Tensor with dimensions [shot, source, 2], containing the
-            index in the two spatial dimensions of the cell that each
-            source oriented in the first spatial dimension is located in,
-            relative to the origin of the model. Optional. Must be provided
-            if `source_amplitudes_y` is. It should have torch.long (int64)
-            datatype. The location of each source oriented in the same
-            dimension must be unique within the same shot (you cannot have two
-            sources oriented in the first dimension in the same shot that
-            both have location [1, 2], for example).
-        source_locations_x:
-            A Tensor containing the locations of sources oriented in the
-            second spatial dimension.
-        receiver_locations_y:
-            A Tensor with dimensions [shot, receiver, 2], containing
-            the coordinates of the cell containing each receiver oriented
-            in the first spatial dimension. Optional.
-            It should have torch.long (int64) datatype. If not provided,
-            the output `receiver_amplitudes_y` Tensor will be empty. If
-            backpropagation will be performed, the location of each
-            receiver with the same orientation must be unique within the
-            same shot.
-        receiver_locations_x:
-            A Tensor containing the coordinates of the receivers oriented
-            in the second spatial dimension.
-        receiver_locations_p:
-            A Tensor containing the coordinates of the pressure receivers.
-        accuracy:
-            An int specifying the finite difference order of accuracy. Possible
-            values are 2 and 4, with larger numbers resulting in more
-            accurate results but greater computational cost. Optional, with
-            a default of 4.
-        pml_width:
-            A single number, or two numbers for each dimension,
-            specifying the width (in number of cells) of the PML
-            that prevents reflections from the edges of the model.
-            If a single value is provided, it will be used for all edges.
-            If a sequence is provided, it should contain values for the
-            edges in the following order:
-            [beginning of first dimension, end of first dimension,
-            beginning of second dimension, end of second dimension].
-            Larger values result in smaller reflections, with values of 10
-            to 20 being typical. For a reflective or "free" surface, set the
-            value for that edge to be zero. For example, if your model is
-            oriented so that the surface that you want to be reflective is the
-            beginning of the second dimension, then you could specify
-            `pml_width=[20, 20, 0, 20]`.
-            The model values in the PML region
-            are obtained by replicating the values on the edge of the
-            model. Optional, default 20.
-        pml_freq:
-            A float specifying the frequency that you wish to use when
-            constructing the PML. This is usually the dominant frequency
-            of the source wavelet. Choosing this value poorly will
-            result in the edges becoming more reflective. Optional, default
-            25 Hz (assuming `dt` is in seconds).
-        max_vel:
-            A float specifying the maximum velocity, which is used when
-            applying the CFL condition and when constructing the PML. If
-            not specified, the actual maximum absolute wavespeed in the
-            model (or portion of it that is used) will be used. The option
-            to specify this is provided to allow you to ensure consistency
-            between runs even if there are changes in the wavespeed.
-            Optional, default None.
-        survey_pad:
-            A single value or list of four values, all of which are either
-            an int or None, specifying whether the simulation domain
-            should be restricted to a region surrounding the sources
-            and receivers. If you have a large model, but the sources
-            and receivers of individual shots only cover a small portion
-            of it (such as in a towed streamer survey), then it may be
-            wasteful to simulate wave propagation over the whole model. This
-            parameter allows you to specify what distance around sources
-            and receivers you would like to extract from the model to use
-            for the simulation. A value of None means that no restriction
-            of the model should be performed in that direction, while an
-            integer value specifies the minimum number of cells that
-            the edge of the simulation domain should be from any source
-            or receiver in that direction (if possible). If a single value
-            is provided, it applies to all directions, so specifying `None`
-            will use the whole model for every simulation, while specifying
-            `10` will cause the simulation domain to contain at least 10
-            cells of padding in each direction around sources and receivers
-            if possible. The padding will end if the edge of the model is
-            encountered. Specifying a list, in the following order:
-            [beginning of first dimension, end of first dimension,
-            beginning of second dimension, end of second dimension]
-            allows the padding in each direction to be controlled. Ints and
-            `None` may be mixed, so a `survey_pad` of [5, None, None, 10]
-            means that there should be at least 5 cells of padding towards
-            the beginning of the first dimension, no restriction of the
-            simulation domain towards the end of the first dimension or
-            beginning of the second, and 10 cells of padding towards the
-            end of the second dimension. If the simulation contains
-            one source at [20, 15], one receiver at [10, 15], and the
-            model is of shape [40, 50], then the extracted simulation
-            domain with this value of `survey_pad` would cover the region
-            [5:40, 0:25]. The same simulation domain will be used for all
-            shots propagated simultaneously, so if this option is used then
-            it is advisable to propagate shots that cover similar regions
-            of the model simultaneously so that it provides a benefit (if
-            the shots cover opposite ends of a dimension, then that
-            whole dimension will be used regardless of what `survey_pad`
-            value is used). This option is disregarded if any initial
-            wavefields are provided, as those will instead be used to
-            determine the simulation domain. Optional, default None.
-        vy_0:
-            A Tensor specifying the initial vy (velocity in the first
-            dimension) wavefield at time step -1/2 (using Deepwave's internal
-            time step interval, which may be smaller than the user provided
-            one to obey the CFL condition). It should have three dimensions,
-            with the first dimension being shot and the subsequent two
-            corresponding to the two spatial dimensions. The spatial shape
-            should be equal to the simulation domain, which is the extracted
-            model plus the PML. If two shots are being propagated
-            simultaneously in a region of size [20, 30] extracted from the
-            model for the simulation, and `pml_width=[1, 2, 3, 4]`, then
-            `vy_0` should be of shape [2, 23, 37]. Optional, default all zeros.
-        vx_0:
-            A Tensor specifying the initial vx (velocity in the second
-            dimension) wavefield. See the entry for `vy_0` for more details.
-        sigmayy_0, sigmaxy_0, sigmaxx_0:
-            A Tensor specifying the initial value for the stress field at time
-            step 0.
-        m_vyy_0, m_vyx_0, m_vxy_0, m_vxx_0:
-            A Tensor specifying the initial value for the "memory variable"
-            for the velocity, used in the PML.
-        m_sigmayyy_0, m_sigmaxyy_0, m_sigmaxyx_0, m_sigmaxxx_0:
-            A Tensor specifying the initial value for the "memory variable"
-            for the stress, used in the PML.
-        origin:
-            A list of ints specifying the origin of the provided initial
-            wavefields relative to the origin of the model. Only relevant
-            if initial wavefields are provided. The origin of a wavefield
-            is the cell where the extracted model used for the simulation
-            domain began. It does not include the PML. So if a simulation
-            is performed using the model region [10:20, 15:30], the origin
-            is [10, 15]. Optional, default [0, 0].
-        nt:
-            If the source amplitudes are not provided then you must instead
-            specify the number of time steps to run the simulation for by
-            providing an integer for `nt`. You cannot specify both the
-            source amplitudes and `nt`.
-        model_gradient_sampling_interval:
-            An int specifying the number of time steps between
-            contributions to the model gradient. The gradient with respect
-            to the model is an integral over the backpropagation time steps.
-            The time sampling frequency of this integral should be at
-            least the Nyquist frequency of the source or data (whichever
-            is greater). If this Nyquist frequency is substantially less
-            than 1/dt, you may wish to reduce the sampling frequency of
-            the integral to reduce computational (especially memory) costs.
-            Optional, default 1 (integral is sampled every time step
-            interval `dt`).
-        freq_taper_frac:
-            A float specifying the fraction of the end of the source and
-            receiver amplitudes (if present) in the frequency domain to
-            cosine taper if they are resampled due to the CFL condition.
-            This might be useful to reduce ringing. A value of 0.1 means
-            that the top 10% of frequencies will be tapered.
-            Default 0.0 (no tapering).
-        time_pad_frac:
-            A float specifying the amount of zero padding that will
-            be added to the source and receiver amplitudes (if present) before
-            resampling and removed afterwards, if they are resampled due to
-            the CFL condition, as a fraction of their length. This might be
-            useful to reduce wraparound artifacts. A value of 0.1 means that
-            zero padding of 10% of the number of time samples will be used.
-            Default 0.0.
-        time_taper:
-            A bool specifying whether to apply a Hann window in time to
-            source and receiver amplitudes (if present). This is useful
-            during correctness tests of the propagators as it ensures that
-            signals taper to zero at their edges in time, avoiding the
-            possibility of high frequencies being introduced.
+        lamb: The first Lam'e parameter model, lambda. Unlike the module
+            interface (:class:`Elastic`), in this functional interface a copy is
+            not made of the model, so gradients will propagate back into the
+            provided torch.Tensor.
+        mu: The second Lam'e parameter model.
+        buoyancy: The buoyancy (1/density) model.
+        grid_spacing: The spatial grid cell size. It can be a single number
+            that will be used for all dimensions, or a number for each
+            dimension.
+        dt: The time step interval of the input and output (internally a
+            smaller interval may be used in propagation to obey the CFL
+            condition for stability).
+        source_amplitudes_y: A Tensor with dimensions [shot, source, time]
+            containing time samples of the source wavelets for sources
+            oriented in the first spatial dimension.
+        source_amplitudes_x: A Tensor containing source wavelet time samples
+            for sources oriented in the second spatial dimension.
+        source_locations_y: A Tensor with dimensions [shot, source, 2],
+            containing the index in the two spatial dimensions of the cell
+            that each source oriented in the first spatial dimension is
+            located in, relative to the origin of the model.
+        source_locations_x: A Tensor containing the locations of sources
+            oriented in the second spatial dimension.
+        receiver_locations_y: A Tensor with dimensions [shot, receiver, 2],
+            containing the coordinates of the cell containing each receiver
+            oriented in the first spatial dimension.
+        receiver_locations_x: A Tensor containing the coordinates of the
+            receivers oriented in the second spatial dimension.
+        receiver_locations_p: A Tensor containing the coordinates of the
+            pressure receivers.
+        accuracy: The finite difference order of accuracy. Possible values are
+            2 and 4.
+        pml_width: A single number, or two numbers for each dimension,
+            specifying the width (in number of cells) of the PML that prevents
+            reflections from the edges of the model.
+        pml_freq: The frequency to use when constructing the PML. This is
+            usually the dominant frequency of the source wavelet.
+        max_vel: The maximum velocity, used for the CFL condition and PML.
+        survey_pad: Padding to apply around sources and receivers to restrict
+            the simulation domain.
+        vy_0: Initial vy (velocity in the first dimension) wavefield at time
+            step -1/2.
+        vx_0: Initial vx (velocity in the second dimension) wavefield.
+        sigmayy_0, sigmaxy_0, sigmaxx_0: Initial value for the stress field at
+            time step 0.
+        m_vyy_0, m_vyx_0, m_vxy_0, m_vxx_0: Initial value for the "memory
+            variable" for the velocity, used in the PML.
+        m_sigmayyy_0, m_sigmaxyy_0, m_sigmaxyx_0, m_sigmaxxx_0: Initial value
+            for the "memory variable" for the stress, used in the PML.
+        origin: The origin of the provided initial wavefields relative to the
+            origin of the model.
+        nt: If the source amplitudes are not provided then you must instead
+            specify the number of time steps to run the simulation for.
+        model_gradient_sampling_interval: The number of time steps between
+            contributions to the model gradient.
+        freq_taper_frac: The fraction of the end of the source and
+            receiver amplitudes in the frequency domain to cosine taper if
+            they are resampled due to the CFL condition.
+        time_pad_frac: The amount of zero padding that will be added to the
+            source and receiver amplitudes before resampling and removed
+            afterwards, if they are resampled due to the CFL condition, as a
+            fraction of their length.
+        time_taper: Whether to apply a Hann window in time to source and
+            receiver amplitudes.
 
     Returns:
-        Tuple[Tensor]:
-
-            vy, vx:
-                A Tensor containing the final velocity wavefield of the
-                simulation.
-            sigmayy, sigmaxy, sigmaxx:
-                A Tensor containing the final stress field of the simulation.
-            m_vyy_0, m_vyx_0, m_vxy_0, m_vxx_0:
-                A Tensor containing the final value for the "memory variable"
-                for the velocity, used in the PML.
-            m_sigmayyy_0, m_sigmaxyy_0, m_sigmaxyx_0, m_sigmaxxx_0:
-                A Tensor containing the final value for the "memory variable"
-                for the stress, used in the PML.
-            receiver_amplitudes_p:
-                A Tensor containing the receiver amplitudes for pressure
-                receivers.
-            receiver_amplitudes_y:
-                A Tensor of dimensions [shot, receiver, time] containing
-                the receiver amplitudes recorded at the provided receiver
-                locations for receivers oriented in the first spatial
-                dimension. If no such receiver locations
-                were specified then this Tensor will be empty.
-            receiver_amplitudes_x:
-                A Tensor containing the receiver amplitudes for receivers
-                oriented in the second spatial dimension.
+        A tuple containing:
+            vy: Final velocity wavefield in the y-dimension.
+            vx: Final velocity wavefield in the x-dimension.
+            sigmayy: Final stress wavefield (yy component).
+            sigmaxy: Final stress wavefield (xy component).
+            sigmaxx: Final stress wavefield (xx component).
+            m_vyy: Final velocity memory variable for the PML.
+            m_vyx: Final velocity memory variable for the PML.
+            m_vxy: Final velocity memory variable for the PML.
+            m_vxx: Final velocity memory variable for the PML.
+            m_sigmayyy: Final stress memory variable for the PML.
+            m_sigmaxyy: Final stress memory variable for the PML.
+            m_sigmaxyx: Final stress memory variable for the PML.
+            m_sigmaxxx: Final stress memory variable for the PML.
+            receiver_amplitudes_p: Recorded pressure receiver amplitudes.
+            receiver_amplitudes_y: Recorded y-component receiver amplitudes.
+            receiver_amplitudes_x: Recorded x-component receiver amplitudes.
 
     """
     # Check that sources and receivers are not on the last row or column,
     # as these are not used
     if (source_locations_y is not None
             and source_locations_y[..., 1].max() >= lamb.shape[1] - 1):
-        raise RuntimeError("With the provided model, the maximum y source "
-                           "location in the second dimension must be less "
-                           "than " + str(lamb.shape[1] - 1) + ".")
+        raise RuntimeError(
+            "With the provided model, the maximum y source "
+            f"location in the second dimension must be less than {lamb.shape[1] - 1}."
+        )
     if (receiver_locations_y is not None
             and receiver_locations_y[..., 1].max() >= lamb.shape[1] - 1):
-        raise RuntimeError("With the provided model, the maximum y "
-                           "receiver location in the second dimension "
-                           "must be less than " + str(lamb.shape[1] - 1) + ".")
+        raise RuntimeError(
+            "With the provided model, the maximum y "
+            "receiver location in the second dimension "
+            f"must be less than {lamb.shape[1] - 1}."
+        )
     if source_locations_x is not None:
         dim_location = source_locations_x[..., 0]
-        dim_location = dim_location[dim_location != IGNORE_LOCATION]
+        dim_location = dim_location[dim_location != deepwave.common.IGNORE_LOCATION]
         if dim_location.min() <= 0:
             raise RuntimeError("The minimum x source "
                                "location in the first dimension must be "
                                "greater than 0.")
     if receiver_locations_x is not None:
         dim_location = receiver_locations_x[..., 0]
-        dim_location = dim_location[dim_location != IGNORE_LOCATION]
+        dim_location = dim_location[dim_location != deepwave.common.IGNORE_LOCATION]
         if dim_location.min() <= 0:
             raise RuntimeError("The minimum x receiver "
                                "location in the first dimension must be "
                                "greater than 0.")
     if receiver_locations_p is not None:
         dim_location = receiver_locations_p[..., 0]
-        dim_location = dim_location[dim_location != IGNORE_LOCATION]
+        dim_location = dim_location[dim_location != deepwave.common.IGNORE_LOCATION]
         if (receiver_locations_p[..., 1].max() >= lamb.shape[1] - 1
                 or dim_location.min() <= 0):
-            raise RuntimeError("With the provided model, the pressure "
-                               "receiver locations in the second dimension "
-                               "must be less than " + str(lamb.shape[1] - 1) +
-                               " and "
-                               "in the first dimension must be "
-                               "greater than 0.")
+            raise RuntimeError(
+                "With the provided model, the pressure "
+                "receiver locations in the second dimension "
+                f"must be less than {lamb.shape[1] - 1} and "
+                "in the first dimension must be greater than 0."
+            )
     if accuracy not in [2, 4]:
         raise RuntimeError("The accuracy must be 2 or 4.")
-    vp, vs, _ = lambmubuoyancy_to_vpvsrho(lamb.abs(), mu.abs(), buoyancy.abs())
+    vp, vs, _ = deepwave.common.lambmubuoyancy_to_vpvsrho(lamb.abs(), mu.abs(), buoyancy.abs())
     max_model_vel = max(vp.abs().max().item(), vs.abs().max().item())
     vp_nonzero = vp[vp != 0]
     if vp_nonzero.numel() > 0:
@@ -593,31 +418,36 @@ def elastic(
      sources_i, receivers_i,
      grid_spacing, dt, nt, n_shots,
      step_ratio, model_gradient_sampling_interval,
-     accuracy, pml_width, pml_freq, max_vel, freq_taper_frac, time_pad_frac, time_taper, device, dtype) = \
-        setup_propagator([lamb, mu, buoyancy], ['replicate'] * 3,
-                         grid_spacing, dt,
-                         [source_amplitudes_y, source_amplitudes_x],
-                         [source_locations_y, source_locations_x],
-                         [receiver_locations_y, receiver_locations_x,
-                          receiver_locations_p],
-                         accuracy, fd_pad, pml_width, pml_freq,
-                         max_vel, min_nonzero_model_vel, max_model_vel, survey_pad,
-                         [vy_0, vx_0, sigmayy_0, sigmaxy_0, sigmaxx_0,
-                          m_vyy_0, m_vyx_0, m_vxy_0, m_vxx_0,
-                          m_sigmayyy_0, m_sigmaxyy_0,
-                          m_sigmaxyx_0, m_sigmaxxx_0],
-                         origin, nt, model_gradient_sampling_interval,
-                         freq_taper_frac, time_pad_frac, time_taper, 2)
+     accuracy, pml_width, pml_freq, max_vel, freq_taper_frac, time_pad_frac,
+     time_taper, device, dtype) = (
+        deepwave.common.setup_propagator(
+            [lamb, mu, buoyancy], ['replicate'] * 3,
+            grid_spacing, dt,
+            [source_amplitudes_y, source_amplitudes_x],
+            [source_locations_y, source_locations_x],
+            [receiver_locations_y, receiver_locations_x,
+             receiver_locations_p],
+            accuracy, fd_pad, pml_width, pml_freq,
+            max_vel, min_nonzero_model_vel, max_model_vel, survey_pad,
+            [vy_0, vx_0, sigmayy_0, sigmaxy_0, sigmaxx_0,
+             m_vyy_0, m_vyx_0, m_vxy_0, m_vxx_0,
+             m_sigmayyy_0, m_sigmaxyy_0,
+             m_sigmaxyx_0, m_sigmaxxx_0],
+            origin, nt, model_gradient_sampling_interval,
+            freq_taper_frac, time_pad_frac, time_taper, 2
+        )
+    )
 
     if any(s <= (accuracy + 1) * 2 for s in models[0].shape[1:]):
-        raise RuntimeError("The model must have at least " +
-                           str((accuracy + 1) * 2 + 1) +
-                           " elements in each dimension (including PML).")
+        raise RuntimeError(
+            f"The model must have at least {(accuracy + 1) * 2 + 1} "
+            "elements in each dimension (including PML)."
+        )
 
     ny, nx = models[0].shape[-2:]
     # source_amplitudes_y
     # Need to interpolate buoyancy to vy
-    mask = sources_i[0] == IGNORE_LOCATION
+    mask = sources_i[0] == deepwave.common.IGNORE_LOCATION
     sources_i_masked = sources_i[0].clone()
     sources_i_masked[mask] = 0
     if source_amplitudes[0].numel() > 0:
@@ -631,14 +461,14 @@ def elastic(
               expand(n_shots, -1).gather(1, sources_i_masked + nx + 1))) / 4 *
             dt)
     # source_amplitudes_x
-    mask = sources_i[1] == IGNORE_LOCATION
+    mask = sources_i[1] == deepwave.common.IGNORE_LOCATION
     sources_i_masked = sources_i[1].clone()
     sources_i_masked[mask] = 0
     if source_amplitudes[1].numel() > 0:
         source_amplitudes[1] = (source_amplitudes[1] * (models[2].view(
             -1, ny * nx).expand(n_shots, -1).gather(1, sources_i_masked)) * dt)
 
-    pml_profiles = set_pml_profiles(
+    pml_profiles = deepwave.staggered_grid.set_pml_profiles(
         pml_width,
         accuracy,
         fd_pad,
@@ -686,30 +516,23 @@ def elastic(
         n_shots,
     )
 
-    # Average velocity receiver samples at t-1/2 and t+1/2 to approximately
-    # get samples at t.
-    def average_adjacent(receiver_amplitudes: Tensor) -> Tensor:
-        if receiver_amplitudes.numel() == 0:
-            return receiver_amplitudes
-        return (receiver_amplitudes[1:] + receiver_amplitudes[:-1]) / 2
-
-    receiver_amplitudes_y = average_adjacent(receiver_amplitudes_y)
-    receiver_amplitudes_x = average_adjacent(receiver_amplitudes_x)
-    receiver_amplitudes_y = downsample_and_movedim(
+    receiver_amplitudes_y = _average_adjacent(receiver_amplitudes_y)
+    receiver_amplitudes_x = _average_adjacent(receiver_amplitudes_x)
+    receiver_amplitudes_y = deepwave.common.downsample_and_movedim(
         receiver_amplitudes_y,
         step_ratio,
         freq_taper_frac,
         time_pad_frac,
         time_taper,
     )
-    receiver_amplitudes_x = downsample_and_movedim(
+    receiver_amplitudes_x = deepwave.common.downsample_and_movedim(
         receiver_amplitudes_x,
         step_ratio,
         freq_taper_frac,
         time_pad_frac,
         time_taper,
     )
-    receiver_amplitudes_p = downsample_and_movedim(
+    receiver_amplitudes_p = deepwave.common.downsample_and_movedim(
         receiver_amplitudes_p,
         step_ratio,
         freq_taper_frac,
@@ -737,11 +560,11 @@ def elastic(
     )
 
 
-def zero_edges(tensor: Tensor, ny: int, nx: int) -> None:
-    """Sets the values on the edges of a 2D tensor to zero.
+def zero_edges(tensor: torch.Tensor, ny: int, nx: int) -> None:
+    """Sets the values on all four edges of a 2D tensor to zero in-place.
 
     Args:
-        tensor: The input 2D Tensor to modify.
+        tensor: The input 2D torch.Tensor to modify, with shape (batch, ny, nx).
         ny: The size of the second dimension (rows).
         nx: The size of the third dimension (columns).
     """
@@ -751,38 +574,40 @@ def zero_edges(tensor: Tensor, ny: int, nx: int) -> None:
     tensor[:, :, 0] = 0
 
 
-def zero_edge_top(tensor: Tensor) -> None:
-    """Sets the values on the top edge of a 2D tensor to zero.
+def zero_edge_top(tensor: torch.Tensor) -> None:
+    """Sets the values on the top edge of a 2D tensor to zero in-place.
 
     Args:
-        tensor: The input 2D Tensor to modify.
+        tensor: The input 2D torch.Tensor to modify, with shape (batch, ny, nx).
     """
     tensor[:, 0, :] = 0
 
 
-def zero_edge_right(tensor: Tensor, nx: int) -> None:
-    """Sets the values on the right edge of a 2D tensor to zero.
+def zero_edge_right(tensor: torch.Tensor, nx: int) -> None:
+    """Sets the values on the right edge of a 2D tensor to zero in-place.
 
     Args:
-        tensor: The input 2D Tensor to modify.
+        tensor: The input 2D torch.Tensor to modify, with shape (batch, ny, nx).
         nx: The size of the third dimension (columns).
     """
     tensor[:, :, nx - 1] = 0
 
 
-def zero_interior(tensor: Tensor, ybegin: int, yend: int, xbegin: int,
-                  xend: int) -> Tensor:
+def zero_interior(tensor: torch.Tensor, ybegin: int, yend: int, xbegin: int,
+                  xend: int) -> torch.Tensor:
     """Zeros out a specified rectangular interior region of a 2D tensor.
 
+    This function returns a new tensor and does not modify the input tensor.
+
     Args:
-        tensor: The input 2D Tensor to modify.
+        tensor: The input 2D torch.Tensor.
         ybegin: The starting index of the y-dimension for the region to zero.
         yend: The ending index of the y-dimension for the region to zero.
         xbegin: The starting index of the x-dimension for the region to zero.
         xend: The ending index of the x-dimension for the region to zero.
 
     Returns:
-        Tensor: A new Tensor with the specified interior region zeroed out.
+        A new torch.Tensor with the specified interior region zeroed out.
     """
     tensor = tensor.clone()
     tensor[:, ybegin:yend, xbegin:xend] = 0
@@ -790,41 +615,42 @@ def zero_interior(tensor: Tensor, ybegin: int, yend: int, xbegin: int,
 
 
 class ElasticForwardFunc(torch.autograd.Function):
+    """Forward propagation of the elastic wave equation."""
 
     @staticmethod
     def forward(
         ctx: Any,
-        lamb: Tensor,
-        mu: Tensor,
-        buoyancy: Tensor,
-        source_amplitudes_y: Tensor,
-        source_amplitudes_x: Tensor,
-        vy: Tensor,
-        vx: Tensor,
-        sigmayy: Tensor,
-        sigmaxy: Tensor,
-        sigmaxx: Tensor,
-        m_vyy: Tensor,
-        m_vyx: Tensor,
-        m_vxy: Tensor,
-        m_vxx: Tensor,
-        m_sigmayyy: Tensor,
-        m_sigmaxyy: Tensor,
-        m_sigmaxyx: Tensor,
-        m_sigmaxxx: Tensor,
-        ay: Tensor,
-        ayh: Tensor,
-        ax: Tensor,
-        axh: Tensor,
-        by: Tensor,
-        byh: Tensor,
-        bx: Tensor,
-        bxh: Tensor,
-        sources_y_i: Tensor,
-        sources_x_i: Tensor,
-        receivers_y_i: Tensor,
-        receivers_x_i: Tensor,
-        receivers_p_i: Tensor,
+        lamb: torch.Tensor,
+        mu: torch.Tensor,
+        buoyancy: torch.Tensor,
+        source_amplitudes_y: torch.Tensor,
+        source_amplitudes_x: torch.Tensor,
+        vy: torch.Tensor,
+        vx: torch.Tensor,
+        sigmayy: torch.Tensor,
+        sigmaxy: torch.Tensor,
+        sigmaxx: torch.Tensor,
+        m_vyy: torch.Tensor,
+        m_vyx: torch.Tensor,
+        m_vxy: torch.Tensor,
+        m_vxx: torch.Tensor,
+        m_sigmayyy: torch.Tensor,
+        m_sigmaxyy: torch.Tensor,
+        m_sigmaxyx: torch.Tensor,
+        m_sigmaxxx: torch.Tensor,
+        ay: torch.Tensor,
+        ayh: torch.Tensor,
+        ax: torch.Tensor,
+        axh: torch.Tensor,
+        by: torch.Tensor,
+        byh: torch.Tensor,
+        bx: torch.Tensor,
+        bxh: torch.Tensor,
+        sources_y_i: torch.Tensor,
+        sources_x_i: torch.Tensor,
+        receivers_y_i: torch.Tensor,
+        receivers_x_i: torch.Tensor,
+        receivers_p_i: torch.Tensor,
         dy: float,
         dx: float,
         dt: float,
@@ -834,22 +660,22 @@ class ElasticForwardFunc(torch.autograd.Function):
         pml_width: List[int],
         n_shots: int,
     ) -> Tuple[
-            Tensor,
-            Tensor,
-            Tensor,
-            Tensor,
-            Tensor,
-            Tensor,
-            Tensor,
-            Tensor,
-            Tensor,
-            Tensor,
-            Tensor,
-            Tensor,
-            Tensor,
-            Tensor,
-            Tensor,
-            Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
     ]:
         """Performs the forward propagation of the elastic wave equation.
 
@@ -858,8 +684,7 @@ class ElasticForwardFunc(torch.autograd.Function):
         propagation, and saves necessary tensors for the backward pass.
 
         Args:
-            ctx: A context object that can be used to save information for
-                the backward pass.
+            ctx: A context object for saving information for the backward pass.
             lamb: The first Lam'e parameter (lambda) model tensor.
             mu: The second Lam'e parameter (mu) model tensor.
             buoyancy: The buoyancy (1/density) model tensor.
@@ -871,12 +696,12 @@ class ElasticForwardFunc(torch.autograd.Function):
             sigmaxy: Initial stress wavefield (sigma_xy).
             sigmaxx: Initial stress wavefield (sigma_xx).
             m_vyy: Initial memory variable for vy in PML.
-            m_vyx: Initial memory variable for vx in PML (related to y-direction).
-            m_vxy: Initial memory variable for vy in PML (related to x-direction).
+            m_vyx: Initial memory variable for vx in PML (y-direction).
+            m_vxy: Initial memory variable for vy in PML (x-direction).
             m_vxx: Initial memory variable for vx in PML.
             m_sigmayyy: Initial memory variable for sigmayy in PML.
-            m_sigmaxyy: Initial memory variable for sigmaxy in PML (related to y-direction).
-            m_sigmaxyx: Initial memory variable for sigmaxy in PML (related to x-direction).
+            m_sigmaxyy: Initial memory variable for sigmaxy in PML (y-direction).
+            m_sigmaxyx: Initial memory variable for sigmaxy in PML (x-direction).
             m_sigmaxxx: Initial memory variable for sigmaxx in PML.
             ay: PML absorption profile for y-dimension (a-coefficient).
             ayh: PML absorption profile for y-dimension (a-coefficient, half-step).
@@ -901,24 +726,8 @@ class ElasticForwardFunc(torch.autograd.Function):
             n_shots: Number of shots in the batch.
 
         Returns:
-            Tuple[Tensor, ...]: A tuple containing the final wavefields,
-                memory variables, and receiver amplitudes:
-                - vy: Final velocity wavefield in y-direction.
-                - vx: Final velocity wavefield in x-direction.
-                - sigmayy: Final stress wavefield (sigma_yy).
-                - sigmaxy: Final stress wavefield (sigma_xy).
-                - sigmaxx: Final stress wavefield (sigma_xx).
-                - m_vyy: Final memory variable for vy in PML.
-                - m_vyx: Final memory variable for vx in PML (related to y-direction).
-                - m_vxy: Final memory variable for vy in PML (related to x-direction).
-                - m_vxx: Final memory variable for vx in PML.
-                - m_sigmayyy: Final memory variable for sigmayy in PML.
-                - m_sigmaxyy: Final memory variable for sigmaxy in PML (related to y-direction).
-                - m_sigmaxyx: Final memory variable for sigmaxy in PML (related to x-direction).
-                - m_sigmaxxx: Final memory variable for sigmaxx in PML.
-                - receiver_amplitudes_p: Recorded pressure receiver amplitudes.
-                - receiver_amplitudes_y: Recorded y-component receiver amplitudes.
-                - receiver_amplitudes_x: Recorded x-component receiver amplitudes.
+            A tuple containing the final wavefields, memory variables, and
+            receiver amplitudes.
         """
         lamb = lamb.contiguous()
         mu = mu.contiguous()
@@ -957,35 +766,35 @@ class ElasticForwardFunc(torch.autograd.Function):
         receiver_amplitudes_x = torch.empty(0, device=device, dtype=dtype)
         receiver_amplitudes_p = torch.empty(0, device=device, dtype=dtype)
 
-        pml_y0 = int(max(pml_width[0], accuracy // 2))
-        pml_y1 = int(min(ny - pml_width[1], ny - accuracy // 2))
-        pml_x0 = int(max(pml_width[2], accuracy // 2))
-        pml_x1 = int(min(nx - pml_width[3], nx - accuracy // 2))
+        pml_y0 = max(pml_width[0], accuracy // 2)
+        pml_y1 = min(ny - pml_width[1], ny - accuracy // 2)
+        pml_x0 = max(pml_width[2], accuracy // 2)
+        pml_x1 = min(nx - pml_width[3], nx - accuracy // 2)
 
         size_with_batch = (n_shots, *lamb.shape[-2:])
-        vy = create_or_pad(vy, 0, lamb.device, lamb.dtype, size_with_batch)
-        vx = create_or_pad(vx, 0, lamb.device, lamb.dtype, size_with_batch)
-        sigmayy = create_or_pad(sigmayy, 0, lamb.device, lamb.dtype,
+        vy = deepwave.common.create_or_pad(vy, 0, lamb.device, lamb.dtype, size_with_batch)
+        vx = deepwave.common.create_or_pad(vx, 0, lamb.device, lamb.dtype, size_with_batch)
+        sigmayy = deepwave.common.create_or_pad(sigmayy, 0, lamb.device, lamb.dtype,
                                 size_with_batch)
-        sigmaxy = create_or_pad(sigmaxy, 0, lamb.device, lamb.dtype,
+        sigmaxy = deepwave.common.create_or_pad(sigmaxy, 0, lamb.device, lamb.dtype,
                                 size_with_batch)
-        sigmaxx = create_or_pad(sigmaxx, 0, lamb.device, lamb.dtype,
+        sigmaxx = deepwave.common.create_or_pad(sigmaxx, 0, lamb.device, lamb.dtype,
                                 size_with_batch)
-        m_vyy = create_or_pad(m_vyy, 0, lamb.device, lamb.dtype,
+        m_vyy = deepwave.common.create_or_pad(m_vyy, 0, lamb.device, lamb.dtype,
                               size_with_batch)
-        m_vyx = create_or_pad(m_vyx, 0, lamb.device, lamb.dtype,
+        m_vyx = deepwave.common.create_or_pad(m_vyx, 0, lamb.device, lamb.dtype,
                               size_with_batch)
-        m_vxy = create_or_pad(m_vxy, 0, lamb.device, lamb.dtype,
+        m_vxy = deepwave.common.create_or_pad(m_vxy, 0, lamb.device, lamb.dtype,
                               size_with_batch)
-        m_vxx = create_or_pad(m_vxx, 0, lamb.device, lamb.dtype,
+        m_vxx = deepwave.common.create_or_pad(m_vxx, 0, lamb.device, lamb.dtype,
                               size_with_batch)
-        m_sigmayyy = create_or_pad(m_sigmayyy, 0, lamb.device, lamb.dtype,
+        m_sigmayyy = deepwave.common.create_or_pad(m_sigmayyy, 0, lamb.device, lamb.dtype,
                                    size_with_batch)
-        m_sigmaxyy = create_or_pad(m_sigmaxyy, 0, lamb.device, lamb.dtype,
+        m_sigmaxyy = deepwave.common.create_or_pad(m_sigmaxyy, 0, lamb.device, lamb.dtype,
                                    size_with_batch)
-        m_sigmaxyx = create_or_pad(m_sigmaxyx, 0, lamb.device, lamb.dtype,
+        m_sigmaxyx = deepwave.common.create_or_pad(m_sigmaxyx, 0, lamb.device, lamb.dtype,
                                    size_with_batch)
-        m_sigmaxxx = create_or_pad(m_sigmaxxx, 0, lamb.device, lamb.dtype,
+        m_sigmaxxx = deepwave.common.create_or_pad(m_sigmaxxx, 0, lamb.device, lamb.dtype,
                                    size_with_batch)
         zero_edges(sigmaxy, ny, nx)
         zero_edges(m_vxy, ny, nx)
@@ -1042,29 +851,29 @@ class ElasticForwardFunc(torch.autograd.Function):
             aux = lamb.get_device()
             if dtype == torch.float32:
                 if accuracy == 2:
-                    forward = dll.elastic_iso_2_float_forward_cuda
+                    forward = deepwave.backend_utils.dll.elastic_iso_2_float_forward_cuda
                 elif accuracy == 4:
-                    forward = dll.elastic_iso_4_float_forward_cuda
+                    forward = deepwave.backend_utils.dll.elastic_iso_4_float_forward_cuda
             else:
                 if accuracy == 2:
-                    forward = dll.elastic_iso_2_double_forward_cuda
+                    forward = deepwave.backend_utils.dll.elastic_iso_2_double_forward_cuda
                 elif accuracy == 4:
-                    forward = dll.elastic_iso_4_double_forward_cuda
+                    forward = deepwave.backend_utils.dll.elastic_iso_4_double_forward_cuda
         else:
-            if USE_OPENMP:
+            if deepwave.backend_utils.USE_OPENMP:
                 aux = min(n_shots, torch.get_num_threads())
             else:
                 aux = 1
             if dtype == torch.float32:
                 if accuracy == 2:
-                    forward = dll.elastic_iso_2_float_forward_cpu
+                    forward = deepwave.backend_utils.dll.elastic_iso_2_float_forward_cpu
                 elif accuracy == 4:
-                    forward = dll.elastic_iso_4_float_forward_cpu
+                    forward = deepwave.backend_utils.dll.elastic_iso_4_float_forward_cpu
             else:
                 if accuracy == 2:
-                    forward = dll.elastic_iso_2_double_forward_cpu
+                    forward = deepwave.backend_utils.dll.elastic_iso_2_double_forward_cpu
                 elif accuracy == 4:
-                    forward = dll.elastic_iso_4_double_forward_cpu
+                    forward = deepwave.backend_utils.dll.elastic_iso_4_double_forward_cpu
 
         if vy.numel() > 0 and nt > 0:
             start_t = 0
@@ -1198,26 +1007,54 @@ class ElasticForwardFunc(torch.autograd.Function):
         )
 
     @staticmethod
-    @once_differentiable
+    @torch.autograd.function.once_differentiable
     def backward(
         ctx: Any,
-        vy: Tensor,
-        vx: Tensor,
-        sigmayy: Tensor,
-        sigmaxy: Tensor,
-        sigmaxx: Tensor,
-        m_vyy: Tensor,
-        m_vyx: Tensor,
-        m_vxy: Tensor,
-        m_vxx: Tensor,
-        m_sigmayyy: Tensor,
-        m_sigmaxyy: Tensor,
-        m_sigmaxyx: Tensor,
-        m_sigmaxxx: Tensor,
-        grad_r_p: Tensor,
-        grad_r_y: Tensor,
-        grad_r_x: Tensor,
-    ) -> Tuple[Optional[Tensor], ...]:
+        vy: torch.Tensor,
+        vx: torch.Tensor,
+        sigmayy: torch.Tensor,
+        sigmaxy: torch.Tensor,
+        sigmaxx: torch.Tensor,
+        m_vyy: torch.Tensor,
+        m_vyx: torch.Tensor,
+        m_vxy: torch.Tensor,
+        m_vxx: torch.Tensor,
+        m_sigmayyy: torch.Tensor,
+        m_sigmaxyy: torch.Tensor,
+        m_sigmaxyx: torch.Tensor,
+        m_sigmaxxx: torch.Tensor,
+        grad_r_p: torch.Tensor,
+        grad_r_y: torch.Tensor,
+        grad_r_x: torch.Tensor,
+    ) -> Tuple[Optional[torch.Tensor], ...]:
+        """Computes the gradients during the backward pass.
+
+        This method is called by PyTorch during the backward pass to compute
+        gradients with respect to the inputs of the forward pass.
+
+        Args:
+            ctx: A context object with saved information from the forward pass.
+            vy: Gradient of the loss wrt the output `vy`.
+            vx: Gradient of the loss wrt the output `vx`.
+            sigmayy: Gradient of the loss wrt the output `sigmayy`.
+            sigmaxy: Gradient of the loss wrt the output `sigmaxy`.
+            sigmaxx: Gradient of the loss wrt the output `sigmaxx`.
+            m_vyy: Gradient of the loss wrt the output `m_vyy`.
+            m_vyx: Gradient of the loss wrt the output `m_vyx`.
+            m_vxy: Gradient of the loss wrt the output `m_vxy`.
+            m_vxx: Gradient of the loss wrt the output `m_vxx`.
+            m_sigmayyy: Gradient of the loss wrt the output `m_sigmayyy`.
+            m_sigmaxyy: Gradient of the loss wrt the output `m_sigmaxyy`.
+            m_sigmaxyx: Gradient of the loss wrt the output `m_sigmaxyx`.
+            m_sigmaxxx: Gradient of the loss wrt the output `m_sigmaxxx`.
+            grad_r_p: Gradient of the loss wrt the output `receiver_amplitudes_p`.
+            grad_r_y: Gradient of the loss wrt the output `receiver_amplitudes_y`.
+            grad_r_x: Gradient of the loss wrt the output `receiver_amplitudes_x`.
+
+        Returns:
+            A tuple containing the gradients with respect to the inputs of the
+            forward pass.
+        """
         (
             lamb,
             mu,
@@ -1305,10 +1142,10 @@ class ElasticForwardFunc(torch.autograd.Function):
         grad_f_y = torch.empty(0, device=device, dtype=dtype)
         grad_f_x = torch.empty(0, device=device, dtype=dtype)
 
-        pml_y0 = int(max(pml_width[0], accuracy // 2))
-        pml_y1 = int(min(ny - pml_width[1], ny - accuracy // 2))
-        pml_x0 = int(max(pml_width[2], accuracy // 2))
-        pml_x1 = int(min(nx - pml_width[3], nx - accuracy // 2))
+        pml_y0 = max(pml_width[0], accuracy // 2)
+        pml_y1 = min(ny - pml_width[1], ny - accuracy // 2)
+        pml_x0 = max(pml_width[2], accuracy // 2)
+        pml_x1 = min(nx - pml_width[3], nx - accuracy // 2)
         spml_y0 = max(pml_width[0], accuracy + 1)
         spml_y1 = min(ny - pml_width[1], ny - (accuracy + 1))
         spml_x0 = max(pml_width[2], accuracy + 1)
@@ -1323,29 +1160,29 @@ class ElasticForwardFunc(torch.autograd.Function):
         buoyancy_batched = buoyancy.ndim == 3 and buoyancy.shape[0] > 1
 
         size_with_batch = (n_shots, *lamb.shape[-2:])
-        vy = create_or_pad(vy, 0, lamb.device, lamb.dtype, size_with_batch)
-        vx = create_or_pad(vx, 0, lamb.device, lamb.dtype, size_with_batch)
-        sigmayy = create_or_pad(sigmayy, 0, lamb.device, lamb.dtype,
+        vy = deepwave.common.create_or_pad(vy, 0, lamb.device, lamb.dtype, size_with_batch)
+        vx = deepwave.common.create_or_pad(vx, 0, lamb.device, lamb.dtype, size_with_batch)
+        sigmayy = deepwave.common.create_or_pad(sigmayy, 0, lamb.device, lamb.dtype,
                                 size_with_batch)
-        sigmaxy = create_or_pad(sigmaxy, 0, lamb.device, lamb.dtype,
+        sigmaxy = deepwave.common.create_or_pad(sigmaxy, 0, lamb.device, lamb.dtype,
                                 size_with_batch)
-        sigmaxx = create_or_pad(sigmaxx, 0, lamb.device, lamb.dtype,
+        sigmaxx = deepwave.common.create_or_pad(sigmaxx, 0, lamb.device, lamb.dtype,
                                 size_with_batch)
-        m_vyy = create_or_pad(m_vyy, 0, lamb.device, lamb.dtype,
+        m_vyy = deepwave.common.create_or_pad(m_vyy, 0, lamb.device, lamb.dtype,
                               size_with_batch)
-        m_vyx = create_or_pad(m_vyx, 0, lamb.device, lamb.dtype,
+        m_vyx = deepwave.common.create_or_pad(m_vyx, 0, lamb.device, lamb.dtype,
                               size_with_batch)
-        m_vxy = create_or_pad(m_vxy, 0, lamb.device, lamb.dtype,
+        m_vxy = deepwave.common.create_or_pad(m_vxy, 0, lamb.device, lamb.dtype,
                               size_with_batch)
-        m_vxx = create_or_pad(m_vxx, 0, lamb.device, lamb.dtype,
+        m_vxx = deepwave.common.create_or_pad(m_vxx, 0, lamb.device, lamb.dtype,
                               size_with_batch)
-        m_sigmayyy = create_or_pad(m_sigmayyy, 0, lamb.device, lamb.dtype,
+        m_sigmayyy = deepwave.common.create_or_pad(m_sigmayyy, 0, lamb.device, lamb.dtype,
                                    size_with_batch)
-        m_sigmaxyy = create_or_pad(m_sigmaxyy, 0, lamb.device, lamb.dtype,
+        m_sigmaxyy = deepwave.common.create_or_pad(m_sigmaxyy, 0, lamb.device, lamb.dtype,
                                    size_with_batch)
-        m_sigmaxyx = create_or_pad(m_sigmaxyx, 0, lamb.device, lamb.dtype,
+        m_sigmaxyx = deepwave.common.create_or_pad(m_sigmaxyx, 0, lamb.device, lamb.dtype,
                                    size_with_batch)
-        m_sigmaxxx = create_or_pad(m_sigmaxxx, 0, lamb.device, lamb.dtype,
+        m_sigmaxxx = deepwave.common.create_or_pad(m_sigmaxxx, 0, lamb.device, lamb.dtype,
                                    size_with_batch)
         m_sigmayyyn = torch.zeros_like(m_sigmayyy)
         m_sigmaxyyn = torch.zeros_like(m_sigmaxyy)
@@ -1400,43 +1237,43 @@ class ElasticForwardFunc(torch.autograd.Function):
                 grad_buoyancy_tmp_ptr = grad_buoyancy_tmp.data_ptr()
             if dtype == torch.float32:
                 if accuracy == 2:
-                    backward = dll.elastic_iso_2_float_backward_cuda
+                    backward = deepwave.backend_utils.dll.elastic_iso_2_float_backward_cuda
                 elif accuracy == 4:
-                    backward = dll.elastic_iso_4_float_backward_cuda
+                    backward = deepwave.backend_utils.dll.elastic_iso_4_float_backward_cuda
             else:
                 if accuracy == 2:
-                    backward = dll.elastic_iso_2_double_backward_cuda
+                    backward = deepwave.backend_utils.dll.elastic_iso_2_double_backward_cuda
                 elif accuracy == 4:
-                    backward = dll.elastic_iso_4_double_backward_cuda
+                    backward = deepwave.backend_utils.dll.elastic_iso_4_double_backward_cuda
         else:
-            if USE_OPENMP:
+            if deepwave.backend_utils.USE_OPENMP:
                 aux = min(n_shots, torch.get_num_threads())
             else:
                 aux = 1
             if (lamb.requires_grad and not lamb_batched and aux > 1
-                    and USE_OPENMP):
+                    and deepwave.backend_utils.USE_OPENMP):
                 grad_lamb_tmp.resize_(n_shots, *lamb.shape[-2:])
                 grad_lamb_tmp.fill_(0)
                 grad_lamb_tmp_ptr = grad_lamb_tmp.data_ptr()
-            if mu.requires_grad and not mu_batched and aux > 1 and USE_OPENMP:
+            if mu.requires_grad and not mu_batched and aux > 1 and deepwave.backend_utils.USE_OPENMP:
                 grad_mu_tmp.resize_(n_shots, *mu.shape[-2:])
                 grad_mu_tmp.fill_(0)
                 grad_mu_tmp_ptr = grad_mu_tmp.data_ptr()
             if (buoyancy.requires_grad and not buoyancy_batched and aux > 1
-                    and USE_OPENMP):
+                    and deepwave.backend_utils.USE_OPENMP):
                 grad_buoyancy_tmp.resize_(n_shots, *buoyancy.shape[-2:])
                 grad_buoyancy_tmp.fill_(0)
                 grad_buoyancy_tmp_ptr = grad_buoyancy_tmp.data_ptr()
             if dtype == torch.float32:
                 if accuracy == 2:
-                    backward = dll.elastic_iso_2_float_backward_cpu
+                    backward = deepwave.backend_utils.dll.elastic_iso_2_float_backward_cpu
                 elif accuracy == 4:
-                    backward = dll.elastic_iso_4_float_backward_cpu
+                    backward = deepwave.backend_utils.dll.elastic_iso_4_float_backward_cpu
             else:
                 if accuracy == 2:
-                    backward = dll.elastic_iso_2_double_backward_cpu
+                    backward = deepwave.backend_utils.dll.elastic_iso_2_double_backward_cpu
                 elif accuracy == 4:
-                    backward = dll.elastic_iso_4_double_backward_cpu
+                    backward = deepwave.backend_utils.dll.elastic_iso_4_double_backward_cpu
 
         if vy.numel() > 0 and nt > 0:
             start_t = 0
@@ -1619,5 +1456,18 @@ class ElasticForwardFunc(torch.autograd.Function):
         )
 
 
-def elastic_func(*args: Any) -> Tuple[Tensor, ...]:
+def elastic_func(*args: Any) -> Tuple[torch.Tensor, ...]:
+    """A helper function to apply the ElasticForwardFunc.
+
+    This function serves as a convenient wrapper to call the `apply` method
+    of `ElasticForwardFunc`, which is the entry point for the autograd graph
+    for elastic wave propagation.
+
+    Args:
+        *args: Variable length argument list to be passed directly to
+            `ElasticForwardFunc.apply`.
+
+    Returns:
+        The results of the forward pass from `ElasticForwardFunc.apply`.
+    """
     return ElasticForwardFunc.apply(*args)

@@ -3,7 +3,6 @@
 import math
 from typing import Optional, Union
 import torch
-from torch import Tensor
 
 
 def ricker(
@@ -12,25 +11,27 @@ def ricker(
     dt: Union[int, float],
     peak_time: Union[int, float],
     dtype: Optional[torch.dtype] = None,
-) -> Tensor:
+) -> torch.Tensor:
     """Return a Ricker wavelet with the specified central frequency.
 
     Args:
-        freq:
-            The central frequency.
-        length:
-            The number of time samples
-        dt:
-            The time sample spacing
-        peak_time:
-            The time (in secs) of the peak amplitude
-        dtype:
-            The PyTorch datatype to use. Optional, defaults to PyTorch's
+        freq: The central frequency.
+        length: The number of time samples.
+        dt: The time sample spacing.
+        peak_time: The time (in secs) of the peak amplitude.
+        dtype: The PyTorch datatype to use. Optional, defaults to PyTorch's
             default (float32).
+
+    Returns:
+        A PyTorch tensor representing the Ricker wavelet.
     """
-    t: Tensor = torch.arange(float(length), dtype=dtype) * dt - peak_time
-    y: Tensor = (1 - 2 * math.pi**2 * freq**2 * t**2) * torch.exp(
-        -(math.pi**2) * freq**2 * t**2)
+    t: torch.Tensor = (
+        torch.arange(float(length), dtype=dtype) * dt - peak_time
+    )
+    y: torch.Tensor = (
+        (1 - 2 * math.pi**2 * freq**2 * t**2)
+        * torch.exp(-(math.pi**2) * freq**2 * t**2)
+    )
     if dtype is not None:
         return y.to(dtype)
     return y

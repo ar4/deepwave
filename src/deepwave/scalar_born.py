@@ -8,7 +8,6 @@ wavefield that uses 2 / v * scatter * dt^2 * wavefield as the source term.
 
 from typing import Optional, Union, Tuple, Sequence, List, Any
 import torch
-from torch import Tensor
 from torch.autograd.function import once_differentiable
 from deepwave.backend_utils import dll, USE_OPENMP
 from deepwave.common import (
@@ -35,97 +34,79 @@ class ScalarBorn(torch.nn.Module):
     attributes to access them.
 
     Args:
-        v:
-            A Tensor containing an initial guess of the wavespeed.
-        scatter:
-            A Tensor containing an initial guess of the scattering potential.
-        grid_spacing:
-            The spatial grid cell size. It can be a single number that will be
-            used for all dimensions, or a number for each dimension.
-        v_requires_grad:
-            A bool specifying whether the `requires_grad` attribute of the
-            wavespeed should be set, and thus whether the necessary data
-            should be stored to calculate the gradient with respect to `v`
-            during backpropagation. Defaults to False.
-        scatter_requires_grad:
-            A bool specifying whether the `requires_grad` attribute of the
-            scattering potential should be set, and thus whether the necessary
-            data should be stored to calculate the gradient with respect to
-            `scatter` during backpropagation. Defaults to False.
+        v: A torch.Tensor containing an initial guess of the wavespeed.
+        scatter: A torch.Tensor containing an initial guess of the scattering
+            potential.
+        grid_spacing: The spatial grid cell size. It can be a single number
+            that will be used for all dimensions, or a number for each
+            dimension.
+        v_requires_grad: A bool specifying whether the `requires_grad`
+            attribute of the wavespeed should be set, and thus whether the
+            necessary data should be stored to calculate the gradient with
+            respect to `v` during backpropagation. Defaults to False.
+        scatter_requires_grad: A bool specifying whether the `requires_grad`
+            attribute of the scattering potential should be set, and thus
+            whether the necessary data should be stored to calculate the
+            gradient with respect to `scatter` during backpropagation.
+            Defaults to False.
     """
 
     def __init__(
         self,
-        v: Tensor,
-        scatter: Tensor,
+        v: torch.Tensor,
+        scatter: torch.Tensor,
         grid_spacing: Union[float, Sequence[float]],
         v_requires_grad: bool = False,
         scatter_requires_grad: bool = False,
     ) -> None:
         super().__init__()
         if not isinstance(v_requires_grad, bool):
-            raise TypeError(
-                f"v_requires_grad must be bool, got {type(v_requires_grad).__name__}"
-            )
-        if not isinstance(v, Tensor):
+            raise TypeError("v_requires_grad must be bool, "
+                            f"got {type(v_requires_grad).__name__}")
+        if not isinstance(v, torch.Tensor):
             raise TypeError("v must be a torch.Tensor.")
         if not isinstance(scatter_requires_grad, bool):
-            raise TypeError(
-                f"scatter_requires_grad must be bool, got {type(scatter_requires_grad).__name__}"
-            )
-        if not isinstance(scatter, Tensor):
+            raise TypeError("scatter_requires_grad must be bool, "
+                            f"got {type(scatter_requires_grad).__name__}")
+        if not isinstance(scatter, torch.Tensor):
             raise TypeError("scatter must be a torch.Tensor.")
         self.v = torch.nn.Parameter(v, requires_grad=v_requires_grad)
-        self.scatter = torch.nn.Parameter(scatter,
-                                          requires_grad=scatter_requires_grad)
+        self.scatter = torch.nn.Parameter(
+            scatter, requires_grad=scatter_requires_grad
+        )
         self.grid_spacing = grid_spacing
 
     def forward(
         self,
         dt: float,
-        source_amplitudes: Optional[Tensor] = None,
-        source_locations: Optional[Tensor] = None,
-        receiver_locations: Optional[Tensor] = None,
-        bg_receiver_locations: Optional[Tensor] = None,
+        source_amplitudes: Optional[torch.Tensor] = None,
+        source_locations: Optional[torch.Tensor] = None,
+        receiver_locations: Optional[torch.Tensor] = None,
+        bg_receiver_locations: Optional[torch.Tensor] = None,
         accuracy: int = 4,
         pml_width: Union[int, Sequence[int]] = 20,
         pml_freq: Optional[float] = None,
         max_vel: Optional[float] = None,
         survey_pad: Optional[Union[int, Sequence[Optional[int]]]] = None,
-        wavefield_0: Optional[Tensor] = None,
-        wavefield_m1: Optional[Tensor] = None,
-        psiy_m1: Optional[Tensor] = None,
-        psix_m1: Optional[Tensor] = None,
-        zetay_m1: Optional[Tensor] = None,
-        zetax_m1: Optional[Tensor] = None,
-        wavefield_sc_0: Optional[Tensor] = None,
-        wavefield_sc_m1: Optional[Tensor] = None,
-        psiy_sc_m1: Optional[Tensor] = None,
-        psix_sc_m1: Optional[Tensor] = None,
-        zetay_sc_m1: Optional[Tensor] = None,
-        zetax_sc_m1: Optional[Tensor] = None,
+        wavefield_0: Optional[torch.Tensor] = None,
+        wavefield_m1: Optional[torch.Tensor] = None,
+        psiy_m1: Optional[torch.Tensor] = None,
+        psix_m1: Optional[torch.Tensor] = None,
+        zetay_m1: Optional[torch.Tensor] = None,
+        zetax_m1: Optional[torch.Tensor] = None,
+        wavefield_sc_0: Optional[torch.Tensor] = None,
+        wavefield_sc_m1: Optional[torch.Tensor] = None,
+        psiy_sc_m1: Optional[torch.Tensor] = None,
+        psix_sc_m1: Optional[torch.Tensor] = None,
+        zetay_sc_m1: Optional[torch.Tensor] = None,
+        zetax_sc_m1: Optional[torch.Tensor] = None,
         origin: Optional[Sequence[int]] = None,
         nt: Optional[int] = None,
         model_gradient_sampling_interval: int = 1,
         freq_taper_frac: float = 0.0,
         time_pad_frac: float = 0.0,
         time_taper: bool = False,
-    ) -> Tuple[
-            Tensor,
-            Tensor,
-            Tensor,
-            Tensor,
-            Tensor,
-            Tensor,
-            Tensor,
-            Tensor,
-            Tensor,
-            Tensor,
-            Tensor,
-            Tensor,
-            Tensor,
-            Tensor,
-    ]:
+    ) -> Tuple[torch.Tensor, ...]:
         """Perform forward propagation/modelling.
 
         The inputs are the same as for :func:`scalar_born` except that `v`,
@@ -161,7 +142,8 @@ class ScalarBorn(torch.nn.Module):
             zetax_sc_m1=zetax_sc_m1,
             origin=origin,
             nt=nt,
-            model_gradient_sampling_interval=model_gradient_sampling_interval,
+            model_gradient_sampling_interval=
+            model_gradient_sampling_interval,
             freq_taper_frac=freq_taper_frac,
             time_pad_frac=time_pad_frac,
             time_taper=time_taper,
@@ -169,53 +151,38 @@ class ScalarBorn(torch.nn.Module):
 
 
 def scalar_born(
-    v: Tensor,
-    scatter: Tensor,
+    v: torch.Tensor,
+    scatter: torch.Tensor,
     grid_spacing: Union[float, Sequence[float]],
     dt: float,
-    source_amplitudes: Optional[Tensor] = None,
-    source_locations: Optional[Tensor] = None,
-    receiver_locations: Optional[Tensor] = None,
-    bg_receiver_locations: Optional[Tensor] = None,
+    source_amplitudes: Optional[torch.Tensor] = None,
+    source_locations: Optional[torch.Tensor] = None,
+    receiver_locations: Optional[torch.Tensor] = None,
+    bg_receiver_locations: Optional[torch.Tensor] = None,
     accuracy: int = 4,
     pml_width: Union[int, Sequence[int]] = 20,
     pml_freq: Optional[float] = None,
     max_vel: Optional[float] = None,
     survey_pad: Optional[Union[int, Sequence[Optional[int]]]] = None,
-    wavefield_0: Optional[Tensor] = None,
-    wavefield_m1: Optional[Tensor] = None,
-    psiy_m1: Optional[Tensor] = None,
-    psix_m1: Optional[Tensor] = None,
-    zetay_m1: Optional[Tensor] = None,
-    zetax_m1: Optional[Tensor] = None,
-    wavefield_sc_0: Optional[Tensor] = None,
-    wavefield_sc_m1: Optional[Tensor] = None,
-    psiy_sc_m1: Optional[Tensor] = None,
-    psix_sc_m1: Optional[Tensor] = None,
-    zetay_sc_m1: Optional[Tensor] = None,
-    zetax_sc_m1: Optional[Tensor] = None,
+    wavefield_0: Optional[torch.Tensor] = None,
+    wavefield_m1: Optional[torch.Tensor] = None,
+    psiy_m1: Optional[torch.Tensor] = None,
+    psix_m1: Optional[torch.Tensor] = None,
+    zetay_m1: Optional[torch.Tensor] = None,
+    zetax_m1: Optional[torch.Tensor] = None,
+    wavefield_sc_0: Optional[torch.Tensor] = None,
+    wavefield_sc_m1: Optional[torch.Tensor] = None,
+    psiy_sc_m1: Optional[torch.Tensor] = None,
+    psix_sc_m1: Optional[torch.Tensor] = None,
+    zetay_sc_m1: Optional[torch.Tensor] = None,
+    zetax_sc_m1: Optional[torch.Tensor] = None,
     origin: Optional[Sequence[int]] = None,
     nt: Optional[int] = None,
     model_gradient_sampling_interval: int = 1,
     freq_taper_frac: float = 0.0,
     time_pad_frac: float = 0.0,
     time_taper: bool = False,
-) -> Tuple[
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-]:
+) -> Tuple[torch.Tensor, ...]:
     """Scalar Born wave propagation (functional interface).
 
     This function performs Born forward modelling with the scalar wave
@@ -249,56 +216,78 @@ def scalar_born(
     only those that are different will be described here.
 
     Args:
-        scatter:
-            A Tensor containing an initial guess of the scattering potential.
-            Unlike the module interface (:class:`ScalarBorn`), in this
-            functional interface a copy of the model is not made, so gradients
-            will propagate back into the provided Tensor.
-        bg_receiver_locations:
-            A Tensor with dimensions [shot, receiver, 2], containing
-            the coordinates of the cell containing each receiver of the
-            background wavefield. Optional.
+        v: A torch.Tensor containing the wavespeed.
+        scatter: A torch.Tensor containing an initial guess of the
+            scattering potential. Unlike the module interface
+            (:class:`ScalarBorn`), in this functional interface a copy of the
+            model is not made, so gradients will propagate back into the
+            provided torch.Tensor.
+        grid_spacing: The spatial grid cell size.
+        dt: The temporal grid cell size.
+        source_amplitudes: A torch.Tensor containing the source amplitudes.
+        source_locations: A torch.Tensor containing the source locations.
+        receiver_locations: A torch.Tensor containing the receiver locations.
+        bg_receiver_locations: A torch.Tensor with dimensions
+            [shot, receiver, 2], containing the coordinates of the cell
+            containing each receiver of the background wavefield. Optional.
             It should have torch.long (int64) datatype. If not provided,
-            the output `bg_receiver_amplitudes` Tensor will be empty. If
-            backpropagation will be performed, the location of each
+            the output `bg_receiver_amplitudes` torch.Tensor will be empty.
+            If backpropagation will be performed, the location of each
             background receiver must be unique within the same shot.
-        wavefield_sc_0, wavefield_sc_m1:
-            The equivalent of `wavefield_0`, etc., for the scattered
-            wavefield.
-        psiy_sc_m1, psix_sc_m1, zetay_sc_m1, zetax_sc_m1:
-            The equivalent of `psiy_m1`, etc., for the scattered
-            wavefield.
+        accuracy: The spatial accuracy of the finite difference stencil.
+        pml_width: The width of the PML in grid cells.
+        pml_freq: The frequency of the PML.
+        max_vel: The maximum velocity of the model.
+        survey_pad: The padding to apply to the survey area.
+        wavefield_0: The wavefield at time step 0.
+        wavefield_m1: The wavefield at time step -1.
+        psiy_m1: The PML wavefield in the y direction at time step -1.
+        psix_m1: The PML wavefield in the x direction at time step -1.
+        zetay_m1: The PML wavefield in the y direction at time step -1.
+        zetax_m1: The PML wavefield in the x direction at time step -1.
+        wavefield_sc_0: The scattered wavefield at time step 0.
+        wavefield_sc_m1: The scattered wavefield at time step -1.
+        psiy_sc_m1: The scattered PML wavefield in the y direction at time
+            step -1.
+        psix_sc_m1: The scattered PML wavefield in the x direction at time
+            step -1.
+        zetay_sc_m1: The scattered PML wavefield in the y direction at time
+            step -1.
+        zetax_sc_m1: The scattered PML wavefield in the x direction at time
+            step -1.
+        origin: The origin of the grid.
+        nt: The number of time steps.
+        model_gradient_sampling_interval: The sampling interval for the
+            model gradient.
+        freq_taper_frac: The fraction of the frequency to taper.
+        time_pad_frac: The fraction of the time to pad.
+        time_taper: Whether to taper the time.
 
     Returns:
-        Tuple[Tensor]:
-
-            wavefield_nt:
-                A Tensor containing the non-scattered wavefield at the final
+        A tuple containing:
+            wavefield_nt: The non-scattered wavefield at the final time step.
+            wavefield_ntm1: The non-scattered wavefield at the second-to-last
                 time step.
-            wavefield_ntm1:
-                A Tensor containing the non-scattered wavefield at the
-                second-to-last time step.
-            psiy_ntm1, psix_ntm1, zetay_ntm1, zetax_ntm1:
-                Tensor containing the wavefield related to the PML at the
-                second-to-last time step for the non-scattered wavefield.
-            wavefield_sc_nt, wavefield_sc_ntm1:
-                Tensor containing the scattered wavefield.
-            psiy_sc_ntm1, psix_sc_ntm1, zetay_sc_ntm1, zetax_sc_ntm1:
-                Tensor containing the wavefield related to the scattered
-                wavefield PML.
-            bg_receiver_amplitudes:
-                A Tensor of dimensions [shot, receiver, time] containing
-                the receiver amplitudes recorded at the provided receiver
-                locations, extracted from the background wavefield. If no
-                receiver locations were specified then this Tensor will be
-                empty.
-            receiver_amplitudes:
-                A Tensor of dimensions [shot, receiver, time] containing
-                the receiver amplitudes recorded at the provided receiver
-                locations, extracted from the scattered wavefield. If no
-                receiver locations were specified then this Tensor will be
-                empty.
-
+            psiy_ntm1: The wavefield related to the PML at the second-to-last
+                time step for the non-scattered wavefield.
+            psix_ntm1: The wavefield related to the PML at the second-to-last
+                time step for the non-scattered wavefield.
+            zetay_ntm1: The wavefield related to the PML at the second-to-last
+                time step for the non-scattered wavefield.
+            zetax_ntm1: The wavefield related to the PML at the second-to-last
+                time step for the non-scattered wavefield.
+            wavefield_sc_nt: The scattered wavefield.
+            wavefield_sc_ntm1: The scattered wavefield.
+            psiy_sc_ntm1: The wavefield related to the scattered wavefield PML.
+            psix_sc_ntm1: The wavefield related to the scattered wavefield PML.
+            zetay_sc_ntm1: The wavefield related to the scattered wavefield PML.
+            zetax_sc_ntm1: The wavefield related to the scattered wavefield PML.
+            bg_receiver_amplitudes: The receiver amplitudes recorded at the
+                provided receiver locations, extracted from the background
+                wavefield.
+            receiver_amplitudes: The receiver amplitudes recorded at the
+                provided receiver locations, extracted from the scattered
+                wavefield.
     """
     v_nonzero = v[v != 0]
     if v_nonzero.numel() > 0:
@@ -312,36 +301,45 @@ def scalar_born(
      grid_spacing, dt, nt, n_shots,
      step_ratio, model_gradient_sampling_interval,
      accuracy, pml_width, pml_freq, max_vel,
-     freq_taper_frac, time_pad_frac, time_taper, device, dtype) = \
-        setup_propagator([v, scatter], ['replicate', 'constant'], grid_spacing, dt,
-                         [source_amplitudes, source_amplitudes],
-                         [source_locations, source_locations],
-                         [bg_receiver_locations, receiver_locations],
-                         accuracy, fd_pad, pml_width, pml_freq, max_vel,
-                         min_nonzero_model_vel, max_model_vel, survey_pad,
-                         [wavefield_0, wavefield_m1, psiy_m1, psix_m1,
-                          zetay_m1, zetax_m1, wavefield_sc_0, wavefield_sc_m1,
-                          psiy_sc_m1, psix_sc_m1, zetay_sc_m1, zetax_sc_m1],
-                         origin, nt, model_gradient_sampling_interval,
-                         freq_taper_frac, time_pad_frac, time_taper, 2)
+     freq_taper_frac, time_pad_frac, time_taper, device, dtype) = (
+        setup_propagator(
+            [v, scatter], ['replicate', 'constant'], grid_spacing, dt,
+            [source_amplitudes, source_amplitudes],
+            [source_locations, source_locations],
+            [bg_receiver_locations, receiver_locations],
+            accuracy, fd_pad, pml_width, pml_freq, max_vel,
+            min_nonzero_model_vel, max_model_vel, survey_pad,
+            [wavefield_0, wavefield_m1, psiy_m1, psix_m1,
+             zetay_m1, zetax_m1, wavefield_sc_0, wavefield_sc_m1,
+             psiy_sc_m1, psix_sc_m1, zetay_sc_m1, zetax_sc_m1],
+            origin, nt, model_gradient_sampling_interval,
+            freq_taper_frac, time_pad_frac, time_taper, 2
+        )
+    )
 
     ny, nx = models[0].shape[-2:]
     # Background (multiply source amplitudes by -v^2*dt^2)
     mask = sources_i[0] == IGNORE_LOCATION
     sources_i_masked = sources_i[0].clone()
     sources_i_masked[mask] = 0
-    source_amplitudes[0] = (-source_amplitudes[0] * (models[0].view(
-        -1, ny * nx).expand(n_shots, -1).gather(1, sources_i_masked))**2 *
-                            dt**2)
+    source_amplitudes[0] = (
+        -source_amplitudes[0] *
+        (models[0].view(-1, ny * nx).expand(n_shots, -1)
+         .gather(1, sources_i_masked))**2 *
+        dt**2
+    )
     # Scattered (multiply source amplitudes by -2*v*scatter*dt^2)
     mask = sources_i[1] == IGNORE_LOCATION
     sources_i_masked = sources_i[1].clone()
     sources_i_masked[mask] = 0
-    source_amplitudes[1] = (-2 * source_amplitudes[1] * (models[0].view(
-        -1, ny * nx).expand(n_shots, -1).gather(1, sources_i_masked)) *
-                            (models[1].view(-1, ny * nx).expand(
-                                n_shots, -1).gather(1, sources_i_masked)) *
-                            dt**2)
+    source_amplitudes[1] = (
+        -2 * source_amplitudes[1] *
+        (models[0].view(-1, ny * nx).expand(n_shots, -1)
+         .gather(1, sources_i_masked)) *
+        (models[1].view(-1, ny * nx).expand(n_shots, -1)
+         .gather(1, sources_i_masked)) *
+        dt**2
+    )
 
     pml_profiles = set_pml_profiles(
         pml_width,
@@ -388,12 +386,14 @@ def scalar_born(
         n_shots,
     )
 
-    receiver_amplitudes = downsample_and_movedim(receiver_amplitudes,
-                                                 step_ratio, freq_taper_frac,
-                                                 time_pad_frac, time_taper)
-    receiver_amplitudessc = downsample_and_movedim(receiver_amplitudessc,
-                                                   step_ratio, freq_taper_frac,
-                                                   time_pad_frac, time_taper)
+    receiver_amplitudes = downsample_and_movedim(
+        receiver_amplitudes, step_ratio, freq_taper_frac,
+        time_pad_frac, time_taper
+    )
+    receiver_amplitudessc = downsample_and_movedim(
+        receiver_amplitudessc, step_ratio, freq_taper_frac,
+        time_pad_frac, time_taper
+    )
 
     return (
         wfc,
@@ -414,36 +414,37 @@ def scalar_born(
 
 
 class ScalarBornForwardFunc(torch.autograd.Function):
+    """Forward propagation function for scalar Born modeling."""
 
     @staticmethod
     def forward(
         ctx: Any,
-        v: Tensor,
-        scatter: Tensor,
-        source_amplitudes: Tensor,
-        source_amplitudessc: Tensor,
-        wfc: Tensor,
-        wfp: Tensor,
-        psiy: Tensor,
-        psix: Tensor,
-        zetay: Tensor,
-        zetax: Tensor,
-        wfcsc: Tensor,
-        wfpsc: Tensor,
-        psiysc: Tensor,
-        psixsc: Tensor,
-        zetaysc: Tensor,
-        zetaxsc: Tensor,
-        ay: Tensor,
-        ax: Tensor,
-        by: Tensor,
-        bx: Tensor,
-        dbydy: Tensor,
-        dbxdx: Tensor,
-        sources_i: Tensor,
-        _: Tensor,
-        receivers_i: Tensor,
-        receiverssc_i: Tensor,
+        v: torch.Tensor,
+        scatter: torch.Tensor,
+        source_amplitudes: torch.Tensor,
+        source_amplitudessc: torch.Tensor,
+        wfc: torch.Tensor,
+        wfp: torch.Tensor,
+        psiy: torch.Tensor,
+        psix: torch.Tensor,
+        zetay: torch.Tensor,
+        zetax: torch.Tensor,
+        wfcsc: torch.Tensor,
+        wfpsc: torch.Tensor,
+        psiysc: torch.Tensor,
+        psixsc: torch.Tensor,
+        zetaysc: torch.Tensor,
+        zetaxsc: torch.Tensor,
+        ay: torch.Tensor,
+        ax: torch.Tensor,
+        by: torch.Tensor,
+        bx: torch.Tensor,
+        dbydy: torch.Tensor,
+        dbxdx: torch.Tensor,
+        sources_i: torch.Tensor,
+        unused_tensor: torch.Tensor,
+        receivers_i: torch.Tensor,
+        receiverssc_i: torch.Tensor,
         dy: float,
         dx: float,
         dt: float,
@@ -452,22 +453,50 @@ class ScalarBornForwardFunc(torch.autograd.Function):
         accuracy: int,
         pml_width: List[int],
         n_shots: int,
-    ) -> Tuple[
-            Tensor,
-            Tensor,
-            Tensor,
-            Tensor,
-            Tensor,
-            Tensor,
-            Tensor,
-            Tensor,
-            Tensor,
-            Tensor,
-            Tensor,
-            Tensor,
-            Tensor,
-            Tensor,
-    ]:
+    ) -> Tuple[torch.Tensor, ...]:
+        """Forward propagation of the scalar Born wave equation.
+
+        Args:
+            ctx: Context object for backpropagation.
+            v: Wavespeed model.
+            scatter: Scattering potential model.
+            source_amplitudes: Source amplitudes for the background wavefield.
+            source_amplitudessc: Source amplitudes for the scattered wavefield.
+            wfc: Current wavefield.
+            wfp: Previous wavefield.
+            psiy: PML variable for the y-direction.
+            psix: PML variable for the x-direction.
+            zetay: PML variable for the y-direction.
+            zetax: PML variable for the x-direction.
+            wfcsc: Current scattered wavefield.
+            wfpsc: Previous scattered wavefield.
+            psiysc: PML variable for the y-direction of the scattered wavefield.
+            psixsc: PML variable for the x-direction of the scattered wavefield.
+            zetaysc: PML variable for the y-direction of the scattered wavefield.
+            zetaxsc: PML variable for the x-direction of the scattered wavefield.
+            ay: PML coefficient.
+            ax: PML coefficient.
+            by: PML coefficient.
+            bx: PML coefficient.
+            dbydy: Derivative of PML coefficient.
+            dbxdx: Derivative of PML coefficient.
+            sources_i: Source locations.
+            unused_tensor: Unused tensor.
+            receivers_i: Receiver locations.
+            receiverssc_i: Scattered wavefield receiver locations.
+            dy: Grid spacing in the y-direction.
+            dx: Grid spacing in the x-direction.
+            dt: Time step size.
+            nt: Number of time steps.
+            step_ratio: Step ratio for storing wavefields.
+            accuracy: Accuracy of the finite-difference scheme.
+            pml_width: Width of the PML.
+            n_shots: Number of shots.
+
+        Returns:
+            A tuple containing the final wavefields and receiver data.
+        """
+        del unused_tensor  # Unused.
         v = v.contiguous()
         scatter = scatter.contiguous()
         source_amplitudes = source_amplitudes.contiguous()
@@ -546,7 +575,8 @@ class ScalarBornForwardFunc(torch.autograd.Function):
             receiver_amplitudes.resize_(nt, n_shots, n_receivers_per_shot)
             receiver_amplitudes.fill_(0)
         if receiverssc_i.numel() > 0:
-            receiver_amplitudessc.resize_(nt, n_shots, n_receiverssc_per_shot)
+            receiver_amplitudessc.resize_(nt, n_shots,
+                                         n_receiverssc_per_shot)
             receiver_amplitudessc.fill_(0)
 
         if v.is_cuda:
@@ -654,15 +684,15 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                 aux,
             )
 
-        if (v.requires_grad or scatter.requires_grad
-                or source_amplitudes.requires_grad
-                or source_amplitudessc.requires_grad or wfc.requires_grad
-                or wfp.requires_grad or psiy.requires_grad
-                or psix.requires_grad or zetay.requires_grad
-                or zetax.requires_grad or wfcsc.requires_grad
-                or wfpsc.requires_grad or psiysc.requires_grad
-                or psixsc.requires_grad or zetaysc.requires_grad
-                or zetaxsc.requires_grad):
+        if (v.requires_grad or scatter.requires_grad or
+                source_amplitudes.requires_grad or
+                source_amplitudessc.requires_grad or wfc.requires_grad or
+                wfp.requires_grad or psiy.requires_grad or
+                psix.requires_grad or zetay.requires_grad or
+                zetax.requires_grad or wfcsc.requires_grad or
+                wfpsc.requires_grad or psiysc.requires_grad or
+                psixsc.requires_grad or zetaysc.requires_grad or
+                zetaxsc.requires_grad):
             ctx.save_for_backward(
                 v,
                 scatter,
@@ -686,8 +716,12 @@ class ScalarBornForwardFunc(torch.autograd.Function):
             ctx.step_ratio = step_ratio
             ctx.accuracy = accuracy
             ctx.pml_width = pml_width
-            ctx.source_amplitudes_requires_grad = source_amplitudes.requires_grad
-            ctx.source_amplitudessc_requires_grad = source_amplitudessc.requires_grad
+            ctx.source_amplitudes_requires_grad = (
+                source_amplitudes.requires_grad
+            )
+            ctx.source_amplitudessc_requires_grad = (
+                source_amplitudessc.requires_grad
+            )
             ctx.non_sc = (v.requires_grad or source_amplitudes.requires_grad
                           or wfc.requires_grad or wfp.requires_grad
                           or psiy.requires_grad or psix.requires_grad
@@ -731,57 +765,22 @@ class ScalarBornForwardFunc(torch.autograd.Function):
     @staticmethod
     @once_differentiable
     def backward(
-        ctx: Any,
-        wfc: Tensor,
-        wfp: Tensor,
-        psiy: Tensor,
-        psix: Tensor,
-        zetay: Tensor,
-        zetax: Tensor,
-        wfcsc: Tensor,
-        wfpsc: Tensor,
-        psiysc: Tensor,
-        psixsc: Tensor,
-        zetaysc: Tensor,
-        zetaxsc: Tensor,
-        grad_r: Tensor,
-        grad_rsc: Tensor,
-    ) -> Tuple[
-            Optional[Tensor],
-            Optional[Tensor],
-            Optional[Tensor],
-            Optional[Tensor],
-            Optional[Tensor],
-            Optional[Tensor],
-            Optional[Tensor],
-            Optional[Tensor],
-            Optional[Tensor],
-            Optional[Tensor],
-            Optional[Tensor],
-            Optional[Tensor],
-            Optional[Tensor],
-            Optional[Tensor],
-            Optional[Tensor],
-            Optional[Tensor],
-            Optional[Tensor],
-            Optional[Tensor],
-            Optional[Tensor],
-            Optional[Tensor],
-            Optional[Tensor],
-            Optional[Tensor],
-            Optional[Tensor],
-            Optional[Tensor],
-            Optional[Tensor],
-            Optional[Tensor],
-            Optional[Tensor],
-            Optional[Tensor],
-            Optional[Tensor],
-            Optional[Tensor],
-            Optional[Tensor],
-            Optional[Tensor],
-            Optional[Tensor],
-            Optional[Tensor],
-    ]:
+        ctx: Any, *grad_outputs: torch.Tensor
+    ) -> Tuple[Optional[torch.Tensor], ...]:
+        """Backward propagation of the scalar Born wave equation.
+
+        Args:
+            ctx: Context object from the forward pass.
+            grad_outputs: Gradients of the outputs of the forward pass.
+
+        Returns:
+            A tuple containing the gradients with respect to the inputs of the
+            forward pass.
+        """
+        (
+            wfc, wfp, psiy, psix, zetay, zetax, wfcsc, wfpsc,
+            psiysc, psixsc, zetaysc, zetaxsc, grad_r, grad_rsc
+        ) = grad_outputs
         (
             v,
             scatter,
@@ -821,7 +820,9 @@ class ScalarBornForwardFunc(torch.autograd.Function):
         accuracy = ctx.accuracy
         pml_width = ctx.pml_width
         source_amplitudes_requires_grad = ctx.source_amplitudes_requires_grad
-        source_amplitudessc_requires_grad = ctx.source_amplitudessc_requires_grad
+        source_amplitudessc_requires_grad = (
+            ctx.source_amplitudessc_requires_grad
+        )
         non_sc = ctx.non_sc
         device = v.device
         dtype = v.dtype
@@ -1040,7 +1041,8 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                     ny,
                     nx,
                     n_sources_per_shot * source_amplitudes_requires_grad,
-                    n_sources_per_shot * source_amplitudessc_requires_grad,
+                    n_sources_per_shot *
+                    source_amplitudessc_requires_grad,
                     n_receivers_per_shot,
                     n_receiverssc_per_shot,
                     step_ratio,
@@ -1090,7 +1092,8 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                     n_shots,
                     ny,
                     nx,
-                    n_sources_per_shot * source_amplitudessc_requires_grad,
+                    n_sources_per_shot *
+                    source_amplitudessc_requires_grad,
                     n_receiverssc_per_shot,
                     step_ratio,
                     scatter.requires_grad,
@@ -1257,19 +1260,19 @@ class ScalarBornForwardFunc(torch.autograd.Function):
 def scalar_born_func(
     *args: Any,
 ) -> Tuple[
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
 ]:
     return ScalarBornForwardFunc.apply(*args)

@@ -21,7 +21,8 @@ if SO_EXT is None:
     raise RuntimeError("Unsupported OS or platform type")
 
 dll = ctypes.CDLL(
-    str(pathlib.Path(__file__).resolve().parent / f"libdeepwave_C.{SO_EXT}"))
+    str(pathlib.Path(__file__).resolve().parent / f"libdeepwave_C.{SO_EXT}")
+)
 
 # Check if was compiled with OpenMP support
 USE_OPENMP = hasattr(dll, "omp_get_num_threads")
@@ -32,34 +33,48 @@ USE_OPENMP = hasattr(dll, "omp_get_num_threads")
 FLOAT_TYPE: type = c_float
 
 # Templates for argtype lists
-scalar_forward_template: List[type] = ([c_void_p] * 20 + [FLOAT_TYPE] * 5 +
-                                       [c_int64] * 7 + [c_bool] * 2 +
-                                       [c_int64] * 6)
+scalar_forward_template: List[type] = (
+    [c_void_p] * 20 + [FLOAT_TYPE] * 5 +
+    [c_int64] * 7 + [c_bool] * 2 +
+    [c_int64] * 6
+)
 
-scalar_backward_template: List[type] = ([c_void_p] * 24 + [FLOAT_TYPE] * 4 +
-                                        [c_int64] * 7 + [c_bool] * 2 +
-                                        [c_int64] * 6)
+scalar_backward_template: List[type] = (
+    [c_void_p] * 24 + [FLOAT_TYPE] * 4 +
+    [c_int64] * 7 + [c_bool] * 2 +
+    [c_int64] * 6
+)
 
-scalar_born_forward_template: List[type] = ([c_void_p] * 33 +
-                                            [FLOAT_TYPE] * 5 + [c_int64] * 8 +
-                                            [c_bool] * 4 + [c_int64] * 6)
+scalar_born_forward_template: List[type] = (
+    [c_void_p] * 33 +
+    [FLOAT_TYPE] * 5 + [c_int64] * 8 +
+    [c_bool] * 4 + [c_int64] * 6
+)
 
-scalar_born_backward_template: List[type] = ([c_void_p] * 41 +
-                                             [FLOAT_TYPE] * 5 + [c_int64] * 9 +
-                                             [c_bool] * 4 + [c_int64] * 6)
+scalar_born_backward_template: List[type] = (
+    [c_void_p] * 41 +
+    [FLOAT_TYPE] * 5 + [c_int64] * 9 +
+    [c_bool] * 4 + [c_int64] * 6
+)
 
-scalar_born_backward_sc_template: List[type] = ([c_void_p] * 24 +
-                                                [FLOAT_TYPE] * 5 +
-                                                [c_int64] * 7 + [c_bool] * 3 +
-                                                [c_int64] * 6)
+scalar_born_backward_sc_template: List[type] = (
+    [c_void_p] * 24 +
+    [FLOAT_TYPE] * 5 +
+    [c_int64] * 7 + [c_bool] * 3 +
+    [c_int64] * 6
+)
 
-elastic_forward_template: List[type] = ([c_void_p] * 39 + [FLOAT_TYPE] * 3 +
-                                        [c_int64] * 10 + [c_bool] * 6 +
-                                        [c_int64] * 6)
+elastic_forward_template: List[type] = (
+    [c_void_p] * 39 + [FLOAT_TYPE] * 3 +
+    [c_int64] * 10 + [c_bool] * 6 +
+    [c_int64] * 6
+)
 
-elastic_backward_template: List[type] = ([c_void_p] * 49 + [FLOAT_TYPE] * 3 +
-                                         [c_int64] * 10 + [c_bool] * 6 +
-                                         [c_int64] * 10)
+elastic_backward_template: List[type] = (
+    [c_void_p] * 49 + [FLOAT_TYPE] * 3 +
+    [c_int64] * 10 + [c_bool] * 6 +
+    [c_int64] * 10
+)
 
 # A dictionary to hold all the templates
 templates = {
