@@ -1,6 +1,14 @@
-"""Elastic wave propagation
+"""Elastic wave propagation module for Deepwave.
 
-Velocity-stress formulation using C-PML.
+Implements elastic wave equation propagation using a velocity-stress
+formulation with finite differences in time (2nd order) and space
+(user-selectable order: 2 or 4). Supports Convolutional Perfectly Matched
+Layer (C-PML) boundaries for absorbing reflections.
+
+This module provides both a `torch.nn.Module` interface (`Elastic` class)
+and a functional interface (`elastic` function) for performing elastic
+wave simulations. The outputs are differentiable with respect to the
+material parameters (Lamé parameters and buoyancy) and source amplitudes.
 """
 
 from typing import Optional, Union, List, Tuple, Sequence, Any
@@ -71,6 +79,24 @@ class Elastic(torch.nn.Module):
         mu_requires_grad: bool = False,
         buoyancy_requires_grad: bool = False,
     ) -> None:
+        """Initializes the Elastic propagator module.
+
+        Args:
+            lamb: A Tensor containing an initial guess of the first Lamé
+                parameter (lambda).
+            mu: A Tensor containing an initial guess of the second Lamé
+                parameter.
+            buoyancy: A Tensor containing an initial guess of the buoyancy
+                (1/density).
+            grid_spacing: The spatial grid cell size. It can be a single number that will be
+                used for all dimensions, or a number for each dimension.
+            lamb_requires_grad: A bool specifying whether gradients will be
+                computed for `lamb`. Defaults to False.
+            mu_requires_grad: A bool specifying whether gradients will be
+                computed for `mu`. Defaults to False.
+            buoyancy_requires_grad: A bool specifying whether gradients will be
+                computed for `buoyancy`. Defaults to False.
+        """
         super().__init__()
         if not isinstance(lamb_requires_grad, bool):
             raise TypeError(
@@ -712,6 +738,13 @@ def elastic(
 
 
 def zero_edges(tensor: Tensor, ny: int, nx: int) -> None:
+    """Sets the values on the edges of a 2D tensor to zero.
+
+    Args:
+        tensor: The input 2D Tensor to modify.
+        ny: The size of the second dimension (rows).
+        nx: The size of the third dimension (columns).
+    """
     tensor[:, ny - 1, :] = 0
     tensor[:, :, nx - 1] = 0
     tensor[:, 0, :] = 0
@@ -719,15 +752,38 @@ def zero_edges(tensor: Tensor, ny: int, nx: int) -> None:
 
 
 def zero_edge_top(tensor: Tensor) -> None:
+    """Sets the values on the top edge of a 2D tensor to zero.
+
+    Args:
+        tensor: The input 2D Tensor to modify.
+    """
     tensor[:, 0, :] = 0
 
 
 def zero_edge_right(tensor: Tensor, nx: int) -> None:
+    """Sets the values on the right edge of a 2D tensor to zero.
+
+    Args:
+        tensor: The input 2D Tensor to modify.
+        nx: The size of the third dimension (columns).
+    """
     tensor[:, :, nx - 1] = 0
 
 
 def zero_interior(tensor: Tensor, ybegin: int, yend: int, xbegin: int,
                   xend: int) -> Tensor:
+    """Zeros out a specified rectangular interior region of a 2D tensor.
+
+    Args:
+        tensor: The input 2D Tensor to modify.
+        ybegin: The starting index of the y-dimension for the region to zero.
+        yend: The ending index of the y-dimension for the region to zero.
+        xbegin: The starting index of the x-dimension for the region to zero.
+        xend: The ending index of the x-dimension for the region to zero.
+
+    Returns:
+        Tensor: A new Tensor with the specified interior region zeroed out.
+    """
     tensor = tensor.clone()
     tensor[:, ybegin:yend, xbegin:xend] = 0
     return tensor
@@ -795,6 +851,75 @@ class ElasticForwardFunc(torch.autograd.Function):
             Tensor,
             Tensor,
     ]:
+        """Performs the forward propagation of the elastic wave equation.
+
+        This method is called by PyTorch during the forward pass. It prepares
+        the input tensors, calls the appropriate C/CUDA function for wave
+        propagation, and saves necessary tensors for the backward pass.
+
+        Args:
+            ctx: A context object that can be used to save information for
+                the backward pass.
+            lamb: The first Lamé parameter (lambda) model tensor.
+            mu: The second Lamé parameter (mu) model tensor.
+            buoyancy: The buoyancy (1/density) model tensor.
+            source_amplitudes_y: Source amplitudes for y-component sources.
+            source_amplitudes_x: Source amplitudes for x-component sources.
+            vy: Initial velocity wavefield in y-direction.
+            vx: Initial velocity wavefield in x-direction.
+            sigmayy: Initial stress wavefield (sigma_yy).
+            sigmaxy: Initial stress wavefield (sigma_xy).
+            sigmaxx: Initial stress wavefield (sigma_xx).
+            m_vyy: Initial memory variable for vy in PML.
+            m_vyx: Initial memory variable for vx in PML (related to y-direction).
+            m_vxy: Initial memory variable for vy in PML (related to x-direction).
+            m_vxx: Initial memory variable for vx in PML.
+            m_sigmayyy: Initial memory variable for sigmayy in PML.
+            m_sigmaxyy: Initial memory variable for sigmaxy in PML (related to y-direction).
+            m_sigmaxyx: Initial memory variable for sigmaxy in PML (related to x-direction).
+            m_sigmaxxx: Initial memory variable for sigmaxx in PML.
+            ay: PML absorption profile for y-dimension (a-coefficient).
+            ayh: PML absorption profile for y-dimension (a-coefficient, half-step).
+            ax: PML absorption profile for x-dimension (a-coefficient).
+            axh: PML absorption profile for x-dimension (a-coefficient, half-step).
+            by: PML absorption profile for y-dimension (b-coefficient).
+            byh: PML absorption profile for y-dimension (b-coefficient, half-step).
+            bx: PML absorption profile for x-dimension (b-coefficient).
+            bxh: PML absorption profile for x-dimension (b-coefficient, half-step).
+            sources_y_i: 1D indices of y-component source locations.
+            sources_x_i: 1D indices of x-component source locations.
+            receivers_y_i: 1D indices of y-component receiver locations.
+            receivers_x_i: 1D indices of x-component receiver locations.
+            receivers_p_i: 1D indices of pressure receiver locations.
+            dy: Grid spacing in y-dimension.
+            dx: Grid spacing in x-dimension.
+            dt: Time step interval.
+            nt: Total number of time steps.
+            step_ratio: Ratio between user dt and internal dt.
+            accuracy: Finite difference accuracy order.
+            pml_width: List of PML widths for each side.
+            n_shots: Number of shots in the batch.
+
+        Returns:
+            Tuple[Tensor, ...]: A tuple containing the final wavefields,
+                memory variables, and receiver amplitudes:
+                - vy: Final velocity wavefield in y-direction.
+                - vx: Final velocity wavefield in x-direction.
+                - sigmayy: Final stress wavefield (sigma_yy).
+                - sigmaxy: Final stress wavefield (sigma_xy).
+                - sigmaxx: Final stress wavefield (sigma_xx).
+                - m_vyy: Final memory variable for vy in PML.
+                - m_vyx: Final memory variable for vx in PML (related to y-direction).
+                - m_vxy: Final memory variable for vy in PML (related to x-direction).
+                - m_vxx: Final memory variable for vx in PML.
+                - m_sigmayyy: Final memory variable for sigmayy in PML.
+                - m_sigmaxyy: Final memory variable for sigmaxy in PML (related to y-direction).
+                - m_sigmaxyx: Final memory variable for sigmaxy in PML (related to x-direction).
+                - m_sigmaxxx: Final memory variable for sigmaxx in PML.
+                - receiver_amplitudes_p: Recorded pressure receiver amplitudes.
+                - receiver_amplitudes_y: Recorded y-component receiver amplitudes.
+                - receiver_amplitudes_x: Recorded x-component receiver amplitudes.
+        """
         lamb = lamb.contiguous()
         mu = mu.contiguous()
         buoyancy = buoyancy.contiguous()
@@ -894,9 +1019,7 @@ class ElasticForwardFunc(torch.autograd.Function):
 
         if buoyancy.requires_grad:
             dvydbuoyancy.resize_(nt // step_ratio, n_shots, ny, nx)
-            dvydbuoyancy.fill_(0)
             dvxdbuoyancy.resize_(nt // step_ratio, n_shots, ny, nx)
-            dvxdbuoyancy.fill_(0)
         if lamb.requires_grad or mu.requires_grad:
             dvydy_store.resize_(nt // step_ratio, n_shots, ny, nx)
             dvxdx_store.resize_(nt // step_ratio, n_shots, ny, nx)

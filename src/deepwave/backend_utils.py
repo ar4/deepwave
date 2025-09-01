@@ -74,7 +74,22 @@ templates = {
 
 
 def _get_argtypes(template_name: str, float_type: type) -> List[type]:
-    """Generate a concrete argtype list from a template and float type."""
+    """Generates a concrete argtype list from a template and a float type.
+
+    This function takes a template name (e.g., "scalar_forward") and a
+    specific float type (e.g., `c_float` or `c_double`) and replaces
+    the `FLOAT_TYPE` placeholders in the template with the provided
+    `float_type`.
+
+    Args:
+        template_name: The name of the argtype template to use.
+        float_type: The `ctypes` float type (`c_float` or `c_double`)
+            to substitute into the template.
+
+    Returns:
+        List[type]: A list of `ctypes` types representing the argument
+            signature for a C function.
+    """
     return [
         float_type if t is FLOAT_TYPE else t for t in templates[template_name]
     ]
@@ -85,7 +100,24 @@ def _assign_argtypes(propagator: str,
                      dtype: str,
                      direction: str,
                      extra: str = "") -> None:
-    """Dynamically assign ctypes argtypes to a given function."""
+    """Dynamically assigns ctypes argtypes to a given C function.
+
+    This function constructs the full C function name based on the provided
+    parameters (propagator, accuracy, dtype, direction, and extra suffix)
+    and then assigns the corresponding `ctypes` argument types to it.
+    It handles both CPU and CUDA versions of the functions.
+
+    Args:
+        propagator: The name of the propagator (e.g., "scalar", "elastic").
+        accuracy: The finite-difference accuracy order (e.g., 2, 4, 6, 8).
+        dtype: The data type as a string (e.g., "float", "double").
+        direction: The direction of propagation (e.g., "forward", "backward").
+        extra: An optional extra suffix for the function name (e.g., "_sc").
+
+    Raises:
+        AttributeError: If a function with the constructed name is not found
+            in the loaded shared library (this is caught internally and skipped).
+    """
     argtypes_name = f"{propagator}_{direction}{extra}_{dtype}_argtypes"
     argtypes = globals()[argtypes_name]
 
@@ -100,10 +132,17 @@ def _assign_argtypes(propagator: str,
 
 
 # Loop through all permutations and assign argtypes
+# First, create specific argtype lists for each combination of template and dtype.
+# This pre-generates the ctypes argument signatures for all functions,
+# allowing _assign_argtypes to simply retrieve them by name.
 for dtype_str, dtype_c in [("float", c_float), ("double", c_double)]:
     for key in templates:
         globals()[f"{key}_{dtype_str}_argtypes"] = _get_argtypes(key, dtype_c)
 
+# Now, iterate through all defined accuracies and data types to assign the
+# correct argtypes to the dynamically loaded C/CUDA functions.
+# The function names are constructed based on the naming convention
+# used in the CMake build system (e.g., scalar_iso_4_float_forward_cpu).
 for current_accuracy in [2, 4, 6, 8]:
     for current_dtype in ["float", "double"]:
         _assign_argtypes("scalar", current_accuracy, current_dtype, "forward")
@@ -118,6 +157,7 @@ for current_accuracy in [2, 4, 6, 8]:
                          "backward",
                          extra="_sc")
 
+# Elastic propagators currently only support 2nd and 4th order accuracy.
 for current_accuracy in [2, 4]:
     for current_dtype in ["float", "double"]:
         _assign_argtypes("elastic", current_accuracy, current_dtype, "forward")

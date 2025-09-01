@@ -1,14 +1,12 @@
 # Deepwave Specification
 
-This document provides a technical specification of the Deepwave project. It is intended for developers who wish to understand the internal workings of the package, its design patterns, and how to contribute.
-
 Deepwave provides a PyTorch-compatible implementation of wave propagation. It is widely used by graduate students and researchers for testing new ideas in applications like seismic inversion and non-destructive testing. As it is often used in unexpected ways to test unusual ideas, it must have a logical structure, carefully implement mathematically correct behavior even in non-physical situations, and be as stable and robust as possible. Many users are not experienced programmers and will use it from a Notebook environment for rapid prototyping. Therefore, ease-of-use, comprehensive input validation to quickly detect mistakes, and helpful error messages are crucial.
 
 Everyone who looks at the code should be impressed by how clean, clear, and Pythonic it is. It should be an exemplar of best practices. However, as a high-performance code implementing computationally intensive operations, it will be limited by available computational power and memory. Therefore, complex C and CUDA code implementing the inner loops of these calculations may be necessary to ensure maximum performance.
 
 All code must be comprehensively tested; thus, the test suite is a crucial component of the package. Like the main code, it should be clear, well-structured, and follow best practices. It should also be extremely thorough, verifying code correctness (including extensive physics-based testing), checking behavior for edge cases, and ensuring invalid arguments are caught with helpful error messages. Internal components should also be unit tested so that developers can more confidently make changes.
 
-To help users and developers avoid mistakes, the code should use type hinting. Since many users will call the code from a Notebook environment, type hints alone may not suffice to prevent incorrect inputs. Therefore, exhaustive input validation with helpful error messages is also necessary to quickly catch mistakes. As a scientific code used by researchers to test ideas, it should not impose unnecessary input restrictions. For example, if a parameter requires a list of floating-point numbers, users should be able to pass a Python `list` or `tuple`, a PyTorch `Tensor`, a NumPy `ndarray` with the appropriate number of elements, or any other type that can reasonably and unambiguously provide the necessary information. Even though floating-point numbers are required, passing integers is acceptable as they can be reasonably and unambiguously converted. However, complex numbers should generally not be accepted, as their conversion is not straightforward and may indicate a user error. In some cases, a warning may be more appropriate than an error, such as when an input is valid but unusual, potentially not what the user intended. The goal is to help users quickly identify and correct mistakes.
+To help users and developers avoid mistakes, the code should use type hinting. Since many users will call the code from a Notebook environment, type hints alone may not suffice to prevent incorrect inputs. Therefore, exhaustive input validation with helpful error messages is also necessary to quickly catch mistakes. As a scientific code used by researchers to test ideas, it should not impose unnecessary input restrictions. For example, if a parameter requires a list of floating-point numbers, users should be able to pass a Python `list` or `tuple`, a PyTorch `Tensor`, a NumPy `ndarray` with the appropriate number of elements, or any other type that can reasonably and unambiguously provide the necessary information. Even though floating-point numbers are required, passing integers is acceptable as they can be reasonably and unambiguously converted. However, complex numbers should generally not be accepted for such inputs, as their conversion is not straightforward and may indicate a user error. In some cases, a warning may be more appropriate than an error, such as when an input is valid but unusual, potentially not what the user intended. The goal is to help users quickly identify and correct mistakes.
 
 ## 1. High-Level Architecture
 
@@ -17,14 +15,14 @@ Deepwave uses a hybrid architecture to balance high performance with a user-frie
 The key components are:
 
 1.  **Python Layer**: Provides the public API (`deepwave.scalar`, `deepwave.elastic`, etc.). It handles input validation, setup, and wrapping the core logic in `torch.autograd.Function` to enable backpropagation.
-2.  **Ctypes Interface**: A thin layer in `src/deepwave/__init__.py` that uses Python's `ctypes` library to load the compiled C/CUDA shared library and define the function signatures. This avoids a direct dependency on the Python C API, making the build process simpler and more robust against Python version changes.
+2.  **Ctypes Interface**: A thin layer in `src/deepwave/backend_utils.py` that uses Python's `ctypes` library to load the compiled C/CUDA shared library and define the function signatures. This avoids a direct dependency on the Python C API, making the build process simpler and more robust against Python version changes.
 3.  **C/CUDA Layer**: Contains the high-performance implementations of the wave propagators. This code is compiled into a single shared library (`libdeepwave_C.so` on Linux) that the Python layer calls into.
 
 ## 2. Code Organization
 
 -   `docs/`: Project documentation.
 -   `src/deepwave/`
-    -   `__init__.py`: The crucial link between the Python and C/CUDA layers, loading the compiled shared library and defining `ctypes` interfaces for all C functions.
+    -   `backend_utils.py`: The crucial link between the Python and C/CUDA layers, loading the compiled shared library and defining `ctypes` interfaces for all C functions.
     -   `common.py`: Contains shared Python helper functions for all propagators, including input validation, survey extraction, PML setup, and CFL condition calculations.
     -   `scalar.py`, `elastic.py`, etc.: The public-facing Python modules for each propagator. They define the `torch.nn.Module` and functional interfaces.
     -   `*.c`, `*.cu`: The low-level C and CUDA implementations of the propagators.
@@ -40,7 +38,7 @@ The C/CUDA code is compiled into a shared library using `scikit-build-core` and 
 -   **Function Naming**: CMake controls the function names in the compiled library, creating a unique name for each permutation. For example, the forward scalar propagator for 4th-order accuracy and `float` data type on the CPU is named `scalar_iso_4_float_forward_cpu`. For CUDA, the functions are suffixed with `_cuda` (e.g., `scalar_iso_4_float_forward_cuda`).
 -   **Output**: The build system produces a single shared library (e.g., `libdeepwave_C.so` on Linux) containing all the compiled function permutations.
 
-## 4. The Python/C Interface (`__init__.py`)
+## 4. The Python/C Interface (`backend_utils.py`, imported by `__init__.py`)
 
 This file is the heart of the interface layer. Its primary responsibilities are:
 
@@ -58,7 +56,7 @@ Each propagator (e.g., scalar) consists of several connected parts:
     -   It calls the `apply` method of a custom `torch.autograd.Function` (e.g., `ScalarForwardFunc.apply`).
 
 2.  **Autograd Function (`ScalarForwardFunc` in `scalar.py`)**:
-    -   The `forward` method is the direct bridge to the compiled code. It retrieves the correct function pointer from the dispatcher in `__init__.py` and calls it, passing pointers to the data of the input Tensors.
+    -   The `forward` method is the direct bridge to the compiled code. It retrieves the correct function pointer from the dispatcher in `backend_utils.py` and calls it, passing pointers to the data of the input Tensors.
     -   It saves the necessary Tensors for the backward pass using `ctx.save_for_backward`.
     -   The `backward` method is responsible for computing the gradient. It calls the corresponding `backward` function from the C/CUDA library.
 
@@ -76,28 +74,3 @@ Each propagator (e.g., scalar) consists of several connected parts:
 -   **PML Implementation**: The PML absorbing boundaries are implemented using a Convolutional PML (C-PML) scheme, which requires auxiliary wavefields (`psi` and `zeta`). To optimize performance, the PML calculations are only performed in the outer regions of the grid. The auxiliary variables are explicitly zeroed outside the PML region to ensure correctness.
 -   **Internal Time-Stepping (CFL)**: The propagators automatically choose an internal time step `dt` that is smaller than the user's `dt` to satisfy the CFL stability condition. Source wavelets are upsampled to this finer `dt` and receiver data is downsampled back to the user's `dt`. This process is handled transparently by `setup_propagator` and `downsample_and_movedim` in `common.py`.
 -   **Backpropagation**: The gradient with respect to the model parameters is calculated by cross-correlating the forward-propagating wavefield with the backward-propagating adjoint wavefield. To reduce memory usage, the forward wavefield is not stored at every time step. Instead, only the necessary components for the gradient calculation are stored, and only at a sampling interval (`model_gradient_sampling_interval`) that respects the Nyquist frequency of the source, not the (potentially much higher) frequency of the internal time stepping.
-
-## 7. Developer's Guide: Adding a New Propagator
-
-To add a new propagator (e.g., `new_prop`), follow these steps:
-
-1.  **Create the Python Module (`src/deepwave/new_prop.py`)**:
-    -   Create the main user-facing function and/or `torch.nn.Module` class.
-    -   Implement a `torch.autograd.Function` for the forward and backward passes. This function will call the compiled C/CUDA code.
-
-2.  **Implement the C/CUDA Kernels (`src/deepwave/new_prop.c`, `src/deepwave/new_prop.cu`)**:
-    -   Write the core numerical logic for the forward and backward propagation. Follow the existing pattern of a main function containing the time loop, which in turn calls a kernel function for the core calculations.
-    -   Use the `DW_ACCURACY` and `DW_DTYPE` macros to support compile-time permutations.
-
-3.  **Update the Build Scripts (`CMakeLists.txt`)**:
-    -   Add your new `.c` and `.cu` files to the list of source files to be compiled.
-
-4.  **Update the `ctypes` Interface (`src/deepwave/__init__.py`)**:
-    -   In the section that loads functions, add logic to load all permutations of your new propagator's functions (e.g., `new_prop_iso_2_float_forward_cpu`, etc.).
-    -   For each loaded function, define its `argtypes` and `restype` to ensure correct data marshalling.
-    -   Add the new propagator to the dispatch mechanism so the Python layer can find and call your compiled functions.
-
-5.  **Integrate with `common.py`**:
-    -   Add a new `prop_type` (e.g., `'new_prop'`) to the `if/elif` block in `setup_propagator` to handle any specific setup requirements for your propagator (e.g., number of models, padding modes).
-
-6.  **Add Tests and Documentation**: Create new test files in the `tests/` directory to validate the correctness of your propagator (including checking gradients). Add a new documentation page in `docs/` explaining the physics and usage.

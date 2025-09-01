@@ -417,6 +417,12 @@ def scalar(
 
 
 class ScalarForwardFunc(torch.autograd.Function):
+    """Autograd function for the forward pass of scalar wave propagation.
+
+    This class defines the forward and backward passes for the scalar wave
+    equation, allowing PyTorch to compute gradients through the wave propagation
+    operation. It interfaces directly with the C/CUDA backend.
+    """
 
     @staticmethod
     def forward(
@@ -446,6 +452,50 @@ class ScalarForwardFunc(torch.autograd.Function):
         pml_width: List[int],
         n_shots: int,
     ) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
+        """Performs the forward propagation of the scalar wave equation.
+
+        This method is called by PyTorch during the forward pass. It prepares
+        the input tensors, calls the appropriate C/CUDA function for wave
+        propagation, and saves necessary tensors for the backward pass.
+
+        Args:
+            ctx: A context object that can be used to save information for
+                the backward pass.
+            v: The wavespeed model tensor.
+            source_amplitudes: The source amplitudes tensor.
+            wfc: Wavefield at current time step.
+            wfp: Wavefield at previous time step.
+            psiy: PML auxiliary variable for y-dimension (current time step).
+            psix: PML auxiliary variable for x-dimension (current time step).
+            zetay: PML auxiliary variable for y-dimension (previous time step).
+            zetax: PML auxiliary variable for x-dimension (previous time step).
+            ay: PML absorption profile for y-dimension (a-coefficient).
+            ax: PML absorption profile for x-dimension (a-coefficient).
+            by: PML absorption profile for y-dimension (b-coefficient).
+            bx: PML absorption profile for x-dimension (b-coefficient).
+            dbydy: Derivative of PML b-coefficient with respect to y.
+            dbxdx: Derivative of PML b-coefficient with respect to x.
+            sources_i: 1D indices of source locations.
+            receivers_i: 1D indices of receiver locations.
+            dy: Grid spacing in y-dimension.
+            dx: Grid spacing in x-dimension.
+            dt: Time step interval.
+            nt: Total number of time steps.
+            step_ratio: Ratio between user dt and internal dt.
+            accuracy: Finite difference accuracy order.
+            pml_width: List of PML widths for each side.
+            n_shots: Number of shots in the batch.
+
+        Returns:
+            Tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
+                - wfc_out: Output wavefield at current time step (trimmed).
+                - wfp_out: Output wavefield at previous time step (trimmed).
+                - psiy_out: Output psiy (trimmed).
+                - psix_out: Output psix (trimmed).
+                - zetay_out: Output zetay (trimmed).
+                - zetax_out: Output zetax (trimmed).
+                - receiver_amplitudes: Recorded receiver amplitudes.
+        """
         if (v.requires_grad or source_amplitudes.requires_grad
                 or wfc.requires_grad or wfp.requires_grad or psiy.requires_grad
                 or psix.requires_grad or zetay.requires_grad
@@ -651,6 +701,27 @@ class ScalarForwardFunc(torch.autograd.Function):
         gzetax: Tensor,
         grad_r: Tensor,
     ) -> Tuple[Optional[Tensor], ...]:
+        """Computes the gradients during the backward pass.
+
+        This method is called by PyTorch during the backward pass to compute
+        gradients with respect to the inputs of the forward pass.
+
+        Args:
+            ctx: A context object that contains information saved during the
+                forward pass.
+            gwfc: Gradient of the loss with respect to `wfc`.
+            gwfp: Gradient of the loss with respect to `wfp`.
+            gpsiy: Gradient of the loss with respect to `psiy`.
+            gpsix: Gradient of the loss with respect to `psix`.
+            gzetay: Gradient of the loss with respect to `zetay`.
+            gzetax: Gradient of the loss with respect to `zetax`.
+            grad_r: Gradient of the loss with respect to `receiver_amplitudes`.
+
+        Returns:
+            Tuple[Optional[Tensor], ...]: Gradients with respect to the inputs
+                of the forward pass, in the same order as the inputs.
+                Returns `None` for inputs that do not require gradients.
+        """
         (
             v,
             ay,
@@ -718,6 +789,12 @@ class ScalarForwardFunc(torch.autograd.Function):
 
 
 class ScalarBackwardFunc(torch.autograd.Function):
+    """Autograd function for the backward pass of scalar wave propagation.
+
+    This class defines the forward and backward passes for computing gradients
+    of the scalar wave equation, interfacing directly with the C/CUDA backend.
+    It is typically called by `ScalarForwardFunc.backward`.
+    """
 
     @staticmethod
     def forward(
@@ -756,6 +833,59 @@ class ScalarBackwardFunc(torch.autograd.Function):
         pml_width: List[int],
         source_amplitudes_requires_grad: bool,
     ) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
+        """Performs the backward propagation of the scalar wave equation.
+
+        This method is called by PyTorch during the backward pass to compute
+        gradients with respect to the inputs of the forward pass.
+
+        Args:
+            ctx: A context object that can be used to save information for
+                the backward pass.
+            gwfc: Gradient of the loss with respect to `wfc`.
+            gwfp: Gradient of the loss with respect to `wfp`.
+            gpsiy: Gradient of the loss with respect to `psiy`.
+            gpsix: Gradient of the loss with respect to `psix`.
+            gzetay: Gradient of the loss with respect to `zetay`.
+            gzetax: Gradient of the loss with respect to `zetax`.
+            grad_r: Gradient of the loss with respect to `receiver_amplitudes`.
+            v: The wavespeed model tensor.
+            ay: PML absorption profile for y-dimension (a-coefficient).
+            ax: PML absorption profile for x-dimension (a-coefficient).
+            by: PML absorption profile for y-dimension (b-coefficient).
+            bx: PML absorption profile for x-dimension (b-coefficient).
+            dbydy: Derivative of PML b-coefficient with respect to y.
+            dbxdx: Derivative of PML b-coefficient with respect to x.
+            sources_i: 1D indices of source locations.
+            receivers_i: 1D indices of receiver locations.
+            dwdv: Wavefield for model gradient calculation.
+            source_amplitudes: The source amplitudes tensor.
+            wfc: Wavefield at current time step (from forward pass).
+            wfp: Wavefield at previous time step (from forward pass).
+            psiy: PML auxiliary variable for y-dimension (current time step, from forward pass).
+            psix: PML auxiliary variable for x-dimension (current time step, from forward pass).
+            zetay: PML auxiliary variable for y-dimension (previous time step, from forward pass).
+            zetax: PML auxiliary variable for x-dimension (previous time step, from forward pass).
+            dy: Grid spacing in y-dimension.
+            dx: Grid spacing in x-dimension.
+            dt: Time step interval.
+            nt: Total number of time steps.
+            n_shots: Number of shots in the batch.
+            step_ratio: Ratio between user dt and internal dt.
+            accuracy: Finite difference accuracy order.
+            pml_width: List of PML widths for each side.
+            source_amplitudes_requires_grad: Boolean indicating if source amplitudes require gradients.
+
+        Returns:
+            Tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
+                - grad_v: Gradient with respect to `v`.
+                - grad_source_amplitudes: Gradient with respect to `source_amplitudes`.
+                - gwfc_out: Output gradient of `wfc` (trimmed).
+                - gwfp_out: Output gradient of `wfp` (trimmed).
+                - gpsiy_out: Output gradient of `psiy` (trimmed).
+                - gpsix_out: Output gradient of `psix` (trimmed).
+                - gzetay_out: Output gradient of `zetay` (trimmed).
+                - gzetax_out: Output gradient of `zetax` (trimmed).
+        """
         ctx.save_for_backward(
             gwfc,
             gwfp,
@@ -989,6 +1119,29 @@ class ScalarBackwardFunc(torch.autograd.Function):
         ggzetay: Tensor,
         ggzetax: Tensor,
     ) -> Tuple[Optional[Tensor], ...]:
+        """Computes the gradients of the backward pass (second-order gradients).
+
+        This method is called by PyTorch during the backward pass of the backward
+        pass to compute second-order gradients.
+
+        Args:
+            ctx: A context object that contains information saved during the
+                forward pass of the backward function.
+            ggv: Gradient of the loss with respect to the gradient of `v`.
+            ggf: Gradient of the loss with respect to the gradient of `source_amplitudes`.
+            ggwfc: Gradient of the loss with respect to the gradient of `wfc`.
+            ggwfp: Gradient of the loss with respect to the gradient of `wfp`.
+            ggpsiy: Gradient of the loss with respect to the gradient of `psiy`.
+            ggpsix: Gradient of the loss with respect to the gradient of `psix`.
+            ggzetay: Gradient of the loss with respect to the gradient of `zetay`.
+            ggzetax: Gradient of the loss with respect to the gradient of `zetax`.
+
+        Returns:
+            Tuple[Optional[Tensor], ...]: Second-order gradients with respect to
+                the inputs of the `ScalarBackwardFunc.forward` method, in the
+                same order as the inputs. Returns `None` for inputs that do not
+                require gradients.
+        """
         (
             gwfc,
             gwfp,
@@ -1479,4 +1632,18 @@ class ScalarBackwardFunc(torch.autograd.Function):
 
 
 def scalar_func(*args: Any) -> Tuple[Tensor, ...]:
+    """Helper function to apply the ScalarForwardFunc.
+
+    This function serves as a convenient wrapper to call the `apply` method
+    of `ScalarForwardFunc`, which is the entry point for the autograd graph
+    for scalar wave propagation.
+
+    Args:
+        *args: Variable length argument list to be passed directly to
+            `ScalarForwardFunc.apply`.
+
+    Returns:
+        Tuple[Tensor, ...]: The results of the forward pass from
+            `ScalarForwardFunc.apply`.
+    """
     return ScalarForwardFunc.apply(*args)
