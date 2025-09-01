@@ -8,6 +8,8 @@ All code must be comprehensively tested; thus, the test suite is a crucial compo
 
 To help users and developers avoid mistakes, the code should use type hinting. Since many users will call the code from a Notebook environment, type hints alone may not suffice to prevent incorrect inputs. Therefore, exhaustive input validation with helpful error messages is also necessary to quickly catch mistakes. As a scientific code used by researchers to test ideas, it should not impose unnecessary input restrictions. For example, if a parameter requires a list of floating-point numbers, users should be able to pass a Python `list` or `tuple`, a PyTorch `Tensor`, a NumPy `ndarray` with the appropriate number of elements, or any other type that can reasonably and unambiguously provide the necessary information. Even though floating-point numbers are required, passing integers is acceptable as they can be reasonably and unambiguously converted. However, complex numbers should generally not be accepted for such inputs, as their conversion is not straightforward and may indicate a user error. In some cases, a warning may be more appropriate than an error, such as when an input is valid but unusual, potentially not what the user intended. The goal is to help users quickly identify and correct mistakes.
 
+Consistent style across all files is important. Deepwave uses the Google style guides, and they should be rigorously enforced.
+
 ## 1. High-Level Architecture
 
 Deepwave uses a hybrid architecture to balance high performance with a user-friendly Python API. The core wave propagation logic is implemented in C (for CPUs) and CUDA (for GPUs). A Python layer provides the user interface and integrates with PyTorch for automatic differentiation.

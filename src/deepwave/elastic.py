@@ -8,7 +8,7 @@ Layer (C-PML) boundaries for absorbing reflections.
 This module provides both a `torch.nn.Module` interface (`Elastic` class)
 and a functional interface (`elastic` function) for performing elastic
 wave simulations. The outputs are differentiable with respect to the
-material parameters (Lamé parameters and buoyancy) and source amplitudes.
+material parameters (Lam'e parameters and buoyancy) and source amplitudes.
 """
 
 from typing import Optional, Union, List, Tuple, Sequence, Any
@@ -41,10 +41,10 @@ class Elastic(torch.nn.Module):
 
     Args:
         lamb:
-            A Tensor containing an initial guess of the first Lamé
+            A Tensor containing an initial guess of the first Lam'e
             parameter (lambda).
         mu:
-            A Tensor containing an initial guess of the second Lamé
+            A Tensor containing an initial guess of the second Lam'e
             parameter.
         buoyancy:
             A Tensor containing an initial guess of the buoyancy
@@ -82,9 +82,9 @@ class Elastic(torch.nn.Module):
         """Initializes the Elastic propagator module.
 
         Args:
-            lamb: A Tensor containing an initial guess of the first Lamé
+            lamb: A Tensor containing an initial guess of the first Lam'e
                 parameter (lambda).
-            mu: A Tensor containing an initial guess of the second Lamé
+            mu: A Tensor containing an initial guess of the second Lam'e
                 parameter.
             buoyancy: A Tensor containing an initial guess of the buoyancy
                 (1/density).
@@ -293,12 +293,12 @@ def elastic(
 
     Args:
         lamb:
-            A Tensor containing the first Lamé parameter model, lambda.
+            A Tensor containing the first Lam'e parameter model, lambda.
             Unlike the module interface (:class:`Elastic`), in this
             functional interface a copy is not made of the model, so gradients
             will propagate back into the provided Tensor.
         mu:
-            A Tensor containing the second Lamé parameter model.
+            A Tensor containing the second Lam'e parameter model.
         buoyancy:
             A Tensor containing the buoyancy (1/density) model.
         grid_spacing:
@@ -543,14 +543,14 @@ def elastic(
     if source_locations_x is not None:
         dim_location = source_locations_x[..., 0]
         dim_location = dim_location[dim_location != IGNORE_LOCATION]
-        if (dim_location.min() <= 0):
+        if dim_location.min() <= 0:
             raise RuntimeError("The minimum x source "
                                "location in the first dimension must be "
                                "greater than 0.")
     if receiver_locations_x is not None:
         dim_location = receiver_locations_x[..., 0]
         dim_location = dim_location[dim_location != IGNORE_LOCATION]
-        if (dim_location.min() <= 0):
+        if dim_location.min() <= 0:
             raise RuntimeError("The minimum x receiver "
                                "location in the first dimension must be "
                                "greater than 0.")
@@ -860,8 +860,8 @@ class ElasticForwardFunc(torch.autograd.Function):
         Args:
             ctx: A context object that can be used to save information for
                 the backward pass.
-            lamb: The first Lamé parameter (lambda) model tensor.
-            mu: The second Lamé parameter (mu) model tensor.
+            lamb: The first Lam'e parameter (lambda) model tensor.
+            mu: The second Lam'e parameter (mu) model tensor.
             buoyancy: The buoyancy (1/density) model tensor.
             source_amplitudes_y: Source amplitudes for y-component sources.
             source_amplitudes_x: Source amplitudes for x-component sources.

@@ -82,7 +82,7 @@
 #define V2DT2_WFC(dy, dx) v2dt2[i + dy * nx + dx] * wfc[i + dy * nx + dx]
 /* Update term for the y-derivative of the wavefield in the PML region, used
  * in the backward pass. This corresponds to the first term in the update
- * equation for the auxiliary wavefield psi. 
+ * equation for the auxiliary wavefield psi.
  */
 #define UT_TERMY1(dy, dx)                                           \
   ((dbydy[y + dy] *                                                 \
@@ -91,7 +91,7 @@
     by[y + dy] * psiy[i + dy * nx]))
 /* Update term for the x-derivative of the wavefield in the PML region, used
  * in the backward pass. This corresponds to the first term in the update
- * equation for the auxiliary wavefield psi. 
+ * equation for the auxiliary wavefield psi.
  */
 #define UT_TERMX1(dy, dx)                                             \
   ((dbxdx[x + dx] * ((1 + bx[x + dx]) * v2dt2[i + dx] * wfc[i + dx] + \
@@ -99,7 +99,7 @@
     bx[x + dx] * psix[i + dx]))
 /* Update term for the y-derivative of the wavefield in the PML region, used
  * in the backward pass. This corresponds to the second term in the update
- * equation for the auxiliary wavefield psi. 
+ * equation for the auxiliary wavefield psi.
  */
 #define UT_TERMY2(dy, dx)                                      \
   ((1 + by[y + dy]) *                                          \
@@ -107,23 +107,22 @@
     by[y + dy] * zetay[i + dy * nx]))
 /* Update term for the x-derivative of the wavefield in the PML region, used
  * in the backward pass. This corresponds to the second term in the update
- * equation for the auxiliary wavefield psi. 
+ * equation for the auxiliary wavefield psi.
  */
 #define UT_TERMX2(dy, dx)                                               \
   ((1 + bx[x + dx]) * ((1 + bx[x + dx]) * v2dt2[i + dx] * wfc[i + dx] + \
                        bx[x + dx] * zetax[i + dx]))
 /* Term used in the update of the auxiliary wavefield psi in the PML region,
- * for the y-derivative. 
+ * for the y-derivative.
  */
 #define PSIY_TERM(dy, dx)                                     \
   ((1 + by[y + dy]) * v2dt2[i + dy * nx] * wfc[i + dy * nx] + \
    by[y + dy] * zetay[i + dy * nx])
 /* Term used in the update of the auxiliary wavefield psi in the PML region,
- * for the x-derivative. 
+ * for the x-derivative.
  */
 #define PSIX_TERM(dy, dx) \
   ((1 + bx[x + dx]) * v2dt2[i + dx] * wfc[i + dx] + bx[x + dx] * zetax[i + dx])
-
 
 #define SET_RANGE(pml_y, pml_x) \
   {                             \
