@@ -11,7 +11,7 @@ wave simulations. The outputs are differentiable with respect to the
 material parameters (Lam'e parameters and buoyancy) and source amplitudes.
 """
 
-from typing import Any, List, Optional, Sequence, Tuple, Union
+from typing import Any, cast, List, Optional, Sequence, Tuple, Union
 
 import torch
 
@@ -1131,7 +1131,7 @@ class ElasticForwardFunc(torch.autograd.Function):
         )
 
     @staticmethod
-    @torch.autograd.function.once_differentiable
+    @torch.autograd.function.once_differentiable  # type: ignore[misc]
     def backward(
         ctx: Any,
         vy: torch.Tensor,
@@ -1638,4 +1638,25 @@ def elastic_func(*args: Any) -> Tuple[torch.Tensor, ...]:
     Returns:
         The results of the forward pass from `ElasticForwardFunc.apply`.
     """
-    return ElasticForwardFunc.apply(*args)
+    result = ElasticForwardFunc.apply(*args)  # type: ignore[no-untyped-call]
+    return cast(
+        Tuple[
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+        ],
+        result,
+    )

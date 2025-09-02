@@ -6,7 +6,7 @@ described in the scalar module, with the addition of a scattered
 wavefield that uses 2 / v * scatter * dt^2 * wavefield as the source term.
 """
 
-from typing import Optional, Union, Tuple, Sequence, List, Any
+from typing import cast, Optional, Union, Tuple, Sequence, List, Any
 
 import torch
 
@@ -276,7 +276,7 @@ def scalar_born(
     fd_pad = [accuracy // 2] * 4
     (
         models,
-        source_amplitudes,
+        source_amplitudes_out,
         wavefields,
         sources_i,
         receivers_i,
@@ -339,8 +339,8 @@ def scalar_born(
     mask = sources_i[0] == deepwave.common.IGNORE_LOCATION
     sources_i_masked = sources_i[0].clone()
     sources_i_masked[mask] = 0
-    source_amplitudes[0] = (
-        -source_amplitudes[0]
+    source_amplitudes_out[0] = (
+        -source_amplitudes_out[0]
         * (models[0].view(-1, ny * nx).expand(n_shots, -1).gather(1, sources_i_masked))
         ** 2
         * dt**2
@@ -349,9 +349,9 @@ def scalar_born(
     mask = sources_i[1] == deepwave.common.IGNORE_LOCATION
     sources_i_masked = sources_i[1].clone()
     sources_i_masked[mask] = 0
-    source_amplitudes[1] = (
+    source_amplitudes_out[1] = (
         -2
-        * source_amplitudes[1]
+        * source_amplitudes_out[1]
         * (models[0].view(-1, ny * nx).expand(n_shots, -1).gather(1, sources_i_masked))
         * (models[1].view(-1, ny * nx).expand(n_shots, -1).gather(1, sources_i_masked))
         * dt**2
@@ -388,7 +388,7 @@ def scalar_born(
         receiver_amplitudessc,
     ) = scalar_born_func(
         *models,
-        *source_amplitudes,
+        *source_amplitudes_out,
         *wavefields,
         *pml_profiles,
         *sources_i,
@@ -835,7 +835,7 @@ class ScalarBornForwardFunc(torch.autograd.Function):
         )
 
     @staticmethod
-    @torch.autograd.function.once_differentiable
+    @torch.autograd.function.once_differentiable  # type: ignore[misc]
     def backward(
         ctx: Any, *grad_outputs: torch.Tensor
     ) -> Tuple[Optional[torch.Tensor], ...]:
@@ -1400,4 +1400,23 @@ def scalar_born_func(
     torch.Tensor,
     torch.Tensor,
 ]:
-    return ScalarBornForwardFunc.apply(*args)
+    result = ScalarBornForwardFunc.apply(*args)  # type: ignore[no-untyped-call]
+    return cast(
+        Tuple[
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+        ],
+        result,
+    )

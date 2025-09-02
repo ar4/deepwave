@@ -18,7 +18,7 @@ receivers).
 All outputs are differentiable with respect to float torch.Tensor inputs.
 """
 
-from typing import Any, List, Optional, Sequence, Tuple, Union
+from typing import Any, cast, List, Optional, Sequence, Tuple, Union
 
 import torch
 
@@ -360,7 +360,7 @@ def scalar(
     fd_pad = [accuracy // 2] * 4
     (
         models,
-        source_amplitudes,
+        source_amplitudes_out,
         wavefields,
         sources_i,
         receivers_i,
@@ -423,8 +423,8 @@ def scalar(
     mask = sources_i[0] == deepwave.common.IGNORE_LOCATION
     sources_i_masked = sources_i[0].clone()
     sources_i_masked[mask] = 0
-    source_amplitudes[0] = (
-        -source_amplitudes[0]
+    source_amplitudes_out[0] = (
+        -source_amplitudes_out[0]
         * (models[0].view(-1, ny * nx).expand(n_shots, -1).gather(1, sources_i_masked))
         ** 2
         * dt**2
@@ -446,7 +446,7 @@ def scalar(
 
     (wfc, wfp, psiy, psix, zetay, zetax, receiver_amplitudes) = scalar_func(
         *models,
-        *source_amplitudes,
+        *source_amplitudes_out,
         *wavefields,
         *pml_profiles,
         *sources_i,
@@ -825,41 +825,54 @@ class ScalarForwardFunc(torch.autograd.Function):
         source_amplitudes_requires_grad = ctx.source_amplitudes_requires_grad
         dwdv = ctx.dwdv
 
+        result = ScalarBackwardFunc.apply(  # type: ignore[no-untyped-call]
+            gwfc,
+            gwfp,
+            gpsiy,
+            gpsix,
+            gzetay,
+            gzetax,
+            grad_r,
+            v,
+            ay,
+            ax,
+            by,
+            bx,
+            dbydy,
+            dbxdx,
+            sources_i,
+            receivers_i,
+            dwdv,
+            source_amplitudes,
+            wfc,
+            wfp,
+            psiy,
+            psix,
+            zetay,
+            zetax,
+            dy,
+            dx,
+            dt,
+            nt,
+            n_shots,
+            step_ratio,
+            accuracy,
+            pml_width,
+            source_amplitudes_requires_grad,
+        )
         return (
-            ScalarBackwardFunc.apply(
-                gwfc,
-                gwfp,
-                gpsiy,
-                gpsix,
-                gzetay,
-                gzetax,
-                grad_r,
-                v,
-                ay,
-                ax,
-                by,
-                bx,
-                dbydy,
-                dbxdx,
-                sources_i,
-                receivers_i,
-                dwdv,
-                source_amplitudes,
-                wfc,
-                wfp,
-                psiy,
-                psix,
-                zetay,
-                zetax,
-                dy,
-                dx,
-                dt,
-                nt,
-                n_shots,
-                step_ratio,
-                accuracy,
-                pml_width,
-                source_amplitudes_requires_grad,
+            cast(
+                Tuple[
+                    Optional[torch.Tensor],
+                    Optional[torch.Tensor],
+                    Optional[torch.Tensor],
+                    Optional[torch.Tensor],
+                    Optional[torch.Tensor],
+                    Optional[torch.Tensor],
+                    Optional[torch.Tensor],
+                    Optional[torch.Tensor],
+                ],
+                result,
             )
             + (None,) * 16
         )
@@ -1229,7 +1242,7 @@ class ScalarBackwardFunc(torch.autograd.Function):
         )
 
     @staticmethod
-    @torch.autograd.function.once_differentiable
+    @torch.autograd.function.once_differentiable  # type: ignore[misc]
     def backward(
         ctx: Any,
         ggv: torch.Tensor,
@@ -1859,4 +1872,16 @@ def scalar_func(*args: Any) -> Tuple[torch.Tensor, ...]:
     Returns:
         The results of the forward pass from `ScalarForwardFunc.apply`.
     """
-    return ScalarForwardFunc.apply(*args)
+    result = ScalarForwardFunc.apply(*args)  # type: ignore[no-untyped-call]
+    return cast(
+        Tuple[
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+        ],
+        result,
+    )

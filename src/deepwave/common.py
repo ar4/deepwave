@@ -7,7 +7,19 @@ PML setup, and data preparation for wave propagation simulations.
 
 import math
 import warnings
-from typing import Any, List, Optional, Sequence, Tuple, Union
+from collections import abc
+from typing import (
+    Any,
+    cast,
+    Iterable,
+    List,
+    Optional,
+    Sequence,
+    SupportsFloat,
+    SupportsInt,
+    Tuple,
+    Union,
+)
 
 import torch
 import torch.fft
@@ -18,14 +30,14 @@ IGNORE_LOCATION = -1 << 31
 def setup_propagator(
     models: Sequence[torch.Tensor],
     model_pad_modes: Sequence[str],
-    grid_spacing: Union[float, Sequence[float]],
+    grid_spacing: Union[float, Iterable[float]],
     dt: float,
     source_amplitudes: Sequence[Optional[torch.Tensor]],
     source_locations: Sequence[Optional[torch.Tensor]],
     receiver_locations: Sequence[Optional[torch.Tensor]],
     accuracy: int,
     fd_pad: Sequence[int],
-    pml_width: Union[int, Sequence[int]],
+    pml_width: Union[int, Iterable[int]],
     pml_freq: Optional[float],
     max_vel: Optional[float],
     min_nonzero_model_vel: float,
@@ -57,7 +69,7 @@ def setup_propagator(
     float,
     float,
     float,
-    float,
+    bool,
     torch.device,
     torch.dtype,
 ]:
@@ -302,7 +314,7 @@ def downsample_and_movedim(
 
 
 def set_grid_spacing(
-    grid_spacing: Union[float, Sequence[float]], n_dims: int
+    grid_spacing: Union[float, Iterable[float]], n_dims: int
 ) -> List[float]:
     """Ensures grid_spacing is a sequence of length n_dims.
 
@@ -320,13 +332,19 @@ def set_grid_spacing(
         ValueError: If any element of `grid_spacing` is not positive.
         RuntimeError: If the length of `grid_spacing` is not 1 or `n_dims`.
     """
-    try:
-        # grid_spacing is convertible to a float
-        processed_grid_spacing = [float(grid_spacing)] * n_dims
-    except (TypeError, ValueError):
+    if (
+        isinstance(grid_spacing, abc.Iterable)
+        and not isinstance(grid_spacing, (str, bytes))
+        and not (hasattr(grid_spacing, "ndim") and grid_spacing.ndim == 0)
+    ):
         try:
-            # grid_spacing is a sequence of elements convertible to floats
             processed_grid_spacing = [float(spacing) for spacing in grid_spacing]
+        except (TypeError, ValueError):
+            raise TypeError("grid_spacing must be a float or sequence of floats.")
+    else:
+        try:
+            scalar_grid_spacing = cast(SupportsFloat, grid_spacing)
+            processed_grid_spacing = [float(scalar_grid_spacing)] * n_dims
         except (TypeError, ValueError):
             raise TypeError("grid_spacing must be a float or sequence of floats.")
 
@@ -361,7 +379,7 @@ def set_accuracy(accuracy: int) -> int:
     return accuracy
 
 
-def set_pml_width(pml_width: Union[int, Sequence[int]], n_dims: int) -> List[int]:
+def set_pml_width(pml_width: Union[int, Iterable[int]], n_dims: int) -> List[int]:
     """Ensures pml_width is a sequence of length 2 * n_dims.
 
     Args:
@@ -379,13 +397,19 @@ def set_pml_width(pml_width: Union[int, Sequence[int]], n_dims: int) -> List[int
         ValueError: If any element of `pml_width` is negative.
         RuntimeError: If the length of `pml_width` is not 1 or `2 * n_dims`.
     """
-    try:
-        # pml_width is convertible to an int
-        processed_pml_width = [int(pml_width)] * 2 * n_dims
-    except (TypeError, ValueError):
+    if (
+        isinstance(pml_width, abc.Iterable)
+        and not isinstance(pml_width, (str, bytes))
+        and not (hasattr(pml_width, "ndim") and pml_width.ndim == 0)
+    ):
         try:
-            # pml_width is a sequence of elements convertible to ints
             processed_pml_width = [int(width) for width in pml_width]
+        except (TypeError, ValueError):
+            raise TypeError("pml_width must be an int or sequence of ints.")
+    else:
+        try:
+            scalar_pml_width = cast(SupportsInt, pml_width)
+            processed_pml_width = [int(scalar_pml_width)] * 2 * n_dims
         except (TypeError, ValueError):
             raise TypeError("pml_width must be an int or sequence of ints.")
 
@@ -1707,13 +1731,13 @@ def extract_locations(
             for batch_idx in range(n_batch):
                 shot_locations = location_1d[batch_idx]
                 shot_locations = shot_locations[shot_locations != IGNORE_LOCATION]
-                if len(shot_locations) != len(shot_locations.unique()):
+                if len(shot_locations) != len(torch.unique(shot_locations)):
                     raise RuntimeError(
                         f"{name} locations must be unique within each shot. "
                         "You cannot have two in the same cell, but in shot "
                         f"{batch_idx} there is/are {len(shot_locations)} "
                         f"active {name.lower()} locations while only "
-                        f"{len(shot_locations.unique())} is/are unique."
+                        f"{len(torch.unique(shot_locations))} is/are unique."
                     )
 
             extracted_locations.append(location_1d.contiguous())
@@ -2117,6 +2141,8 @@ def diff(a: torch.Tensor, accuracy: int, grid_spacing: float) -> torch.Tensor:
         coeffs = [1 / 280, -4 / 105, 1 / 5, -4 / 5, 4 / 5, -1 / 5, 4 / 105, -1 / 280]
         stencil = [-4, -3, -2, -1, 1, 2, 3, 4]
     return (
-        sum(c * torch.roll(a, -s, dims=-1) for c, s in zip(coeffs, stencil))
-        / grid_spacing
+        sum(
+            (c * torch.roll(a, -s, dims=-1) for c, s in zip(coeffs, stencil)),
+            start=torch.zeros_like(a, memory_format=torch.contiguous_format),
+        ) / grid_spacing
     )
