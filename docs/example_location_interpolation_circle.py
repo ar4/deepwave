@@ -38,12 +38,12 @@ source_locations = torch.zeros(
     n_shots, n_sources_per_shot, 2, dtype=torch.long, device=device
 )
 
-for l in range(n_source_locations):
-    angle = l / n_source_locations * 2 * math.pi
-    source_locations[0, l * 2 : (l + 1) * 2, 0] = math.sin(angle) * radius + cy
-    source_locations[0, l * 2 : (l + 1) * 2, 1] = math.cos(angle) * radius + cx
-    source_amplitudes[0, l * 2] *= math.sin(angle)
-    source_amplitudes[0, l * 2 + 1] *= math.cos(angle)
+for idx in range(n_source_locations):
+    angle = idx / n_source_locations * 2 * math.pi
+    source_locations[0, idx * 2 : (idx + 1) * 2, 0] = math.sin(angle) * radius + cy
+    source_locations[0, idx * 2 : (idx + 1) * 2, 1] = math.cos(angle) * radius + cx
+    source_amplitudes[0, idx * 2] *= math.sin(angle)
+    source_amplitudes[0, idx * 2 + 1] *= math.cos(angle)
 
 source_monopole = torch.zeros(
     n_shots, n_sources_per_shot, dtype=torch.bool, device=device

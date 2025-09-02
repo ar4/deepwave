@@ -126,15 +126,11 @@ def test_resample_invalid_args(
         step_ratio_val = 2
         kwargs = {arg_name: arg_value}
 
-    if expected_error_type == UserWarning:
-        with pytest.warns(
-            expected_error_type, match=re.escape(expected_error_match)
-        ):
+    if expected_error_type is UserWarning:
+        with pytest.warns(expected_error_type, match=re.escape(expected_error_match)):
             func(signal, step_ratio_val, **kwargs)
     else:
-        with pytest.raises(
-            expected_error_type, match=re.escape(expected_error_match)
-        ):
+        with pytest.raises(expected_error_type, match=re.escape(expected_error_match)):
             func(signal, step_ratio_val, **kwargs)
 
 

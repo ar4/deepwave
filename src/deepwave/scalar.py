@@ -5,11 +5,12 @@ Implements scalar wave equation propagation using finite differences in time
 boundaries and adjoint mode for gradient computation. For PML details, see
 
     Pasalic, Damir, and Ray McGarry. "Convolutional perfectly matched
-    layer for isotropic and anisotropic acoustic wave equations."
-    SEG Technical Program Expanded Abstracts 2010.
-    Society of Exploration Geophysicists, 2010. 2925-2929.
+        layer for isotropic and anisotropic acoustic wave equations."
+        SEG Technical Program Expanded Abstracts 2010.
+        Society of Exploration Geophysicists, 2010. 2925-2929.
 
-Required inputs: wavespeed model (`v`), grid cell size (`dx`), time step (`dt`),
+
+    Required inputs: wavespeed model (`v`), grid cell size (`dx`), time step (`dt`),
 and either source term (`source_amplitudes` and `source_locations`) or number
 of time steps (`nt`).
 Outputs: final wavefields (including PML) and receiver amplitudes (empty if no
@@ -20,11 +21,10 @@ All outputs are differentiable with respect to float torch.Tensor inputs.
 from typing import Any, List, Optional, Sequence, Tuple, Union
 
 import torch
-from torch.autograd import function
 
-from deepwave import backend_utils
-from deepwave import common
-from deepwave import regular_grid
+import deepwave.backend_utils
+import deepwave.common
+import deepwave.regular_grid
 
 
 class Scalar(torch.nn.Module):
@@ -94,7 +94,7 @@ class Scalar(torch.nn.Module):
     ]:
         """Performs forward propagation/modelling.
 
-        See `scalar` for details.
+        See :func:`scalar` for details.
         """
         return scalar(
             self.v,
@@ -165,19 +165,12 @@ def scalar(
     For computational performance, multiple shots may be propagated
     simultaneously.
 
-    The scalar wave equation is: `d^2u/dt^2 = v^2 * laplacian(u) + v^2 * f`,
-    where `u` is the wavefield, `t` is time, `v` is the wavespeed, and `f`
-    is the source. The Laplacian is applied to the spatial dimensions.
-
     The function returns the final wavefields and the data recorded at
     the specified receiver locations. All returned torch.Tensors are
     differentiable with respect to the float torch.Tensors in the input.
 
     Args:
-        v: A torch.Tensor containing the wavespeed model. Unlike the module
-            interface (:class:`Scalar`), in this functional interface a copy is
-            not made of the model, so gradients will propagate back into
-            the provided torch.Tensor.
+        v: A torch.Tensor containing the wavespeed model.
         grid_spacing: The spatial grid cell size. It can be a single number
             that will be used for all dimensions, or a number for each
             dimension.
@@ -187,8 +180,8 @@ def scalar(
         source_amplitudes: A torch.Tensor with dimensions [shot, source, time].
             For example, if two shots are propagated simultaneously, each
             containing three sources of one hundred time samples, the shape
-            would be [2, 3, 100]. The time dimension length corresponds to the
-            number of time samples in the source wavelet. Optional. If
+            would be [2, 3, 100]. The time dimension length determines the
+            number of time steps in the simulation. Optional. If
             provided, `source_locations` must also be specified. If not
             provided, `nt` must be specified.
         source_locations: A torch.Tensor with dimensions [shot, source, 2],
@@ -216,8 +209,12 @@ def scalar(
             If a single value is provided, it will be used for all edges.
             If a sequence is provided, it should contain values for the
             edges in the following order:
-            [beginning of first dimension, end of first dimension,
-            beginning of second dimension, end of second dimension].
+
+            - beginning of first dimension
+            - end of first dimension
+            - beginning of second dimension
+            - end of second dimension
+
             Larger values result in smaller reflections, with values of 10
             to 20 being typical. For a reflective or "free" surface, set the
             value for that edge to be zero. For example, if your model is
@@ -257,27 +254,32 @@ def scalar(
             `10` will cause the simulation domain to contain at least 10
             cells of padding in each direction around sources and receivers
             if possible. The padding will end if the edge of the model is
-            encountered. Specifying a list, in the following order:
-            [beginning of first dimension, end of first dimension,
-            beginning of second dimension, end of second dimension]
-            allows the padding in each direction to be controlled. Ints and
-            `None` may be mixed, so a `survey_pad` of [5, None, None, 10]
-            means that there should be at least 5 cells of padding towards
-            the beginning of the first dimension, no restriction of the
-            simulation domain towards the end of the first dimension or
-            beginning of the second, and 10 cells of padding towards the
-            end of the second dimension. If the simulation contains
-            one source at [20, 15], one receiver at [10, 15], and the
-            model is of shape [40, 50], then the extracted simulation
-            domain with this value of `survey_pad` would cover the region
-            [5:40, 0:25]. The same simulation domain will be used for all
-            shots propagated simultaneously, so if this option is used then
-            it is advisable to propagate shots that cover similar regions
-            of the model simultaneously so that it provides a benefit (if
-            the shots cover opposite ends of a dimension, then that
-            whole dimension will be used regardless of what `survey_pad`
-            value is used). Optional, default None. Cannot be specified
-            if origin is also specified.
+            encountered. Specifying a list, in the following order, allows
+            the padding in each direction to be controlled:
+
+            - beginning of first dimension
+            - end of first dimension
+            - beginning of second dimension
+            - end of second dimension
+
+            Ints and `None` may be mixed, so a `survey_pad` of
+            [5, None, None, 10] means that there should be at least 5 cells
+            of padding towards the beginning of the first dimension, no
+            restriction of the simulation domain towards the end of the
+            first dimension or beginning of the second, and 10 cells of
+            padding towards the end of the second dimension. If the
+            simulation contains one source at [20, 15], one receiver at
+            [10, 15], and the model is of shape [40, 50], then the
+            extracted simulation domain with this value of `survey_pad`
+            would cover the region [5:40, 0:25]. The same simulation
+            domain will be used for all shots propagated simultaneously, so
+            if this option is used then it is advisable to propagate shots
+            that cover similar regions of the model simultaneously so that
+            it provides a benefit (if the shots cover opposite ends of a
+            dimension, then that whole dimension will be used regardless of
+            what `survey_pad` value is used). Optional, default None.
+            Cannot be specified if origin is also specified.
+
         wavefield_0: A torch.Tensor specifying the initial wavefield at time
             step 0. It should have three dimensions, with the first dimension
             being shot and the subsequent two corresponding to the two spatial
@@ -337,15 +339,17 @@ def scalar(
             possibility of high frequencies being introduced.
 
     Returns:
-        A tuple containing:
-            wavefield_nt: The wavefield at the final time step.
-            wavefield_ntm1: The wavefield at the second-to-last time step.
-            psiy_ntm1: PML-related wavefield.
-            psix_ntm1: PML-related wavefield.
-            zetay_ntm1: PML-related wavefield.
-            zetax_ntm1: PML-related wavefield.
-            receiver_amplitudes: The receiver amplitudes. Empty if no receivers
-                were specified.
+        Tuple:
+
+            - wavefield_nt: The wavefield at the final time step.
+            - wavefield_ntm1: The wavefield at the second-to-last time step.
+            - psiy_ntm1: PML-related wavefield.
+            - psix_ntm1: PML-related wavefield.
+            - zetay_ntm1: PML-related wavefield.
+            - zetax_ntm1: PML-related wavefield.
+            - receiver_amplitudes: The receiver amplitudes. Empty if no
+              receivers were specified.
+
     """
     v_nonzero = v[v != 0]
     if v_nonzero.numel() > 0:
@@ -375,7 +379,7 @@ def scalar(
         time_taper,
         device,
         dtype,
-    ) = common.setup_propagator(
+    ) = deepwave.common.setup_propagator(
         [v],
         ["replicate"],
         grid_spacing,
@@ -416,24 +420,28 @@ def scalar(
     # avoid out-of-bounds accesses to the model. Since these sources will not be
     # used, their amplitudes are not important.
     ny, nx = models[0].shape[-2:]
-    mask = sources_i[0] == common.IGNORE_LOCATION
+    mask = sources_i[0] == deepwave.common.IGNORE_LOCATION
     sources_i_masked = sources_i[0].clone()
     sources_i_masked[mask] = 0
     source_amplitudes[0] = (
         -source_amplitudes[0]
-        * (
-            models[0]
-            .view(-1, ny * nx)
-            .expand(n_shots, -1)
-            .gather(1, sources_i_masked)
-        )
+        * (models[0].view(-1, ny * nx).expand(n_shots, -1).gather(1, sources_i_masked))
         ** 2
         * dt**2
     )
 
-    pml_profiles = regular_grid.set_pml_profiles(
-        pml_width, accuracy, fd_pad, dt, grid_spacing, max_vel, dtype, device,
-        pml_freq, ny, nx
+    pml_profiles = deepwave.regular_grid.set_pml_profiles(
+        pml_width,
+        accuracy,
+        fd_pad,
+        dt,
+        grid_spacing,
+        max_vel,
+        dtype,
+        device,
+        pml_freq,
+        ny,
+        nx,
     )
 
     (wfc, wfp, psiy, psix, zetay, zetax, receiver_amplitudes) = scalar_func(
@@ -452,9 +460,8 @@ def scalar(
         n_shots,
     )
 
-    receiver_amplitudes = common.downsample_and_movedim(
-        receiver_amplitudes, step_ratio, freq_taper_frac, time_pad_frac,
-        time_taper
+    receiver_amplitudes = deepwave.common.downsample_and_movedim(
+        receiver_amplitudes, step_ratio, freq_taper_frac, time_pad_frac, time_taper
     )
 
     return wfc, wfp, psiy, psix, zetay, zetax, receiver_amplitudes
@@ -577,9 +584,7 @@ class ScalarForwardFunc(torch.autograd.Function):
             ctx.step_ratio = step_ratio
             ctx.accuracy = accuracy
             ctx.pml_width = pml_width
-            ctx.source_amplitudes_requires_grad = (
-                source_amplitudes.requires_grad
-            )
+            ctx.source_amplitudes_requires_grad = source_amplitudes.requires_grad
 
         v = v.contiguous()
         source_amplitudes = source_amplitudes.contiguous()
@@ -594,28 +599,28 @@ class ScalarForwardFunc(torch.autograd.Function):
 
         fd_pad = accuracy // 2
         size_with_batch = (n_shots, *v.shape[-2:])
-        wfc = common.create_or_pad(
+        wfc = deepwave.common.create_or_pad(
             wfc, fd_pad, v.device, v.dtype, size_with_batch
         )
-        wfp = common.create_or_pad(
+        wfp = deepwave.common.create_or_pad(
             wfp, fd_pad, v.device, v.dtype, size_with_batch
         )
-        psiy = common.create_or_pad(
+        psiy = deepwave.common.create_or_pad(
             psiy, fd_pad, v.device, v.dtype, size_with_batch
         )
-        psix = common.create_or_pad(
+        psix = deepwave.common.create_or_pad(
             psix, fd_pad, v.device, v.dtype, size_with_batch
         )
-        zetay = common.create_or_pad(
+        zetay = deepwave.common.create_or_pad(
             zetay, fd_pad, v.device, v.dtype, size_with_batch
         )
-        zetax = common.create_or_pad(
+        zetax = deepwave.common.create_or_pad(
             zetax, fd_pad, v.device, v.dtype, size_with_batch
         )
-        psiy = common.zero_interior(psiy, fd_pad, pml_width, True)
-        psix = common.zero_interior(psix, fd_pad, pml_width, False)
-        zetay = common.zero_interior(zetay, fd_pad, pml_width, True)
-        zetax = common.zero_interior(zetax, fd_pad, pml_width, False)
+        psiy = deepwave.common.zero_interior(psiy, fd_pad, pml_width, True)
+        psix = deepwave.common.zero_interior(psix, fd_pad, pml_width, False)
+        zetay = deepwave.common.zero_interior(zetay, fd_pad, pml_width, True)
+        zetax = deepwave.common.zero_interior(zetax, fd_pad, pml_width, False)
 
         device = v.device
         dtype = v.dtype
@@ -645,45 +650,53 @@ class ScalarForwardFunc(torch.autograd.Function):
             aux = v.get_device()
             if dtype == torch.float32:
                 if accuracy == 2:
-                    forward = backend_utils.dll.scalar_iso_2_float_forward_cuda
+                    forward = deepwave.backend_utils.dll.scalar_iso_2_float_forward_cuda
                 elif accuracy == 4:
-                    forward = backend_utils.dll.scalar_iso_4_float_forward_cuda
+                    forward = deepwave.backend_utils.dll.scalar_iso_4_float_forward_cuda
                 elif accuracy == 6:
-                    forward = backend_utils.dll.scalar_iso_6_float_forward_cuda
+                    forward = deepwave.backend_utils.dll.scalar_iso_6_float_forward_cuda
                 else:
-                    forward = backend_utils.dll.scalar_iso_8_float_forward_cuda
+                    forward = deepwave.backend_utils.dll.scalar_iso_8_float_forward_cuda
             else:
                 if accuracy == 2:
-                    forward = backend_utils.dll.scalar_iso_2_double_forward_cuda
+                    forward = (
+                        deepwave.backend_utils.dll.scalar_iso_2_double_forward_cuda
+                    )
                 elif accuracy == 4:
-                    forward = backend_utils.dll.scalar_iso_4_double_forward_cuda
+                    forward = (
+                        deepwave.backend_utils.dll.scalar_iso_4_double_forward_cuda
+                    )
                 elif accuracy == 6:
-                    forward = backend_utils.dll.scalar_iso_6_double_forward_cuda
+                    forward = (
+                        deepwave.backend_utils.dll.scalar_iso_6_double_forward_cuda
+                    )
                 else:
-                    forward = backend_utils.dll.scalar_iso_8_double_forward_cuda
+                    forward = (
+                        deepwave.backend_utils.dll.scalar_iso_8_double_forward_cuda
+                    )
         else:
-            if backend_utils.USE_OPENMP:
+            if deepwave.backend_utils.USE_OPENMP:
                 aux = min(n_shots, torch.get_num_threads())
             else:
                 aux = 1
             if dtype == torch.float32:
                 if accuracy == 2:
-                    forward = backend_utils.dll.scalar_iso_2_float_forward_cpu
+                    forward = deepwave.backend_utils.dll.scalar_iso_2_float_forward_cpu
                 elif accuracy == 4:
-                    forward = backend_utils.dll.scalar_iso_4_float_forward_cpu
+                    forward = deepwave.backend_utils.dll.scalar_iso_4_float_forward_cpu
                 elif accuracy == 6:
-                    forward = backend_utils.dll.scalar_iso_6_float_forward_cpu
+                    forward = deepwave.backend_utils.dll.scalar_iso_6_float_forward_cpu
                 else:
-                    forward = backend_utils.dll.scalar_iso_8_float_forward_cpu
+                    forward = deepwave.backend_utils.dll.scalar_iso_8_float_forward_cpu
             else:
                 if accuracy == 2:
-                    forward = backend_utils.dll.scalar_iso_2_double_forward_cpu
+                    forward = deepwave.backend_utils.dll.scalar_iso_2_double_forward_cpu
                 elif accuracy == 4:
-                    forward = backend_utils.dll.scalar_iso_4_double_forward_cpu
+                    forward = deepwave.backend_utils.dll.scalar_iso_4_double_forward_cpu
                 elif accuracy == 6:
-                    forward = backend_utils.dll.scalar_iso_6_double_forward_cpu
+                    forward = deepwave.backend_utils.dll.scalar_iso_6_double_forward_cpu
                 else:
-                    forward = backend_utils.dll.scalar_iso_8_double_forward_cpu
+                    forward = deepwave.backend_utils.dll.scalar_iso_8_double_forward_cpu
 
         if wfc.numel() > 0 and nt > 0:
             start_t = 0
@@ -1006,28 +1019,28 @@ class ScalarBackwardFunc(torch.autograd.Function):
         fd_pad = accuracy // 2
 
         size_with_batch = (n_shots, *v.shape[-2:])
-        gwfc = common.create_or_pad(
+        gwfc = deepwave.common.create_or_pad(
             gwfc, fd_pad, v.device, v.dtype, size_with_batch
         )
-        gwfp = common.create_or_pad(
+        gwfp = deepwave.common.create_or_pad(
             gwfp, fd_pad, v.device, v.dtype, size_with_batch
         )
-        gpsiy = common.create_or_pad(
+        gpsiy = deepwave.common.create_or_pad(
             gpsiy, fd_pad, v.device, v.dtype, size_with_batch
         )
-        gpsix = common.create_or_pad(
+        gpsix = deepwave.common.create_or_pad(
             gpsix, fd_pad, v.device, v.dtype, size_with_batch
         )
-        gzetay = common.create_or_pad(
+        gzetay = deepwave.common.create_or_pad(
             gzetay, fd_pad, v.device, v.dtype, size_with_batch
         )
-        gzetax = common.create_or_pad(
+        gzetax = deepwave.common.create_or_pad(
             gzetax, fd_pad, v.device, v.dtype, size_with_batch
         )
-        gpsiy = common.zero_interior(gpsiy, fd_pad, pml_width, True)
-        gpsix = common.zero_interior(gpsix, fd_pad, pml_width, False)
-        gzetay = common.zero_interior(gzetay, fd_pad, pml_width, True)
-        gzetax = common.zero_interior(gzetax, fd_pad, pml_width, False)
+        gpsiy = deepwave.common.zero_interior(gpsiy, fd_pad, pml_width, True)
+        gpsix = deepwave.common.zero_interior(gpsix, fd_pad, pml_width, False)
+        gzetay = deepwave.common.zero_interior(gzetay, fd_pad, pml_width, True)
+        gzetax = deepwave.common.zero_interior(gzetax, fd_pad, pml_width, False)
 
         gpsiyn = torch.zeros_like(gpsiy)
         gpsixn = torch.zeros_like(gpsix)
@@ -1060,24 +1073,40 @@ class ScalarBackwardFunc(torch.autograd.Function):
                 grad_v_tmp_ptr = grad_v_tmp.data_ptr()
             if dtype == torch.float32:
                 if accuracy == 2:
-                    backward = backend_utils.dll.scalar_iso_2_float_backward_cuda
+                    backward = (
+                        deepwave.backend_utils.dll.scalar_iso_2_float_backward_cuda
+                    )
                 elif accuracy == 4:
-                    backward = backend_utils.dll.scalar_iso_4_float_backward_cuda
+                    backward = (
+                        deepwave.backend_utils.dll.scalar_iso_4_float_backward_cuda
+                    )
                 elif accuracy == 6:
-                    backward = backend_utils.dll.scalar_iso_6_float_backward_cuda
+                    backward = (
+                        deepwave.backend_utils.dll.scalar_iso_6_float_backward_cuda
+                    )
                 else:
-                    backward = backend_utils.dll.scalar_iso_8_float_backward_cuda
+                    backward = (
+                        deepwave.backend_utils.dll.scalar_iso_8_float_backward_cuda
+                    )
             else:
                 if accuracy == 2:
-                    backward = backend_utils.dll.scalar_iso_2_double_backward_cuda
+                    backward = (
+                        deepwave.backend_utils.dll.scalar_iso_2_double_backward_cuda
+                    )
                 elif accuracy == 4:
-                    backward = backend_utils.dll.scalar_iso_4_double_backward_cuda
+                    backward = (
+                        deepwave.backend_utils.dll.scalar_iso_4_double_backward_cuda
+                    )
                 elif accuracy == 6:
-                    backward = backend_utils.dll.scalar_iso_6_double_backward_cuda
+                    backward = (
+                        deepwave.backend_utils.dll.scalar_iso_6_double_backward_cuda
+                    )
                 else:
-                    backward = backend_utils.dll.scalar_iso_8_double_backward_cuda
+                    backward = (
+                        deepwave.backend_utils.dll.scalar_iso_8_double_backward_cuda
+                    )
         else:
-            if backend_utils.USE_OPENMP:
+            if deepwave.backend_utils.USE_OPENMP:
                 aux = min(n_shots, torch.get_num_threads())
             else:
                 aux = 1
@@ -1085,29 +1114,45 @@ class ScalarBackwardFunc(torch.autograd.Function):
                 v.requires_grad
                 and not v_batched
                 and aux > 1
-                and backend_utils.USE_OPENMP
+                and deepwave.backend_utils.USE_OPENMP
             ):
                 grad_v_tmp.resize_(aux, *v.shape[-2:])
                 grad_v_tmp.fill_(0)
                 grad_v_tmp_ptr = grad_v_tmp.data_ptr()
             if dtype == torch.float32:
                 if accuracy == 2:
-                    backward = backend_utils.dll.scalar_iso_2_float_backward_cpu
+                    backward = (
+                        deepwave.backend_utils.dll.scalar_iso_2_float_backward_cpu
+                    )
                 elif accuracy == 4:
-                    backward = backend_utils.dll.scalar_iso_4_float_backward_cpu
+                    backward = (
+                        deepwave.backend_utils.dll.scalar_iso_4_float_backward_cpu
+                    )
                 elif accuracy == 6:
-                    backward = backend_utils.dll.scalar_iso_6_float_backward_cpu
+                    backward = (
+                        deepwave.backend_utils.dll.scalar_iso_6_float_backward_cpu
+                    )
                 else:
-                    backward = backend_utils.dll.scalar_iso_8_float_backward_cpu
+                    backward = (
+                        deepwave.backend_utils.dll.scalar_iso_8_float_backward_cpu
+                    )
             else:
                 if accuracy == 2:
-                    backward = backend_utils.dll.scalar_iso_2_double_backward_cpu
+                    backward = (
+                        deepwave.backend_utils.dll.scalar_iso_2_double_backward_cpu
+                    )
                 elif accuracy == 4:
-                    backward = backend_utils.dll.scalar_iso_4_double_backward_cpu
+                    backward = (
+                        deepwave.backend_utils.dll.scalar_iso_4_double_backward_cpu
+                    )
                 elif accuracy == 6:
-                    backward = backend_utils.dll.scalar_iso_6_double_backward_cpu
+                    backward = (
+                        deepwave.backend_utils.dll.scalar_iso_6_double_backward_cpu
+                    )
                 else:
-                    backward = backend_utils.dll.scalar_iso_8_double_backward_cpu
+                    backward = (
+                        deepwave.backend_utils.dll.scalar_iso_8_double_backward_cpu
+                    )
 
         v2dt2 = v**2 * dt**2
         gwfp = -gwfp
@@ -1184,7 +1229,7 @@ class ScalarBackwardFunc(torch.autograd.Function):
         )
 
     @staticmethod
-    @function.once_differentiable
+    @torch.autograd.function.once_differentiable
     def backward(
         ctx: Any,
         ggv: torch.Tensor,
@@ -1277,50 +1322,50 @@ class ScalarBackwardFunc(torch.autograd.Function):
 
         fd_pad = accuracy // 2
         size_with_batch = (n_shots, *v.shape[-2:])
-        wfc = common.create_or_pad(
+        wfc = deepwave.common.create_or_pad(
             wfc, fd_pad, v.device, v.dtype, size_with_batch
         )
-        wfp = common.create_or_pad(
+        wfp = deepwave.common.create_or_pad(
             wfp, fd_pad, v.device, v.dtype, size_with_batch
         )
-        psiy = common.create_or_pad(
+        psiy = deepwave.common.create_or_pad(
             psiy, fd_pad, v.device, v.dtype, size_with_batch
         )
-        psix = common.create_or_pad(
+        psix = deepwave.common.create_or_pad(
             psix, fd_pad, v.device, v.dtype, size_with_batch
         )
-        zetay = common.create_or_pad(
+        zetay = deepwave.common.create_or_pad(
             zetay, fd_pad, v.device, v.dtype, size_with_batch
         )
-        zetax = common.create_or_pad(
+        zetax = deepwave.common.create_or_pad(
             zetax, fd_pad, v.device, v.dtype, size_with_batch
         )
-        ggwfc = common.create_or_pad(
+        ggwfc = deepwave.common.create_or_pad(
             ggwfc, fd_pad, v.device, v.dtype, size_with_batch
         )
-        ggwfp = common.create_or_pad(
+        ggwfp = deepwave.common.create_or_pad(
             ggwfp, fd_pad, v.device, v.dtype, size_with_batch
         )
-        ggpsiy = common.create_or_pad(
+        ggpsiy = deepwave.common.create_or_pad(
             ggpsiy, fd_pad, v.device, v.dtype, size_with_batch
         )
-        ggpsix = common.create_or_pad(
+        ggpsix = deepwave.common.create_or_pad(
             ggpsix, fd_pad, v.device, v.dtype, size_with_batch
         )
-        ggzetay = common.create_or_pad(
+        ggzetay = deepwave.common.create_or_pad(
             ggzetay, fd_pad, v.device, v.dtype, size_with_batch
         )
-        ggzetax = common.create_or_pad(
+        ggzetax = deepwave.common.create_or_pad(
             ggzetax, fd_pad, v.device, v.dtype, size_with_batch
         )
-        psiy = common.zero_interior(psiy, fd_pad, pml_width, True)
-        psix = common.zero_interior(psix, fd_pad, pml_width, False)
-        zetay = common.zero_interior(zetay, fd_pad, pml_width, True)
-        zetax = common.zero_interior(zetax, fd_pad, pml_width, False)
-        ggpsiy = common.zero_interior(ggpsiy, fd_pad, pml_width, True)
-        ggpsix = common.zero_interior(ggpsix, fd_pad, pml_width, False)
-        ggzetay = common.zero_interior(ggzetay, fd_pad, pml_width, True)
-        ggzetax = common.zero_interior(ggzetax, fd_pad, pml_width, False)
+        psiy = deepwave.common.zero_interior(psiy, fd_pad, pml_width, True)
+        psix = deepwave.common.zero_interior(psix, fd_pad, pml_width, False)
+        zetay = deepwave.common.zero_interior(zetay, fd_pad, pml_width, True)
+        zetax = deepwave.common.zero_interior(zetax, fd_pad, pml_width, False)
+        ggpsiy = deepwave.common.zero_interior(ggpsiy, fd_pad, pml_width, True)
+        ggpsix = deepwave.common.zero_interior(ggpsix, fd_pad, pml_width, False)
+        ggzetay = deepwave.common.zero_interior(ggzetay, fd_pad, pml_width, True)
+        ggzetax = deepwave.common.zero_interior(ggzetax, fd_pad, pml_width, False)
 
         device = v.device
         dtype = v.dtype
@@ -1354,54 +1399,84 @@ class ScalarBackwardFunc(torch.autograd.Function):
             receiver_amplitudes.resize_(nt, n_shots, n_receivers_per_shot)
             receiver_amplitudes.fill_(0)
         if fwd_ggreceivers_i.numel() > 0:
-            ggreceiver_amplitudes.resize_(
-                nt, n_shots, n_ggreceivers_per_shot
-            )
+            ggreceiver_amplitudes.resize_(nt, n_shots, n_ggreceivers_per_shot)
             ggreceiver_amplitudes.fill_(0)
 
         if v.is_cuda:
             aux = v.get_device()
             if dtype == torch.float32:
                 if accuracy == 2:
-                    forward = backend_utils.dll.scalar_born_iso_2_float_forward_cuda
+                    forward = (
+                        deepwave.backend_utils.dll.scalar_born_iso_2_float_forward_cuda
+                    )
                 elif accuracy == 4:
-                    forward = backend_utils.dll.scalar_born_iso_4_float_forward_cuda
+                    forward = (
+                        deepwave.backend_utils.dll.scalar_born_iso_4_float_forward_cuda
+                    )
                 elif accuracy == 6:
-                    forward = backend_utils.dll.scalar_born_iso_6_float_forward_cuda
+                    forward = (
+                        deepwave.backend_utils.dll.scalar_born_iso_6_float_forward_cuda
+                    )
                 else:
-                    forward = backend_utils.dll.scalar_born_iso_8_float_forward_cuda
+                    forward = (
+                        deepwave.backend_utils.dll.scalar_born_iso_8_float_forward_cuda
+                    )
             else:
                 if accuracy == 2:
-                    forward = backend_utils.dll.scalar_born_iso_2_double_forward_cuda
+                    forward = (
+                        deepwave.backend_utils.dll.scalar_born_iso_2_double_forward_cuda
+                    )
                 elif accuracy == 4:
-                    forward = backend_utils.dll.scalar_born_iso_4_double_forward_cuda
+                    forward = (
+                        deepwave.backend_utils.dll.scalar_born_iso_4_double_forward_cuda
+                    )
                 elif accuracy == 6:
-                    forward = backend_utils.dll.scalar_born_iso_6_double_forward_cuda
+                    forward = (
+                        deepwave.backend_utils.dll.scalar_born_iso_6_double_forward_cuda
+                    )
                 else:
-                    forward = backend_utils.dll.scalar_born_iso_8_double_forward_cuda
+                    forward = (
+                        deepwave.backend_utils.dll.scalar_born_iso_8_double_forward_cuda
+                    )
         else:
-            if backend_utils.USE_OPENMP:
+            if deepwave.backend_utils.USE_OPENMP:
                 aux = min(n_shots, torch.get_num_threads())
             else:
                 aux = 1
             if dtype == torch.float32:
                 if accuracy == 2:
-                    forward = backend_utils.dll.scalar_born_iso_2_float_forward_cpu
+                    forward = (
+                        deepwave.backend_utils.dll.scalar_born_iso_2_float_forward_cpu
+                    )
                 elif accuracy == 4:
-                    forward = backend_utils.dll.scalar_born_iso_4_float_forward_cpu
+                    forward = (
+                        deepwave.backend_utils.dll.scalar_born_iso_4_float_forward_cpu
+                    )
                 elif accuracy == 6:
-                    forward = backend_utils.dll.scalar_born_iso_6_float_forward_cpu
+                    forward = (
+                        deepwave.backend_utils.dll.scalar_born_iso_6_float_forward_cpu
+                    )
                 else:
-                    forward = backend_utils.dll.scalar_born_iso_8_float_forward_cpu
+                    forward = (
+                        deepwave.backend_utils.dll.scalar_born_iso_8_float_forward_cpu
+                    )
             else:
                 if accuracy == 2:
-                    forward = backend_utils.dll.scalar_born_iso_2_double_forward_cpu
+                    forward = (
+                        deepwave.backend_utils.dll.scalar_born_iso_2_double_forward_cpu
+                    )
                 elif accuracy == 4:
-                    forward = backend_utils.dll.scalar_born_iso_4_double_forward_cpu
+                    forward = (
+                        deepwave.backend_utils.dll.scalar_born_iso_4_double_forward_cpu
+                    )
                 elif accuracy == 6:
-                    forward = backend_utils.dll.scalar_born_iso_6_double_forward_cpu
+                    forward = (
+                        deepwave.backend_utils.dll.scalar_born_iso_6_double_forward_cpu
+                    )
                 else:
-                    forward = backend_utils.dll.scalar_born_iso_8_double_forward_cpu
+                    forward = (
+                        deepwave.backend_utils.dll.scalar_born_iso_8_double_forward_cpu
+                    )
 
         if wfc.numel() > 0 and nt > 0:
             start_t = 0
@@ -1473,54 +1548,54 @@ class ScalarBackwardFunc(torch.autograd.Function):
         n_receivers_per_shot = bwd_receivers_i.numel() // n_shots
         n_greceivers_per_shot = bwd_greceivers_i.numel() // n_shots
 
-        wfc = common.create_or_pad(
+        wfc = deepwave.common.create_or_pad(
             torch.empty(0), fd_pad, v.device, v.dtype, size_with_batch
         )
-        wfp = common.create_or_pad(
+        wfp = deepwave.common.create_or_pad(
             torch.empty(0), fd_pad, v.device, v.dtype, size_with_batch
         )
-        psiy = common.create_or_pad(
+        psiy = deepwave.common.create_or_pad(
             torch.empty(0), fd_pad, v.device, v.dtype, size_with_batch
         )
-        psix = common.create_or_pad(
+        psix = deepwave.common.create_or_pad(
             torch.empty(0), fd_pad, v.device, v.dtype, size_with_batch
         )
-        zetay = common.create_or_pad(
+        zetay = deepwave.common.create_or_pad(
             torch.empty(0), fd_pad, v.device, v.dtype, size_with_batch
         )
-        zetax = common.create_or_pad(
+        zetax = deepwave.common.create_or_pad(
             torch.empty(0), fd_pad, v.device, v.dtype, size_with_batch
         )
-        psiy = common.zero_interior(psiy, fd_pad, pml_width, True)
-        psix = common.zero_interior(psix, fd_pad, pml_width, False)
-        zetay = common.zero_interior(zetay, fd_pad, pml_width, True)
-        zetax = common.zero_interior(zetax, fd_pad, pml_width, False)
+        psiy = deepwave.common.zero_interior(psiy, fd_pad, pml_width, True)
+        psix = deepwave.common.zero_interior(psix, fd_pad, pml_width, False)
+        zetay = deepwave.common.zero_interior(zetay, fd_pad, pml_width, True)
+        zetax = deepwave.common.zero_interior(zetax, fd_pad, pml_width, False)
         psiyn = torch.zeros_like(psiy)
         psixn = torch.zeros_like(psix)
         zetayn = torch.zeros_like(zetay)
         zetaxn = torch.zeros_like(zetax)
-        gwfc = common.create_or_pad(
+        gwfc = deepwave.common.create_or_pad(
             gwfc, fd_pad, v.device, v.dtype, size_with_batch
         )
-        gwfp = common.create_or_pad(
+        gwfp = deepwave.common.create_or_pad(
             gwfp, fd_pad, v.device, v.dtype, size_with_batch
         )
-        gpsiy = common.create_or_pad(
+        gpsiy = deepwave.common.create_or_pad(
             gpsiy, fd_pad, v.device, v.dtype, size_with_batch
         )
-        gpsix = common.create_or_pad(
+        gpsix = deepwave.common.create_or_pad(
             gpsix, fd_pad, v.device, v.dtype, size_with_batch
         )
-        gzetay = common.create_or_pad(
+        gzetay = deepwave.common.create_or_pad(
             gzetay, fd_pad, v.device, v.dtype, size_with_batch
         )
-        gzetax = common.create_or_pad(
+        gzetax = deepwave.common.create_or_pad(
             gzetax, fd_pad, v.device, v.dtype, size_with_batch
         )
-        gpsiy = common.zero_interior(gpsiy, fd_pad, pml_width, True)
-        gpsix = common.zero_interior(gpsix, fd_pad, pml_width, False)
-        gzetay = common.zero_interior(gzetay, fd_pad, pml_width, True)
-        gzetax = common.zero_interior(gzetax, fd_pad, pml_width, False)
+        gpsiy = deepwave.common.zero_interior(gpsiy, fd_pad, pml_width, True)
+        gpsix = deepwave.common.zero_interior(gpsix, fd_pad, pml_width, False)
+        gzetay = deepwave.common.zero_interior(gzetay, fd_pad, pml_width, True)
+        gzetax = deepwave.common.zero_interior(gzetax, fd_pad, pml_width, False)
         gpsiyn = torch.zeros_like(gpsiy)
         gpsixn = torch.zeros_like(gpsix)
         gzetayn = torch.zeros_like(gzetay)
@@ -1552,39 +1627,31 @@ class ScalarBackwardFunc(torch.autograd.Function):
             if dtype == torch.float32:
                 if accuracy == 2:
                     backward = (
-                        backend_utils.dll.scalar_born_iso_2_float_backward_cuda
+                        deepwave.backend_utils.dll.scalar_born_iso_2_float_backward_cuda
                     )
                 elif accuracy == 4:
                     backward = (
-                        backend_utils.dll.scalar_born_iso_4_float_backward_cuda
+                        deepwave.backend_utils.dll.scalar_born_iso_4_float_backward_cuda
                     )
                 elif accuracy == 6:
                     backward = (
-                        backend_utils.dll.scalar_born_iso_6_float_backward_cuda
+                        deepwave.backend_utils.dll.scalar_born_iso_6_float_backward_cuda
                     )
                 else:
                     backward = (
-                        backend_utils.dll.scalar_born_iso_8_float_backward_cuda
+                        deepwave.backend_utils.dll.scalar_born_iso_8_float_backward_cuda
                     )
             else:
                 if accuracy == 2:
-                    backward = (
-                        backend_utils.dll.scalar_born_iso_2_double_backward_cuda
-                    )
+                    backward = deepwave.backend_utils.dll.scalar_born_iso_2_double_backward_cuda
                 elif accuracy == 4:
-                    backward = (
-                        backend_utils.dll.scalar_born_iso_4_double_backward_cuda
-                    )
+                    backward = deepwave.backend_utils.dll.scalar_born_iso_4_double_backward_cuda
                 elif accuracy == 6:
-                    backward = (
-                        backend_utils.dll.scalar_born_iso_6_double_backward_cuda
-                    )
+                    backward = deepwave.backend_utils.dll.scalar_born_iso_6_double_backward_cuda
                 else:
-                    backward = (
-                        backend_utils.dll.scalar_born_iso_8_double_backward_cuda
-                    )
+                    backward = deepwave.backend_utils.dll.scalar_born_iso_8_double_backward_cuda
         else:
-            if backend_utils.USE_OPENMP:
+            if deepwave.backend_utils.USE_OPENMP:
                 aux = min(n_shots, torch.get_num_threads())
             else:
                 aux = 1
@@ -1592,7 +1659,7 @@ class ScalarBackwardFunc(torch.autograd.Function):
                 v.requires_grad
                 and not v_batched
                 and aux > 1
-                and backend_utils.USE_OPENMP
+                and deepwave.backend_utils.USE_OPENMP
             ):
                 grad_v_tmp.resize_(aux, *v.shape[-2:])
                 grad_v_tmp.fill_(0)
@@ -1600,36 +1667,36 @@ class ScalarBackwardFunc(torch.autograd.Function):
             if dtype == torch.float32:
                 if accuracy == 2:
                     backward = (
-                        backend_utils.dll.scalar_born_iso_2_float_backward_cpu
+                        deepwave.backend_utils.dll.scalar_born_iso_2_float_backward_cpu
                     )
                 elif accuracy == 4:
                     backward = (
-                        backend_utils.dll.scalar_born_iso_4_float_backward_cpu
+                        deepwave.backend_utils.dll.scalar_born_iso_4_float_backward_cpu
                     )
                 elif accuracy == 6:
                     backward = (
-                        backend_utils.dll.scalar_born_iso_6_float_backward_cpu
+                        deepwave.backend_utils.dll.scalar_born_iso_6_float_backward_cpu
                     )
                 else:
                     backward = (
-                        backend_utils.dll.scalar_born_iso_8_float_backward_cpu
+                        deepwave.backend_utils.dll.scalar_born_iso_8_float_backward_cpu
                     )
             else:
                 if accuracy == 2:
                     backward = (
-                        backend_utils.dll.scalar_born_iso_2_double_backward_cpu
+                        deepwave.backend_utils.dll.scalar_born_iso_2_double_backward_cpu
                     )
                 elif accuracy == 4:
                     backward = (
-                        backend_utils.dll.scalar_born_iso_4_double_backward_cpu
+                        deepwave.backend_utils.dll.scalar_born_iso_4_double_backward_cpu
                     )
                 elif accuracy == 6:
                     backward = (
-                        backend_utils.dll.scalar_born_iso_6_double_backward_cpu
+                        deepwave.backend_utils.dll.scalar_born_iso_6_double_backward_cpu
                     )
                 else:
                     backward = (
-                        backend_utils.dll.scalar_born_iso_8_double_backward_cpu
+                        deepwave.backend_utils.dll.scalar_born_iso_8_double_backward_cpu
                     )
 
         gwfp = -gwfp

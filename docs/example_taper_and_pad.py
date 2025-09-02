@@ -1,3 +1,8 @@
+"""
+This script demonstrates the effect of frequency tapering and time padding
+in Deepwave to reduce wraparound and ringing artifacts in receiver data.
+"""
+
 import torch
 import matplotlib.pyplot as plt
 import deepwave

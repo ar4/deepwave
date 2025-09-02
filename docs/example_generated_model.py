@@ -1,3 +1,8 @@
+"""
+This script demonstrates how to use a custom model generation function
+within Deepwave's optimization framework to invert for layered velocities.
+"""
+
 import torch
 import deepwave
 import matplotlib.pyplot as plt
@@ -38,8 +43,8 @@ class Model(torch.nn.Module):
 
 
 layer_thickness = 5
-nx = 100
-m = Model(layer_thickness, nx)
+nx_model = 100
+m = Model(layer_thickness, nx_model)
 
 x_true = torch.tensor([1500.0, 1600.0, 1750.0, 1920.0])
 v_true = m(x_true)
@@ -52,8 +57,8 @@ dt = 0.004
 peak_time = 1.5 / freq
 source_locations = torch.zeros(n_shots, 1, 2)
 source_locations[:, 0, 1] = torch.arange(n_shots) * 5 + 2
-receiver_locations = torch.zeros(n_shots, nx - 1, 2)
-receiver_locations[..., 1] = torch.arange(nx - 1).repeat(n_shots, 1)
+receiver_locations = torch.zeros(n_shots, nx_model - 1, 2)
+receiver_locations[..., 1] = torch.arange(nx_model - 1).repeat(n_shots, 1)
 source_amplitudes = (
     deepwave.wavelets.ricker(freq, nt, dt, peak_time)
     .reshape(1, 1, -1)

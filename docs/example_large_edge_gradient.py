@@ -1,14 +1,29 @@
+"""
+This script demonstrates the phenomenon of large gradients at the edges
+of the model in Deepwave and provides solutions, including using a free
+surface and applying a smoothing function to the model.
+"""
+
 import torch
 import torchvision
 import deepwave
 import matplotlib.pyplot as plt
 
-source_amplitudes = deepwave.wavelets.ricker(25, 200, 0.004, 0.06).reshape(1, 1, -1)
+# Define simulation parameters
+freq = 25
+nt = 200
+dt = 0.004
+peak_time = 0.06
+dx = 4
+ny_model = 50
+nx_model = 100
+
+source_amplitudes = deepwave.wavelets.ricker(freq, nt, dt, peak_time).reshape(1, 1, -1)
 source_locations = torch.tensor([[[0, 10]]])
 receiver_locations = torch.tensor([[[0, 90]]])
 
-v_true = 1500 * torch.ones(50, 100)
-v = 1600 * torch.ones(50, 100)
+v_true = 1500 * torch.ones(ny_model, nx_model)
+v = 1600 * torch.ones(ny_model, nx_model)
 v.requires_grad_()
 
 

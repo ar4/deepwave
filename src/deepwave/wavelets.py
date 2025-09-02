@@ -25,12 +25,9 @@ def ricker(
     Returns:
         A PyTorch tensor representing the Ricker wavelet.
     """
-    t: torch.Tensor = (
-        torch.arange(float(length), dtype=dtype) * dt - peak_time
-    )
-    y: torch.Tensor = (
-        (1 - 2 * math.pi**2 * freq**2 * t**2)
-        * torch.exp(-(math.pi**2) * freq**2 * t**2)
+    t: torch.Tensor = torch.arange(float(length), dtype=dtype) * dt - peak_time
+    y: torch.Tensor = (1 - 2 * math.pi**2 * freq**2 * t**2) * torch.exp(
+        -(math.pi**2) * freq**2 * t**2
     )
     if dtype is not None:
         return y.to(dtype)

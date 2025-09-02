@@ -12,7 +12,9 @@ material parameters (Lam'e parameters and buoyancy) and source amplitudes.
 """
 
 from typing import Any, List, Optional, Sequence, Tuple, Union
+
 import torch
+
 import deepwave.backend_utils
 import deepwave.common
 import deepwave.staggered_grid
@@ -74,7 +76,8 @@ class Elastic(torch.nn.Module):
         self.lamb = torch.nn.Parameter(lamb, requires_grad=lamb_requires_grad)
         self.mu = torch.nn.Parameter(mu, requires_grad=mu_requires_grad)
         self.buoyancy = torch.nn.Parameter(
-            buoyancy, requires_grad=buoyancy_requires_grad)
+            buoyancy, requires_grad=buoyancy_requires_grad
+        )
         self.grid_spacing = grid_spacing
 
     def forward(
@@ -112,22 +115,22 @@ class Elastic(torch.nn.Module):
         time_pad_frac: float = 0.0,
         time_taper: bool = False,
     ) -> Tuple[
-            torch.Tensor,
-            torch.Tensor,
-            torch.Tensor,
-            torch.Tensor,
-            torch.Tensor,
-            torch.Tensor,
-            torch.Tensor,
-            torch.Tensor,
-            torch.Tensor,
-            torch.Tensor,
-            torch.Tensor,
-            torch.Tensor,
-            torch.Tensor,
-            torch.Tensor,
-            torch.Tensor,
-            torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
     ]:
         """Perform forward propagation/modelling.
 
@@ -230,22 +233,22 @@ def elastic(
     time_pad_frac: float = 0.0,
     time_taper: bool = False,
 ) -> Tuple[
-        torch.Tensor,
-        torch.Tensor,
-        torch.Tensor,
-        torch.Tensor,
-        torch.Tensor,
-        torch.Tensor,
-        torch.Tensor,
-        torch.Tensor,
-        torch.Tensor,
-        torch.Tensor,
-        torch.Tensor,
-        torch.Tensor,
-        torch.Tensor,
-        torch.Tensor,
-        torch.Tensor,
-        torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
 ]:
     """Elastic wave propagation (functional interface).
 
@@ -255,21 +258,13 @@ def elastic(
     For computational performance, multiple shots may be propagated
     simultaneously.
 
-    The elastic wave equation is:
-        `rho * d^2u/dt^2 = nabla . (lambda * I * (nabla . u) +
-         mu * (nabla*u + (nabla*u).T)) + f`
-    where `u` is the displacement vector, `t` is time, `rho` is density,
-    `lambda` and `mu` are the Lame parameters, and `f` is the source vector.
-
-    This propagator uses a staggered grid. See
-    https://ausargeo.com/deepwave/elastic for a description.
+    This propagator uses a staggered grid. See the
+    `documentation <https://ausargeo.com/deepwave/elastic.html>`_
+    for a description of the grid layout.
 
     Args:
-        lamb: The first Lam'e parameter model, lambda. Unlike the module
-            interface (:class:`Elastic`), in this functional interface a copy is
-            not made of the model, so gradients will propagate back into the
-            provided torch.Tensor.
-        mu: The second Lam'e parameter model.
+        lamb: The first Lamé parameter model, lambda.
+        mu: The second Lamé parameter model.
         buoyancy: The buoyancy (1/density) model.
         grid_spacing: The spatial grid cell size. It can be a single number
             that will be used for all dimensions, or a number for each
@@ -296,15 +291,33 @@ def elastic(
         receiver_locations_p: A Tensor containing the coordinates of the
             pressure receivers.
         accuracy: The finite difference order of accuracy. Possible values are
-            2 and 4.
-        pml_width: A single number, or two numbers for each dimension,
-            specifying the width (in number of cells) of the PML that prevents
-            reflections from the edges of the model.
+            2 and 4. Default 4.
+        pml_width: A single number, or a sequence of numbers for each side,
+            specifying the width (in number of cells) of the PML
+            that prevents reflections from the edges of the model.
+            If a single value is provided, it will be used for all edges.
+            If a sequence is provided, it should contain values for the
+            edges in the following order:
+
+            - beginning of first dimension
+            - end of first dimension
+            - beginning of second dimension
+            - end of second dimension
+
+            Larger values result in smaller reflections, with values of 10
+            to 20 being typical. For a reflective or "free" surface, set the
+            value for that edge to be zero. The wavespeed in the PML region
+            is obtained by replicating the values on the edge of the
+            model. Optional, default 20.
         pml_freq: The frequency to use when constructing the PML. This is
-            usually the dominant frequency of the source wavelet.
-        max_vel: The maximum velocity, used for the CFL condition and PML.
+            usually the dominant frequency of the source wavelet. Optional,
+            default 25 Hz (if `dt` is in seconds).
+        max_vel: The maximum velocity, used for the CFL condition and PML. If
+            not specified, the actual maximum P-wave and S-wave velocities
+            in the model will be used. Optional, default None.
         survey_pad: Padding to apply around sources and receivers to restrict
-            the simulation domain.
+            the simulation domain. See the documentation for the `scalar`
+            propagator for a full description.
         vy_0: Initial vy (velocity in the first dimension) wavefield at time
             step -1/2.
         vx_0: Initial vx (velocity in the second dimension) wavefield.
@@ -331,35 +344,40 @@ def elastic(
             receiver amplitudes.
 
     Returns:
-        A tuple containing:
-            vy: Final velocity wavefield in the y-dimension.
-            vx: Final velocity wavefield in the x-dimension.
-            sigmayy: Final stress wavefield (yy component).
-            sigmaxy: Final stress wavefield (xy component).
-            sigmaxx: Final stress wavefield (xx component).
-            m_vyy: Final velocity memory variable for the PML.
-            m_vyx: Final velocity memory variable for the PML.
-            m_vxy: Final velocity memory variable for the PML.
-            m_vxx: Final velocity memory variable for the PML.
-            m_sigmayyy: Final stress memory variable for the PML.
-            m_sigmaxyy: Final stress memory variable for the PML.
-            m_sigmaxyx: Final stress memory variable for the PML.
-            m_sigmaxxx: Final stress memory variable for the PML.
-            receiver_amplitudes_p: Recorded pressure receiver amplitudes.
-            receiver_amplitudes_y: Recorded y-component receiver amplitudes.
-            receiver_amplitudes_x: Recorded x-component receiver amplitudes.
+        Tuple:
+
+            - vy: Final velocity wavefield in the y-dimension.
+            - vx: Final velocity wavefield in the x-dimension.
+            - sigmayy: Final stress wavefield (yy component).
+            - sigmaxy: Final stress wavefield (xy component).
+            - sigmaxx: Final stress wavefield (xx component).
+            - m_vyy: Final velocity memory variable for the PML.
+            - m_vyx: Final velocity memory variable for the PML.
+            - m_vxy: Final velocity memory variable for the PML.
+            - m_vxx: Final velocity memory variable for the PML.
+            - m_sigmayyy: Final stress memory variable for the PML.
+            - m_sigmaxyy: Final stress memory variable for the PML.
+            - m_sigmaxyx: Final stress memory variable for the PML.
+            - m_sigmaxxx: Final stress memory variable for the PML.
+            - receiver_amplitudes_p: Recorded pressure receiver amplitudes.
+            - receiver_amplitudes_y: Recorded y-component receiver amplitudes.
+            - receiver_amplitudes_x: Recorded x-component receiver amplitudes.
 
     """
     # Check that sources and receivers are not on the last row or column,
     # as these are not used
-    if (source_locations_y is not None
-            and source_locations_y[..., 1].max() >= lamb.shape[1] - 1):
+    if (
+        source_locations_y is not None
+        and source_locations_y[..., 1].max() >= lamb.shape[1] - 1
+    ):
         raise RuntimeError(
             "With the provided model, the maximum y source "
             f"location in the second dimension must be less than {lamb.shape[1] - 1}."
         )
-    if (receiver_locations_y is not None
-            and receiver_locations_y[..., 1].max() >= lamb.shape[1] - 1):
+    if (
+        receiver_locations_y is not None
+        and receiver_locations_y[..., 1].max() >= lamb.shape[1] - 1
+    ):
         raise RuntimeError(
             "With the provided model, the maximum y "
             "receiver location in the second dimension "
@@ -369,21 +387,27 @@ def elastic(
         dim_location = source_locations_x[..., 0]
         dim_location = dim_location[dim_location != deepwave.common.IGNORE_LOCATION]
         if dim_location.min() <= 0:
-            raise RuntimeError("The minimum x source "
-                               "location in the first dimension must be "
-                               "greater than 0.")
+            raise RuntimeError(
+                "The minimum x source "
+                "location in the first dimension must be "
+                "greater than 0."
+            )
     if receiver_locations_x is not None:
         dim_location = receiver_locations_x[..., 0]
         dim_location = dim_location[dim_location != deepwave.common.IGNORE_LOCATION]
         if dim_location.min() <= 0:
-            raise RuntimeError("The minimum x receiver "
-                               "location in the first dimension must be "
-                               "greater than 0.")
+            raise RuntimeError(
+                "The minimum x receiver "
+                "location in the first dimension must be "
+                "greater than 0."
+            )
     if receiver_locations_p is not None:
         dim_location = receiver_locations_p[..., 0]
         dim_location = dim_location[dim_location != deepwave.common.IGNORE_LOCATION]
-        if (receiver_locations_p[..., 1].max() >= lamb.shape[1] - 1
-                or dim_location.min() <= 0):
+        if (
+            receiver_locations_p[..., 1].max() >= lamb.shape[1] - 1
+            or dim_location.min() <= 0
+        ):
             raise RuntimeError(
                 "With the provided model, the pressure "
                 "receiver locations in the second dimension "
@@ -392,7 +416,9 @@ def elastic(
             )
     if accuracy not in [2, 4]:
         raise RuntimeError("The accuracy must be 2 or 4.")
-    vp, vs, _ = deepwave.common.lambmubuoyancy_to_vpvsrho(lamb.abs(), mu.abs(), buoyancy.abs())
+    vp, vs, _ = deepwave.common.lambmubuoyancy_to_vpvsrho(
+        lamb.abs(), mu.abs(), buoyancy.abs()
+    )
     max_model_vel = max(vp.abs().max().item(), vs.abs().max().item())
     vp_nonzero = vp[vp != 0]
     if vp_nonzero.numel() > 0:
@@ -414,28 +440,65 @@ def elastic(
         min_nonzero_model_vel = float(min(min_nonzero_vp, min_nonzero_vs))
     fd_pad = [0] * 4
 
-    (models, source_amplitudes, wavefields,
-     sources_i, receivers_i,
-     grid_spacing, dt, nt, n_shots,
-     step_ratio, model_gradient_sampling_interval,
-     accuracy, pml_width, pml_freq, max_vel, freq_taper_frac, time_pad_frac,
-     time_taper, device, dtype) = (
-        deepwave.common.setup_propagator(
-            [lamb, mu, buoyancy], ['replicate'] * 3,
-            grid_spacing, dt,
-            [source_amplitudes_y, source_amplitudes_x],
-            [source_locations_y, source_locations_x],
-            [receiver_locations_y, receiver_locations_x,
-             receiver_locations_p],
-            accuracy, fd_pad, pml_width, pml_freq,
-            max_vel, min_nonzero_model_vel, max_model_vel, survey_pad,
-            [vy_0, vx_0, sigmayy_0, sigmaxy_0, sigmaxx_0,
-             m_vyy_0, m_vyx_0, m_vxy_0, m_vxx_0,
-             m_sigmayyy_0, m_sigmaxyy_0,
-             m_sigmaxyx_0, m_sigmaxxx_0],
-            origin, nt, model_gradient_sampling_interval,
-            freq_taper_frac, time_pad_frac, time_taper, 2
-        )
+    (
+        models,
+        source_amplitudes,
+        wavefields,
+        sources_i,
+        receivers_i,
+        grid_spacing,
+        dt,
+        nt,
+        n_shots,
+        step_ratio,
+        model_gradient_sampling_interval,
+        accuracy,
+        pml_width,
+        pml_freq,
+        max_vel,
+        freq_taper_frac,
+        time_pad_frac,
+        time_taper,
+        device,
+        dtype,
+    ) = deepwave.common.setup_propagator(
+        [lamb, mu, buoyancy],
+        ["replicate"] * 3,
+        grid_spacing,
+        dt,
+        [source_amplitudes_y, source_amplitudes_x],
+        [source_locations_y, source_locations_x],
+        [receiver_locations_y, receiver_locations_x, receiver_locations_p],
+        accuracy,
+        fd_pad,
+        pml_width,
+        pml_freq,
+        max_vel,
+        min_nonzero_model_vel,
+        max_model_vel,
+        survey_pad,
+        [
+            vy_0,
+            vx_0,
+            sigmayy_0,
+            sigmaxy_0,
+            sigmaxx_0,
+            m_vyy_0,
+            m_vyx_0,
+            m_vxy_0,
+            m_vxx_0,
+            m_sigmayyy_0,
+            m_sigmaxyy_0,
+            m_sigmaxyx_0,
+            m_sigmaxxx_0,
+        ],
+        origin,
+        nt,
+        model_gradient_sampling_interval,
+        freq_taper_frac,
+        time_pad_frac,
+        time_taper,
+        2,
     )
 
     if any(s <= (accuracy + 1) * 2 for s in models[0].shape[1:]):
@@ -452,21 +515,45 @@ def elastic(
     sources_i_masked[mask] = 0
     if source_amplitudes[0].numel() > 0:
         source_amplitudes[0] = (
-            (source_amplitudes[0] *
-             (models[2].view(-1, ny * nx).expand(n_shots, -1).gather(
-                 1, sources_i_masked) + models[2].view(-1, ny * nx).expand(
-                     n_shots, -1).gather(1, sources_i_masked + 1) +
-              models[2].view(-1, ny * nx).expand(n_shots, -1).gather(
-                  1, sources_i_masked + nx) + models[2].view(-1, ny * nx).
-              expand(n_shots, -1).gather(1, sources_i_masked + nx + 1))) / 4 *
-            dt)
+            (
+                source_amplitudes[0]
+                * (
+                    models[2]
+                    .view(-1, ny * nx)
+                    .expand(n_shots, -1)
+                    .gather(1, sources_i_masked)
+                    + models[2]
+                    .view(-1, ny * nx)
+                    .expand(n_shots, -1)
+                    .gather(1, sources_i_masked + 1)
+                    + models[2]
+                    .view(-1, ny * nx)
+                    .expand(n_shots, -1)
+                    .gather(1, sources_i_masked + nx)
+                    + models[2]
+                    .view(-1, ny * nx)
+                    .expand(n_shots, -1)
+                    .gather(1, sources_i_masked + nx + 1)
+                )
+            )
+            / 4
+            * dt
+        )
     # source_amplitudes_x
     mask = sources_i[1] == deepwave.common.IGNORE_LOCATION
     sources_i_masked = sources_i[1].clone()
     sources_i_masked[mask] = 0
     if source_amplitudes[1].numel() > 0:
-        source_amplitudes[1] = (source_amplitudes[1] * (models[2].view(
-            -1, ny * nx).expand(n_shots, -1).gather(1, sources_i_masked)) * dt)
+        source_amplitudes[1] = (
+            source_amplitudes[1]
+            * (
+                models[2]
+                .view(-1, ny * nx)
+                .expand(n_shots, -1)
+                .gather(1, sources_i_masked)
+            )
+            * dt
+        )
 
     pml_profiles = deepwave.staggered_grid.set_pml_profiles(
         pml_width,
@@ -593,8 +680,9 @@ def zero_edge_right(tensor: torch.Tensor, nx: int) -> None:
     tensor[:, :, nx - 1] = 0
 
 
-def zero_interior(tensor: torch.Tensor, ybegin: int, yend: int, xbegin: int,
-                  xend: int) -> torch.Tensor:
+def zero_interior(
+    tensor: torch.Tensor, ybegin: int, yend: int, xbegin: int, xend: int
+) -> torch.Tensor:
     """Zeros out a specified rectangular interior region of a 2D tensor.
 
     This function returns a new tensor and does not modify the input tensor.
@@ -660,22 +748,22 @@ class ElasticForwardFunc(torch.autograd.Function):
         pml_width: List[int],
         n_shots: int,
     ) -> Tuple[
-            torch.Tensor,
-            torch.Tensor,
-            torch.Tensor,
-            torch.Tensor,
-            torch.Tensor,
-            torch.Tensor,
-            torch.Tensor,
-            torch.Tensor,
-            torch.Tensor,
-            torch.Tensor,
-            torch.Tensor,
-            torch.Tensor,
-            torch.Tensor,
-            torch.Tensor,
-            torch.Tensor,
-            torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
     ]:
         """Performs the forward propagation of the elastic wave equation.
 
@@ -772,30 +860,45 @@ class ElasticForwardFunc(torch.autograd.Function):
         pml_x1 = min(nx - pml_width[3], nx - accuracy // 2)
 
         size_with_batch = (n_shots, *lamb.shape[-2:])
-        vy = deepwave.common.create_or_pad(vy, 0, lamb.device, lamb.dtype, size_with_batch)
-        vx = deepwave.common.create_or_pad(vx, 0, lamb.device, lamb.dtype, size_with_batch)
-        sigmayy = deepwave.common.create_or_pad(sigmayy, 0, lamb.device, lamb.dtype,
-                                size_with_batch)
-        sigmaxy = deepwave.common.create_or_pad(sigmaxy, 0, lamb.device, lamb.dtype,
-                                size_with_batch)
-        sigmaxx = deepwave.common.create_or_pad(sigmaxx, 0, lamb.device, lamb.dtype,
-                                size_with_batch)
-        m_vyy = deepwave.common.create_or_pad(m_vyy, 0, lamb.device, lamb.dtype,
-                              size_with_batch)
-        m_vyx = deepwave.common.create_or_pad(m_vyx, 0, lamb.device, lamb.dtype,
-                              size_with_batch)
-        m_vxy = deepwave.common.create_or_pad(m_vxy, 0, lamb.device, lamb.dtype,
-                              size_with_batch)
-        m_vxx = deepwave.common.create_or_pad(m_vxx, 0, lamb.device, lamb.dtype,
-                              size_with_batch)
-        m_sigmayyy = deepwave.common.create_or_pad(m_sigmayyy, 0, lamb.device, lamb.dtype,
-                                   size_with_batch)
-        m_sigmaxyy = deepwave.common.create_or_pad(m_sigmaxyy, 0, lamb.device, lamb.dtype,
-                                   size_with_batch)
-        m_sigmaxyx = deepwave.common.create_or_pad(m_sigmaxyx, 0, lamb.device, lamb.dtype,
-                                   size_with_batch)
-        m_sigmaxxx = deepwave.common.create_or_pad(m_sigmaxxx, 0, lamb.device, lamb.dtype,
-                                   size_with_batch)
+        vy = deepwave.common.create_or_pad(
+            vy, 0, lamb.device, lamb.dtype, size_with_batch
+        )
+        vx = deepwave.common.create_or_pad(
+            vx, 0, lamb.device, lamb.dtype, size_with_batch
+        )
+        sigmayy = deepwave.common.create_or_pad(
+            sigmayy, 0, lamb.device, lamb.dtype, size_with_batch
+        )
+        sigmaxy = deepwave.common.create_or_pad(
+            sigmaxy, 0, lamb.device, lamb.dtype, size_with_batch
+        )
+        sigmaxx = deepwave.common.create_or_pad(
+            sigmaxx, 0, lamb.device, lamb.dtype, size_with_batch
+        )
+        m_vyy = deepwave.common.create_or_pad(
+            m_vyy, 0, lamb.device, lamb.dtype, size_with_batch
+        )
+        m_vyx = deepwave.common.create_or_pad(
+            m_vyx, 0, lamb.device, lamb.dtype, size_with_batch
+        )
+        m_vxy = deepwave.common.create_or_pad(
+            m_vxy, 0, lamb.device, lamb.dtype, size_with_batch
+        )
+        m_vxx = deepwave.common.create_or_pad(
+            m_vxx, 0, lamb.device, lamb.dtype, size_with_batch
+        )
+        m_sigmayyy = deepwave.common.create_or_pad(
+            m_sigmayyy, 0, lamb.device, lamb.dtype, size_with_batch
+        )
+        m_sigmaxyy = deepwave.common.create_or_pad(
+            m_sigmaxyy, 0, lamb.device, lamb.dtype, size_with_batch
+        )
+        m_sigmaxyx = deepwave.common.create_or_pad(
+            m_sigmaxyx, 0, lamb.device, lamb.dtype, size_with_batch
+        )
+        m_sigmaxxx = deepwave.common.create_or_pad(
+            m_sigmaxxx, 0, lamb.device, lamb.dtype, size_with_batch
+        )
         zero_edges(sigmaxy, ny, nx)
         zero_edges(m_vxy, ny, nx)
         zero_edges(m_vyx, ny, nx)
@@ -836,12 +939,10 @@ class ElasticForwardFunc(torch.autograd.Function):
             dvydxdvxdy_store.resize_(nt // step_ratio, n_shots, ny, nx)
 
         if receivers_y_i.numel() > 0:
-            receiver_amplitudes_y.resize_(nt + 1, n_shots,
-                                          n_receivers_y_per_shot)
+            receiver_amplitudes_y.resize_(nt + 1, n_shots, n_receivers_y_per_shot)
             receiver_amplitudes_y.fill_(0)
         if receivers_x_i.numel() > 0:
-            receiver_amplitudes_x.resize_(nt + 1, n_shots,
-                                          n_receivers_x_per_shot)
+            receiver_amplitudes_x.resize_(nt + 1, n_shots, n_receivers_x_per_shot)
             receiver_amplitudes_x.fill_(0)
         if receivers_p_i.numel() > 0:
             receiver_amplitudes_p.resize_(nt, n_shots, n_receivers_p_per_shot)
@@ -851,14 +952,22 @@ class ElasticForwardFunc(torch.autograd.Function):
             aux = lamb.get_device()
             if dtype == torch.float32:
                 if accuracy == 2:
-                    forward = deepwave.backend_utils.dll.elastic_iso_2_float_forward_cuda
+                    forward = (
+                        deepwave.backend_utils.dll.elastic_iso_2_float_forward_cuda
+                    )
                 elif accuracy == 4:
-                    forward = deepwave.backend_utils.dll.elastic_iso_4_float_forward_cuda
+                    forward = (
+                        deepwave.backend_utils.dll.elastic_iso_4_float_forward_cuda
+                    )
             else:
                 if accuracy == 2:
-                    forward = deepwave.backend_utils.dll.elastic_iso_2_double_forward_cuda
+                    forward = (
+                        deepwave.backend_utils.dll.elastic_iso_2_double_forward_cuda
+                    )
                 elif accuracy == 4:
-                    forward = deepwave.backend_utils.dll.elastic_iso_4_double_forward_cuda
+                    forward = (
+                        deepwave.backend_utils.dll.elastic_iso_4_double_forward_cuda
+                    )
         else:
             if deepwave.backend_utils.USE_OPENMP:
                 aux = min(n_shots, torch.get_num_threads())
@@ -871,9 +980,13 @@ class ElasticForwardFunc(torch.autograd.Function):
                     forward = deepwave.backend_utils.dll.elastic_iso_4_float_forward_cpu
             else:
                 if accuracy == 2:
-                    forward = deepwave.backend_utils.dll.elastic_iso_2_double_forward_cpu
+                    forward = (
+                        deepwave.backend_utils.dll.elastic_iso_2_double_forward_cpu
+                    )
                 elif accuracy == 4:
-                    forward = deepwave.backend_utils.dll.elastic_iso_4_double_forward_cpu
+                    forward = (
+                        deepwave.backend_utils.dll.elastic_iso_4_double_forward_cpu
+                    )
 
         if vy.numel() > 0 and nt > 0:
             start_t = 0
@@ -944,15 +1057,26 @@ class ElasticForwardFunc(torch.autograd.Function):
                 aux,
             )
 
-        if (lamb.requires_grad or mu.requires_grad or buoyancy.requires_grad
-                or source_amplitudes_y.requires_grad
-                or source_amplitudes_x.requires_grad or vy.requires_grad
-                or vx.requires_grad or sigmayy.requires_grad
-                or sigmaxy.requires_grad or sigmaxx.requires_grad
-                or m_vyy.requires_grad or m_vyx.requires_grad
-                or m_vxy.requires_grad or m_vxx.requires_grad
-                or m_sigmayyy.requires_grad or m_sigmaxyy.requires_grad
-                or m_sigmaxyx.requires_grad or m_sigmaxxx.requires_grad):
+        if (
+            lamb.requires_grad
+            or mu.requires_grad
+            or buoyancy.requires_grad
+            or source_amplitudes_y.requires_grad
+            or source_amplitudes_x.requires_grad
+            or vy.requires_grad
+            or vx.requires_grad
+            or sigmayy.requires_grad
+            or sigmaxy.requires_grad
+            or sigmaxx.requires_grad
+            or m_vyy.requires_grad
+            or m_vyx.requires_grad
+            or m_vxy.requires_grad
+            or m_vxx.requires_grad
+            or m_sigmayyy.requires_grad
+            or m_sigmaxyy.requires_grad
+            or m_sigmaxyx.requires_grad
+            or m_sigmaxxx.requires_grad
+        ):
             ctx.save_for_backward(
                 lamb,
                 mu,
@@ -1160,30 +1284,45 @@ class ElasticForwardFunc(torch.autograd.Function):
         buoyancy_batched = buoyancy.ndim == 3 and buoyancy.shape[0] > 1
 
         size_with_batch = (n_shots, *lamb.shape[-2:])
-        vy = deepwave.common.create_or_pad(vy, 0, lamb.device, lamb.dtype, size_with_batch)
-        vx = deepwave.common.create_or_pad(vx, 0, lamb.device, lamb.dtype, size_with_batch)
-        sigmayy = deepwave.common.create_or_pad(sigmayy, 0, lamb.device, lamb.dtype,
-                                size_with_batch)
-        sigmaxy = deepwave.common.create_or_pad(sigmaxy, 0, lamb.device, lamb.dtype,
-                                size_with_batch)
-        sigmaxx = deepwave.common.create_or_pad(sigmaxx, 0, lamb.device, lamb.dtype,
-                                size_with_batch)
-        m_vyy = deepwave.common.create_or_pad(m_vyy, 0, lamb.device, lamb.dtype,
-                              size_with_batch)
-        m_vyx = deepwave.common.create_or_pad(m_vyx, 0, lamb.device, lamb.dtype,
-                              size_with_batch)
-        m_vxy = deepwave.common.create_or_pad(m_vxy, 0, lamb.device, lamb.dtype,
-                              size_with_batch)
-        m_vxx = deepwave.common.create_or_pad(m_vxx, 0, lamb.device, lamb.dtype,
-                              size_with_batch)
-        m_sigmayyy = deepwave.common.create_or_pad(m_sigmayyy, 0, lamb.device, lamb.dtype,
-                                   size_with_batch)
-        m_sigmaxyy = deepwave.common.create_or_pad(m_sigmaxyy, 0, lamb.device, lamb.dtype,
-                                   size_with_batch)
-        m_sigmaxyx = deepwave.common.create_or_pad(m_sigmaxyx, 0, lamb.device, lamb.dtype,
-                                   size_with_batch)
-        m_sigmaxxx = deepwave.common.create_or_pad(m_sigmaxxx, 0, lamb.device, lamb.dtype,
-                                   size_with_batch)
+        vy = deepwave.common.create_or_pad(
+            vy, 0, lamb.device, lamb.dtype, size_with_batch
+        )
+        vx = deepwave.common.create_or_pad(
+            vx, 0, lamb.device, lamb.dtype, size_with_batch
+        )
+        sigmayy = deepwave.common.create_or_pad(
+            sigmayy, 0, lamb.device, lamb.dtype, size_with_batch
+        )
+        sigmaxy = deepwave.common.create_or_pad(
+            sigmaxy, 0, lamb.device, lamb.dtype, size_with_batch
+        )
+        sigmaxx = deepwave.common.create_or_pad(
+            sigmaxx, 0, lamb.device, lamb.dtype, size_with_batch
+        )
+        m_vyy = deepwave.common.create_or_pad(
+            m_vyy, 0, lamb.device, lamb.dtype, size_with_batch
+        )
+        m_vyx = deepwave.common.create_or_pad(
+            m_vyx, 0, lamb.device, lamb.dtype, size_with_batch
+        )
+        m_vxy = deepwave.common.create_or_pad(
+            m_vxy, 0, lamb.device, lamb.dtype, size_with_batch
+        )
+        m_vxx = deepwave.common.create_or_pad(
+            m_vxx, 0, lamb.device, lamb.dtype, size_with_batch
+        )
+        m_sigmayyy = deepwave.common.create_or_pad(
+            m_sigmayyy, 0, lamb.device, lamb.dtype, size_with_batch
+        )
+        m_sigmaxyy = deepwave.common.create_or_pad(
+            m_sigmaxyy, 0, lamb.device, lamb.dtype, size_with_batch
+        )
+        m_sigmaxyx = deepwave.common.create_or_pad(
+            m_sigmaxyx, 0, lamb.device, lamb.dtype, size_with_batch
+        )
+        m_sigmaxxx = deepwave.common.create_or_pad(
+            m_sigmaxxx, 0, lamb.device, lamb.dtype, size_with_batch
+        )
         m_sigmayyyn = torch.zeros_like(m_sigmayyy)
         m_sigmaxyyn = torch.zeros_like(m_sigmaxyy)
         m_sigmaxyxn = torch.zeros_like(m_sigmaxyx)
@@ -1237,43 +1376,72 @@ class ElasticForwardFunc(torch.autograd.Function):
                 grad_buoyancy_tmp_ptr = grad_buoyancy_tmp.data_ptr()
             if dtype == torch.float32:
                 if accuracy == 2:
-                    backward = deepwave.backend_utils.dll.elastic_iso_2_float_backward_cuda
+                    backward = (
+                        deepwave.backend_utils.dll.elastic_iso_2_float_backward_cuda
+                    )
                 elif accuracy == 4:
-                    backward = deepwave.backend_utils.dll.elastic_iso_4_float_backward_cuda
+                    backward = (
+                        deepwave.backend_utils.dll.elastic_iso_4_float_backward_cuda
+                    )
             else:
                 if accuracy == 2:
-                    backward = deepwave.backend_utils.dll.elastic_iso_2_double_backward_cuda
+                    backward = (
+                        deepwave.backend_utils.dll.elastic_iso_2_double_backward_cuda
+                    )
                 elif accuracy == 4:
-                    backward = deepwave.backend_utils.dll.elastic_iso_4_double_backward_cuda
+                    backward = (
+                        deepwave.backend_utils.dll.elastic_iso_4_double_backward_cuda
+                    )
         else:
             if deepwave.backend_utils.USE_OPENMP:
                 aux = min(n_shots, torch.get_num_threads())
             else:
                 aux = 1
-            if (lamb.requires_grad and not lamb_batched and aux > 1
-                    and deepwave.backend_utils.USE_OPENMP):
+            if (
+                lamb.requires_grad
+                and not lamb_batched
+                and aux > 1
+                and deepwave.backend_utils.USE_OPENMP
+            ):
                 grad_lamb_tmp.resize_(n_shots, *lamb.shape[-2:])
                 grad_lamb_tmp.fill_(0)
                 grad_lamb_tmp_ptr = grad_lamb_tmp.data_ptr()
-            if mu.requires_grad and not mu_batched and aux > 1 and deepwave.backend_utils.USE_OPENMP:
+            if (
+                mu.requires_grad
+                and not mu_batched
+                and aux > 1
+                and deepwave.backend_utils.USE_OPENMP
+            ):
                 grad_mu_tmp.resize_(n_shots, *mu.shape[-2:])
                 grad_mu_tmp.fill_(0)
                 grad_mu_tmp_ptr = grad_mu_tmp.data_ptr()
-            if (buoyancy.requires_grad and not buoyancy_batched and aux > 1
-                    and deepwave.backend_utils.USE_OPENMP):
+            if (
+                buoyancy.requires_grad
+                and not buoyancy_batched
+                and aux > 1
+                and deepwave.backend_utils.USE_OPENMP
+            ):
                 grad_buoyancy_tmp.resize_(n_shots, *buoyancy.shape[-2:])
                 grad_buoyancy_tmp.fill_(0)
                 grad_buoyancy_tmp_ptr = grad_buoyancy_tmp.data_ptr()
             if dtype == torch.float32:
                 if accuracy == 2:
-                    backward = deepwave.backend_utils.dll.elastic_iso_2_float_backward_cpu
+                    backward = (
+                        deepwave.backend_utils.dll.elastic_iso_2_float_backward_cpu
+                    )
                 elif accuracy == 4:
-                    backward = deepwave.backend_utils.dll.elastic_iso_4_float_backward_cpu
+                    backward = (
+                        deepwave.backend_utils.dll.elastic_iso_4_float_backward_cpu
+                    )
             else:
                 if accuracy == 2:
-                    backward = deepwave.backend_utils.dll.elastic_iso_2_double_backward_cpu
+                    backward = (
+                        deepwave.backend_utils.dll.elastic_iso_2_double_backward_cpu
+                    )
                 elif accuracy == 4:
-                    backward = deepwave.backend_utils.dll.elastic_iso_4_double_backward_cpu
+                    backward = (
+                        deepwave.backend_utils.dll.elastic_iso_4_double_backward_cpu
+                    )
 
         if vy.numel() > 0 and nt > 0:
             start_t = 0

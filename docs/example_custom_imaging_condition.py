@@ -1,7 +1,11 @@
+"""
+This script demonstrates two methods for implementing custom imaging conditions
+in Deepwave: one using PyTorch's backward hooks and another using a lower-level
+internal interface. It compares their results and performance.
+"""
+
 import time
-from typing import Optional, Union, List
 import torch
-from torch import Tensor
 from torch.autograd.function import once_differentiable
 import matplotlib.pyplot as plt
 import deepwave
@@ -15,7 +19,7 @@ from deepwave.common import (
 
 ny = 200
 nx = 200
-dx = 5
+dx = 5.0
 nt = 400
 dt = 0.004
 freq = 25
@@ -207,28 +211,28 @@ def method_1():
 # Method 2 is broken into parts. First we do some setup of the propagator and then
 # call the Autograd Function that is defined further down
 def method2_scalar(
-    v: Tensor,
-    grid_spacing: Union[int, float, List[float], Tensor],
-    dt: float,
-    source_amplitudes: Optional[Tensor] = None,
-    source_locations: Optional[Tensor] = None,
-    receiver_locations: Optional[Tensor] = None,
-    accuracy: int = 4,
-    pml_width: Union[int, List[int]] = 20,
-    pml_freq: Optional[float] = None,
-    max_vel: Optional[float] = None,
-    survey_pad: Optional[Union[int, List[Optional[int]]]] = None,
-    wavefield_0: Optional[Tensor] = None,
-    wavefield_m1: Optional[Tensor] = None,
-    psiy_m1: Optional[Tensor] = None,
-    psix_m1: Optional[Tensor] = None,
-    zetay_m1: Optional[Tensor] = None,
-    zetax_m1: Optional[Tensor] = None,
-    origin: Optional[List[int]] = None,
-    nt: Optional[int] = None,
-    model_gradient_sampling_interval: int = 1,
-    freq_taper_frac: float = 0.0,
-    time_pad_frac: float = 0.0,
+    v,
+    grid_spacing,
+    dt,
+    source_amplitudes=None,
+    source_locations=None,
+    receiver_locations=None,
+    accuracy=4,
+    pml_width=20,
+    pml_freq=None,
+    max_vel=None,
+    survey_pad=None,
+    wavefield_0=None,
+    wavefield_m1=None,
+    psiy_m1=None,
+    psix_m1=None,
+    zetay_m1=None,
+    zetax_m1=None,
+    origin=None,
+    nt=None,
+    model_gradient_sampling_interval=1,
+    freq_taper_frac=0.0,
+    time_pad_frac=0.0,
 ):
     (
         models,
@@ -564,12 +568,10 @@ class Method2ForwardFunc(torch.autograd.Function):
         step_ratio = ctx.step_ratio
         accuracy = ctx.accuracy
         pml_width = ctx.pml_width
-        source_amplitudes_requires_grad = ctx.source_amplitudes_requires_grad
-        device = v.device
+
         dtype = v.dtype
         ny = v.shape[0]
         nx = v.shape[1]
-        n_sources_per_shot = sources_i.numel() // n_shots
         n_receivers_per_shot = receivers_i.numel() // n_shots
         fd_pad = accuracy // 2
 

@@ -1,39 +1,38 @@
 Deepwave
 ========
 
-Deepwave implements wave propagators as PyTorch modules. This allows you to perform forward modelling, and backpropagation to calculate the gradient of the outputs with respect to the inputs (and thus perform inversion/optimisation). It currently includes 2D regular and Born modelling of the scalar wave equation, propagation with the elastic wave equation, and runs on both CPUs and GPUs.
+Deepwave offers PyTorch-integrated wave propagators, enabling efficient forward modeling and backpropagation for gradient calculation in inversion and optimization tasks. It currently supports 2D standard and Born modeling of the scalar wave equation, alongside propagation with the elastic wave equation, optimized for both CPUs and GPUs.
 
-To install it, I recommend first installing PyTorch using the instructions on the `PyTorch website <https://pytorch.org>`_. Deepwave can then be installed using::
+Installation
+------------
 
-    pip install deepwave
-
-This should work for most people, but if you have an unusual system then you might need to instead build it from the source. Instructions for doing that are below.
-
-As Deepwave is a module for PyTorch, learning how to use PyTorch will help you a lot with using Deepwave. The `PyTorch website <https://pytorch.org>`_ has many tutorials.
-
-If you find any mistakes (even a typo or broken link), anything that doesn't behave the way you expected it to, something that you think could be clearer, have a feature suggestion, or just want to say hello, please `write to me <mailto:alan@ausargeo.com>`_.
-
-Building from source
-^^^^^^^^^^^^^^^^^^^^
-
-Deepwave uses `cibuildwheel` and `scikit-build-core` to manage its build process. This means that when you run `pip install deepwave`, `pip` will first attempt to download a precompiled wheel if one is available for your system. If a suitable precompiled wheel is not found, `pip` will automatically download the source distribution and attempt to compile it on your system.
-
-The precompiled wheels still make certain assumptions, such as on the `glibc` version and AVX2 support. If the installed package fails to run (possibly with an error about an illegal operation or instruction) due to your system not conforming to these assumptions, you should install from the source distribution instead. To do this, you can run:
+It is recommended to first install PyTorch by following the instructions on the `PyTorch website <https://pytorch.org>`_. Once PyTorch is installed, Deepwave can be installed using pip:
 
 .. code-block:: bash
 
-    pip install --no-binary :all: deepwave
+    pip install deepwave
 
-This command forces `pip` to download the source distribution and compile it on your system, bypassing any precompiled wheels. You may need to ensure your build environment is correctly set up for `scikit-build-core` to compile from source.
+This method should work for most users. However, if you have an unusual system configuration, you might need to build Deepwave from source. Instructions for building from source are provided below.
 
-(Assumptions for the precompiled version include: Linux (glibc >= 2.17), recent MacOS or Windows, and an x86-64 processor with AVX2 support (Linux and Windows) or x86-64/ARM64 (MacOS).)
+As Deepwave is built on PyTorch, a good understanding of PyTorch will significantly enhance your experience. The `PyTorch website <https://pytorch.org>`_ offers many helpful tutorials.
 
-If you encounter any issues during installation or compilation, please `file an issue <https://github.com/ar4/deepwave/issues>`_ or `send me an email <mailto:alan@ausargeo.com>`_. I am happy to assist.
+Building from source
+--------------------
 
-Other issues
-^^^^^^^^^^^^
+Deepwave utilizes `cibuildwheel` and `scikit-build-core` for its build process. When you run `pip install deepwave`, pip will first attempt to download a precompiled wheel if one is available for your system. If a suitable precompiled wheel is not found, pip will automatically download the source distribution and attempt to compile it on your system. You will need to have a C compiler and CMake available, and a CUDA compiler if you wish to have CUDA support.
 
-If you encounter any problems, please `file an issue <https://github.com/ar4/deepwave/issues>`_ or `send me an email <mailto:alan@ausargeo.com>`_.
+If you wish to force building from source rather than using a wheel (such as because your system does not have AVX2 support, which the wheels assume is available), you can use the following command:
+
+.. code-block:: bash
+
+    pip install deepwave --no-binary deepwave
+
+This command forces pip to download and compile the source distribution on your system, bypassing any precompiled wheels.
+
+Support
+-------
+
+If you encounter any issues (e.g., typos, broken links, unexpected behavior), or have suggestions for improvement, please `file an issue on GitHub <https://github.com/ar4/deepwave/issues>`_ or `send me an email <mailto:alan@ausargeo.com>`_. Your feedback is highly appreciated.
 
 .. toctree::
    :maxdepth: 2

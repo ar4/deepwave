@@ -1,3 +1,8 @@
+"""
+This script demonstrates how to calculate and use Hessian matrices
+in Deepwave for optimization, specifically using the Newton-Raphson method.
+"""
+
 import torch
 import torchvision
 from scipy.sparse.linalg import eigsh

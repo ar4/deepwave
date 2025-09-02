@@ -1,3 +1,9 @@
+"""
+This script demonstrates elastic wave propagation and Full-Waveform Inversion (FWI).
+It shows how to set up elastic models, generate synthetic data, and perform
+inversion for vp, vs, and rho parameters.
+"""
+
 import torch
 import matplotlib.pyplot as plt
 import deepwave

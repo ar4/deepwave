@@ -270,8 +270,6 @@ def test_forward_cpu_gpu_match():
         # Check receiver amplitudes
         cpui = actual_cpu[-1]
         gpui = actual_gpu[-1]
-        # The tolerance is higher for the receiver amplitudes as they involve
-        # an interpolation, which can introduce small differences.
         assert torch.allclose(cpui, gpui.cpu(), atol=5e-5)
 
 
@@ -294,7 +292,6 @@ def test_scatter_2d():
 def test_v_batched():
     """Test forward using a different velocity for each shot."""
     expected_diff = 1.3
-    actuals = {}
     expected, actual = run_direct_2d(
         c=torch.tensor([[[1500.0]], [[1600.0]]]), propagator=scalarprop
     )
@@ -397,7 +394,6 @@ def run_scalarfunc(nt=3, gradgrad=False):
     dy = dx = 5
     pml_width = [3, 3, 3, 3]
     n_sources_per_shot = 2
-    n_receivers_per_shot = 3
     step_ratio = 1
     accuracy = 4
     fd_pad = accuracy // 2

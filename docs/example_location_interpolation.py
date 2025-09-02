@@ -1,3 +1,9 @@
+"""
+This script demonstrates the Hicks method for location interpolation
+and dipole sources/receivers in Deepwave. It compares the accuracy
+of the Hicks method against simple rounding and a denser grid.
+"""
+
 import torch
 import matplotlib.pyplot as plt
 import deepwave

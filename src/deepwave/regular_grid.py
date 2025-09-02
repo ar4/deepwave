@@ -3,6 +3,7 @@
 This module provides functions to set up Perfectly Matched Layers (PML)
 profiles for wave propagation simulations on a regular grid.
 """
+
 from typing import List
 import torch
 import deepwave
@@ -47,12 +48,14 @@ def set_pml_profiles(
         fd_pad[2] + pml_width[2],
         nx - 1 - fd_pad[3] - pml_width[3],
     ]
-    max_pml = max([
-        pml_width[0] * grid_spacing[0],
-        pml_width[1] * grid_spacing[0],
-        pml_width[2] * grid_spacing[1],
-        pml_width[3] * grid_spacing[1],
-    ])
+    max_pml = max(
+        [
+            pml_width[0] * grid_spacing[0],
+            pml_width[1] * grid_spacing[0],
+            pml_width[2] * grid_spacing[1],
+            pml_width[3] * grid_spacing[1],
+        ]
+    )
 
     ay, by = deepwave.common.setup_pml(
         pml_width[:2],

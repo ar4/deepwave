@@ -116,9 +116,7 @@ def test_set_grid_spacing_list_incorrect_length():
 def test_set_grid_spacing_invalid_type():
     with pytest.raises(
         TypeError,
-        match=re.escape(
-            "grid_spacing must be a float or sequence of floats."
-        ),
+        match=re.escape("grid_spacing must be a float or sequence of floats."),
     ):
         set_grid_spacing("invalid", 2)
 
@@ -216,9 +214,7 @@ def test_set_pml_width_list_incorrect_length():
 def test_set_pml_width_invalid_type():
     with pytest.raises(
         TypeError,
-        match=re.escape(
-            "pml_width must be an int or sequence of ints."
-        ),
+        match=re.escape("pml_width must be an int or sequence of ints."),
     ):
         set_pml_width("invalid", 2)
 
@@ -226,9 +222,7 @@ def test_set_pml_width_invalid_type():
 def test_set_pml_width_list_invalid_element_type():
     with pytest.raises(
         TypeError,
-        match=re.escape(
-            "pml_width must be an int or sequence of ints."
-        ),
+        match=re.escape("pml_width must be an int or sequence of ints."),
     ):
         set_pml_width([1, "invalid"], 2)
 
@@ -543,7 +537,15 @@ def test_set_source_amplitudes_none():
     device = torch.device("cpu")
     dtype = torch.float32
     result = set_source_amplitudes(
-        source_amplitudes, n_batch, nt, step_ratio, freq_taper_frac, time_pad_frac, time_taper, device, dtype
+        source_amplitudes,
+        n_batch,
+        nt,
+        step_ratio,
+        freq_taper_frac,
+        time_pad_frac,
+        time_taper,
+        device,
+        dtype,
     )
     assert len(result) == 1
     assert result[0].shape == (nt, n_batch, 0)
@@ -562,7 +564,15 @@ def test_set_source_amplitudes_valid():
     device = torch.device("cpu")
     dtype = torch.float32
     result = set_source_amplitudes(
-        source_amplitudes, n_batch, nt, step_ratio, freq_taper_frac, time_pad_frac, time_taper, device, dtype
+        source_amplitudes,
+        n_batch,
+        nt,
+        step_ratio,
+        freq_taper_frac,
+        time_pad_frac,
+        time_taper,
+        device,
+        dtype,
     )
     assert len(result) == 1
     assert result[0].shape == (nt, n_batch, 3)
@@ -587,7 +597,15 @@ def test_set_source_amplitudes_invalid_ndim():
         ),
     ):
         set_source_amplitudes(
-            source_amplitudes, n_batch, nt, step_ratio, freq_taper_frac, time_pad_frac, time_taper, device, dtype
+            source_amplitudes,
+            n_batch,
+            nt,
+            step_ratio,
+            freq_taper_frac,
+            time_pad_frac,
+            time_taper,
+            device,
+            dtype,
         )
 
 
@@ -613,12 +631,28 @@ def test_set_source_amplitudes_inconsistent_device():
             ),
         ):
             set_source_amplitudes(
-                source_amplitudes, n_batch, nt, step_ratio, freq_taper_frac, time_pad_frac, time_taper, device, dtype
+                source_amplitudes,
+                n_batch,
+                nt,
+                step_ratio,
+                freq_taper_frac,
+                time_pad_frac,
+                time_taper,
+                device,
+                dtype,
             )
     else:
         # If CUDA is not available, the tensor will be on CPU, so no error should be raised.
         set_source_amplitudes(
-            source_amplitudes, n_batch, nt, step_ratio, freq_taper_frac, time_pad_frac, time_taper, device, dtype
+            source_amplitudes,
+            n_batch,
+            nt,
+            step_ratio,
+            freq_taper_frac,
+            time_pad_frac,
+            time_taper,
+            device,
+            dtype,
         )
 
 
@@ -639,7 +673,15 @@ def test_set_source_amplitudes_inconsistent_dtype():
         ),
     ):
         set_source_amplitudes(
-            source_amplitudes, n_batch, nt, step_ratio, freq_taper_frac, time_pad_frac, time_taper, device, dtype
+            source_amplitudes,
+            n_batch,
+            nt,
+            step_ratio,
+            freq_taper_frac,
+            time_pad_frac,
+            time_taper,
+            device,
+            dtype,
         )
 
 
@@ -660,7 +702,15 @@ def test_set_source_amplitudes_inconsistent_batch_size():
         ),
     ):
         set_source_amplitudes(
-            source_amplitudes, n_batch, nt, step_ratio, freq_taper_frac, time_pad_frac, time_taper, device, dtype
+            source_amplitudes,
+            n_batch,
+            nt,
+            step_ratio,
+            freq_taper_frac,
+            time_pad_frac,
+            time_taper,
+            device,
+            dtype,
         )
 
 
@@ -683,7 +733,15 @@ def test_set_source_amplitudes_inconsistent_nt():
         ),
     ):
         set_source_amplitudes(
-            source_amplitudes, n_batch, nt, step_ratio, freq_taper_frac, time_pad_frac, time_taper, device, dtype
+            source_amplitudes,
+            n_batch,
+            nt,
+            step_ratio,
+            freq_taper_frac,
+            time_pad_frac,
+            time_taper,
+            device,
+            dtype,
         )
 
 
@@ -698,7 +756,15 @@ def test_set_source_amplitudes_upsampling():
     device = torch.device("cpu")
     dtype = torch.float32
     result = set_source_amplitudes(
-        source_amplitudes, n_batch, nt, step_ratio, freq_taper_frac, time_pad_frac, time_taper, device, dtype
+        source_amplitudes,
+        n_batch,
+        nt,
+        step_ratio,
+        freq_taper_frac,
+        time_pad_frac,
+        time_taper,
+        device,
+        dtype,
     )
     assert result[0].shape == (nt, n_batch, 3)
     # Further checks for upsampling correctness would require comparing with a known good upsampling, which is complex.
@@ -722,7 +788,15 @@ def test_set_source_amplitudes_zero_n_batch():
         ),
     ):
         set_source_amplitudes(
-            source_amplitudes, n_batch, nt, step_ratio, freq_taper_frac, time_pad_frac, time_taper, device, dtype
+            source_amplitudes,
+            n_batch,
+            nt,
+            step_ratio,
+            freq_taper_frac,
+            time_pad_frac,
+            time_taper,
+            device,
+            dtype,
         )
 
 
@@ -743,7 +817,15 @@ def test_set_source_amplitudes_zero_nt():
         ),
     ):
         set_source_amplitudes(
-            source_amplitudes, n_batch, nt, step_ratio, freq_taper_frac, time_pad_frac, time_taper, device, dtype
+            source_amplitudes,
+            n_batch,
+            nt,
+            step_ratio,
+            freq_taper_frac,
+            time_pad_frac,
+            time_taper,
+            device,
+            dtype,
         )
 
 
@@ -988,9 +1070,7 @@ def test_cfl_condition_n_invalid_type_dt():
 
 
 def test_cfl_condition_n_invalid_type_max_vel():
-    with pytest.raises(
-        TypeError, match=re.escape("max_abs_vel must be a float.")
-    ):
+    with pytest.raises(TypeError, match=re.escape("max_abs_vel must be a float.")):
         cfl_condition_n([5.0, 5.0], 0.004, "invalid")
 
 

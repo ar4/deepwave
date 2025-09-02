@@ -3,77 +3,77 @@ Usage
 
 .. contents:: :local:
 
-``Scalar``
-----------
+Scalar Class
+------------
 
 .. autoclass:: deepwave.Scalar
     :members:
 
-``scalar``
-----------
+Scalar Function
+---------------
 
 .. autofunction:: deepwave.scalar
 
-``ScalarBorn``
---------------
+ScalarBorn Class
+----------------
 
 .. autoclass:: deepwave.ScalarBorn
     :members:
 
-``scalar_born``
----------------
+ScalarBorn Function
+-------------------
 
 .. autofunction:: deepwave.scalar_born
 
-``Elastic``
------------
+Elastic Class
+-------------
 
 .. autoclass:: deepwave.Elastic
     :members:
 
-``elastic``
------------
+Elastic Function
+----------------
 
 .. autofunction:: deepwave.elastic
 
 
-``cosine_taper_end``
----------------------------
+cosine_taper_end Function
+-------------------------
 
 .. autofunction:: deepwave.common.cosine_taper_end
 
-``upsample``
--------------------
+upsample Function
+-----------------
 
 .. autofunction:: deepwave.common.upsample
 
-``downsample``
----------------------
+downsample Function
+-------------------
 
 .. autofunction:: deepwave.common.downsample
 
-``cfl_condition``
-------------------------
+cfl_condition Function
+----------------------
 
 .. autofunction:: deepwave.common.cfl_condition
 
-``vpvsrho_to_lambmubuoyancy``
-------------------------------------
+vpvsrho_to_lambmubuoyancy Function
+----------------------------------
 
 .. autofunction:: deepwave.common.vpvsrho_to_lambmubuoyancy
 
-``lambmubuoyancy_to_vpvsrho``
-------------------------------------
+lambmubuoyancy_to_vpvsrho Function
+----------------------------------
 
 .. autofunction:: deepwave.common.lambmubuoyancy_to_vpvsrho
 
-``Hicks``
---------------------------------
+Hicks Class
+-----------
 
 .. autoclass:: deepwave.location_interpolation.Hicks
     :members:
 
-``ricker``
--------------------
+ricker Function
+---------------
 
 .. autofunction:: deepwave.wavelets.ricker

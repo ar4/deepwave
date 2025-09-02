@@ -1,3 +1,10 @@
+"""
+This script demonstrates forward modeling using Deepwave with the Marmousi velocity model.
+It loads the Marmousi Vp model, sets up source and receiver locations,
+propagates seismic waves, and generates synthetic receiver data.
+The results are then plotted and saved to a file.
+"""
+
 import torch
 import matplotlib.pyplot as plt
 import deepwave

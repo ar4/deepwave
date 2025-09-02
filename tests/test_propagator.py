@@ -63,7 +63,7 @@ def test_scalar_forward_invalid_optional_args(
     receiver_locations = torch.zeros(1, 1, 2, dtype=torch.long)
     dt = 0.004
     kwargs = {arg_name: arg_value}
-    if expected_error_type == UserWarning:
+    if expected_error_type is UserWarning:
         with pytest.warns(expected_error_type, match=expected_error_match):
             prop(dt, source_amplitudes, source_locations, receiver_locations, **kwargs)
     else:

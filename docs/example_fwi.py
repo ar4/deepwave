@@ -1,3 +1,10 @@
+"""
+This script demonstrates Full-Waveform Inversion (FWI) using Deepwave.
+It covers two approaches: a simple inversion and a more advanced one
+incorporating constrained velocity and frequency filtering to address
+cycle-skipping and stability issues.
+"""
+
 import torch
 from torchaudio.functional import biquad
 from scipy.ndimage import gaussian_filter
@@ -13,9 +20,9 @@ dx = 4.0
 v_true = torch.from_file("marmousi_vp.bin", size=ny * nx).reshape(ny, nx)
 
 # Select portion of model for inversion
-ny = 600
-nx = 250
-v_true = v_true[:ny, :nx]
+ny_subset = 600
+nx_subset = 250
+v_true = v_true[:ny_subset, :nx_subset]
 
 # Smooth to use as starting model
 v_init = torch.tensor(1 / gaussian_filter(1 / v_true.numpy(), 40)).to(device)
@@ -44,10 +51,12 @@ observed_data = torch.from_file(
 ).reshape(n_shots, n_receivers_per_shot, nt)
 
 # Select portion of data for inversion
-n_shots = 20
-n_receivers_per_shot = 100
-nt = 300
-observed_data = observed_data[:n_shots, :n_receivers_per_shot, :nt].to(device)
+n_shots_subset = 20
+n_receivers_per_shot_subset = 100
+nt_subset = 300
+observed_data = observed_data[
+    :n_shots_subset, :n_receivers_per_shot_subset, :nt_subset
+].to(device)
 
 # source_locations
 source_locations = torch.zeros(

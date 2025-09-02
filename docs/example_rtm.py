@@ -1,3 +1,9 @@
+"""
+This script demonstrates Reverse-Time Migration (RTM) using Deepwave,
+focusing on memory reduction by accumulating gradients over batches.
+It also shows how to use a tapered mute to attenuate direct arrivals.
+"""
+
 import math
 import torch
 from scipy.ndimage import gaussian_filter
@@ -6,17 +12,17 @@ import deepwave
 from deepwave import scalar_born
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-ny = 2301
-nx = 751
-dx = 4.0
-v = torch.from_file("marmousi_vp.bin", size=ny * nx).reshape(ny, nx)
+ny_full = 2301
+nx_full = 751
+dx_full = 4.0
+v = torch.from_file("marmousi_vp.bin", size=ny_full * nx_full).reshape(ny_full, nx_full)
 
 # Smooth to use as migration model
 v_mig = torch.tensor(1 / gaussian_filter(1 / v.numpy(), 40))
 v_mig = v_mig[::2, ::2].to(device)
 ny = v_mig.shape[0]
 nx = v_mig.shape[1]
-dx *= 2
+dx = dx_full * 2
 
 n_shots = 115
 

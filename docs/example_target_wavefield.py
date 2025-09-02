@@ -1,3 +1,9 @@
+"""
+This script demonstrates optimizing source amplitudes to match a target
+final wavefield using Deepwave. It also shows how to save wavefield
+snapshots for animation.
+"""
+
 import torch
 import torchvision
 import deepwave
@@ -5,7 +11,7 @@ import deepwave
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 ny = 200
 nx = 200
-dx = 5
+dx = 5.0
 dt = 0.004
 nt = 100
 n_shots = 1
