@@ -116,7 +116,11 @@ def test_downsample_invalid_signal_type():
     ],
 )
 def test_resample_invalid_args(
-    func, arg_name, arg_value, expected_error_match, expected_error_type,
+    func,
+    arg_name,
+    arg_value,
+    expected_error_match,
+    expected_error_type,
 ):
     signal = torch.randn(10)
 

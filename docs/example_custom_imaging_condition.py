@@ -38,14 +38,26 @@ max_vel = 1650
 source_locations = torch.zeros(n_shots, 1, 2, dtype=torch.long, device=device)
 source_locations[..., 0] = acquisition_depth
 source_locations[:, 0, 1] = torch.linspace(
-    0, nx - 1, n_shots, dtype=torch.long, device=device,
+    0,
+    nx - 1,
+    n_shots,
+    dtype=torch.long,
+    device=device,
 )
 receiver_locations = torch.zeros(
-    n_shots, n_receivers_per_shot, 2, dtype=torch.long, device=device,
+    n_shots,
+    n_receivers_per_shot,
+    2,
+    dtype=torch.long,
+    device=device,
 )
 receiver_locations[..., 0] = acquisition_depth
 receiver_locations[0, :, 1] = torch.linspace(
-    0, nx - 1, n_receivers_per_shot, dtype=torch.long, device=device,
+    0,
+    nx - 1,
+    n_receivers_per_shot,
+    dtype=torch.long,
+    device=device,
 )
 receiver_locations[..., 1] = receiver_locations[:1, :, 1].repeat(n_shots, 1)
 
@@ -105,7 +117,10 @@ def method_1():
     # Storage for second time derivative of forward wavefield
     source_wavefields = torch.zeros(n_segments, n_shots, ny, nx, device=device)
     receiver_amplitudes = torch.zeros(
-        n_shots, n_receivers_per_shot, n_segments * step_ratio, device=device,
+        n_shots,
+        n_receivers_per_shot,
+        n_segments * step_ratio,
+        device=device,
     )
     # Storage for gradient with respect to model
     out = [torch.zeros(ny, nx, device=device)]
@@ -147,7 +162,9 @@ def method_1():
 
         # We then save the source (forward) wavefield (part 1)
         source_wavefields[i] = wavefield_m1.detach()[
-            :, pml_width:-pml_width, pml_width:-pml_width,
+            :,
+            pml_width:-pml_width,
+            pml_width:-pml_width,
         ]
 
         # Then propagate forward for the last timestep in the chunk
@@ -202,7 +219,8 @@ def method_1():
         k += chunk.shape[-1]
 
     loss = 1e6 * loss_fn(
-        deepwave.common.downsample(receiver_amplitudes, step_ratio), d_true,
+        deepwave.common.downsample(receiver_amplitudes, step_ratio),
+        d_true,
     )
     loss.backward()
 
@@ -308,7 +326,10 @@ def method2_scalar(
     )
 
     receiver_amplitudes = downsample_and_movedim(
-        receiver_amplitudes, step_ratio, freq_taper_frac, time_pad_frac,
+        receiver_amplitudes,
+        step_ratio,
+        freq_taper_frac,
+        time_pad_frac,
     )
 
     return wfc, wfp, psiy, psix, zetay, zetax, receiver_amplitudes
@@ -506,7 +527,16 @@ class Method2ForwardFunc(torch.autograd.Function):
             or zetax.requires_grad
         ):
             ctx.save_for_backward(
-                v, ay, ax, by, bx, dbydy, dbxdx, sources_i, receivers_i, dwdv,
+                v,
+                ay,
+                ax,
+                by,
+                bx,
+                dbydy,
+                dbxdx,
+                sources_i,
+                receivers_i,
+                dwdv,
             )
             ctx.dy = dy
             ctx.dx = dx
@@ -800,12 +830,20 @@ print("Regular Deepwave:", time.time() - t0)
 _, ax = plt.subplots(3, figsize=(10.5, 10.5), sharex=True, sharey=True)
 vmax = 0.0003
 im = ax[0].imshow(
-    method_1_grad.cpu()[1:-1, 1:-1], aspect="auto", cmap="gray", vmin=-vmax, vmax=vmax,
+    method_1_grad.cpu()[1:-1, 1:-1],
+    aspect="auto",
+    cmap="gray",
+    vmin=-vmax,
+    vmax=vmax,
 )
 plt.colorbar(im, ax=ax[0])
 ax[0].set_title("Method 1")
 im = ax[1].imshow(
-    method_2_grad.cpu()[1:-1, 1:-1], aspect="auto", cmap="gray", vmin=-vmax, vmax=vmax,
+    method_2_grad.cpu()[1:-1, 1:-1],
+    aspect="auto",
+    cmap="gray",
+    vmin=-vmax,
+    vmax=vmax,
 )
 plt.colorbar(im, ax=ax[1])
 ax[1].set_title("Method 2")

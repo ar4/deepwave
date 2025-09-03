@@ -35,14 +35,22 @@ peak_time = 1.5 / freq
 
 # source_locations
 source_locations = torch.zeros(
-    n_shots, n_sources_per_shot, 2, dtype=torch.long, device=device,
+    n_shots,
+    n_sources_per_shot,
+    2,
+    dtype=torch.long,
+    device=device,
 )
 source_locations[..., 1] = source_depth
 source_locations[:, 0, 0] = torch.arange(n_shots) * d_source + first_source
 
 # receiver_locations
 receiver_locations = torch.zeros(
-    n_shots, n_receivers_per_shot, 2, dtype=torch.long, device=device,
+    n_shots,
+    n_receivers_per_shot,
+    2,
+    dtype=torch.long,
+    device=device,
 )
 receiver_locations[..., 1] = receiver_depth
 receiver_locations[:, :, 0] = (
@@ -71,11 +79,16 @@ out = scalar(
 # Plot
 receiver_amplitudes = out[-1]
 vmin, vmax = torch.quantile(
-    receiver_amplitudes[0], torch.tensor([0.05, 0.95]).to(device),
+    receiver_amplitudes[0],
+    torch.tensor([0.05, 0.95]).to(device),
 )
 _, ax = plt.subplots(1, 2, figsize=(10.5, 7), sharey=True)
 ax[0].imshow(
-    receiver_amplitudes[57].cpu().T, aspect="auto", cmap="gray", vmin=vmin, vmax=vmax,
+    receiver_amplitudes[57].cpu().T,
+    aspect="auto",
+    cmap="gray",
+    vmin=vmin,
+    vmax=vmax,
 )
 ax[1].imshow(
     receiver_amplitudes[:, 192].cpu().T,

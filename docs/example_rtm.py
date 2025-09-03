@@ -44,14 +44,22 @@ peak_time = 1.5 / freq
 
 # source_locations
 source_locations = torch.zeros(
-    n_shots, n_sources_per_shot, 2, dtype=torch.long, device=device,
+    n_shots,
+    n_sources_per_shot,
+    2,
+    dtype=torch.long,
+    device=device,
 )
 source_locations[..., 1] = source_depth
 source_locations[:, 0, 0] = torch.arange(n_shots) * d_source + first_source
 
 # receiver_locations
 receiver_locations = torch.zeros(
-    n_shots, n_receivers_per_shot, 2, dtype=torch.long, device=device,
+    n_shots,
+    n_receivers_per_shot,
+    2,
+    dtype=torch.long,
+    device=device,
 )
 receiver_locations[..., 1] = receiver_depth
 receiver_locations[:, :, 0] = (
@@ -106,7 +114,11 @@ ax[0].set_title("Observed")
 ax[1].imshow(mask[0].cpu().T, aspect="auto", cmap="gray")
 ax[1].set_title("Mask")
 ax[2].imshow(
-    observed_scatter_masked[0].cpu().T, aspect="auto", cmap="gray", vmin=vmin, vmax=vmax,
+    observed_scatter_masked[0].cpu().T,
+    aspect="auto",
+    cmap="gray",
+    vmin=vmin,
+    vmax=vmax,
 )
 ax[2].set_title("Masked data")
 plt.tight_layout()

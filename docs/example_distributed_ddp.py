@@ -74,7 +74,8 @@ def run_rank(rank, world_size):
     nx_full = 751
     dx = 4.0
     v_true_full = torch.from_file("marmousi_vp.bin", size=ny_full * nx_full).reshape(
-        ny_full, nx_full,
+        ny_full,
+        nx_full,
     )
 
     # Select portion of model for inversion
@@ -103,7 +104,8 @@ def run_rank(rank, world_size):
     peak_time = 1.5 / freq
 
     observed_data_full = torch.from_file(
-        "marmousi_data.bin", size=n_shots_full * n_receivers_per_shot_full * nt_full,
+        "marmousi_data.bin",
+        size=n_shots_full * n_receivers_per_shot_full * nt_full,
     ).reshape(n_shots_full, n_receivers_per_shot_full, nt_full)
 
     def taper(x):
@@ -130,7 +132,9 @@ def run_rank(rank, world_size):
 
     # source_amplitudes
     source_amplitudes = (deepwave.wavelets.ricker(freq, nt, dt, peak_time)).repeat(
-        n_shots, n_sources_per_shot, 1,
+        n_shots,
+        n_sources_per_shot,
+        1,
     )
 
     observed_data = torch.chunk(observed_data, world_size)[rank].to(rank)
@@ -178,7 +182,11 @@ def run_rank(rank, world_size):
         ax[0].imshow(v_init.cpu().T, aspect="auto", cmap="gray", vmin=vmin, vmax=vmax)
         ax[0].set_title("Initial")
         ax[1].imshow(
-            v.detach().cpu().T, aspect="auto", cmap="gray", vmin=vmin, vmax=vmax,
+            v.detach().cpu().T,
+            aspect="auto",
+            cmap="gray",
+            vmin=vmin,
+            vmax=vmax,
         )
         ax[1].set_title("Out")
         ax[2].imshow(v_true.cpu().T, aspect="auto", cmap="gray", vmin=vmin, vmax=vmax)

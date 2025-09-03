@@ -94,7 +94,11 @@ def _get_argtypes(template_name: str, float_type: type) -> List[type]:
 
 
 def _assign_argtypes(
-    propagator: str, accuracy: int, dtype: str, direction: str, extra: str = "",
+    propagator: str,
+    accuracy: int,
+    dtype: str,
+    direction: str,
+    extra: str = "",
 ) -> None:
     """Dynamically assigns ctypes argtypes to a given C function.
 
@@ -163,7 +167,9 @@ def get_backend_function(
 
     device_str = device.type
 
-    func_name = f"{propagator}_iso_{accuracy}_{dtype_str}_{pass_name}{extra}_{device_str}"
+    func_name = (
+        f"{propagator}_iso_{accuracy}_{dtype_str}_{pass_name}{extra}_{device_str}"
+    )
 
     try:
         func = getattr(dll, func_name)
@@ -191,7 +197,11 @@ for current_accuracy in [2, 4, 6, 8]:
         _assign_argtypes("scalar_born", current_accuracy, current_dtype, "forward")
         _assign_argtypes("scalar_born", current_accuracy, current_dtype, "backward")
         _assign_argtypes(
-            "scalar_born", current_accuracy, current_dtype, "backward", extra="_sc",
+            "scalar_born",
+            current_accuracy,
+            current_dtype,
+            "backward",
+            extra="_sc",
         )
 
 # Elastic propagators currently only support 2nd and 4th order accuracy.

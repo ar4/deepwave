@@ -28,7 +28,11 @@ v = 2000 * torch.ones(ny, nx, device=device)
 
 # source_locations
 source_locations = torch.zeros(
-    n_shots, n_sources_per_shot, 2, dtype=torch.long, device=device,
+    n_shots,
+    n_sources_per_shot,
+    2,
+    dtype=torch.long,
+    device=device,
 )
 torch.manual_seed(1)
 grid_cells = torch.cartesian_prod(torch.arange(ny), torch.arange(nx))

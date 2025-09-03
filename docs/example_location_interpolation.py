@@ -36,7 +36,9 @@ source_monopole[0, 2] = False
 source_dipole_dim = torch.zeros(1, 3, dtype=torch.int, device=device)
 source_dipole_dim[0, 2] = 1
 hicks_source = deepwave.location_interpolation.Hicks(
-    source_locations, monopole=source_monopole, dipole_dim=source_dipole_dim,
+    source_locations,
+    monopole=source_monopole,
+    dipole_dim=source_dipole_dim,
 )
 hicks_source_locations = hicks_source.get_locations()
 hicks_source_amplitudes = hicks_source.source(source_amplitudes)
@@ -51,7 +53,9 @@ receiver_monopole[0, 2] = False
 receiver_dipole_dim = torch.zeros(1, 3, dtype=torch.int, device=device)
 receiver_dipole_dim[0, 2] = 1
 hicks_receiver = deepwave.location_interpolation.Hicks(
-    receiver_locations, monopole=receiver_monopole, dipole_dim=receiver_dipole_dim,
+    receiver_locations,
+    monopole=receiver_monopole,
+    dipole_dim=receiver_dipole_dim,
 )
 hicks_receiver_locations = hicks_receiver.get_locations()
 

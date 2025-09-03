@@ -16,7 +16,8 @@ ny_full = 2301
 nx_full = 751
 dx = 4.0
 v_true_full = torch.from_file("marmousi_vp.bin", size=ny_full * nx_full).reshape(
-    ny_full, nx_full,
+    ny_full,
+    nx_full,
 )
 
 # Select portion of model for inversion
@@ -45,7 +46,8 @@ dt = 0.004
 peak_time = 1.5 / freq
 
 observed_data_full = torch.from_file(
-    "marmousi_data.bin", size=n_shots_full * n_receivers_per_shot_full * nt_full,
+    "marmousi_data.bin",
+    size=n_shots_full * n_receivers_per_shot_full * nt_full,
 ).reshape(n_shots_full, n_receivers_per_shot_full, nt_full)
 
 
@@ -64,14 +66,22 @@ observed_data = taper(observed_data_full[:n_shots, :n_receivers_per_shot, :nt]).
 
 # source_locations
 source_locations = torch.zeros(
-    n_shots, n_sources_per_shot, 2, dtype=torch.long, device=device,
+    n_shots,
+    n_sources_per_shot,
+    2,
+    dtype=torch.long,
+    device=device,
 )
 source_locations[..., 1] = source_depth
 source_locations[:, 0, 0] = torch.arange(n_shots) * d_source + first_source
 
 # receiver_locations
 receiver_locations = torch.zeros(
-    n_shots, n_receivers_per_shot, 2, dtype=torch.long, device=device,
+    n_shots,
+    n_receivers_per_shot,
+    2,
+    dtype=torch.long,
+    device=device,
 )
 receiver_locations[..., 1] = receiver_depth
 receiver_locations[:, :, 0] = (

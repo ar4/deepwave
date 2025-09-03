@@ -300,14 +300,16 @@ def elasticpropchained(
                 segment_source_amplitudes_y = source_amplitudes_y[
                     ...,
                     nt_per_segment * segment_idx : min(
-                        nt_per_segment * (segment_idx + 1), source_nt,
+                        nt_per_segment * (segment_idx + 1),
+                        source_nt,
                     ),
                 ]
             if source_amplitudes_x is not None:
                 segment_source_amplitudes_x = source_amplitudes_x[
                     ...,
                     nt_per_segment * segment_idx : min(
-                        nt_per_segment * (segment_idx + 1), source_nt,
+                        nt_per_segment * (segment_idx + 1),
+                        source_nt,
                     ),
                 ]
             segment_nt = None
@@ -368,21 +370,24 @@ def elasticpropchained(
             receiver_amplitudes_y[
                 ...,
                 nt_per_segment * segment_idx : min(
-                    nt_per_segment * (segment_idx + 1), receiver_amplitudes_y.shape[-1],
+                    nt_per_segment * (segment_idx + 1),
+                    receiver_amplitudes_y.shape[-1],
                 ),
             ] = segment_receiver_amplitudes_y
         if receiver_locations_x is not None:
             receiver_amplitudes_x[
                 ...,
                 nt_per_segment * segment_idx : min(
-                    nt_per_segment * (segment_idx + 1), receiver_amplitudes_x.shape[-1],
+                    nt_per_segment * (segment_idx + 1),
+                    receiver_amplitudes_x.shape[-1],
                 ),
             ] = segment_receiver_amplitudes_x
         if receiver_locations_p is not None:
             receiver_amplitudes_p[
                 ...,
                 nt_per_segment * segment_idx : min(
-                    nt_per_segment * (segment_idx + 1), receiver_amplitudes_p.shape[-1],
+                    nt_per_segment * (segment_idx + 1),
+                    receiver_amplitudes_p.shape[-1],
                 ),
             ] = segment_receiver_amplitudes_p
 
@@ -654,10 +659,18 @@ def run_elasticfunc(nt=3):
     m_sigmaxyx = torch.randn_like(vy)
     m_sigmaxxx = torch.randn_like(vy)
     source_amplitudes_y = torch.randn(
-        nt, n_batch, n_sources_y_per_shot, dtype=torch.double, device=device,
+        nt,
+        n_batch,
+        n_sources_y_per_shot,
+        dtype=torch.double,
+        device=device,
     )
     source_amplitudes_x = torch.randn(
-        nt, n_batch, n_sources_x_per_shot, dtype=torch.double, device=device,
+        nt,
+        n_batch,
+        n_sources_x_per_shot,
+        dtype=torch.double,
+        device=device,
     )
     sources_y_i = torch.tensor([[1 * nx + 1], [2 * nx + 2]]).long().to(device)
     sources_x_i = (
@@ -667,7 +680,10 @@ def run_elasticfunc(nt=3):
     )
     receivers_y_i = (
         torch.tensor(
-            [[1 * nx + 1, 2 * nx + 2, 3 * nx + 3], [4 * nx + 4, 2 * nx + 3, 2 * nx + 1]],
+            [
+                [1 * nx + 1, 2 * nx + 2, 3 * nx + 3],
+                [4 * nx + 4, 2 * nx + 3, 2 * nx + 1],
+            ],
         )
         .long()
         .to(device)
@@ -800,7 +816,9 @@ def test_gradcheck_2d_2nd_order():
 def test_gradcheck_2d_cfl():
     """Test gradcheck with a timestep greater than the CFL limit."""
     run_gradcheck_2d(
-        propagator=elasticprop, dt=0.002, prop_kwargs={"time_pad_frac": 0.2},
+        propagator=elasticprop,
+        dt=0.002,
+        prop_kwargs={"time_pad_frac": 0.2},
     )
 
 
@@ -872,7 +890,8 @@ def test_gradcheck_batched_lamb_2d():
 def test_gradcheck_batched_mu_2d():
     """Test gradcheck in a 2D model with batched mu."""
     run_gradcheck_2d(
-        propagator=elasticprop, mu=torch.tensor([[[DEFAULT_MU]], [[DEFAULT_MU * 1.2]]]),
+        propagator=elasticprop,
+        mu=torch.tensor([[[DEFAULT_MU]], [[DEFAULT_MU * 1.2]]]),
     )
 
 
@@ -885,7 +904,12 @@ def test_gradcheck_batched_buoyancy_2d():
 
 
 def run_forward_lamb(
-    orientation=0, prop_kwargs=None, device=None, dtype=None, pml_width=20, **kwargs,
+    orientation=0,
+    prop_kwargs=None,
+    device=None,
+    dtype=None,
+    pml_width=20,
+    **kwargs,
 ):
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

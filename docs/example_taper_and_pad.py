@@ -59,17 +59,26 @@ receiver_amplitudes_2 = out[-1][0].detach().clone()
 
 # Plot receiver amplitudes
 vmin, vmax = torch.quantile(
-    receiver_amplitudes_1, torch.tensor([0.05, 0.95]).to(device),
+    receiver_amplitudes_1,
+    torch.tensor([0.05, 0.95]).to(device),
 )
 _, ax = plt.subplots(1, 2, figsize=(10.5, 7), sharex=True, sharey=True)
 ax[0].imshow(
-    receiver_amplitudes_1.cpu().T, aspect="auto", cmap="gray", vmin=vmin, vmax=vmax,
+    receiver_amplitudes_1.cpu().T,
+    aspect="auto",
+    cmap="gray",
+    vmin=vmin,
+    vmax=vmax,
 )
 ax[0].set_xlabel("Channel")
 ax[0].set_ylabel("Time Sample")
 ax[0].set_title("No taper or pad")
 ax[1].imshow(
-    receiver_amplitudes_2.cpu().T, aspect="auto", cmap="gray", vmin=vmin, vmax=vmax,
+    receiver_amplitudes_2.cpu().T,
+    aspect="auto",
+    cmap="gray",
+    vmin=vmin,
+    vmax=vmax,
 )
 ax[1].set_title("0.2 taper and pad")
 plt.tight_layout()

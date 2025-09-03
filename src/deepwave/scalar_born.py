@@ -403,10 +403,18 @@ def scalar_born(
     )
 
     receiver_amplitudes = deepwave.common.downsample_and_movedim(
-        receiver_amplitudes, step_ratio, freq_taper_frac, time_pad_frac, time_taper,
+        receiver_amplitudes,
+        step_ratio,
+        freq_taper_frac,
+        time_pad_frac,
+        time_taper,
     )
     receiver_amplitudessc = deepwave.common.downsample_and_movedim(
-        receiver_amplitudessc, step_ratio, freq_taper_frac, time_pad_frac, time_taper,
+        receiver_amplitudessc,
+        step_ratio,
+        freq_taper_frac,
+        time_pad_frac,
+        time_taper,
     )
 
     return (
@@ -529,40 +537,88 @@ class ScalarBornForwardFunc(torch.autograd.Function):
         fd_pad = accuracy // 2
         size_with_batch = (n_shots, *v.shape[-2:])
         wfc = deepwave.common.create_or_pad(
-            wfc, fd_pad, v.device, v.dtype, size_with_batch,
+            wfc,
+            fd_pad,
+            v.device,
+            v.dtype,
+            size_with_batch,
         )
         wfp = deepwave.common.create_or_pad(
-            wfp, fd_pad, v.device, v.dtype, size_with_batch,
+            wfp,
+            fd_pad,
+            v.device,
+            v.dtype,
+            size_with_batch,
         )
         psiy = deepwave.common.create_or_pad(
-            psiy, fd_pad, v.device, v.dtype, size_with_batch,
+            psiy,
+            fd_pad,
+            v.device,
+            v.dtype,
+            size_with_batch,
         )
         psix = deepwave.common.create_or_pad(
-            psix, fd_pad, v.device, v.dtype, size_with_batch,
+            psix,
+            fd_pad,
+            v.device,
+            v.dtype,
+            size_with_batch,
         )
         zetay = deepwave.common.create_or_pad(
-            zetay, fd_pad, v.device, v.dtype, size_with_batch,
+            zetay,
+            fd_pad,
+            v.device,
+            v.dtype,
+            size_with_batch,
         )
         zetax = deepwave.common.create_or_pad(
-            zetax, fd_pad, v.device, v.dtype, size_with_batch,
+            zetax,
+            fd_pad,
+            v.device,
+            v.dtype,
+            size_with_batch,
         )
         wfcsc = deepwave.common.create_or_pad(
-            wfcsc, fd_pad, v.device, v.dtype, size_with_batch,
+            wfcsc,
+            fd_pad,
+            v.device,
+            v.dtype,
+            size_with_batch,
         )
         wfpsc = deepwave.common.create_or_pad(
-            wfpsc, fd_pad, v.device, v.dtype, size_with_batch,
+            wfpsc,
+            fd_pad,
+            v.device,
+            v.dtype,
+            size_with_batch,
         )
         psiysc = deepwave.common.create_or_pad(
-            psiysc, fd_pad, v.device, v.dtype, size_with_batch,
+            psiysc,
+            fd_pad,
+            v.device,
+            v.dtype,
+            size_with_batch,
         )
         psixsc = deepwave.common.create_or_pad(
-            psixsc, fd_pad, v.device, v.dtype, size_with_batch,
+            psixsc,
+            fd_pad,
+            v.device,
+            v.dtype,
+            size_with_batch,
         )
         zetaysc = deepwave.common.create_or_pad(
-            zetaysc, fd_pad, v.device, v.dtype, size_with_batch,
+            zetaysc,
+            fd_pad,
+            v.device,
+            v.dtype,
+            size_with_batch,
         )
         zetaxsc = deepwave.common.create_or_pad(
-            zetaxsc, fd_pad, v.device, v.dtype, size_with_batch,
+            zetaxsc,
+            fd_pad,
+            v.device,
+            v.dtype,
+            size_with_batch,
         )
         psiy = deepwave.common.zero_interior(psiy, fd_pad, pml_width, True)
         psix = deepwave.common.zero_interior(psix, fd_pad, pml_width, False)
@@ -616,7 +672,11 @@ class ScalarBornForwardFunc(torch.autograd.Function):
         else:
             aux = 1
         forward = deepwave.backend_utils.get_backend_function(
-            "scalar_born", "forward", accuracy, dtype, v.device,
+            "scalar_born",
+            "forward",
+            accuracy,
+            dtype,
+            v.device,
         )
 
         if wfc.numel() > 0 and nt > 0:
@@ -772,7 +832,8 @@ class ScalarBornForwardFunc(torch.autograd.Function):
     @staticmethod
     @torch.autograd.function.once_differentiable  # type: ignore[misc]
     def backward(
-        ctx: Any, *grad_outputs: torch.Tensor,
+        ctx: Any,
+        *grad_outputs: torch.Tensor,
     ) -> Tuple[Optional[torch.Tensor], ...]:
         """Backward propagation of the scalar Born wave equation.
 
@@ -854,22 +915,46 @@ class ScalarBornForwardFunc(torch.autograd.Function):
         size_with_batch = (n_shots, *v.shape[-2:])
         if non_sc:
             wfc = deepwave.common.create_or_pad(
-                wfc, fd_pad, v.device, v.dtype, size_with_batch,
+                wfc,
+                fd_pad,
+                v.device,
+                v.dtype,
+                size_with_batch,
             )
             wfp = deepwave.common.create_or_pad(
-                wfp, fd_pad, v.device, v.dtype, size_with_batch,
+                wfp,
+                fd_pad,
+                v.device,
+                v.dtype,
+                size_with_batch,
             )
             psiy = deepwave.common.create_or_pad(
-                psiy, fd_pad, v.device, v.dtype, size_with_batch,
+                psiy,
+                fd_pad,
+                v.device,
+                v.dtype,
+                size_with_batch,
             )
             psix = deepwave.common.create_or_pad(
-                psix, fd_pad, v.device, v.dtype, size_with_batch,
+                psix,
+                fd_pad,
+                v.device,
+                v.dtype,
+                size_with_batch,
             )
             zetay = deepwave.common.create_or_pad(
-                zetay, fd_pad, v.device, v.dtype, size_with_batch,
+                zetay,
+                fd_pad,
+                v.device,
+                v.dtype,
+                size_with_batch,
             )
             zetax = deepwave.common.create_or_pad(
-                zetax, fd_pad, v.device, v.dtype, size_with_batch,
+                zetax,
+                fd_pad,
+                v.device,
+                v.dtype,
+                size_with_batch,
             )
             psiy = deepwave.common.zero_interior(psiy, fd_pad, pml_width, True)
             psix = deepwave.common.zero_interior(psix, fd_pad, pml_width, False)
@@ -880,22 +965,46 @@ class ScalarBornForwardFunc(torch.autograd.Function):
             zetayn = torch.zeros_like(zetay)
             zetaxn = torch.zeros_like(zetax)
         wfcsc = deepwave.common.create_or_pad(
-            wfcsc, fd_pad, v.device, v.dtype, size_with_batch,
+            wfcsc,
+            fd_pad,
+            v.device,
+            v.dtype,
+            size_with_batch,
         )
         wfpsc = deepwave.common.create_or_pad(
-            wfpsc, fd_pad, v.device, v.dtype, size_with_batch,
+            wfpsc,
+            fd_pad,
+            v.device,
+            v.dtype,
+            size_with_batch,
         )
         psiysc = deepwave.common.create_or_pad(
-            psiysc, fd_pad, v.device, v.dtype, size_with_batch,
+            psiysc,
+            fd_pad,
+            v.device,
+            v.dtype,
+            size_with_batch,
         )
         psixsc = deepwave.common.create_or_pad(
-            psixsc, fd_pad, v.device, v.dtype, size_with_batch,
+            psixsc,
+            fd_pad,
+            v.device,
+            v.dtype,
+            size_with_batch,
         )
         zetaysc = deepwave.common.create_or_pad(
-            zetaysc, fd_pad, v.device, v.dtype, size_with_batch,
+            zetaysc,
+            fd_pad,
+            v.device,
+            v.dtype,
+            size_with_batch,
         )
         zetaxsc = deepwave.common.create_or_pad(
-            zetaxsc, fd_pad, v.device, v.dtype, size_with_batch,
+            zetaxsc,
+            fd_pad,
+            v.device,
+            v.dtype,
+            size_with_batch,
         )
         psiysc = deepwave.common.zero_interior(psiysc, fd_pad, pml_width, True)
         psixsc = deepwave.common.zero_interior(psixsc, fd_pad, pml_width, False)
@@ -970,10 +1079,19 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                 grad_scatter_tmp.fill_(0)
                 grad_scatter_tmp_ptr = grad_scatter_tmp.data_ptr()
         backward = deepwave.backend_utils.get_backend_function(
-            "scalar_born", "backward", accuracy, dtype, v.device,
+            "scalar_born",
+            "backward",
+            accuracy,
+            dtype,
+            v.device,
         )
         backward_sc = deepwave.backend_utils.get_backend_function(
-            "scalar_born", "backward", accuracy, dtype, v.device, extra="_sc",
+            "scalar_born",
+            "backward",
+            accuracy,
+            dtype,
+            v.device,
+            extra="_sc",
         )
 
         wfp = -wfp

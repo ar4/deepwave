@@ -60,7 +60,10 @@ def _get_hicks_for_one_location_dim(
         key = (int((location - int(location)) / eps), halfwidth, int(monopole))
         x = (
             torch.arange(
-                -halfwidth + 1, halfwidth + 1, dtype=beta.dtype, device=beta.device,
+                -halfwidth + 1,
+                halfwidth + 1,
+                dtype=beta.dtype,
+                device=beta.device,
             )
             - location
             + int(location)
@@ -200,7 +203,11 @@ def _get_hicks_locations_and_weights(
         hicks_locations_list.append(list(locations_dict.keys()))
     hicks_locations = (
         torch.ones(
-            n_shots, n_per_shot_hicks, 2, dtype=torch.long, device=locations.device,
+            n_shots,
+            n_per_shot_hicks,
+            2,
+            dtype=torch.long,
+            device=locations.device,
         )
         * deepwave.common.IGNORE_LOCATION
     )
@@ -212,7 +219,8 @@ def _get_hicks_locations_and_weights(
 
 
 def _check_shot_idxs(
-    amplitudes: torch.Tensor, shot_idxs: Optional[torch.Tensor] = None,
+    amplitudes: torch.Tensor,
+    shot_idxs: Optional[torch.Tensor] = None,
 ) -> None:
     if shot_idxs is not None and shot_idxs.shape != (len(amplitudes),):
         raise RuntimeError("shot_idxs must have the same length as amplitudes")
@@ -376,7 +384,9 @@ class Hicks:
         return self.hicks_locations
 
     def source(
-        self, amplitudes: torch.Tensor, shot_idxs: Optional[torch.Tensor] = None,
+        self,
+        amplitudes: torch.Tensor,
+        shot_idxs: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """Calculate the amplitudes of the interpolated sources.
 
@@ -430,7 +440,9 @@ class Hicks:
         return out.to(amplitudes.device)
 
     def receiver(
-        self, amplitudes: torch.Tensor, shot_idxs: Optional[torch.Tensor] = None,
+        self,
+        amplitudes: torch.Tensor,
+        shot_idxs: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """Convert receiver amplitudes from interpolated to original locations.
 
@@ -458,7 +470,11 @@ class Hicks:
         n_shots, _, nt = amplitudes.shape
         n_per_shot = self.locations.shape[1]
         out = torch.zeros(
-            n_shots, n_per_shot, nt, dtype=amplitudes.dtype, device=amplitudes.device,
+            n_shots,
+            n_per_shot,
+            nt,
+            dtype=amplitudes.dtype,
+            device=amplitudes.device,
         )
         for shotidx in range(n_shots):
             if shot_idxs is not None:

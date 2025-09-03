@@ -62,3 +62,6 @@ exclude = [
     ".github/*",
     ".gitignore"
 ]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"

@@ -40,7 +40,11 @@ def _set_sources(x_s, freq, dt, nt, dtype=None, dpeak_time=0.3):
         for source in range(num_sources_per_shot):
             peak_time = 0.05 + torch.rand(1).item() * dpeak_time
             sources["amplitude"][shot, source, :] = ricker(
-                freq, nt, dt, peak_time, dtype=dtype,
+                freq,
+                nt,
+                dt,
+                peak_time,
+                dtype=dtype,
             )
     return sources
 
@@ -68,7 +72,8 @@ def _set_coords(num_shots, num_per_shot, nx, location="top"):
     ndim = len(nx)
     coords = torch.zeros(num_shots, num_per_shot, ndim)
     coords[..., 0] = torch.arange(num_shots * num_per_shot).reshape(
-        num_shots, num_per_shot,
+        num_shots,
+        num_per_shot,
     )
     if location == "top":
         pass

@@ -22,13 +22,18 @@ dx = 4
 v_true = 1500 * torch.ones(ny, nx, dtype=dtype, device=device)
 v_true[10:] += 200
 v_init = torchvision.transforms.functional.gaussian_blur(
-    v_true[None], [31, 31],
+    v_true[None],
+    [31, 31],
 ).squeeze()
 v = v_init.clone().requires_grad_()
 
 source_locations = torch.tensor([[[1, 15]]], dtype=torch.long, device=device)
 source_amplitudes = deepwave.wavelets.ricker(
-    freq, nt, dt, 1.3 / freq, dtype=dtype,
+    freq,
+    nt,
+    dt,
+    1.3 / freq,
+    dtype=dtype,
 ).reshape(1, 1, -1)
 receiver_locations = torch.ones(1, nx - 20, 2, dtype=torch.long, device=device)
 receiver_locations[0, :, 1] = torch.arange(10, nx - 10)

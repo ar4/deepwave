@@ -37,7 +37,11 @@ source_amplitudes = (
 )
 
 source_locations = torch.zeros(
-    n_shots, n_sources_per_shot, 2, dtype=torch.long, device=device,
+    n_shots,
+    n_sources_per_shot,
+    2,
+    dtype=torch.long,
+    device=device,
 )
 
 for idx in range(n_source_locations):
@@ -48,10 +52,16 @@ for idx in range(n_source_locations):
     source_amplitudes[0, idx * 2 + 1] *= math.cos(angle)
 
 source_monopole = torch.zeros(
-    n_shots, n_sources_per_shot, dtype=torch.bool, device=device,
+    n_shots,
+    n_sources_per_shot,
+    dtype=torch.bool,
+    device=device,
 )
 source_dipole_dim = torch.zeros(
-    n_shots, n_sources_per_shot, dtype=torch.int, device=device,
+    n_shots,
+    n_sources_per_shot,
+    dtype=torch.int,
+    device=device,
 )
 
 source_dipole_dim[0, 1::2] = 1  # every second source is x-oriented

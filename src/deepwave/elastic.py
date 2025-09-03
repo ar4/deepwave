@@ -77,7 +77,8 @@ class Elastic(torch.nn.Module):
         self.lamb = torch.nn.Parameter(lamb, requires_grad=lamb_requires_grad)
         self.mu = torch.nn.Parameter(mu, requires_grad=mu_requires_grad)
         self.buoyancy = torch.nn.Parameter(
-            buoyancy, requires_grad=buoyancy_requires_grad,
+            buoyancy,
+            requires_grad=buoyancy_requires_grad,
         )
         self.grid_spacing = grid_spacing
 
@@ -419,7 +420,9 @@ def elastic(
     if accuracy not in [2, 4]:
         raise RuntimeError("The accuracy must be 2 or 4.")
     vp, vs, _ = deepwave.common.lambmubuoyancy_to_vpvsrho(
-        lamb.abs(), mu.abs(), buoyancy.abs(),
+        lamb.abs(),
+        mu.abs(),
+        buoyancy.abs(),
     )
     max_model_vel = max(vp.abs().max().item(), vs.abs().max().item())
     vp_nonzero = vp[vp != 0]
@@ -686,7 +689,11 @@ def zero_edge_right(tensor: torch.Tensor, nx: int) -> None:
 
 
 def zero_interior(
-    tensor: torch.Tensor, ybegin: int, yend: int, xbegin: int, xend: int,
+    tensor: torch.Tensor,
+    ybegin: int,
+    yend: int,
+    xbegin: int,
+    xend: int,
 ) -> torch.Tensor:
     """Zeros out a specified rectangular interior region of a 2D tensor.
 
@@ -868,43 +875,95 @@ class ElasticForwardFunc(torch.autograd.Function):
 
         size_with_batch = (n_shots, *lamb.shape[-2:])
         vy = deepwave.common.create_or_pad(
-            vy, 0, lamb.device, lamb.dtype, size_with_batch,
+            vy,
+            0,
+            lamb.device,
+            lamb.dtype,
+            size_with_batch,
         )
         vx = deepwave.common.create_or_pad(
-            vx, 0, lamb.device, lamb.dtype, size_with_batch,
+            vx,
+            0,
+            lamb.device,
+            lamb.dtype,
+            size_with_batch,
         )
         sigmayy = deepwave.common.create_or_pad(
-            sigmayy, 0, lamb.device, lamb.dtype, size_with_batch,
+            sigmayy,
+            0,
+            lamb.device,
+            lamb.dtype,
+            size_with_batch,
         )
         sigmaxy = deepwave.common.create_or_pad(
-            sigmaxy, 0, lamb.device, lamb.dtype, size_with_batch,
+            sigmaxy,
+            0,
+            lamb.device,
+            lamb.dtype,
+            size_with_batch,
         )
         sigmaxx = deepwave.common.create_or_pad(
-            sigmaxx, 0, lamb.device, lamb.dtype, size_with_batch,
+            sigmaxx,
+            0,
+            lamb.device,
+            lamb.dtype,
+            size_with_batch,
         )
         m_vyy = deepwave.common.create_or_pad(
-            m_vyy, 0, lamb.device, lamb.dtype, size_with_batch,
+            m_vyy,
+            0,
+            lamb.device,
+            lamb.dtype,
+            size_with_batch,
         )
         m_vyx = deepwave.common.create_or_pad(
-            m_vyx, 0, lamb.device, lamb.dtype, size_with_batch,
+            m_vyx,
+            0,
+            lamb.device,
+            lamb.dtype,
+            size_with_batch,
         )
         m_vxy = deepwave.common.create_or_pad(
-            m_vxy, 0, lamb.device, lamb.dtype, size_with_batch,
+            m_vxy,
+            0,
+            lamb.device,
+            lamb.dtype,
+            size_with_batch,
         )
         m_vxx = deepwave.common.create_or_pad(
-            m_vxx, 0, lamb.device, lamb.dtype, size_with_batch,
+            m_vxx,
+            0,
+            lamb.device,
+            lamb.dtype,
+            size_with_batch,
         )
         m_sigmayyy = deepwave.common.create_or_pad(
-            m_sigmayyy, 0, lamb.device, lamb.dtype, size_with_batch,
+            m_sigmayyy,
+            0,
+            lamb.device,
+            lamb.dtype,
+            size_with_batch,
         )
         m_sigmaxyy = deepwave.common.create_or_pad(
-            m_sigmaxyy, 0, lamb.device, lamb.dtype, size_with_batch,
+            m_sigmaxyy,
+            0,
+            lamb.device,
+            lamb.dtype,
+            size_with_batch,
         )
         m_sigmaxyx = deepwave.common.create_or_pad(
-            m_sigmaxyx, 0, lamb.device, lamb.dtype, size_with_batch,
+            m_sigmaxyx,
+            0,
+            lamb.device,
+            lamb.dtype,
+            size_with_batch,
         )
         m_sigmaxxx = deepwave.common.create_or_pad(
-            m_sigmaxxx, 0, lamb.device, lamb.dtype, size_with_batch,
+            m_sigmaxxx,
+            0,
+            lamb.device,
+            lamb.dtype,
+            size_with_batch,
         )
         zero_edges(sigmaxy, ny, nx)
         zero_edges(m_vxy, ny, nx)
@@ -962,7 +1021,11 @@ class ElasticForwardFunc(torch.autograd.Function):
         else:
             aux = 1
         forward = deepwave.backend_utils.get_backend_function(
-            "elastic", "forward", accuracy, dtype, lamb.device,
+            "elastic",
+            "forward",
+            accuracy,
+            dtype,
+            lamb.device,
         )
 
         if vy.numel() > 0 and nt > 0:
@@ -1263,43 +1326,95 @@ class ElasticForwardFunc(torch.autograd.Function):
 
         size_with_batch = (n_shots, *lamb.shape[-2:])
         vy = deepwave.common.create_or_pad(
-            vy, 0, lamb.device, lamb.dtype, size_with_batch,
+            vy,
+            0,
+            lamb.device,
+            lamb.dtype,
+            size_with_batch,
         )
         vx = deepwave.common.create_or_pad(
-            vx, 0, lamb.device, lamb.dtype, size_with_batch,
+            vx,
+            0,
+            lamb.device,
+            lamb.dtype,
+            size_with_batch,
         )
         sigmayy = deepwave.common.create_or_pad(
-            sigmayy, 0, lamb.device, lamb.dtype, size_with_batch,
+            sigmayy,
+            0,
+            lamb.device,
+            lamb.dtype,
+            size_with_batch,
         )
         sigmaxy = deepwave.common.create_or_pad(
-            sigmaxy, 0, lamb.device, lamb.dtype, size_with_batch,
+            sigmaxy,
+            0,
+            lamb.device,
+            lamb.dtype,
+            size_with_batch,
         )
         sigmaxx = deepwave.common.create_or_pad(
-            sigmaxx, 0, lamb.device, lamb.dtype, size_with_batch,
+            sigmaxx,
+            0,
+            lamb.device,
+            lamb.dtype,
+            size_with_batch,
         )
         m_vyy = deepwave.common.create_or_pad(
-            m_vyy, 0, lamb.device, lamb.dtype, size_with_batch,
+            m_vyy,
+            0,
+            lamb.device,
+            lamb.dtype,
+            size_with_batch,
         )
         m_vyx = deepwave.common.create_or_pad(
-            m_vyx, 0, lamb.device, lamb.dtype, size_with_batch,
+            m_vyx,
+            0,
+            lamb.device,
+            lamb.dtype,
+            size_with_batch,
         )
         m_vxy = deepwave.common.create_or_pad(
-            m_vxy, 0, lamb.device, lamb.dtype, size_with_batch,
+            m_vxy,
+            0,
+            lamb.device,
+            lamb.dtype,
+            size_with_batch,
         )
         m_vxx = deepwave.common.create_or_pad(
-            m_vxx, 0, lamb.device, lamb.dtype, size_with_batch,
+            m_vxx,
+            0,
+            lamb.device,
+            lamb.dtype,
+            size_with_batch,
         )
         m_sigmayyy = deepwave.common.create_or_pad(
-            m_sigmayyy, 0, lamb.device, lamb.dtype, size_with_batch,
+            m_sigmayyy,
+            0,
+            lamb.device,
+            lamb.dtype,
+            size_with_batch,
         )
         m_sigmaxyy = deepwave.common.create_or_pad(
-            m_sigmaxyy, 0, lamb.device, lamb.dtype, size_with_batch,
+            m_sigmaxyy,
+            0,
+            lamb.device,
+            lamb.dtype,
+            size_with_batch,
         )
         m_sigmaxyx = deepwave.common.create_or_pad(
-            m_sigmaxyx, 0, lamb.device, lamb.dtype, size_with_batch,
+            m_sigmaxyx,
+            0,
+            lamb.device,
+            lamb.dtype,
+            size_with_batch,
         )
         m_sigmaxxx = deepwave.common.create_or_pad(
-            m_sigmaxxx, 0, lamb.device, lamb.dtype, size_with_batch,
+            m_sigmaxxx,
+            0,
+            lamb.device,
+            lamb.dtype,
+            size_with_batch,
         )
         m_sigmayyyn = torch.zeros_like(m_sigmayyy)
         m_sigmaxyyn = torch.zeros_like(m_sigmaxyy)
@@ -1385,7 +1500,11 @@ class ElasticForwardFunc(torch.autograd.Function):
                 grad_buoyancy_tmp.fill_(0)
                 grad_buoyancy_tmp_ptr = grad_buoyancy_tmp.data_ptr()
         backward = deepwave.backend_utils.get_backend_function(
-            "elastic", "backward", accuracy, dtype, lamb.device,
+            "elastic",
+            "backward",
+            accuracy,
+            dtype,
+            lamb.device,
         )
 
         if vy.numel() > 0 and nt > 0:

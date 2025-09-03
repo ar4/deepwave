@@ -317,7 +317,8 @@ def downsample_and_movedim(
 
 
 def set_grid_spacing(
-    grid_spacing: Union[float, Iterable[float]], n_dims: int,
+    grid_spacing: Union[float, Iterable[float]],
+    n_dims: int,
 ) -> List[float]:
     """Ensures grid_spacing is a sequence of length n_dims.
 
@@ -534,7 +535,8 @@ def set_nt(
     if step_ratio < 1:
         raise ValueError("step_ratio must be >= 1")
     source_amplitudes_not_none = next(
-        (a for a in source_amplitudes if a is not None), None,
+        (a for a in source_amplitudes if a is not None),
+        None,
     )
     source_amplitudes_nt = None
     if source_amplitudes_not_none is not None:
@@ -763,7 +765,9 @@ def set_source_amplitudes(
 
 
 def check_points_per_wavelength(
-    min_nonzero_vel: float, pml_freq: float, grid_spacing: Sequence[float],
+    min_nonzero_vel: float,
+    pml_freq: float,
+    grid_spacing: Sequence[float],
 ) -> None:
     """Checks if there are enough grid points per wavelength.
 
@@ -949,7 +953,9 @@ def upsample(
         signal = signal[..., : signal.shape[-1] - n_time_pad * step_ratio]
     if time_taper:
         signal = signal * torch.hann_window(
-            signal.shape[-1], periodic=False, device=signal.device,
+            signal.shape[-1],
+            periodic=False,
+            device=signal.device,
         )
     return signal
 
@@ -1036,7 +1042,9 @@ def downsample(
         return signal
     if time_taper:
         signal = signal * torch.hann_window(
-            signal.shape[-1], periodic=False, device=signal.device,
+            signal.shape[-1],
+            periodic=False,
+            device=signal.device,
         )
     n_time_pad = (
         int(time_pad_frac * (signal.shape[-1] // step_ratio))
@@ -1079,7 +1087,10 @@ def extract_survey(
     device: torch.device,
     dtype: torch.dtype,
 ) -> Tuple[
-    List[torch.Tensor], List[torch.Tensor], List[torch.Tensor], List[torch.Tensor],
+    List[torch.Tensor],
+    List[torch.Tensor],
+    List[torch.Tensor],
+    List[torch.Tensor],
 ]:
     """Extracts a region of the model, pads it and prepares related tensors.
 
@@ -1143,34 +1154,59 @@ def extract_survey(
     pad = [fd + pml for fd, pml in zip(fd_pad, pml_width)]
     if survey_pad is None and any(w is not None for w in wavefields):
         survey_extents = get_survey_extents_from_wavefields(
-            wavefields, origin, pml_width,
+            wavefields,
+            origin,
+            pml_width,
         )
         check_extents_within_model(survey_extents, model_spatial_shape)
         check_locations_within_extents(survey_extents, locations)
     else:
         survey_extents = get_survey_extents_from_locations(
-            model_spatial_shape, locations, survey_pad,
+            model_spatial_shape,
+            locations,
+            survey_pad,
         )
         check_extents_match_wavefields_shape(survey_extents, wavefields, pml_width)
     return (
         list(
             extract_models(
-                models, survey_extents, pad, model_pad_modes, n_batch, device, dtype,
+                models,
+                survey_extents,
+                pad,
+                model_pad_modes,
+                n_batch,
+                device,
+                dtype,
             ),
         ),
         list(
             extract_locations(
-                "Source", source_locations, survey_extents, pad, n_batch, device,
+                "Source",
+                source_locations,
+                survey_extents,
+                pad,
+                n_batch,
+                device,
             ),
         ),
         list(
             extract_locations(
-                "Receiver", receiver_locations, survey_extents, pad, n_batch, device,
+                "Receiver",
+                receiver_locations,
+                survey_extents,
+                pad,
+                n_batch,
+                device,
             ),
         ),
         list(
             prepare_wavefields(
-                wavefields, survey_extents, pml_width, n_batch, device, dtype,
+                wavefields,
+                survey_extents,
+                pml_width,
+                n_batch,
+                device,
+                dtype,
             ),
         ),
     )
@@ -1213,7 +1249,8 @@ def check_locations_are_within_model(
 
 
 def set_survey_pad(
-    survey_pad: Optional[Union[int, Sequence[Optional[int]]]], ndim: int,
+    survey_pad: Optional[Union[int, Sequence[Optional[int]]]],
+    ndim: int,
 ) -> List[int]:
     """Checks `survey_pad` and converts it to a list if it is a scalar.
 
@@ -1301,11 +1338,19 @@ def get_survey_extents_from_locations(
     for dim in range(ndims):
         left_pad = survey_pad_list[dim * 2]
         left_extent = get_survey_extents_one_side(
-            left_pad, "left", dim, locations, model_shape[dim],
+            left_pad,
+            "left",
+            dim,
+            locations,
+            model_shape[dim],
         )
         right_pad = survey_pad_list[dim * 2 + 1]
         right_extent = get_survey_extents_one_side(
-            right_pad, "right", dim, locations, model_shape[dim],
+            right_pad,
+            "right",
+            dim,
+            locations,
+            model_shape[dim],
         )
         extents.append((left_extent, right_extent))
     return extents
@@ -1371,11 +1416,13 @@ def get_survey_extents_one_side(
 
             if side == "left":
                 extreme_location = min(
-                    extreme_location, int(dim_location.min().item()) - pad,
+                    extreme_location,
+                    int(dim_location.min().item()) - pad,
                 )
             else:
                 extreme_location = max(
-                    extreme_location, int(dim_location.max().item()) + pad,
+                    extreme_location,
+                    int(dim_location.max().item()) + pad,
                 )
     # The right side of the extent is not included - it is one past the end. It
     # currently holds the largest value that should be included, though, so we
@@ -1449,7 +1496,8 @@ def get_survey_extents_from_wavefields(
 
 
 def check_extents_within_model(
-    extents: Sequence[Tuple[int, int]], model_shape: Sequence[int],
+    extents: Sequence[Tuple[int, int]],
+    model_shape: Sequence[int],
 ) -> None:
     """Checks if the survey extents are within the bounds of the model.
 
@@ -1467,8 +1515,8 @@ def check_extents_within_model(
         if extent[0] < 0 or model_dim_shape < extent[1]:
             raise RuntimeError(
                 "Survey extents are larger than the model. "
-                 "This probably occurred because you provided "
-                 "an initial wavefield of the wrong shape.",
+                "This probably occurred because you provided "
+                "an initial wavefield of the wrong shape.",
             )
 
 
@@ -1640,7 +1688,9 @@ def extract_models(
         ]
     return [
         torch.nn.functional.pad(
-            model[region], pad=reversed_pad, mode=pad_mode,
+            model[region],
+            pad=reversed_pad,
+            mode=pad_mode,
         ).contiguous()
         for model, pad_mode in zip(models, pad_modes)
     ]
@@ -1747,7 +1797,9 @@ def extract_locations(
 
             # Convert locations to 1d coordinate
             location_1d = torch.where(
-                shifted_location[..., 0] != IGNORE_LOCATION, 0, IGNORE_LOCATION,
+                shifted_location[..., 0] != IGNORE_LOCATION,
+                0,
+                IGNORE_LOCATION,
             )
             for dim in range(n_dims):
                 location_1d += torch.where(
@@ -2182,5 +2234,6 @@ def diff(a: torch.Tensor, accuracy: int, grid_spacing: float) -> torch.Tensor:
         sum(
             (c * torch.roll(a, -s, dims=-1) for c, s in zip(coeffs, stencil)),
             start=torch.zeros_like(a, memory_format=torch.contiguous_format),
-        ) / grid_spacing
+        )
+        / grid_spacing
     )

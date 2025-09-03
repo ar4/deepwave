@@ -58,7 +58,11 @@ def test_passes(prop):
     ],
 )
 def test_scalar_forward_invalid_optional_args(
-    prop, arg_name, arg_value, expected_error_match, expected_error_type,
+    prop,
+    arg_name,
+    arg_value,
+    expected_error_match,
+    expected_error_type,
 ):
     source_amplitudes = torch.zeros(1, 1, 2)
     source_locations = torch.zeros(1, 1, 2, dtype=torch.long)
@@ -189,7 +193,8 @@ def test_pml_width_list_too_long(prop):
     receiver_locations = torch.zeros(2, 1, 2, dtype=torch.long)
     dt = 0.004
     with pytest.raises(
-        RuntimeError, match="Expected pml_width to be of length 1 or 4, got 5.",
+        RuntimeError,
+        match="Expected pml_width to be of length 1 or 4, got 5.",
     ):
         prop(
             dt,
