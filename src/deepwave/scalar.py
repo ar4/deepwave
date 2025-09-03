@@ -482,7 +482,7 @@ class ScalarForwardFunc(torch.autograd.Function):
 
     @staticmethod
     def forward(
-        ctx: Any,
+        ctx: Any,  # type: ignore[ANN401]
         v: torch.Tensor,
         source_amplitudes: torch.Tensor,
         wfc: torch.Tensor,
@@ -760,7 +760,7 @@ class ScalarForwardFunc(torch.autograd.Function):
 
     @staticmethod
     def backward(
-        ctx: Any,
+        ctx: Any,  # type: ignore[ANN401]
         gwfc: torch.Tensor,
         gwfp: torch.Tensor,
         gpsiy: torch.Tensor,
@@ -855,7 +855,10 @@ class ScalarForwardFunc(torch.autograd.Function):
         )
         return (
             cast(
-                "Tuple[Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor]]",
+                "Tuple[Optional[torch.Tensor], Optional[torch.Tensor], "
+                "Optional[torch.Tensor], Optional[torch.Tensor], "
+                "Optional[torch.Tensor], Optional[torch.Tensor], "
+                "Optional[torch.Tensor], Optional[torch.Tensor]]",
                 result,
             )
             + (None,) * 16
@@ -872,7 +875,7 @@ class ScalarBackwardFunc(torch.autograd.Function):
 
     @staticmethod
     def forward(
-        ctx: Any,
+        ctx: Any,  # type: ignore[ANN401]
         gwfc: torch.Tensor,
         gwfp: torch.Tensor,
         gpsiy: torch.Tensor,
@@ -1192,7 +1195,7 @@ class ScalarBackwardFunc(torch.autograd.Function):
     @staticmethod
     @torch.autograd.function.once_differentiable  # type: ignore[misc]
     def backward(
-        ctx: Any,
+        ctx: Any,  # type: ignore[ANN401]
         ggv: torch.Tensor,
         ggf: torch.Tensor,
         ggwfc: torch.Tensor,
@@ -1847,7 +1850,7 @@ class ScalarBackwardFunc(torch.autograd.Function):
         )
 
 
-def scalar_func(*args: Any) -> Tuple[torch.Tensor, ...]:
+def scalar_func(*args: Any) -> Tuple[torch.Tensor, ...]:  # type: ignore[ANN401]
     """Helper function to apply the ScalarForwardFunc.
 
     This function serves as a convenient wrapper to call the `apply` method
@@ -1862,8 +1865,8 @@ def scalar_func(*args: Any) -> Tuple[torch.Tensor, ...]:
         The results of the forward pass from `ScalarForwardFunc.apply`.
 
     """
-    result = ScalarForwardFunc.apply(*args)  # type: ignore[no-untyped-call]
     return cast(
-        "Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]",
-        result,
+        "Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, "
+        "torch.Tensor, torch.Tensor, torch.Tensor]",
+        ScalarForwardFunc.apply(*args),  # type: ignore[no-untyped-call]
     )

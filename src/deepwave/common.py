@@ -344,14 +344,18 @@ def set_grid_spacing(
     ):
         try:
             processed_grid_spacing = [float(spacing) for spacing in grid_spacing]
-        except (TypeError, ValueError):
-            raise TypeError("grid_spacing must be a float or sequence of floats.")
+        except (TypeError, ValueError) as e:
+            raise TypeError(
+                "grid_spacing must be a float or sequence of floats."
+            ) from e
     else:
         try:
             scalar_grid_spacing = cast("SupportsFloat", grid_spacing)
             processed_grid_spacing = [float(scalar_grid_spacing)] * n_dims
-        except (TypeError, ValueError):
-            raise TypeError("grid_spacing must be a float or sequence of floats.")
+        except (TypeError, ValueError) as e:
+            raise TypeError(
+                "grid_spacing must be a float or sequence of floats."
+            ) from e
 
     if any(spacing <= 0 for spacing in processed_grid_spacing):
         raise ValueError("grid_spacing elements must be positive.")
@@ -411,14 +415,14 @@ def set_pml_width(pml_width: Union[int, Iterable[int]], n_dims: int) -> List[int
     ):
         try:
             processed_pml_width = [int(width) for width in pml_width]
-        except (TypeError, ValueError):
-            raise TypeError("pml_width must be an int or sequence of ints.")
+        except (TypeError, ValueError) as e:
+            raise TypeError("pml_width must be an int or sequence of ints.") from e
     else:
         try:
             scalar_pml_width = cast("SupportsInt", pml_width)
             processed_pml_width = [int(scalar_pml_width)] * 2 * n_dims
-        except (TypeError, ValueError):
-            raise TypeError("pml_width must be an int or sequence of ints.")
+        except (TypeError, ValueError) as e:
+            raise TypeError("pml_width must be an int or sequence of ints.") from e
 
     if any(width < 0 for width in processed_pml_width):
         raise ValueError("pml_width must be non-negative.")
@@ -452,19 +456,22 @@ def set_pml_freq(pml_freq: Optional[float], dt: float) -> float:
     if pml_freq is not None:
         try:
             pml_freq = float(pml_freq)
-        except (TypeError, ValueError):
-            raise TypeError("pml_freq must be None or convertible to a float.")
+        except (TypeError, ValueError) as e:
+            raise TypeError("pml_freq must be None or convertible to a float.") from e
     if dt <= 0:
         raise ValueError("dt must be greater than zero to calculate Nyquist frequency.")
     nyquist = 0.5 / abs(dt)
     if pml_freq is None:
         pml_freq = 25.0
-        warnings.warn(f"pml_freq was not set, so defaulting to {pml_freq}.")
+        warnings.warn(
+            f"pml_freq was not set, so defaulting to {pml_freq}.", stacklevel=2
+        )
     if pml_freq < 0:
         raise ValueError("pml_freq must be non-negative.")
     if pml_freq > nyquist:
         warnings.warn(
             f"pml_freq {pml_freq} is greater than the Nyquist frequency {nyquist}.",
+            stacklevel=2,
         )
     return pml_freq
 
@@ -488,19 +495,19 @@ def set_max_vel(max_vel: Optional[float], max_model_vel: float) -> float:
     if max_vel is not None:
         try:
             max_vel = float(max_vel)
-        except (TypeError, ValueError):
-            raise TypeError("max_vel must be None or convertible to a float.")
+        except (TypeError, ValueError) as e:
+            raise TypeError("max_vel must be None or convertible to a float.") from e
     try:
         max_model_vel = float(max_model_vel)
-    except (TypeError, ValueError):
-        raise TypeError("max_model_vel must be convertible to a float.")
+    except (TypeError, ValueError) as e:
+        raise TypeError("max_model_vel must be convertible to a float.") from e
     if max_model_vel <= 0:
         raise ValueError("max_model_vel must be greater than zero.")
     if max_vel is None:
         return max_model_vel
     max_vel = abs(max_vel)
     if max_vel < max_model_vel:
-        warnings.warn("max_vel is less than the actual maximum velocity.")
+        warnings.warn("max_vel is less than the actual maximum velocity.", stacklevel=2)
     return max_vel
 
 
@@ -592,8 +599,8 @@ def set_freq_taper_frac(freq_taper_frac: float) -> float:
     """
     try:
         freq_taper_frac = float(freq_taper_frac)
-    except ValueError:
-        raise TypeError("freq_taper_frac must be convertible to a float.")
+    except ValueError as e:
+        raise TypeError("freq_taper_frac must be convertible to a float.") from e
     if not 0.0 <= freq_taper_frac <= 1.0:
         raise ValueError(f"freq_taper_frac must be in [0, 1], got {freq_taper_frac}.")
     return freq_taper_frac
@@ -615,8 +622,8 @@ def set_time_pad_frac(time_pad_frac: float) -> float:
     """
     try:
         time_pad_frac = float(time_pad_frac)
-    except ValueError:
-        raise TypeError("time_pad_frac must be convertible to a float.")
+    except ValueError as e:
+        raise TypeError("time_pad_frac must be convertible to a float.") from e
     if not 0.0 <= time_pad_frac <= 1.0:
         raise ValueError(f"time_pad_frac must be in [0, 1], got {time_pad_frac}.")
     return time_pad_frac
@@ -792,10 +799,7 @@ def check_points_per_wavelength(
         if g <= 0:
             raise ValueError("grid_spacing elements must be positive.")
 
-    if pml_freq == 0:
-        min_wavelength = float("inf")
-    else:
-        min_wavelength = abs(min_nonzero_vel / pml_freq)
+    min_wavelength = float("inf") if pml_freq == 0 else abs(min_nonzero_vel / pml_freq)
     max_spacing = max(abs(dim_spacing) for dim_spacing in grid_spacing)
     cells_per_wavelength = min_wavelength / max_spacing
     if cells_per_wavelength < 6:
@@ -804,6 +808,7 @@ def check_points_per_wavelength(
             f"frequency of {pml_freq}, a minimum non-zero velocity of "
             f"{min_nonzero_vel}, and a grid cell spacing of {max_spacing}, "
             f"there are only {cells_per_wavelength:.2f}.",
+            stacklevel=2,
         )
 
 
@@ -919,14 +924,14 @@ def upsample(
         raise ValueError("step_ratio must be positive.")
     try:
         freq_taper_frac = float(freq_taper_frac)
-    except (TypeError, ValueError):
-        raise TypeError("freq_taper_frac must be a float.")
+    except (TypeError, ValueError) as e:
+        raise TypeError("freq_taper_frac must be a float.") from e
     if not 0.0 <= freq_taper_frac <= 1.0:
         raise ValueError(f"freq_taper_frac must be in [0, 1], got {freq_taper_frac}.")
     try:
         time_pad_frac = float(time_pad_frac)
-    except (TypeError, ValueError):
-        raise TypeError("time_pad_frac must be a float.")
+    except (TypeError, ValueError) as e:
+        raise TypeError("time_pad_frac must be a float.") from e
     if not 0.0 <= time_pad_frac <= 1.0:
         raise ValueError(f"time_pad_frac must be in [0, 1], got {time_pad_frac}.")
     if not isinstance(time_taper, bool):
@@ -1021,22 +1026,22 @@ def downsample(
         raise ValueError("step_ratio must be positive.")
     try:
         freq_taper_frac = float(freq_taper_frac)
-    except (TypeError, ValueError):
-        raise TypeError("freq_taper_frac must be a float.")
+    except (TypeError, ValueError) as e:
+        raise TypeError("freq_taper_frac must be a float.") from e
     if not 0.0 <= freq_taper_frac <= 1.0:
         raise ValueError(f"freq_taper_frac must be in [0, 1], got {freq_taper_frac}.")
     try:
         time_pad_frac = float(time_pad_frac)
-    except (TypeError, ValueError):
-        raise TypeError("time_pad_frac must be a float.")
+    except (TypeError, ValueError) as e:
+        raise TypeError("time_pad_frac must be a float.") from e
     if not 0.0 <= time_pad_frac <= 1.0:
         raise ValueError(f"time_pad_frac must be in [0, 1], got {time_pad_frac}.")
     if not isinstance(time_taper, bool):
         raise TypeError("time_taper must be a bool.")
     try:
         shift = float(shift)
-    except (TypeError, ValueError):
-        raise TypeError("shift must be a float.")
+    except (TypeError, ValueError) as e:
+        raise TypeError("shift must be a float.") from e
 
     if step_ratio == 1 and shift == 0.0:
         return signal
@@ -1431,9 +1436,7 @@ def get_survey_extents_one_side(
         extreme_location += 1
     # The extents should not be outside the model, so we clip them to the
     # extents of the model.
-    extreme_location = max(extreme_location, 0)
-    extreme_location = min(extreme_location, shape)
-    return extreme_location
+    return min(max(extreme_location, 0), shape)
 
 
 def get_survey_extents_from_wavefields(
@@ -1490,6 +1493,7 @@ def get_survey_extents_from_wavefields(
                 warnings.warn(
                     "Survey extents were inferred from the wavefield shape to "
                     f"be {extents} because origin was not provided.",
+                    stacklevel=2,
                 )
             return extents
     raise RuntimeError("At least one wavefield must be non-None.")
@@ -1576,10 +1580,12 @@ def check_extents_match_wavefields_shape(
 
     """
     n_dims = len(extents)
-    assert len(pad) == 2 * n_dims
+    if not len(pad) == 2 * n_dims:
+        raise AssertionError("Expected len(pad) == 2 * n_dims")
     for wavefield in wavefields:
         if wavefield is not None:
-            assert len(wavefield.shape) - 1 == n_dims
+            if not len(wavefield.shape) - 1 == n_dims:
+                raise AssertionError("Expected len(wavefield.shape) - 1 == n_dims")
             for dim in range(n_dims):
                 # The spatial dimensions should have size equal to the extent
                 # plus the padding
@@ -1654,8 +1660,10 @@ def extract_models(
 
     """
     n_dims = len(pad) // 2
-    assert len(models) == len(pad_modes)
-    assert len(extents) == n_dims
+    if not len(models) == len(pad_modes):
+        raise AssertionError("Expected len(models) == len(pad_modes)")
+    if not len(extents) == n_dims:
+        raise AssertionError("Expected len(extents) == n_dims")
 
     # Check all models have correct dimensions and consistent attributes
     spatial_shape = models[0].shape[-n_dims:]
@@ -1678,7 +1686,7 @@ def extract_models(
                 f"The batch dimension of models must be of size 1 or {n_batch}.",
             )
 
-    region = (slice(None),) + tuple(slice(begin, end) for begin, end in extents)
+    region = (slice(None), *(slice(begin, end) for begin, end in extents))
     reversed_pad = reverse_pad(pad)
 
     if n_batch == 0:
@@ -1764,6 +1772,7 @@ def extract_locations(
                     "that is not centred on a cell, please consider "
                     "using the Hick's method, which is implemented "
                     "in deepwave.location_interpolation.",
+                    stacklevel=2,
                 )
 
             if location.ndim != 3:
@@ -1946,13 +1955,13 @@ def cfl_condition_n(
     """
     try:
         grid_spacing = list(grid_spacing)
-    except TypeError:
-        raise TypeError("grid_spacing must be a list of floats.")
+    except TypeError as e:
+        raise TypeError("grid_spacing must be a list of floats.") from e
     for i, spacing in enumerate(grid_spacing):
         try:
             grid_spacing[i] = float(spacing)
-        except ValueError:
-            raise TypeError("grid_spacing must be a list of floats.")
+        except ValueError as e:
+            raise TypeError("grid_spacing must be a list of floats.") from e
     if not grid_spacing:
         raise ValueError("grid_spacing must not be empty.")
     for g in grid_spacing:
@@ -1960,12 +1969,12 @@ def cfl_condition_n(
             raise ValueError("grid_spacing elements must be positive.")
     try:
         dt = float(dt)
-    except (TypeError, ValueError):
-        raise TypeError("dt must be a float.")
+    except (TypeError, ValueError) as e:
+        raise TypeError("dt must be a float.") from e
     try:
         max_abs_vel = float(max_abs_vel)
-    except (TypeError, ValueError):
-        raise TypeError("max_abs_vel must be a float.")
+    except (TypeError, ValueError) as e:
+        raise TypeError("max_abs_vel must be a float.") from e
     if max_abs_vel <= 0:
         raise RuntimeError("max_abs_vel must be greater than zero.")
 
@@ -1974,12 +1983,12 @@ def cfl_condition_n(
         / math.sqrt(sum(1 / dim_spacing**2 for dim_spacing in grid_spacing))
         / (max_abs_vel**2 + eps)
     ) * max_abs_vel
-    step_ratio = int(math.ceil(abs(dt) / max_dt))
+    step_ratio = math.ceil(abs(dt) / max_dt)
     inner_dt = dt / step_ratio
     return inner_dt, step_ratio
 
 
-def cfl_condition(dy: float, dx: float, *args: Any, **kwargs: Any) -> Tuple[float, int]:
+def cfl_condition(dy: float, dx: float, *args: Any, **kwargs: Any) -> Tuple[float, int]:  # type: ignore[ANN401]
     """Calculates the time step interval for 2D models.
 
     This is a convenience wrapper around `cfl_condition_n` for 2D models.

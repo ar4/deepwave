@@ -63,5 +63,9 @@ exclude = [
     ".gitignore"
 ]
 
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "D", "UP", "B", "C4", "SIM", "ANN", "A", "BLE", "C90", "DTZ", "ERA", "EXE", "G", "ISC", "PIE", "PT", "PTH", "Q", "RET", "RUF", "S", "TID", "TCH", "YTT", "SLF", "INP"]
+ignore = ["ANN401"]
+
 [tool.ruff.lint.pydocstyle]
 convention = "google"

@@ -55,6 +55,20 @@ class ScalarBorn(torch.nn.Module):
         v_requires_grad: bool = False,
         scatter_requires_grad: bool = False,
     ) -> None:
+        """Initializes the ScalarBorn propagator module.
+
+        Args:
+            v: A torch.Tensor containing an initial guess of the wavespeed.
+            scatter: A torch.Tensor containing an initial guess of the scattering
+                potential.
+            grid_spacing: The spatial grid cell size. It can be a single number
+                that will be used for all dimensions, or a number for each
+                dimension.
+            v_requires_grad: A bool specifying whether the `requires_grad`
+                attribute of the wavespeed should be set.
+            scatter_requires_grad: A bool specifying whether the `requires_grad`
+                attribute of the scattering potential should be set.
+        """
         super().__init__()
         if not isinstance(v_requires_grad, bool):
             raise TypeError(
@@ -440,7 +454,7 @@ class ScalarBornForwardFunc(torch.autograd.Function):
 
     @staticmethod
     def forward(
-        ctx: Any,
+        ctx: Any,  # type: ignore[ANN401]
         v: torch.Tensor,
         scatter: torch.Tensor,
         source_amplitudes: torch.Tensor,
@@ -832,7 +846,7 @@ class ScalarBornForwardFunc(torch.autograd.Function):
     @staticmethod
     @torch.autograd.function.once_differentiable  # type: ignore[misc]
     def backward(
-        ctx: Any,
+        ctx: Any,  # type: ignore[ANN401]
         *grad_outputs: torch.Tensor,
     ) -> Tuple[Optional[torch.Tensor], ...]:
         """Backward propagation of the scalar Born wave equation.
@@ -1367,7 +1381,7 @@ class ScalarBornForwardFunc(torch.autograd.Function):
 
 
 def scalar_born_func(
-    *args: Any,
+    *args: Any,  # type: ignore[ANN401]
 ) -> Tuple[
     torch.Tensor,
     torch.Tensor,
@@ -1384,8 +1398,23 @@ def scalar_born_func(
     torch.Tensor,
     torch.Tensor,
 ]:
-    result = ScalarBornForwardFunc.apply(*args)  # type: ignore[no-untyped-call]
+    """Helper function to apply the ScalarBornForwardFunc.
+
+    This function serves as a convenient wrapper to call the `apply` method
+    of `ScalarBornForwardFunc`, which is the entry point for the autograd graph
+    for scalar Born wave propagation.
+
+    Args:
+        *args: Variable length argument list to be passed directly to
+            `ScalarBornForwardFunc.apply`.
+
+    Returns:
+        The results of the forward pass from `ScalarBornForwardFunc.apply`.
+    """
     return cast(
-        "Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]",
-        result,
+        "Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, "
+        "torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, "
+        "torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, "
+        "torch.Tensor, torch.Tensor]",
+        ScalarBornForwardFunc.apply(*args),  # type: ignore[no-untyped-call]
     )

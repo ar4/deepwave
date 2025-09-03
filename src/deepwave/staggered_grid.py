@@ -42,7 +42,8 @@ def set_pml_profiles(
         nx: The number of grid points in the x direction.
 
     Returns:
-        A list of torch.Tensors representing the PML profiles (ay, ayh, ax, axh, by, byh, bx, bxh).
+        A list of torch.Tensors representing the PML profiles (ay, ayh, ax,
+        axh, by, byh, bx, bxh).
 
     """
     pml_start: List[float] = [

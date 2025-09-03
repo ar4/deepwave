@@ -141,7 +141,11 @@ def test_initial_argtype_assignment():
         backend_utils._assign_argtypes("scalar", 8, "double", "backward")
         backend_utils._assign_argtypes("elastic", 4, "float", "forward")
         backend_utils._assign_argtypes(
-            "scalar_born", 6, "double", "backward", extra="_sc",
+            "scalar_born",
+            6,
+            "double",
+            "backward",
+            extra="_sc",
         )
 
     # Assert that argtypes were set correctly on the mock functions

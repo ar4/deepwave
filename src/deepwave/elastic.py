@@ -58,7 +58,8 @@ class Elastic(torch.nn.Module):
         super().__init__()
         if not isinstance(lamb_requires_grad, bool):
             raise TypeError(
-                f"lamb_requires_grad must be bool, got {type(lamb_requires_grad).__name__}",
+                f"lamb_requires_grad must be bool, "
+                f"got {type(lamb_requires_grad).__name__}",
             )
         if not isinstance(lamb, torch.Tensor):
             raise TypeError("lamb must be a torch.Tensor.")
@@ -70,7 +71,8 @@ class Elastic(torch.nn.Module):
             raise TypeError("mu must be a torch.Tensor.")
         if not isinstance(buoyancy_requires_grad, bool):
             raise TypeError(
-                f"buoyancy_requires_grad must be bool, got {type(buoyancy_requires_grad).__name__}",
+                f"buoyancy_requires_grad must be bool, "
+                f"got {type(buoyancy_requires_grad).__name__}",
             )
         if not isinstance(buoyancy, torch.Tensor):
             raise TypeError("buoyancy must be a torch.Tensor.")
@@ -324,12 +326,28 @@ def elastic(
         vy_0: Initial vy (velocity in the first dimension) wavefield at time
             step -1/2.
         vx_0: Initial vx (velocity in the second dimension) wavefield.
-        sigmayy_0, sigmaxy_0, sigmaxx_0: Initial value for the stress field at
+        sigmayy_0: Initial value for the yy component of the stress field at
             time step 0.
-        m_vyy_0, m_vyx_0, m_vxy_0, m_vxx_0: Initial value for the "memory
-            variable" for the velocity, used in the PML.
-        m_sigmayyy_0, m_sigmaxyy_0, m_sigmaxyx_0, m_sigmaxxx_0: Initial value
-            for the "memory variable" for the stress, used in the PML.
+        sigmaxy_0: Initial value for the xy component of the stress field at
+            time step 0.
+        sigmaxx_0: Initial value for the xx component of the stress field at
+            time step 0.
+        m_vyy_0: Initial value for the "memory variable" for the yy component
+            of the velocity, used in the PML.
+        m_vyx_0: Initial value for the "memory variable" for the yx component
+            of the velocity, used in the PML.
+        m_vxy_0: Initial value for the "memory variable" for the xy component
+            of the velocity, used in the PML.
+        m_vxx_0: Initial value for the "memory variable" for the xx component
+            of the velocity, used in the PML.
+        m_sigmayyy_0: Initial value for the "memory variable" for the yyy
+            component of the stress, used in the PML.
+        m_sigmaxyy_0: Initial value for the "memory variable" for the xyy
+            component of the stress, used in the PML.
+        m_sigmaxyx_0: Initial value for the "memory variable" for the xyx
+            component of the stress, used in the PML.
+        m_sigmaxxx_0: Initial value for the "memory variable" for the xxx
+            component of the stress, used in the PML.
         origin: The origin of the provided initial wavefields relative to the
             origin of the model.
         nt: If the source amplitudes are not provided then you must instead
@@ -426,15 +444,9 @@ def elastic(
     )
     max_model_vel = max(vp.abs().max().item(), vs.abs().max().item())
     vp_nonzero = vp[vp != 0]
-    if vp_nonzero.numel() > 0:
-        min_nonzero_vp = vp_nonzero.abs().min().item()
-    else:
-        min_nonzero_vp = 0.0
+    min_nonzero_vp = vp_nonzero.abs().min().item() if vp_nonzero.numel() > 0 else 0.0
     vs_nonzero = vs[vs != 0]
-    if vs_nonzero.numel() > 0:
-        min_nonzero_vs = vs_nonzero.abs().min().item()
-    else:
-        min_nonzero_vs = 0.0
+    min_nonzero_vs = vs_nonzero.abs().min().item() if vs_nonzero.numel() > 0 else 0.0
     if min_nonzero_vp == 0 and min_nonzero_vs == 0:
         min_nonzero_model_vel = 0.0
     elif min_nonzero_vp == 0:
@@ -720,7 +732,7 @@ class ElasticForwardFunc(torch.autograd.Function):
 
     @staticmethod
     def forward(
-        ctx: Any,
+        ctx: Any,  # type: ignore[ANN401]
         lamb: torch.Tensor,
         mu: torch.Tensor,
         buoyancy: torch.Tensor,
@@ -1173,7 +1185,7 @@ class ElasticForwardFunc(torch.autograd.Function):
     @staticmethod
     @torch.autograd.function.once_differentiable  # type: ignore[misc]
     def backward(
-        ctx: Any,
+        ctx: Any,  # type: ignore[ANN401]
         vy: torch.Tensor,
         vx: torch.Tensor,
         sigmayy: torch.Tensor,
@@ -1688,7 +1700,7 @@ class ElasticForwardFunc(torch.autograd.Function):
         )
 
 
-def elastic_func(*args: Any) -> Tuple[torch.Tensor, ...]:
+def elastic_func(*args: Any) -> Tuple[torch.Tensor, ...]:  # type: ignore[ANN401]
     """A helper function to apply the ElasticForwardFunc.
 
     This function serves as a convenient wrapper to call the `apply` method
@@ -1703,8 +1715,10 @@ def elastic_func(*args: Any) -> Tuple[torch.Tensor, ...]:
         The results of the forward pass from `ElasticForwardFunc.apply`.
 
     """
-    result = ElasticForwardFunc.apply(*args)  # type: ignore[no-untyped-call]
     return cast(
-        "Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]",
-        result,
+        "Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, "
+        "torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, "
+        "torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, "
+        "torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]",
+        ElasticForwardFunc.apply(*args),  # type: ignore[no-untyped-call]
     )

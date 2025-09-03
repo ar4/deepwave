@@ -91,7 +91,7 @@ def _get_hicks_for_one_location_dim(
         if free_surface[0] and locations[0].item() < free_surface_loc[0]:
             # idx0: first index at, or on model side of, free surface
             # idx1: first index on model side of free surface
-            idx0 = int(math.ceil(free_surface_loc[0] - locations[0].item()))
+            idx0 = math.ceil(free_surface_loc[0] - locations[0].item())
             idx1 = idx0 + int(
                 math.isclose(round(free_surface_loc[0]), free_surface_loc[0]),
             )
@@ -101,9 +101,7 @@ def _get_hicks_for_one_location_dim(
             weights = weights[idx0:]
         if free_surface[1] and locations[-1].item() > free_surface_loc[1]:
             idx0 = (
-                len(weights)
-                - 1
-                - int(math.ceil(locations[-1].item() - free_surface_loc[1]))
+                len(weights) - 1 - math.ceil(locations[-1].item() - free_surface_loc[1])
             )
             idx1 = idx0 - int(
                 math.isclose(round(free_surface_loc[1]), free_surface_loc[1]),
@@ -227,7 +225,7 @@ def _check_shot_idxs(
 
 
 class Hicks:
-    """Location interpolation onto grid using method of Hicks
+    """Location interpolation onto grid using method of Hicks.
 
     Hicks (2002, https://doi.org/10.1190/1.1451454) proposed
     using a Kaiser windowed sinc function to interpolate
@@ -289,7 +287,26 @@ class Hicks:
         dipole_dim: Union[torch.Tensor, int] = 0,
         dtype: torch.dtype = torch.float,
         eps: float = DEFAULT_EPS,
-    ):
+    ) -> None:
+        """Initializes the Hicks interpolation class.
+
+        Args:
+            locations: A three dimensional torch.Tensor [shot, per_shot, 2] specifying
+                the locations to interpolate, provided as float values in
+                units of cells relative to the origin of the grid.
+            halfwidth: An integer specifying the halfwidth of the window that
+                will be used to interpolate each point onto the grid.
+            free_surfaces: A list of four booleans specifying whether the corresponding
+                edge of the grid is a free surface.
+            free_surface_locs: A list of four floats indicating free surface locations.
+            model_shape: A list of two integers specifying the size of the grid.
+            monopole: A boolean or torch.Tensor of booleans specifying whether
+                the source/receiver is a monopole.
+            dipole_dim: An integer or torch.Tensor of integers specifying the
+                dimension in which the dipole is oriented.
+            dtype: The datatype to use.
+            eps: A small value to prevent division by zero.
+        """
         if not isinstance(locations, torch.Tensor):
             raise TypeError("locations must be a torch.Tensor.")
         if locations.ndim != 3:

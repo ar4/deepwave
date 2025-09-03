@@ -10,9 +10,11 @@ import ctypes
 import pathlib
 import platform
 from ctypes import c_bool, c_double, c_float, c_int64, c_void_p
-from typing import List
+from typing import Any, List, TypeAlias
 
 import torch
+
+CFunctionPointer: TypeAlias = Any
 
 # Platform-specific shared library extension
 SO_EXT = {"Linux": "so", "Darwin": "dylib", "Windows": "dll"}.get(platform.system())
@@ -139,7 +141,7 @@ def get_backend_function(
     dtype: torch.dtype,
     device: torch.device,
     extra: str = "",
-) -> ctypes.CDLL._FuncPtr:
+) -> CFunctionPointer:
     """Selects and returns the appropriate backend C/CUDA function.
 
     Args:
@@ -172,8 +174,7 @@ def get_backend_function(
     )
 
     try:
-        func = getattr(dll, func_name)
-        return func
+        return getattr(dll, func_name)
     except AttributeError as e:
         raise AttributeError(f"Backend function {func_name} not found.") from e
 
