@@ -1,8 +1,10 @@
 import math
+
 import torch
+from test_utils import _set_coords, _set_sources, direct_2d_approx, scattered_2d
+
 from deepwave import Scalar, scalar
-from deepwave.common import cfl_condition, upsample, downsample, IGNORE_LOCATION
-from test_utils import _set_sources, _set_coords, direct_2d_approx, scattered_2d
+from deepwave.common import IGNORE_LOCATION, cfl_condition, downsample, upsample
 
 
 def scalarprop(
@@ -27,7 +29,6 @@ def scalarprop(
     functional=True,
 ):
     """Wraps the scalar propagator."""
-
     if prop_kwargs is None:
         prop_kwargs = {}
     # For consistency when actual max speed changes
@@ -174,7 +175,7 @@ def scalarpropchained(
             segment_source_amplitudes = source_amplitudes[
                 ...,
                 nt_per_segment * segment_idx : min(
-                    nt_per_segment * (segment_idx + 1), source_amplitudes.shape[-1]
+                    nt_per_segment * (segment_idx + 1), source_amplitudes.shape[-1],
                 ),
             ]
             segment_nt = None
@@ -205,7 +206,7 @@ def scalarpropchained(
             receiver_amplitudes[
                 ...,
                 nt_per_segment * segment_idx : min(
-                    nt_per_segment * (segment_idx + 1), receiver_amplitudes.shape[-1]
+                    nt_per_segment * (segment_idx + 1), receiver_amplitudes.shape[-1],
                 ),
             ] = segment_receiver_amplitudes
 
@@ -219,7 +220,7 @@ def test_pml_width_list():
     """Verify that PML width supplied as int and list give same result."""
     _, actual_int = run_direct_2d(propagator=scalarprop, prop_kwargs={"pml_width": 20})
     _, actual_list = run_direct_2d(
-        propagator=scalarprop, prop_kwargs={"pml_width": [20, 20, 20, 20]}
+        propagator=scalarprop, prop_kwargs={"pml_width": [20, 20, 20, 20]},
     )
     assert torch.allclose(actual_int, actual_list)
 
@@ -283,7 +284,7 @@ def test_direct_2d_module():
 def test_scatter_2d():
     """Test propagation in a 2D model with a point scatterer."""
     expected, actual = run_scatter_2d(
-        propagator=scalarprop, dt=0.001, prop_kwargs={"pml_width": 30}
+        propagator=scalarprop, dt=0.001, prop_kwargs={"pml_width": 30},
     )
     diff = (expected - actual.cpu()).flatten()
     assert diff.norm().item() < 0.008
@@ -293,7 +294,7 @@ def test_v_batched():
     """Test forward using a different velocity for each shot."""
     expected_diff = 1.3
     expected, actual = run_direct_2d(
-        c=torch.tensor([[[1500.0]], [[1600.0]]]), propagator=scalarprop
+        c=torch.tensor([[[1500.0]], [[1600.0]]]), propagator=scalarprop,
     )
     diff = (expected - actual.cpu()).flatten()
     assert diff.norm().item() < expected_diff
@@ -401,7 +402,7 @@ def run_scalarfunc(nt=3, gradgrad=False):
     c = 1500 * torch.ones(ny, nx, dtype=torch.double, device=device)
     c += 100 * torch.rand_like(c)
     wfc = torch.randn(
-        n_batch, ny - 2 * fd_pad, nx - 2 * fd_pad, dtype=torch.double, device=device
+        n_batch, ny - 2 * fd_pad, nx - 2 * fd_pad, dtype=torch.double, device=device,
     )
     wfp = torch.randn_like(wfc)
     psiy = torch.randn_like(wfc)
@@ -409,7 +410,7 @@ def run_scalarfunc(nt=3, gradgrad=False):
     zetay = torch.randn_like(wfc)
     zetax = torch.randn_like(wfc)
     source_amplitudes = torch.randn(
-        nt, n_batch, n_sources_per_shot, dtype=torch.double, device=device
+        nt, n_batch, n_sources_per_shot, dtype=torch.double, device=device,
     )
     sources_i = (
         torch.tensor([[7 * nx + 7, 8 * nx + 8], [9 * nx + 9, 10 * nx + 10]])
@@ -421,7 +422,7 @@ def run_scalarfunc(nt=3, gradgrad=False):
             [
                 [7 * nx + 7, 8 * nx + 8, 9 * nx + 9],
                 [11 * nx + 11, 12 * nx + 12, 13 * nx + 12],
-            ]
+            ],
         )
         .long()
         .to(device)
@@ -583,14 +584,14 @@ def test_gradcheck_2d_no_receivers():
 def test_gradcheck_2d_survey_pad():
     """Test gradcheck with survey_pad."""
     run_gradcheck_2d(
-        propagator=scalarprop, survey_pad=0, nx=(12, 9), provide_wavefields=False
+        propagator=scalarprop, survey_pad=0, nx=(12, 9), provide_wavefields=False,
     )
 
 
 def test_gradcheck_2d_partial_wavefields():
     """Test gradcheck with wavefields that do not cover the model."""
     run_gradcheck_2d(
-        propagator=scalarprop, origin=(0, 4), nx=(12, 9), wavefield_size=(4 + 6, 1 + 6)
+        propagator=scalarprop, origin=(0, 4), nx=(12, 9), wavefield_size=(4 + 6, 1 + 6),
     )
 
 
@@ -877,7 +878,6 @@ def run_direct_2d(
     **kwargs,
 ):
     """Runs run_direct with default parameters for 2D."""
-
     return run_direct(
         c,
         freq,
@@ -958,7 +958,6 @@ def run_forward_2d(
     **kwargs,
 ):
     """Runs run_forward with default parameters for 2D."""
-
     return run_forward(
         c,
         freq,
@@ -1070,7 +1069,6 @@ def run_scatter_2d(
     dtype=None,
 ):
     """Runs run_scatter with default parameters for 2D."""
-
     return run_scatter(
         c,
         dc,
@@ -1162,7 +1160,7 @@ def run_gradcheck(
                 nx[1] + pml_width[2] + pml_width[3],
             )
         wavefield_0 = torch.zeros(
-            num_shots, *wavefield_size, dtype=dtype, device=device
+            num_shots, *wavefield_size, dtype=dtype, device=device,
         )
         wavefield_m1 = torch.zeros_like(wavefield_0)
         psiy_m1 = torch.zeros_like(wavefield_0)
@@ -1264,7 +1262,6 @@ def run_gradcheck_2d(
     **kwargs,
 ):
     """Runs run_gradcheck with default parameters for 2D."""
-
     return run_gradcheck(
         c,
         dc,

@@ -1,9 +1,10 @@
+import builtins
+import ctypes
+import importlib
+from unittest.mock import MagicMock, patch
+
 import pytest
 import torch
-import ctypes
-from unittest.mock import MagicMock, patch
-import importlib
-import builtins
 
 # Import backend_utils first, so we can patch its 'dll' attribute
 # This assumes that the initial import of backend_utils will succeed
@@ -37,10 +38,10 @@ def test_get_argtypes_elastic_backward_double():
     assert argtypes.count(ctypes.c_bool) == 6
 
 def test_get_backend_function_valid_call():
-    with patch('deepwave.backend_utils.dll') as mock_dll:
+    with patch("deepwave.backend_utils.dll") as mock_dll:
         # Configure mock_dll to return a mock function for the expected call
         mock_func = MagicMock()
-        mock_dll.attach_mock(mock_func, 'scalar_iso_4_float_forward_cpu')
+        mock_dll.attach_mock(mock_func, "scalar_iso_4_float_forward_cpu")
 
         func = backend_utils.get_backend_function(
             propagator="scalar",
@@ -62,7 +63,7 @@ def test_get_backend_function_unsupported_dtype():
         )
 
 def test_get_backend_function_not_found():
-    with patch('deepwave.backend_utils.dll', spec=ctypes.CDLL) as mock_dll:
+    with patch("deepwave.backend_utils.dll", spec=ctypes.CDLL) as mock_dll:
         # Now, mock_dll should behave like a ctypes.CDLL instance.
         # Accessing a non-existent attribute on it should raise AttributeError.
         with pytest.raises(AttributeError, match="Backend function .* not found."):
@@ -76,7 +77,7 @@ def test_get_backend_function_not_found():
 
 
 def test_use_openmp_true():
-    with patch('deepwave.backend_utils.dll') as mock_dll:
+    with patch("deepwave.backend_utils.dll") as mock_dll:
         # Explicitly set omp_get_num_threads to exist
         mock_dll.omp_get_num_threads = MagicMock()
 
@@ -86,8 +87,8 @@ def test_use_openmp_true():
 
 def test_use_openmp_false():
     original_hasattr = builtins.hasattr # Store the original hasattr
-    with patch('deepwave.backend_utils.dll') as mock_dll:
-        with patch('builtins.hasattr', side_effect=lambda obj, name: False if name == "omp_get_num_threads" else original_hasattr(obj, name)):
+    with patch("deepwave.backend_utils.dll") as mock_dll:
+        with patch("builtins.hasattr", side_effect=lambda obj, name: False if name == "omp_get_num_threads" else original_hasattr(obj, name)):
             # Reload backend_utils to re-evaluate USE_OPENMP
             importlib.reload(backend_utils)
             assert backend_utils.USE_OPENMP is False
@@ -108,7 +109,7 @@ def test_initial_argtype_assignment():
     mock_dll.scalar_born_iso_6_double_backward_sc_cuda = mock_func_scalar_born_backward_sc_cuda
 
     # Temporarily replace backend_utils.dll with our mock for the duration of this test
-    with patch('deepwave.backend_utils.dll', new=mock_dll):
+    with patch("deepwave.backend_utils.dll", new=mock_dll):
         # Call _assign_argtypes directly for a few permutations
         # Note: _assign_argtypes is called internally during backend_utils import.
         # Here, we are calling it directly for unit testing purposes.

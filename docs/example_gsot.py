@@ -1,9 +1,10 @@
+import matplotlib.pyplot as plt
+import numpy as np
 import torch
 from scipy.optimize import linear_sum_assignment
 from scipy.signal import butter, sosfilt
-import matplotlib.pyplot as plt
+
 import deepwave
-import numpy as np
 
 
 def gsot(y_pred: torch.Tensor, y: torch.Tensor, eta: float):
@@ -18,6 +19,7 @@ def gsot(y_pred: torch.Tensor, y: torch.Tensor, eta: float):
 
     Returns:
         The cost function value/loss
+
     """
     loss = torch.tensor(0, dtype=torch.float)
     for s in range(y.shape[0]):
@@ -58,7 +60,7 @@ for shift in shifts:
             deepwave.wavelets.ricker(freq, nt, dt, (nt // 2 + shift) * dt)[None, None],
             source_amplitudes[None, None],
             0.003,
-        )
+        ),
     )
 
 l2_losses = []
@@ -66,9 +68,9 @@ for shift in shifts:
     l2_losses.append(
         torch.linalg.vector_norm(
             deepwave.wavelets.ricker(freq, nt, dt, (nt // 2 + shift) * dt)
-            - source_amplitudes
+            - source_amplitudes,
         )
-        ** 2
+        ** 2,
     )
 
 plt.figure(figsize=(10.5, 5))

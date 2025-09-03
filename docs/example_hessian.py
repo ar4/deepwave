@@ -1,12 +1,12 @@
-"""
-This script demonstrates how to calculate and use Hessian matrices
+"""This script demonstrates how to calculate and use Hessian matrices
 in Deepwave for optimization, specifically using the Newton-Raphson method.
 """
 
+import matplotlib.pyplot as plt
 import torch
 import torchvision
 from scipy.sparse.linalg import eigsh
-import matplotlib.pyplot as plt
+
 import deepwave
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -22,13 +22,13 @@ dx = 4
 v_true = 1500 * torch.ones(ny, nx, dtype=dtype, device=device)
 v_true[10:] += 200
 v_init = torchvision.transforms.functional.gaussian_blur(
-    v_true[None], [31, 31]
+    v_true[None], [31, 31],
 ).squeeze()
 v = v_init.clone().requires_grad_()
 
 source_locations = torch.tensor([[[1, 15]]], dtype=torch.long, device=device)
 source_amplitudes = deepwave.wavelets.ricker(
-    freq, nt, dt, 1.3 / freq, dtype=dtype
+    freq, nt, dt, 1.3 / freq, dtype=dtype,
 ).reshape(1, 1, -1)
 receiver_locations = torch.ones(1, nx - 20, 2, dtype=torch.long, device=device)
 receiver_locations[0, :, 1] = torch.arange(10, nx - 10)
@@ -88,7 +88,7 @@ eig0 = eigsh(hess.cpu().numpy().reshape(v.numel(), v.numel()), k=1, which="SA")[
 tau = max(-1.5 * eig0, 0)
 L = torch.linalg.cholesky(
     hess.reshape(v.numel(), v.numel())
-    + tau * torch.eye(v.numel(), dtype=dtype, device=device)
+    + tau * torch.eye(v.numel(), dtype=dtype, device=device),
 )
 h = torch.cholesky_solve(grad.reshape(-1, 1).neg(), L).reshape(ny, nx)
 
@@ -111,7 +111,7 @@ for epoch in range(3):
     ].item()
     tau = max(-1.5 * eig0, 0)
     L = torch.linalg.cholesky(
-        hess.reshape(v.numel(), v.numel()) + tau * torch.eye(v.numel())
+        hess.reshape(v.numel(), v.numel()) + tau * torch.eye(v.numel()),
     )
     h = torch.cholesky_solve(grad.reshape(-1, 1).neg(), L).reshape(ny, nx)
     v = (v.detach() + h).requires_grad_()

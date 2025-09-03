@@ -1,8 +1,10 @@
+import re
+
 import pytest
 import torch
+
 import deepwave
 import deepwave.common
-import re
 
 
 def test_set_survey_pad():
@@ -16,31 +18,31 @@ def test_set_survey_pad():
     survey_pad = deepwave.common.set_survey_pad([1, None, None, 4], 2)
     assert survey_pad == [1, -1, -1, 4]
     with pytest.raises(
-        RuntimeError, match="survey_pad must have length 2 \* dims in model, but got 1."
+        RuntimeError, match=r"survey_pad must have length 2 \* dims in model, but got 1.",
     ):
         deepwave.common.set_survey_pad([1], 2)
     with pytest.raises(
-        RuntimeError, match="survey_pad must have length 2 \* dims in model, but got 2."
+        RuntimeError, match=r"survey_pad must have length 2 \* dims in model, but got 2.",
     ):
         deepwave.common.set_survey_pad([1, 2], 2)
     with pytest.raises(
-        RuntimeError, match="survey_pad must have length 2 \* dims in model, but got 3."
+        RuntimeError, match=r"survey_pad must have length 2 \* dims in model, but got 3.",
     ):
         deepwave.common.set_survey_pad([1, 2, 3], 2)
     with pytest.raises(
-        RuntimeError, match="survey_pad must have length 2 \* dims in model, but got 5."
+        RuntimeError, match=r"survey_pad must have length 2 \* dims in model, but got 5.",
     ):
         deepwave.common.set_survey_pad([1, 2, 3, 4, 5], 2)
     with pytest.raises(
-        RuntimeError, match="survey_pad must have length 2 \* dims in model, but got 6."
+        RuntimeError, match=r"survey_pad must have length 2 \* dims in model, but got 6.",
     ):
         deepwave.common.set_survey_pad([1, 2, 3, 4, 5, 6], 2)
     with pytest.raises(
-        RuntimeError, match="survey_pad entries must be None or non-negative ints."
+        RuntimeError, match="survey_pad entries must be None or non-negative ints.",
     ):
         deepwave.common.set_survey_pad([-1, 2, 3, 4], 2)
     with pytest.raises(
-        RuntimeError, match="survey_pad entries must be None or non-negative ints."
+        RuntimeError, match="survey_pad entries must be None or non-negative ints.",
     ):
         deepwave.common.set_survey_pad([1, 2, 3, -4], 2)
     with pytest.raises(RuntimeError, match="survey_pad must be non-negative."):
@@ -100,35 +102,35 @@ def test_get_extents_from_locations():
     locations = [None, None]
     survey_pad = None
     assert deepwave.common.get_survey_extents_from_locations(
-        model_shape, locations, survey_pad
+        model_shape, locations, survey_pad,
     ) == [(0, 8), (0, 9)]
     survey_pad = [1, 2, 3, 4]
     assert deepwave.common.get_survey_extents_from_locations(
-        model_shape, locations, survey_pad
+        model_shape, locations, survey_pad,
     ) == [(0, 8), (0, 9)]
     locations = [None, 3 * torch.ones(2, 3, 2)]
     survey_pad = None
     assert deepwave.common.get_survey_extents_from_locations(
-        model_shape, locations, survey_pad
+        model_shape, locations, survey_pad,
     ) == [(0, 8), (0, 9)]
     survey_pad = [None, 2, None, 4]
     assert deepwave.common.get_survey_extents_from_locations(
-        model_shape, locations, survey_pad
+        model_shape, locations, survey_pad,
     ) == [(0, 6), (0, 8)]
     survey_pad = [1, 2, 3, 4]
     assert deepwave.common.get_survey_extents_from_locations(
-        model_shape, locations, survey_pad
+        model_shape, locations, survey_pad,
     ) == [(2, 6), (0, 8)]
     locations = [3 * torch.ones(3, 4, 2), 3 * torch.ones(2, 3, 2)]
     locations[0][1, 1, 0] = 2
     locations[1][1, 2, 1] = 8
     survey_pad = [None, 2, None, 4]
     assert deepwave.common.get_survey_extents_from_locations(
-        model_shape, locations, survey_pad
+        model_shape, locations, survey_pad,
     ) == [(0, 6), (0, 9)]
     survey_pad = [1, 2, 3, 4]
     assert deepwave.common.get_survey_extents_from_locations(
-        model_shape, locations, survey_pad
+        model_shape, locations, survey_pad,
     ) == [(1, 6), (0, 9)]
 
 
@@ -138,7 +140,7 @@ def test_get_extents_from_locations_empty_model_shape():
     survey_pad = None
     with pytest.raises(RuntimeError, match="model_shape must not be empty."):
         deepwave.common.get_survey_extents_from_locations(
-            model_shape, locations, survey_pad
+            model_shape, locations, survey_pad,
         )
 
 
@@ -148,7 +150,7 @@ def test_get_extents_from_locations_non_positive_model_shape():
     survey_pad = None
     with pytest.raises(RuntimeError, match="model_shape elements must be positive."):
         deepwave.common.get_survey_extents_from_locations(
-            model_shape, locations, survey_pad
+            model_shape, locations, survey_pad,
         )
 
 
@@ -158,7 +160,7 @@ def test_get_extents_from_locations_negative_model_shape():
     survey_pad = None
     with pytest.raises(RuntimeError, match="model_shape elements must be positive."):
         deepwave.common.get_survey_extents_from_locations(
-            model_shape, locations, survey_pad
+            model_shape, locations, survey_pad,
         )
 
 
@@ -167,46 +169,46 @@ def test_get_extents_from_wavefields():
     origin = None
     pml_width = [0, 0, 0, 0]
     assert deepwave.common.get_survey_extents_from_wavefields(
-        wavefields, origin, pml_width
+        wavefields, origin, pml_width,
     ) == [(0, 8), (0, 9)]
     pml_width = [1, 2, 3, 4]
     assert deepwave.common.get_survey_extents_from_wavefields(
-        wavefields, origin, pml_width
+        wavefields, origin, pml_width,
     ) == [(0, 5), (0, 2)]
     origin = [1, 2]
     assert deepwave.common.get_survey_extents_from_wavefields(
-        wavefields, origin, pml_width
+        wavefields, origin, pml_width,
     ) == [(1, 6), (2, 4)]
     origin = [1, -2]
     with pytest.raises(RuntimeError):
         deepwave.common.get_survey_extents_from_wavefields(
-            wavefields, origin, pml_width
+            wavefields, origin, pml_width,
         )
     origin = [1, 2, 3]
     with pytest.raises(RuntimeError):
         deepwave.common.get_survey_extents_from_wavefields(
-            wavefields, origin, pml_width
+            wavefields, origin, pml_width,
         )
     origin = [1, None]
     with pytest.raises(RuntimeError):
         deepwave.common.get_survey_extents_from_wavefields(
-            wavefields, origin, pml_width
+            wavefields, origin, pml_width,
         )
     origin = [1, 2]
     pml_width = [1, 2]
     with pytest.raises(RuntimeError):
         deepwave.common.get_survey_extents_from_wavefields(
-            wavefields, origin, pml_width
+            wavefields, origin, pml_width,
         )
     pml_width = [1, -2, 1, 1]
     with pytest.raises(RuntimeError):
         deepwave.common.get_survey_extents_from_wavefields(
-            wavefields, origin, pml_width
+            wavefields, origin, pml_width,
         )
     pml_width = None
     with pytest.raises(RuntimeError):
         deepwave.common.get_survey_extents_from_wavefields(
-            wavefields, origin, pml_width
+            wavefields, origin, pml_width,
         )
 
 
@@ -216,7 +218,7 @@ def test_get_extents_from_wavefields_empty_wavefields():
     pml_width = [1, 2, 3, 4]
     with pytest.raises(RuntimeError, match="At least one wavefield must be non-None."):
         deepwave.common.get_survey_extents_from_wavefields(
-            wavefields, origin, pml_width
+            wavefields, origin, pml_width,
         )
 
 
@@ -265,13 +267,13 @@ def test_extract_survey():
     assert torch.allclose(
         out[0][0],
         torch.nn.functional.pad(
-            models[0][1:6, :].unsqueeze(0), (2, 1, 4, 3), mode="replicate"
+            models[0][1:6, :].unsqueeze(0), (2, 1, 4, 3), mode="replicate",
         ),
     )
     assert torch.allclose(
         out[0][1],
         torch.nn.functional.pad(
-            models[1][1:6, :].unsqueeze(0), (2, 1, 4, 3), mode="replicate"
+            models[1][1:6, :].unsqueeze(0), (2, 1, 4, 3), mode="replicate",
         ),
     )
     # The beginning of the extent in each dimension (1 for y, 0 for x)
@@ -333,13 +335,13 @@ def test_extract_survey():
     assert torch.allclose(
         out[0][0],
         torch.nn.functional.pad(
-            models[0][2:6, 3:9].unsqueeze(0), (2, 1, 4, 3), mode="replicate"
+            models[0][2:6, 3:9].unsqueeze(0), (2, 1, 4, 3), mode="replicate",
         ),
     )
     assert torch.allclose(
         out[0][1],
         torch.nn.functional.pad(
-            models[1][2:6, 3:9].unsqueeze(0), (2, 1, 4, 3), mode="replicate"
+            models[1][2:6, 3:9].unsqueeze(0), (2, 1, 4, 3), mode="replicate",
         ),
     )
     # The nx for the 1D index conversion should be (given x range from 3 to 8, padding of 3) 9.
@@ -401,26 +403,26 @@ def test_check_extents_match_wavefields_shape():
     # Wavefields are None, so all extents match
     wavefields = [None, None]
     deepwave.common.check_extents_match_wavefields_shape(
-        survey_extents, wavefields, pad
+        survey_extents, wavefields, pad,
     )
     # Spatial size of wavefield is (4, 8), with padding of (1, 5),
     # so the size of the extents should be (4-1, 8-5) = (3, 3),
     # which it is.
     wavefields = [None, torch.zeros(2, 4, 8)]
     deepwave.common.check_extents_match_wavefields_shape(
-        survey_extents, wavefields, pad
+        survey_extents, wavefields, pad,
     )
     # When the wavefield is smaller, it will not match the extents.
     wavefields = [None, torch.zeros(2, 3, 8)]
     with pytest.raises(RuntimeError):
         deepwave.common.check_extents_match_wavefields_shape(
-            survey_extents, wavefields, pad
+            survey_extents, wavefields, pad,
         )
     # Similarly, when it is bigger, it will not match.
     wavefields = [None, torch.zeros(2, 4, 9)]
     with pytest.raises(RuntimeError):
         deepwave.common.check_extents_match_wavefields_shape(
-            survey_extents, wavefields, pad
+            survey_extents, wavefields, pad,
         )
 
 
@@ -430,7 +432,7 @@ def test_check_extents_match_wavefields_shape_incorrect_extents_length():
     wavefields = [None, torch.zeros(2, 4, 8)]
     with pytest.raises(AssertionError):
         deepwave.common.check_extents_match_wavefields_shape(
-            survey_extents, wavefields, pad
+            survey_extents, wavefields, pad,
         )
 
 
@@ -440,7 +442,7 @@ def test_check_extents_match_wavefields_shape_incorrect_pad_length():
     wavefields = [None, torch.zeros(2, 4, 8)]
     with pytest.raises(AssertionError):
         deepwave.common.check_extents_match_wavefields_shape(
-            survey_extents, wavefields, pad
+            survey_extents, wavefields, pad,
         )
 
 
@@ -449,5 +451,5 @@ def test_check_extents_match_wavefields_shape_empty_wavefields():
     pad = [0, 1, 2, 3]
     wavefields = []
     deepwave.common.check_extents_match_wavefields_shape(
-        survey_extents, wavefields, pad
+        survey_extents, wavefields, pad,
     )

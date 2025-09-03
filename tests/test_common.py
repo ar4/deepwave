@@ -1,24 +1,26 @@
+import re
+
 import pytest
 import torch
+
 from deepwave.common import (
-    get_n_batch,
-    set_grid_spacing,
-    set_accuracy,
-    set_pml_width,
-    set_pml_freq,
-    set_max_vel,
-    set_nt,
-    set_model_gradient_sampling_interval,
-    set_freq_taper_frac,
-    set_time_pad_frac,
-    check_source_amplitudes_locations_match,
-    set_source_amplitudes,
-    check_points_per_wavelength,
-    cosine_taper_end,
-    zero_last_element_of_final_dimension,
     cfl_condition_n,
+    check_points_per_wavelength,
+    check_source_amplitudes_locations_match,
+    cosine_taper_end,
+    get_n_batch,
+    set_accuracy,
+    set_freq_taper_frac,
+    set_grid_spacing,
+    set_max_vel,
+    set_model_gradient_sampling_interval,
+    set_nt,
+    set_pml_freq,
+    set_pml_width,
+    set_source_amplitudes,
+    set_time_pad_frac,
+    zero_last_element_of_final_dimension,
 )
-import re
 
 
 # Tests for get_n_batch
@@ -46,7 +48,7 @@ def test_get_n_batch_all_none():
     with pytest.raises(
         RuntimeError,
         match=re.escape(
-            "At least one input source_locations or wavefield must be non-None."
+            "At least one input source_locations or wavefield must be non-None.",
         ),
     ):
         get_n_batch(source_locations, wavefields)
@@ -65,7 +67,7 @@ def test_get_n_batch_empty_tensor_list():
     with pytest.raises(
         RuntimeError,
         match=re.escape(
-            "At least one input source_locations or wavefield must be non-None."
+            "At least one input source_locations or wavefield must be non-None.",
         ),
     ):
         get_n_batch(source_locations, wavefields)
@@ -104,11 +106,11 @@ def test_set_grid_spacing_tensor_1d_correct_length():
 
 def test_set_grid_spacing_list_incorrect_length():
     with pytest.raises(
-        RuntimeError, match=re.escape("grid_spacing must have 1 or 2 elements, got 3.")
+        RuntimeError, match=re.escape("grid_spacing must have 1 or 2 elements, got 3."),
     ):
         set_grid_spacing([10.0, 11.0, 12.0], 2)
     with pytest.raises(
-        RuntimeError, match=re.escape("grid_spacing must have 1 or 3 elements, got 2.")
+        RuntimeError, match=re.escape("grid_spacing must have 1 or 3 elements, got 2."),
     ):
         set_grid_spacing([5, 6], 3)
 
@@ -123,28 +125,28 @@ def test_set_grid_spacing_invalid_type():
 
 def test_set_grid_spacing_negative_value():
     with pytest.raises(
-        ValueError, match=re.escape("grid_spacing elements must be positive.")
+        ValueError, match=re.escape("grid_spacing elements must be positive."),
     ):
         set_grid_spacing(-10.0, 2)
 
 
 def test_set_grid_spacing_zero_value():
     with pytest.raises(
-        ValueError, match=re.escape("grid_spacing elements must be positive.")
+        ValueError, match=re.escape("grid_spacing elements must be positive."),
     ):
         set_grid_spacing(0.0, 2)
 
 
 def test_set_grid_spacing_list_negative_element():
     with pytest.raises(
-        ValueError, match=re.escape("grid_spacing elements must be positive.")
+        ValueError, match=re.escape("grid_spacing elements must be positive."),
     ):
         set_grid_spacing([10.0, -1.0], 2)
 
 
 def test_set_grid_spacing_list_zero_element():
     with pytest.raises(
-        ValueError, match=re.escape("grid_spacing elements must be positive.")
+        ValueError, match=re.escape("grid_spacing elements must be positive."),
     ):
         set_grid_spacing([10.0, 0.0], 2)
 
@@ -159,15 +161,15 @@ def test_set_accuracy_valid_values():
 
 def test_set_accuracy_invalid_value():
     with pytest.raises(
-        ValueError, match=re.escape("accuracy must be 2, 4, 6, or 8, got 3")
+        ValueError, match=re.escape("accuracy must be 2, 4, 6, or 8, got 3"),
     ):
         set_accuracy(3)
     with pytest.raises(
-        ValueError, match=re.escape("accuracy must be 2, 4, 6, or 8, got 0")
+        ValueError, match=re.escape("accuracy must be 2, 4, 6, or 8, got 0"),
     ):
         set_accuracy(0)
     with pytest.raises(
-        ValueError, match=re.escape("accuracy must be 2, 4, 6, or 8, got 10")
+        ValueError, match=re.escape("accuracy must be 2, 4, 6, or 8, got 10"),
     ):
         set_accuracy(10)
 
@@ -249,7 +251,7 @@ def test_set_pml_width_list_zero_element():
 def test_set_pml_freq_none():
     # Default value is 25.0
     with pytest.warns(
-        UserWarning, match=re.escape("pml_freq was not set, so defaulting to 25.0.")
+        UserWarning, match=re.escape("pml_freq was not set, so defaulting to 25.0."),
     ):
         assert set_pml_freq(None, 0.004) == 25.0
 
@@ -275,7 +277,7 @@ def test_set_pml_freq_above_nyquist():
 
 def test_set_pml_freq_invalid_type():
     with pytest.raises(
-        TypeError, match=re.escape("pml_freq must be None or convertible to a float.")
+        TypeError, match=re.escape("pml_freq must be None or convertible to a float."),
     ):
         set_pml_freq("invalid", 0.004)
 
@@ -312,14 +314,14 @@ def test_set_max_vel_negative_value():
 
 def test_set_max_vel_invalid_type():
     with pytest.raises(
-        TypeError, match=re.escape("max_vel must be None or convertible to a float.")
+        TypeError, match=re.escape("max_vel must be None or convertible to a float."),
     ):
         set_max_vel("invalid", 1500.0)
 
 
 def test_set_max_vel_zero_actual_max_vel():
     with pytest.raises(
-        ValueError, match=re.escape("max_model_vel must be greater than zero.")
+        ValueError, match=re.escape("max_model_vel must be greater than zero."),
     ):
         set_max_vel(2000.0, 0.0)
 
@@ -335,7 +337,7 @@ def test_set_nt_none_without_source_amplitudes():
     source_amplitudes = [None]
     step_ratio = 1
     with pytest.raises(
-        RuntimeError, match=re.escape("nt or source amplitudes must be specified")
+        RuntimeError, match=re.escape("nt or source amplitudes must be specified"),
     ):
         set_nt(None, source_amplitudes, step_ratio)
 
@@ -400,18 +402,18 @@ def test_set_model_gradient_sampling_interval_valid_value():
 
 def test_set_model_gradient_sampling_interval_negative_value():
     with pytest.raises(
-        ValueError, match=re.escape("model_gradient_sampling_interval must be >= 0")
+        ValueError, match=re.escape("model_gradient_sampling_interval must be >= 0"),
     ):
         set_model_gradient_sampling_interval(-1)
 
 
 def test_set_model_gradient_sampling_interval_invalid_type():
     with pytest.raises(
-        TypeError, match=re.escape("model_gradient_sampling_interval must be an int.")
+        TypeError, match=re.escape("model_gradient_sampling_interval must be an int."),
     ):
         set_model_gradient_sampling_interval(1.0)
     with pytest.raises(
-        TypeError, match=re.escape("model_gradient_sampling_interval must be an int.")
+        TypeError, match=re.escape("model_gradient_sampling_interval must be an int."),
     ):
         set_model_gradient_sampling_interval("invalid")
 
@@ -429,18 +431,18 @@ def test_set_freq_taper_frac_valid_value():
 
 def test_set_freq_taper_frac_out_of_range():
     with pytest.raises(
-        ValueError, match=re.escape("freq_taper_frac must be in [0, 1], got -0.1")
+        ValueError, match=re.escape("freq_taper_frac must be in [0, 1], got -0.1"),
     ):
         set_freq_taper_frac(-0.1)
     with pytest.raises(
-        ValueError, match=re.escape("freq_taper_frac must be in [0, 1], got 1.1")
+        ValueError, match=re.escape("freq_taper_frac must be in [0, 1], got 1.1"),
     ):
         set_freq_taper_frac(1.1)
 
 
 def test_set_freq_taper_frac_invalid_type():
     with pytest.raises(
-        TypeError, match=re.escape("freq_taper_frac must be convertible to a float.")
+        TypeError, match=re.escape("freq_taper_frac must be convertible to a float."),
     ):
         set_freq_taper_frac("invalid")
 
@@ -454,18 +456,18 @@ def test_set_time_pad_frac_valid_value():
 
 def test_set_time_pad_frac_out_of_range():
     with pytest.raises(
-        ValueError, match=re.escape("time_pad_frac must be in [0, 1], got -0.1")
+        ValueError, match=re.escape("time_pad_frac must be in [0, 1], got -0.1"),
     ):
         set_time_pad_frac(-0.1)
     with pytest.raises(
-        ValueError, match=re.escape("time_pad_frac must be in [0, 1], got 1.1")
+        ValueError, match=re.escape("time_pad_frac must be in [0, 1], got 1.1"),
     ):
         set_time_pad_frac(1.1)
 
 
 def test_set_time_pad_frac_invalid_type():
     with pytest.raises(
-        TypeError, match=re.escape("time_pad_frac must be convertible to a float.")
+        TypeError, match=re.escape("time_pad_frac must be convertible to a float."),
     ):
         set_time_pad_frac("invalid")
 
@@ -483,7 +485,7 @@ def test_check_source_amplitudes_locations_match_length_mismatch():
     with pytest.raises(
         RuntimeError,
         match=re.escape(
-            "The same number of source_amplitudes (1) and source_locations (2) must be provided."
+            "The same number of source_amplitudes (1) and source_locations (2) must be provided.",
         ),
     ):
         check_source_amplitudes_locations_match(source_amplitudes, source_locations)
@@ -495,7 +497,7 @@ def test_check_source_amplitudes_locations_match_none_mismatch():
     with pytest.raises(
         RuntimeError,
         match=re.escape(
-            "Each pair of source locations and amplitudes must both be None or both be non-None."
+            "Each pair of source locations and amplitudes must both be None or both be non-None.",
         ),
     ):
         check_source_amplitudes_locations_match(source_amplitudes, source_locations)
@@ -507,7 +509,7 @@ def test_check_source_amplitudes_locations_match_n_sources_mismatch():
     with pytest.raises(
         RuntimeError,
         match=re.escape(
-            "Expected source amplitudes and locations to be the same size in the n_sources_per_shot dimension, got 1 and 2."
+            "Expected source amplitudes and locations to be the same size in the n_sources_per_shot dimension, got 1 and 2.",
         ),
     ):
         check_source_amplitudes_locations_match(source_amplitudes, source_locations)
@@ -593,7 +595,7 @@ def test_set_source_amplitudes_invalid_ndim():
     with pytest.raises(
         RuntimeError,
         match=re.escape(
-            "source amplitudes Tensors should have 3 dimensions, but found one with 2."
+            "source amplitudes Tensors should have 3 dimensions, but found one with 2.",
         ),
     ):
         set_source_amplitudes(
@@ -613,7 +615,7 @@ def test_set_source_amplitudes_inconsistent_device():
     source_amplitudes = [
         torch.randn(2, 3, 100, device="cuda")
         if torch.cuda.is_available()
-        else torch.randn(2, 3, 100)
+        else torch.randn(2, 3, 100),
     ]
     n_batch = 2
     nt = 100
@@ -627,7 +629,7 @@ def test_set_source_amplitudes_inconsistent_device():
         with pytest.raises(
             RuntimeError,
             match=re.escape(
-                "Inconsistent device: Expected all Tensors be on device cpu, but found a source amplitudes Tensor on device cuda."
+                "Inconsistent device: Expected all Tensors be on device cpu, but found a source amplitudes Tensor on device cuda.",
             ),
         ):
             set_source_amplitudes(
@@ -669,7 +671,7 @@ def test_set_source_amplitudes_inconsistent_dtype():
     with pytest.raises(
         RuntimeError,
         match=re.escape(
-            f"Inconsistent dtype: Expected source amplitudes to have datatype {dtype}, but found one with dtype {torch.float64}."
+            f"Inconsistent dtype: Expected source amplitudes to have datatype {dtype}, but found one with dtype {torch.float64}.",
         ),
     ):
         set_source_amplitudes(
@@ -698,7 +700,7 @@ def test_set_source_amplitudes_inconsistent_batch_size():
     with pytest.raises(
         RuntimeError,
         match=re.escape(
-            "Expected source amplitudes to have size 2 in the batch dimension, but found one with size 3."
+            "Expected source amplitudes to have size 2 in the batch dimension, but found one with size 3.",
         ),
     ):
         set_source_amplitudes(
@@ -716,7 +718,7 @@ def test_set_source_amplitudes_inconsistent_batch_size():
 
 def test_set_source_amplitudes_inconsistent_nt():
     source_amplitudes = [
-        torch.randn(2, 3, 40)
+        torch.randn(2, 3, 40),
     ]  # nt is 100, step_ratio is 1, so expected time samples is 100
     n_batch = 2
     nt = 100
@@ -729,7 +731,7 @@ def test_set_source_amplitudes_inconsistent_nt():
     with pytest.raises(
         RuntimeError,
         match=re.escape(
-            f"Inconsistent number of time samples: Expected source amplitudes to have {nt // step_ratio} time samples, but found one with 40."
+            f"Inconsistent number of time samples: Expected source amplitudes to have {nt // step_ratio} time samples, but found one with 40.",
         ),
     ):
         set_source_amplitudes(
@@ -784,7 +786,7 @@ def test_set_source_amplitudes_zero_n_batch():
     with pytest.raises(
         RuntimeError,
         match=re.escape(
-            "Expected source amplitudes to have size 0 in the batch dimension, but found one with size 2."
+            "Expected source amplitudes to have size 0 in the batch dimension, but found one with size 2.",
         ),
     ):
         set_source_amplitudes(
@@ -813,7 +815,7 @@ def test_set_source_amplitudes_zero_nt():
     with pytest.raises(
         RuntimeError,
         match=re.escape(
-            "Inconsistent number of time samples: Expected source amplitudes to have 0 time samples, but found one with 50."
+            "Inconsistent number of time samples: Expected source amplitudes to have 0 time samples, but found one with 50.",
         ),
     ):
         set_source_amplitudes(
@@ -848,7 +850,7 @@ def test_check_points_per_wavelength_warns():
     with pytest.warns(
         UserWarning,
         match=re.escape(
-            "At least six grid cells per wavelength is recommended, but at a frequency of 25.0, a minimum non-zero velocity of 100.0, and a grid cell spacing of 5.0, there are only 0.80."
+            "At least six grid cells per wavelength is recommended, but at a frequency of 25.0, a minimum non-zero velocity of 100.0, and a grid cell spacing of 5.0, there are only 0.80.",
         ),
     ):
         check_points_per_wavelength(min_nonzero_vel, pml_freq, grid_spacing)
@@ -870,7 +872,7 @@ def test_check_points_per_wavelength_zero_min_nonzero_vel():
     with pytest.warns(
         UserWarning,
         match=re.escape(
-            "At least six grid cells per wavelength is recommended, but at a frequency of 25.0, a minimum non-zero velocity of 0.0, and a grid cell spacing of 5.0, there are only 0.00."
+            "At least six grid cells per wavelength is recommended, but at a frequency of 25.0, a minimum non-zero velocity of 0.0, and a grid cell spacing of 5.0, there are only 0.00.",
         ),
     ):
         check_points_per_wavelength(min_nonzero_vel, pml_freq, grid_spacing)
@@ -881,7 +883,7 @@ def test_check_points_per_wavelength_negative_min_nonzero_vel():
     pml_freq = 25.0
     grid_spacing = [5.0, 5.0]
     with pytest.raises(
-        ValueError, match=re.escape("min_nonzero_vel must be non-negative.")
+        ValueError, match=re.escape("min_nonzero_vel must be non-negative."),
     ):
         check_points_per_wavelength(min_nonzero_vel, pml_freq, grid_spacing)
 
@@ -899,7 +901,7 @@ def test_check_points_per_wavelength_zero_grid_spacing_element():
     pml_freq = 25.0
     grid_spacing = [5.0, 0.0]
     with pytest.raises(
-        ValueError, match=re.escape("grid_spacing elements must be positive.")
+        ValueError, match=re.escape("grid_spacing elements must be positive."),
     ):
         check_points_per_wavelength(min_nonzero_vel, pml_freq, grid_spacing)
 
@@ -909,7 +911,7 @@ def test_check_points_per_wavelength_negative_grid_spacing_element():
     pml_freq = 25.0
     grid_spacing = [5.0, -1.0]
     with pytest.raises(
-        ValueError, match=re.escape("grid_spacing elements must be positive.")
+        ValueError, match=re.escape("grid_spacing elements must be positive."),
     ):
         check_points_per_wavelength(min_nonzero_vel, pml_freq, grid_spacing)
 
@@ -919,7 +921,7 @@ def test_cosine_taper_end_basic():
     signal = torch.ones(10)
     n_taper = 5
     expected = torch.tensor(
-        [1.0, 1.0, 1.0, 1.0, 1.0, 0.9045, 0.6545, 0.3455, 0.0955, 0.0]
+        [1.0, 1.0, 1.0, 1.0, 1.0, 0.9045, 0.6545, 0.3455, 0.0955, 0.0],
     )
     result = cosine_taper_end(signal, n_taper)
     assert torch.allclose(result, expected, atol=1e-4)
@@ -1034,7 +1036,7 @@ def test_cfl_condition_n_zero_max_vel():
     dt = 0.004
     max_vel = 0.0
     with pytest.raises(
-        RuntimeError, match=re.escape("max_abs_vel must be greater than zero.")
+        RuntimeError, match=re.escape("max_abs_vel must be greater than zero."),
     ):
         cfl_condition_n(grid_spacing, dt, max_vel)
 
@@ -1059,7 +1061,7 @@ def test_cfl_condition_n_different_grid_spacing():
 
 def test_cfl_condition_n_invalid_type_grid_spacing():
     with pytest.raises(
-        TypeError, match=re.escape("grid_spacing must be a list of floats.")
+        TypeError, match=re.escape("grid_spacing must be a list of floats."),
     ):
         cfl_condition_n("invalid", 0.004, 1500.0)
 
@@ -1079,7 +1081,7 @@ def test_cfl_condition_n_negative_grid_spacing_element():
     dt = 0.002
     max_vel = 1500.0
     with pytest.raises(
-        ValueError, match=re.escape("grid_spacing elements must be positive.")
+        ValueError, match=re.escape("grid_spacing elements must be positive."),
     ):
         cfl_condition_n(grid_spacing, dt, max_vel)
 
@@ -1089,7 +1091,7 @@ def test_cfl_condition_n_zero_grid_spacing_element():
     dt = 0.002
     max_vel = 1500.0
     with pytest.raises(
-        ValueError, match=re.escape("grid_spacing elements must be positive.")
+        ValueError, match=re.escape("grid_spacing elements must be positive."),
     ):
         cfl_condition_n(grid_spacing, dt, max_vel)
 

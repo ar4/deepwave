@@ -1,9 +1,10 @@
 import math
-import torch
-from deepwave.common import upsample, downsample
+import re
 
 import pytest
-import re
+import torch
+
+from deepwave.common import downsample, upsample
 
 
 def test_upsample_invalid_signal_type():
@@ -115,7 +116,7 @@ def test_downsample_invalid_signal_type():
     ],
 )
 def test_resample_invalid_args(
-    func, arg_name, arg_value, expected_error_match, expected_error_type
+    func, arg_name, arg_value, expected_error_match, expected_error_type,
 ):
     signal = torch.randn(10)
 
@@ -162,6 +163,6 @@ def test_shift(n=128, dtype=torch.double, device=None):
     x = torch.sin(torch.arange(n, dtype=dtype, device=device) * 2 * math.pi / n * 6)
     y = downsample(x, 2, shift=-0.23456)
     expected = torch.sin(
-        (torch.arange(n, dtype=dtype, device=device) + 0.23456) * 2 * math.pi / n * 6
+        (torch.arange(n, dtype=dtype, device=device) + 0.23456) * 2 * math.pi / n * 6,
     )[::2]
     assert torch.allclose(y, expected)

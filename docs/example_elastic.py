@@ -1,11 +1,11 @@
-"""
-This script demonstrates elastic wave propagation and Full-Waveform Inversion (FWI).
+"""This script demonstrates elastic wave propagation and Full-Waveform Inversion (FWI).
 It shows how to set up elastic models, generate synthetic data, and perform
 inversion for vp, vs, and rho parameters.
 """
 
-import torch
 import matplotlib.pyplot as plt
+import torch
+
 import deepwave
 from deepwave import elastic
 
@@ -44,14 +44,14 @@ peak_time = 1.5 / freq
 
 # source_locations
 source_locations = torch.zeros(
-    n_shots, n_sources_per_shot, 2, dtype=torch.long, device=device
+    n_shots, n_sources_per_shot, 2, dtype=torch.long, device=device,
 )
 source_locations[..., 0] = source_depth
 source_locations[:, 0, 1] = torch.arange(n_shots) * d_source + first_source
 
 # receiver_locations
 receiver_locations = torch.zeros(
-    n_shots, n_receivers_per_shot, 2, dtype=torch.long, device=device
+    n_shots, n_receivers_per_shot, 2, dtype=torch.long, device=device,
 )
 receiver_locations[..., 0] = receiver_depth
 receiver_locations[:, :, 1] = (
@@ -124,7 +124,7 @@ ax[1, 0].set_title("Out vp")
 ax[1, 1].imshow(vs.detach().cpu(), aspect="auto", cmap="gray", vmin=vsmin, vmax=vsmax)
 ax[1, 1].set_title("Out vs")
 ax[1, 2].imshow(
-    rho.detach().cpu(), aspect="auto", cmap="gray", vmin=rhomin, vmax=rhomax
+    rho.detach().cpu(), aspect="auto", cmap="gray", vmin=rhomin, vmax=rhomax,
 )
 ax[1, 2].set_title("Out rho")
 plt.tight_layout()

@@ -18,7 +18,7 @@ receivers).
 All outputs are differentiable with respect to float torch.Tensor inputs.
 """
 
-from typing import Any, cast, List, Optional, Sequence, Tuple, Union
+from typing import Any, List, Optional, Sequence, Tuple, Union, cast
 
 import torch
 
@@ -49,11 +49,12 @@ class Scalar(torch.nn.Module):
                 dimension.
             v_requires_grad: A bool specifying whether gradients will be
                 computed for `v`. Defaults to False.
+
         """
         super().__init__()
         if not isinstance(v_requires_grad, bool):
             raise TypeError(
-                f"v_requires_grad must be bool, got {type(v_requires_grad).__name__}"
+                f"v_requires_grad must be bool, got {type(v_requires_grad).__name__}",
             )
         if not isinstance(v, torch.Tensor):
             raise TypeError("v must be a torch.Tensor.")
@@ -461,7 +462,7 @@ def scalar(
     )
 
     receiver_amplitudes = deepwave.common.downsample_and_movedim(
-        receiver_amplitudes, step_ratio, freq_taper_frac, time_pad_frac, time_taper
+        receiver_amplitudes, step_ratio, freq_taper_frac, time_pad_frac, time_taper,
     )
 
     return wfc, wfp, psiy, psix, zetay, zetax, receiver_amplitudes
@@ -547,6 +548,7 @@ class ScalarForwardFunc(torch.autograd.Function):
 
         Returns:
             A tuple containing the output wavefields and receiver amplitudes.
+
         """
         if (
             v.requires_grad
@@ -600,22 +602,22 @@ class ScalarForwardFunc(torch.autograd.Function):
         fd_pad = accuracy // 2
         size_with_batch = (n_shots, *v.shape[-2:])
         wfc = deepwave.common.create_or_pad(
-            wfc, fd_pad, v.device, v.dtype, size_with_batch
+            wfc, fd_pad, v.device, v.dtype, size_with_batch,
         )
         wfp = deepwave.common.create_or_pad(
-            wfp, fd_pad, v.device, v.dtype, size_with_batch
+            wfp, fd_pad, v.device, v.dtype, size_with_batch,
         )
         psiy = deepwave.common.create_or_pad(
-            psiy, fd_pad, v.device, v.dtype, size_with_batch
+            psiy, fd_pad, v.device, v.dtype, size_with_batch,
         )
         psix = deepwave.common.create_or_pad(
-            psix, fd_pad, v.device, v.dtype, size_with_batch
+            psix, fd_pad, v.device, v.dtype, size_with_batch,
         )
         zetay = deepwave.common.create_or_pad(
-            zetay, fd_pad, v.device, v.dtype, size_with_batch
+            zetay, fd_pad, v.device, v.dtype, size_with_batch,
         )
         zetax = deepwave.common.create_or_pad(
-            zetax, fd_pad, v.device, v.dtype, size_with_batch
+            zetax, fd_pad, v.device, v.dtype, size_with_batch,
         )
         psiy = deepwave.common.zero_interior(psiy, fd_pad, pml_width, True)
         psix = deepwave.common.zero_interior(psix, fd_pad, pml_width, False)
@@ -648,13 +650,12 @@ class ScalarForwardFunc(torch.autograd.Function):
 
         if v.is_cuda:
             aux = v.get_device()
+        elif deepwave.backend_utils.USE_OPENMP:
+            aux = min(n_shots, torch.get_num_threads())
         else:
-            if deepwave.backend_utils.USE_OPENMP:
-                aux = min(n_shots, torch.get_num_threads())
-            else:
-                aux = 1
+            aux = 1
         forward = deepwave.backend_utils.get_backend_function(
-            "scalar", "forward", accuracy, dtype, v.device
+            "scalar", "forward", accuracy, dtype, v.device,
         )
 
         if wfc.numel() > 0 and nt > 0:
@@ -754,6 +755,7 @@ class ScalarForwardFunc(torch.autograd.Function):
 
         Returns:
             Gradients with respect to the inputs of the forward pass.
+
         """
         (
             v,
@@ -821,16 +823,7 @@ class ScalarForwardFunc(torch.autograd.Function):
         )
         return (
             cast(
-                Tuple[
-                    Optional[torch.Tensor],
-                    Optional[torch.Tensor],
-                    Optional[torch.Tensor],
-                    Optional[torch.Tensor],
-                    Optional[torch.Tensor],
-                    Optional[torch.Tensor],
-                    Optional[torch.Tensor],
-                    Optional[torch.Tensor],
-                ],
+                "Tuple[Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor]]",
                 result,
             )
             + (None,) * 16
@@ -934,6 +927,7 @@ class ScalarBackwardFunc(torch.autograd.Function):
 
         Returns:
             A tuple containing the gradients of the inputs.
+
         """
         ctx.save_for_backward(
             gwfc,
@@ -992,22 +986,22 @@ class ScalarBackwardFunc(torch.autograd.Function):
 
         size_with_batch = (n_shots, *v.shape[-2:])
         gwfc = deepwave.common.create_or_pad(
-            gwfc, fd_pad, v.device, v.dtype, size_with_batch
+            gwfc, fd_pad, v.device, v.dtype, size_with_batch,
         )
         gwfp = deepwave.common.create_or_pad(
-            gwfp, fd_pad, v.device, v.dtype, size_with_batch
+            gwfp, fd_pad, v.device, v.dtype, size_with_batch,
         )
         gpsiy = deepwave.common.create_or_pad(
-            gpsiy, fd_pad, v.device, v.dtype, size_with_batch
+            gpsiy, fd_pad, v.device, v.dtype, size_with_batch,
         )
         gpsix = deepwave.common.create_or_pad(
-            gpsix, fd_pad, v.device, v.dtype, size_with_batch
+            gpsix, fd_pad, v.device, v.dtype, size_with_batch,
         )
         gzetay = deepwave.common.create_or_pad(
-            gzetay, fd_pad, v.device, v.dtype, size_with_batch
+            gzetay, fd_pad, v.device, v.dtype, size_with_batch,
         )
         gzetax = deepwave.common.create_or_pad(
-            gzetax, fd_pad, v.device, v.dtype, size_with_batch
+            gzetax, fd_pad, v.device, v.dtype, size_with_batch,
         )
         gpsiy = deepwave.common.zero_interior(gpsiy, fd_pad, pml_width, True)
         gpsix = deepwave.common.zero_interior(gpsix, fd_pad, pml_width, False)
@@ -1058,7 +1052,7 @@ class ScalarBackwardFunc(torch.autograd.Function):
                 grad_v_tmp.fill_(0)
                 grad_v_tmp_ptr = grad_v_tmp.data_ptr()
         backward = deepwave.backend_utils.get_backend_function(
-            "scalar", "backward", accuracy, dtype, v.device
+            "scalar", "backward", accuracy, dtype, v.device,
         )
 
         v2dt2 = v**2 * dt**2
@@ -1171,6 +1165,7 @@ class ScalarBackwardFunc(torch.autograd.Function):
         Returns:
             Second-order gradients with respect to the inputs of the
             `ScalarBackwardFunc.forward` method.
+
         """
         (
             gwfc,
@@ -1230,40 +1225,40 @@ class ScalarBackwardFunc(torch.autograd.Function):
         fd_pad = accuracy // 2
         size_with_batch = (n_shots, *v.shape[-2:])
         wfc = deepwave.common.create_or_pad(
-            wfc, fd_pad, v.device, v.dtype, size_with_batch
+            wfc, fd_pad, v.device, v.dtype, size_with_batch,
         )
         wfp = deepwave.common.create_or_pad(
-            wfp, fd_pad, v.device, v.dtype, size_with_batch
+            wfp, fd_pad, v.device, v.dtype, size_with_batch,
         )
         psiy = deepwave.common.create_or_pad(
-            psiy, fd_pad, v.device, v.dtype, size_with_batch
+            psiy, fd_pad, v.device, v.dtype, size_with_batch,
         )
         psix = deepwave.common.create_or_pad(
-            psix, fd_pad, v.device, v.dtype, size_with_batch
+            psix, fd_pad, v.device, v.dtype, size_with_batch,
         )
         zetay = deepwave.common.create_or_pad(
-            zetay, fd_pad, v.device, v.dtype, size_with_batch
+            zetay, fd_pad, v.device, v.dtype, size_with_batch,
         )
         zetax = deepwave.common.create_or_pad(
-            zetax, fd_pad, v.device, v.dtype, size_with_batch
+            zetax, fd_pad, v.device, v.dtype, size_with_batch,
         )
         ggwfc = deepwave.common.create_or_pad(
-            ggwfc, fd_pad, v.device, v.dtype, size_with_batch
+            ggwfc, fd_pad, v.device, v.dtype, size_with_batch,
         )
         ggwfp = deepwave.common.create_or_pad(
-            ggwfp, fd_pad, v.device, v.dtype, size_with_batch
+            ggwfp, fd_pad, v.device, v.dtype, size_with_batch,
         )
         ggpsiy = deepwave.common.create_or_pad(
-            ggpsiy, fd_pad, v.device, v.dtype, size_with_batch
+            ggpsiy, fd_pad, v.device, v.dtype, size_with_batch,
         )
         ggpsix = deepwave.common.create_or_pad(
-            ggpsix, fd_pad, v.device, v.dtype, size_with_batch
+            ggpsix, fd_pad, v.device, v.dtype, size_with_batch,
         )
         ggzetay = deepwave.common.create_or_pad(
-            ggzetay, fd_pad, v.device, v.dtype, size_with_batch
+            ggzetay, fd_pad, v.device, v.dtype, size_with_batch,
         )
         ggzetax = deepwave.common.create_or_pad(
-            ggzetax, fd_pad, v.device, v.dtype, size_with_batch
+            ggzetax, fd_pad, v.device, v.dtype, size_with_batch,
         )
         psiy = deepwave.common.zero_interior(psiy, fd_pad, pml_width, True)
         psix = deepwave.common.zero_interior(psix, fd_pad, pml_width, False)
@@ -1311,13 +1306,12 @@ class ScalarBackwardFunc(torch.autograd.Function):
 
         if v.is_cuda:
             aux = v.get_device()
+        elif deepwave.backend_utils.USE_OPENMP:
+            aux = min(n_shots, torch.get_num_threads())
         else:
-            if deepwave.backend_utils.USE_OPENMP:
-                aux = min(n_shots, torch.get_num_threads())
-            else:
-                aux = 1
+            aux = 1
         forward = deepwave.backend_utils.get_backend_function(
-            "scalar_born", "forward", accuracy, dtype, v.device
+            "scalar_born", "forward", accuracy, dtype, v.device,
         )
 
         if wfc.numel() > 0 and nt > 0:
@@ -1391,22 +1385,22 @@ class ScalarBackwardFunc(torch.autograd.Function):
         n_greceivers_per_shot = bwd_greceivers_i.numel() // n_shots
 
         wfc = deepwave.common.create_or_pad(
-            torch.empty(0), fd_pad, v.device, v.dtype, size_with_batch
+            torch.empty(0), fd_pad, v.device, v.dtype, size_with_batch,
         )
         wfp = deepwave.common.create_or_pad(
-            torch.empty(0), fd_pad, v.device, v.dtype, size_with_batch
+            torch.empty(0), fd_pad, v.device, v.dtype, size_with_batch,
         )
         psiy = deepwave.common.create_or_pad(
-            torch.empty(0), fd_pad, v.device, v.dtype, size_with_batch
+            torch.empty(0), fd_pad, v.device, v.dtype, size_with_batch,
         )
         psix = deepwave.common.create_or_pad(
-            torch.empty(0), fd_pad, v.device, v.dtype, size_with_batch
+            torch.empty(0), fd_pad, v.device, v.dtype, size_with_batch,
         )
         zetay = deepwave.common.create_or_pad(
-            torch.empty(0), fd_pad, v.device, v.dtype, size_with_batch
+            torch.empty(0), fd_pad, v.device, v.dtype, size_with_batch,
         )
         zetax = deepwave.common.create_or_pad(
-            torch.empty(0), fd_pad, v.device, v.dtype, size_with_batch
+            torch.empty(0), fd_pad, v.device, v.dtype, size_with_batch,
         )
         psiy = deepwave.common.zero_interior(psiy, fd_pad, pml_width, True)
         psix = deepwave.common.zero_interior(psix, fd_pad, pml_width, False)
@@ -1417,22 +1411,22 @@ class ScalarBackwardFunc(torch.autograd.Function):
         zetayn = torch.zeros_like(zetay)
         zetaxn = torch.zeros_like(zetax)
         gwfc = deepwave.common.create_or_pad(
-            gwfc, fd_pad, v.device, v.dtype, size_with_batch
+            gwfc, fd_pad, v.device, v.dtype, size_with_batch,
         )
         gwfp = deepwave.common.create_or_pad(
-            gwfp, fd_pad, v.device, v.dtype, size_with_batch
+            gwfp, fd_pad, v.device, v.dtype, size_with_batch,
         )
         gpsiy = deepwave.common.create_or_pad(
-            gpsiy, fd_pad, v.device, v.dtype, size_with_batch
+            gpsiy, fd_pad, v.device, v.dtype, size_with_batch,
         )
         gpsix = deepwave.common.create_or_pad(
-            gpsix, fd_pad, v.device, v.dtype, size_with_batch
+            gpsix, fd_pad, v.device, v.dtype, size_with_batch,
         )
         gzetay = deepwave.common.create_or_pad(
-            gzetay, fd_pad, v.device, v.dtype, size_with_batch
+            gzetay, fd_pad, v.device, v.dtype, size_with_batch,
         )
         gzetax = deepwave.common.create_or_pad(
-            gzetax, fd_pad, v.device, v.dtype, size_with_batch
+            gzetax, fd_pad, v.device, v.dtype, size_with_batch,
         )
         gpsiy = deepwave.common.zero_interior(gpsiy, fd_pad, pml_width, True)
         gpsix = deepwave.common.zero_interior(gpsix, fd_pad, pml_width, False)
@@ -1483,15 +1477,14 @@ class ScalarBackwardFunc(torch.autograd.Function):
                     backward = (
                         deepwave.backend_utils.dll.scalar_born_iso_8_float_backward_cuda
                     )
+            elif accuracy == 2:
+                backward = deepwave.backend_utils.dll.scalar_born_iso_2_double_backward_cuda
+            elif accuracy == 4:
+                backward = deepwave.backend_utils.dll.scalar_born_iso_4_double_backward_cuda
+            elif accuracy == 6:
+                backward = deepwave.backend_utils.dll.scalar_born_iso_6_double_backward_cuda
             else:
-                if accuracy == 2:
-                    backward = deepwave.backend_utils.dll.scalar_born_iso_2_double_backward_cuda
-                elif accuracy == 4:
-                    backward = deepwave.backend_utils.dll.scalar_born_iso_4_double_backward_cuda
-                elif accuracy == 6:
-                    backward = deepwave.backend_utils.dll.scalar_born_iso_6_double_backward_cuda
-                else:
-                    backward = deepwave.backend_utils.dll.scalar_born_iso_8_double_backward_cuda
+                backward = deepwave.backend_utils.dll.scalar_born_iso_8_double_backward_cuda
         else:
             if deepwave.backend_utils.USE_OPENMP:
                 aux = min(n_shots, torch.get_num_threads())
@@ -1523,23 +1516,22 @@ class ScalarBackwardFunc(torch.autograd.Function):
                     backward = (
                         deepwave.backend_utils.dll.scalar_born_iso_8_float_backward_cpu
                     )
+            elif accuracy == 2:
+                backward = (
+                    deepwave.backend_utils.dll.scalar_born_iso_2_double_backward_cpu
+                )
+            elif accuracy == 4:
+                backward = (
+                    deepwave.backend_utils.dll.scalar_born_iso_4_double_backward_cpu
+                )
+            elif accuracy == 6:
+                backward = (
+                    deepwave.backend_utils.dll.scalar_born_iso_6_double_backward_cpu
+                )
             else:
-                if accuracy == 2:
-                    backward = (
-                        deepwave.backend_utils.dll.scalar_born_iso_2_double_backward_cpu
-                    )
-                elif accuracy == 4:
-                    backward = (
-                        deepwave.backend_utils.dll.scalar_born_iso_4_double_backward_cpu
-                    )
-                elif accuracy == 6:
-                    backward = (
-                        deepwave.backend_utils.dll.scalar_born_iso_6_double_backward_cpu
-                    )
-                else:
-                    backward = (
-                        deepwave.backend_utils.dll.scalar_born_iso_8_double_backward_cpu
-                    )
+                backward = (
+                    deepwave.backend_utils.dll.scalar_born_iso_8_double_backward_cpu
+                )
 
         gwfp = -gwfp
 
@@ -1700,17 +1692,10 @@ def scalar_func(*args: Any) -> Tuple[torch.Tensor, ...]:
 
     Returns:
         The results of the forward pass from `ScalarForwardFunc.apply`.
+
     """
     result = ScalarForwardFunc.apply(*args)  # type: ignore[no-untyped-call]
     return cast(
-        Tuple[
-            torch.Tensor,
-            torch.Tensor,
-            torch.Tensor,
-            torch.Tensor,
-            torch.Tensor,
-            torch.Tensor,
-            torch.Tensor,
-        ],
+        "Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]",
         result,
     )

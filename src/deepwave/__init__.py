@@ -13,25 +13,22 @@ CUDA.
 """
 
 __all__ = [
-    "Scalar",
-    "scalar",
-    "ScalarBorn",
-    "scalar_born",
     "Elastic",
-    "elastic",
-    "wavelets",
-    "location_interpolation",
+    "Scalar",
+    "ScalarBorn",
     "_version",
     "backend_utils",
+    "elastic",
+    "location_interpolation",
+    "scalar",
+    "scalar_born",
+    "wavelets",
 ]
 
 # These imports are for exposing the public API
+from deepwave.elastic import Elastic, elastic
 from deepwave.scalar import Scalar, scalar
 from deepwave.scalar_born import ScalarBorn, scalar_born
-from deepwave.elastic import Elastic, elastic
-from . import wavelets
-from . import location_interpolation
-from . import _version
 
 # Import backend utilities to ensure DLL is loaded and functions are assigned
-from . import backend_utils
+from . import _version, backend_utils, location_interpolation, wavelets

@@ -1,20 +1,21 @@
-"""
-This script demonstrates two methods for implementing custom imaging conditions
+"""This script demonstrates two methods for implementing custom imaging conditions
 in Deepwave: one using PyTorch's backward hooks and another using a lower-level
 internal interface. It compares their results and performance.
 """
 
 import time
+
+import matplotlib.pyplot as plt
 import torch
 from torch.autograd.function import once_differentiable
-import matplotlib.pyplot as plt
+
 import deepwave
 from deepwave.common import (
-    setup_propagator,
-    diff,
     create_or_pad,
-    zero_interior,
+    diff,
     downsample_and_movedim,
+    setup_propagator,
+    zero_interior,
 )
 
 ny = 200
@@ -37,14 +38,14 @@ max_vel = 1650
 source_locations = torch.zeros(n_shots, 1, 2, dtype=torch.long, device=device)
 source_locations[..., 0] = acquisition_depth
 source_locations[:, 0, 1] = torch.linspace(
-    0, nx - 1, n_shots, dtype=torch.long, device=device
+    0, nx - 1, n_shots, dtype=torch.long, device=device,
 )
 receiver_locations = torch.zeros(
-    n_shots, n_receivers_per_shot, 2, dtype=torch.long, device=device
+    n_shots, n_receivers_per_shot, 2, dtype=torch.long, device=device,
 )
 receiver_locations[..., 0] = acquisition_depth
 receiver_locations[0, :, 1] = torch.linspace(
-    0, nx - 1, n_receivers_per_shot, dtype=torch.long, device=device
+    0, nx - 1, n_receivers_per_shot, dtype=torch.long, device=device,
 )
 receiver_locations[..., 1] = receiver_locations[:1, :, 1].repeat(n_shots, 1)
 
@@ -104,7 +105,7 @@ def method_1():
     # Storage for second time derivative of forward wavefield
     source_wavefields = torch.zeros(n_segments, n_shots, ny, nx, device=device)
     receiver_amplitudes = torch.zeros(
-        n_shots, n_receivers_per_shot, n_segments * step_ratio, device=device
+        n_shots, n_receivers_per_shot, n_segments * step_ratio, device=device,
     )
     # Storage for gradient with respect to model
     out = [torch.zeros(ny, nx, device=device)]
@@ -146,7 +147,7 @@ def method_1():
 
         # We then save the source (forward) wavefield (part 1)
         source_wavefields[i] = wavefield_m1.detach()[
-            :, pml_width:-pml_width, pml_width:-pml_width
+            :, pml_width:-pml_width, pml_width:-pml_width,
         ]
 
         # Then propagate forward for the last timestep in the chunk
@@ -201,7 +202,7 @@ def method_1():
         k += chunk.shape[-1]
 
     loss = 1e6 * loss_fn(
-        deepwave.common.downsample(receiver_amplitudes, step_ratio), d_true
+        deepwave.common.downsample(receiver_amplitudes, step_ratio), d_true,
     )
     loss.backward()
 
@@ -307,7 +308,7 @@ def method2_scalar(
     )
 
     receiver_amplitudes = downsample_and_movedim(
-        receiver_amplitudes, step_ratio, freq_taper_frac, time_pad_frac
+        receiver_amplitudes, step_ratio, freq_taper_frac, time_pad_frac,
     )
 
     return wfc, wfp, psiy, psix, zetay, zetax, receiver_amplitudes
@@ -413,15 +414,14 @@ class Method2ForwardFunc(torch.autograd.Function):
                     forward = deepwave.dll_cuda.scalar_iso_6_float_forward
                 else:
                     forward = deepwave.dll_cuda.scalar_iso_8_float_forward
+            elif accuracy == 2:
+                forward = deepwave.dll_cuda.scalar_iso_2_double_forward
+            elif accuracy == 4:
+                forward = deepwave.dll_cuda.scalar_iso_4_double_forward
+            elif accuracy == 6:
+                forward = deepwave.dll_cuda.scalar_iso_6_double_forward
             else:
-                if accuracy == 2:
-                    forward = deepwave.dll_cuda.scalar_iso_2_double_forward
-                elif accuracy == 4:
-                    forward = deepwave.dll_cuda.scalar_iso_4_double_forward
-                elif accuracy == 6:
-                    forward = deepwave.dll_cuda.scalar_iso_6_double_forward
-                else:
-                    forward = deepwave.dll_cuda.scalar_iso_8_double_forward
+                forward = deepwave.dll_cuda.scalar_iso_8_double_forward
         else:  # Running on CPU
             if deepwave.use_openmp:
                 aux = min(n_shots, torch.get_num_threads())
@@ -442,15 +442,14 @@ class Method2ForwardFunc(torch.autograd.Function):
                     forward = deepwave.dll_cpu.scalar_iso_6_float_forward
                 else:
                     forward = deepwave.dll_cpu.scalar_iso_8_float_forward
+            elif accuracy == 2:
+                forward = deepwave.dll_cpu.scalar_iso_2_double_forward
+            elif accuracy == 4:
+                forward = deepwave.dll_cpu.scalar_iso_4_double_forward
+            elif accuracy == 6:
+                forward = deepwave.dll_cpu.scalar_iso_6_double_forward
             else:
-                if accuracy == 2:
-                    forward = deepwave.dll_cpu.scalar_iso_2_double_forward
-                elif accuracy == 4:
-                    forward = deepwave.dll_cpu.scalar_iso_4_double_forward
-                elif accuracy == 6:
-                    forward = deepwave.dll_cpu.scalar_iso_6_double_forward
-                else:
-                    forward = deepwave.dll_cpu.scalar_iso_8_double_forward
+                forward = deepwave.dll_cpu.scalar_iso_8_double_forward
 
         # Call the C/CUDA function to propagate forward
         if wfc.numel() > 0 and nt > 0:
@@ -507,7 +506,7 @@ class Method2ForwardFunc(torch.autograd.Function):
             or zetax.requires_grad
         ):
             ctx.save_for_backward(
-                v, ay, ax, by, bx, dbydy, dbxdx, sources_i, receivers_i, dwdv
+                v, ay, ax, by, bx, dbydy, dbxdx, sources_i, receivers_i, dwdv,
             )
             ctx.dy = dy
             ctx.dx = dx
@@ -531,16 +530,15 @@ class Method2ForwardFunc(torch.autograd.Function):
                 zetax[s],
                 receiver_amplitudes,
             )
-        else:
-            return (
-                wfp[s],
-                wfc[s],
-                psiyn[s],
-                psixn[s],
-                zetay[s],
-                zetax[s],
-                receiver_amplitudes,
-            )
+        return (
+            wfp[s],
+            wfc[s],
+            psiyn[s],
+            psixn[s],
+            zetay[s],
+            zetax[s],
+            receiver_amplitudes,
+        )
 
     @staticmethod
     @once_differentiable
@@ -608,15 +606,14 @@ class Method2ForwardFunc(torch.autograd.Function):
                     backward = deepwave.dll_cuda.scalar_iso_6_float_backward
                 else:
                     backward = deepwave.dll_cuda.scalar_iso_8_float_backward
+            elif accuracy == 2:
+                backward = deepwave.dll_cuda.scalar_iso_2_double_backward
+            elif accuracy == 4:
+                backward = deepwave.dll_cuda.scalar_iso_4_double_backward
+            elif accuracy == 6:
+                backward = deepwave.dll_cuda.scalar_iso_6_double_backward
             else:
-                if accuracy == 2:
-                    backward = deepwave.dll_cuda.scalar_iso_2_double_backward
-                elif accuracy == 4:
-                    backward = deepwave.dll_cuda.scalar_iso_4_double_backward
-                elif accuracy == 6:
-                    backward = deepwave.dll_cuda.scalar_iso_6_double_backward
-                else:
-                    backward = deepwave.dll_cuda.scalar_iso_8_double_backward
+                backward = deepwave.dll_cuda.scalar_iso_8_double_backward
         else:
             if deepwave.use_openmp:
                 aux = min(n_shots, torch.get_num_threads())
@@ -631,15 +628,14 @@ class Method2ForwardFunc(torch.autograd.Function):
                     backward = deepwave.dll_cpu.scalar_iso_6_float_backward
                 else:
                     backward = deepwave.dll_cpu.scalar_iso_8_float_backward
+            elif accuracy == 2:
+                backward = deepwave.dll_cpu.scalar_iso_2_double_backward
+            elif accuracy == 4:
+                backward = deepwave.dll_cpu.scalar_iso_4_double_backward
+            elif accuracy == 6:
+                backward = deepwave.dll_cpu.scalar_iso_6_double_backward
             else:
-                if accuracy == 2:
-                    backward = deepwave.dll_cpu.scalar_iso_2_double_backward
-                elif accuracy == 4:
-                    backward = deepwave.dll_cpu.scalar_iso_4_double_backward
-                elif accuracy == 6:
-                    backward = deepwave.dll_cpu.scalar_iso_6_double_backward
-                else:
-                    backward = deepwave.dll_cpu.scalar_iso_8_double_backward
+                backward = deepwave.dll_cpu.scalar_iso_8_double_backward
 
         v2dt2 = v**2 * dt**2
         wfp = -wfp
@@ -804,12 +800,12 @@ print("Regular Deepwave:", time.time() - t0)
 _, ax = plt.subplots(3, figsize=(10.5, 10.5), sharex=True, sharey=True)
 vmax = 0.0003
 im = ax[0].imshow(
-    method_1_grad.cpu()[1:-1, 1:-1], aspect="auto", cmap="gray", vmin=-vmax, vmax=vmax
+    method_1_grad.cpu()[1:-1, 1:-1], aspect="auto", cmap="gray", vmin=-vmax, vmax=vmax,
 )
 plt.colorbar(im, ax=ax[0])
 ax[0].set_title("Method 1")
 im = ax[1].imshow(
-    method_2_grad.cpu()[1:-1, 1:-1], aspect="auto", cmap="gray", vmin=-vmax, vmax=vmax
+    method_2_grad.cpu()[1:-1, 1:-1], aspect="auto", cmap="gray", vmin=-vmax, vmax=vmax,
 )
 plt.colorbar(im, ax=ax[1])
 ax[1].set_title("Method 2")

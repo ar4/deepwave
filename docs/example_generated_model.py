@@ -1,11 +1,11 @@
-"""
-This script demonstrates how to use a custom model generation function
+"""This script demonstrates how to use a custom model generation function
 within Deepwave's optimization framework to invert for layered velocities.
 """
 
-import torch
-import deepwave
 import matplotlib.pyplot as plt
+import torch
+
+import deepwave
 
 
 class Model(torch.nn.Module):
@@ -33,6 +33,7 @@ class Model(torch.nn.Module):
 
         Returns:
             A layered model with the specified velocities.
+
         """
         return (
             x.reshape(-1, 1)

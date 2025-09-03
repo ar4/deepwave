@@ -1,12 +1,12 @@
-"""
-This script demonstrates joint migration inversion using Deepwave,
+"""This script demonstrates joint migration inversion using Deepwave,
 where both the velocity model and the scattering potential are inverted simultaneously.
 """
 
+import matplotlib.pyplot as plt
 import torch
 import torchvision
 from scipy.ndimage import gaussian_filter
-import matplotlib.pyplot as plt
+
 import deepwave
 from deepwave import scalar_born
 
@@ -15,7 +15,7 @@ ny_full = 2301
 nx_full = 751
 dx = 4.0
 v_true_full = torch.from_file("marmousi_vp.bin", size=ny_full * nx_full).reshape(
-    ny_full, nx_full
+    ny_full, nx_full,
 )
 
 # Select portion of model for inversion
@@ -46,7 +46,7 @@ dt = 0.004
 peak_time = 1.5 / freq
 
 observed_data = torch.from_file(
-    "marmousi_data.bin", size=n_shots * n_receivers_per_shot * nt
+    "marmousi_data.bin", size=n_shots * n_receivers_per_shot * nt,
 ).reshape(n_shots, n_receivers_per_shot, nt)
 
 # Select portion of data for inversion
@@ -54,19 +54,19 @@ n_shots_subset = 20
 n_receivers_per_shot_subset = 100
 nt_subset = 300
 observed_data = observed_data[
-    :n_shots_subset, :n_receivers_per_shot_subset, :nt_subset
+    :n_shots_subset, :n_receivers_per_shot_subset, :nt_subset,
 ].to(device)
 
 # source_locations
 source_locations = torch.zeros(
-    n_shots, n_sources_per_shot, 2, dtype=torch.long, device=device
+    n_shots, n_sources_per_shot, 2, dtype=torch.long, device=device,
 )
 source_locations[..., 1] = source_depth
 source_locations[:, 0, 0] = torch.arange(n_shots) * d_source + first_source
 
 # receiver_locations
 receiver_locations = torch.zeros(
-    n_shots, n_receivers_per_shot, 2, dtype=torch.long, device=device
+    n_shots, n_receivers_per_shot, 2, dtype=torch.long, device=device,
 )
 receiver_locations[..., 1] = receiver_depth
 receiver_locations[:, :, 0] = (
@@ -94,12 +94,12 @@ def closure():
     optimiser.zero_grad()
     # Remove high wavenumbers from the velocity model
     v_smooth = torchvision.transforms.functional.gaussian_blur(
-        v[None], [11, 11]
+        v[None], [11, 11],
     ).squeeze()
     # Remove low wavenumbers from the scattering model
     scatter_sharp = scatter - (
         torchvision.transforms.functional.gaussian_blur(
-            scatter[None], [11, 11]
+            scatter[None], [11, 11],
         ).squeeze()
     )
     out = scalar_born(
@@ -124,11 +124,11 @@ for epoch in range(n_epochs):
     optimiser.step(closure)
 
 v_smooth = torchvision.transforms.functional.gaussian_blur(
-    v.detach().cpu()[None], [11, 11]
+    v.detach().cpu()[None], [11, 11],
 ).squeeze()
 scatter_sharp = scatter.detach().cpu() - (
     torchvision.transforms.functional.gaussian_blur(
-        scatter.detach().cpu()[None], [11, 11]
+        scatter.detach().cpu()[None], [11, 11],
     ).squeeze()
 )
 

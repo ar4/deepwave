@@ -5,7 +5,9 @@ profiles for wave propagation simulations on a staggered grid.
 """
 
 from typing import List
+
 import torch
+
 import deepwave
 
 
@@ -41,6 +43,7 @@ def set_pml_profiles(
 
     Returns:
         A list of torch.Tensors representing the PML profiles (ay, ayh, ax, axh, by, byh, bx, bxh).
+
     """
     pml_start: List[float] = [
         pml_width[0],
@@ -54,7 +57,7 @@ def set_pml_profiles(
             pml_width[1] * grid_spacing[0],
             pml_width[2] * grid_spacing[1],
             pml_width[3] * grid_spacing[1],
-        ]
+        ],
     )
 
     ay, by = deepwave.common.setup_pml(

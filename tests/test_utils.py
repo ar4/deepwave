@@ -1,8 +1,10 @@
-import pytest
-import torch
-from deepwave.wavelets import ricker
 import math
+
+import pytest
 import scipy.special
+import torch
+
+from deepwave.wavelets import ricker
 
 
 def _set_sources(x_s, freq, dt, nt, dtype=None, dpeak_time=0.3):
@@ -38,7 +40,7 @@ def _set_sources(x_s, freq, dt, nt, dtype=None, dpeak_time=0.3):
         for source in range(num_sources_per_shot):
             peak_time = 0.05 + torch.rand(1).item() * dpeak_time
             sources["amplitude"][shot, source, :] = ricker(
-                freq, nt, dt, peak_time, dtype=dtype
+                freq, nt, dt, peak_time, dtype=dtype,
             )
     return sources
 
@@ -66,7 +68,7 @@ def _set_coords(num_shots, num_per_shot, nx, location="top"):
     ndim = len(nx)
     coords = torch.zeros(num_shots, num_per_shot, ndim)
     coords[..., 0] = torch.arange(num_shots * num_per_shot).reshape(
-        num_shots, num_per_shot
+        num_shots, num_per_shot,
     )
     if location == "top":
         pass
@@ -346,7 +348,7 @@ def _second_deriv(arr, dt):
         raise RuntimeError("arr must be a 1D Tensor.")
     if arr.numel() < 3:
         raise ValueError(
-            "arr must have at least 3 elements for second derivative calculation."
+            "arr must have at least 3 elements for second derivative calculation.",
         )
     if not isinstance(dt, (int, float)):
         raise TypeError("dt must be a number.")

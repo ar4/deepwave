@@ -1,5 +1,6 @@
-import torch
 import matplotlib.pyplot as plt
+import torch
+
 import deepwave
 
 ny = 100

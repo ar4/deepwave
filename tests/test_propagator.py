@@ -1,6 +1,8 @@
-import torch
-import pytest
 import re
+
+import pytest
+import torch
+
 import deepwave
 
 NZ = 5
@@ -50,13 +52,13 @@ def test_passes(prop):
             "model_gradient_sampling_interval must be >= 0",
             ValueError,
         ),
-        ("freq_taper_frac", -0.1, "freq_taper_frac must be in \[0, 1\]", ValueError),
-        ("time_pad_frac", 1.1, "time_pad_frac must be in \[0, 1\]", ValueError),
+        ("freq_taper_frac", -0.1, r"freq_taper_frac must be in \[0, 1\]", ValueError),
+        ("time_pad_frac", 1.1, r"time_pad_frac must be in \[0, 1\]", ValueError),
         ("time_taper", "invalid", "time_taper must be a bool.", TypeError),
     ],
 )
 def test_scalar_forward_invalid_optional_args(
-    prop, arg_name, arg_value, expected_error_match, expected_error_type
+    prop, arg_name, arg_value, expected_error_match, expected_error_type,
 ):
     source_amplitudes = torch.zeros(1, 1, 2)
     source_locations = torch.zeros(1, 1, 2, dtype=torch.long)
@@ -187,7 +189,7 @@ def test_pml_width_list_too_long(prop):
     receiver_locations = torch.zeros(2, 1, 2, dtype=torch.long)
     dt = 0.004
     with pytest.raises(
-        RuntimeError, match="Expected pml_width to be of length 1 or 4, got 5."
+        RuntimeError, match="Expected pml_width to be of length 1 or 4, got 5.",
     ):
         prop(
             dt,

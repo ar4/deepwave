@@ -1,13 +1,14 @@
 import torch
+from test_utils import _set_coords, _set_sources, scattered_2d
+
 from deepwave import ScalarBorn, scalar_born
-from deepwave.common import cfl_condition, upsample, downsample, IGNORE_LOCATION
-from test_utils import _set_sources, _set_coords, scattered_2d
+from deepwave.common import IGNORE_LOCATION, cfl_condition, downsample, upsample
 
 
 def test_born_scatter_2d():
     """Test Born propagation in a 2D model with a point scatterer."""
     expected, actual = run_born_scatter_2d(
-        propagator=scalarbornprop, dt=0.001, prop_kwargs={"pml_width": 30}
+        propagator=scalarbornprop, dt=0.001, prop_kwargs={"pml_width": 30},
     )
     diff = (expected - actual.cpu()).flatten()
     assert diff.norm() < 0.0025
@@ -112,7 +113,6 @@ def scalarbornprop(
     functional=True,
 ):
     """Wraps the scalar born propagator."""
-
     if prop_kwargs is None:
         prop_kwargs = {}
     # For consistency when actual max speed changes
@@ -215,7 +215,6 @@ def scalarbornpropchained(
     n_chained=2,
 ):
     """Wraps multiple scalar born propagators chained sequentially."""
-
     if prop_kwargs is None:
         prop_kwargs = {}
     # For consistency when actual max speed changes
@@ -310,7 +309,7 @@ def scalarbornpropchained(
             segment_source_amplitudes = source_amplitudes[
                 ...,
                 nt_per_segment * segment_idx : min(
-                    nt_per_segment * (segment_idx + 1), source_amplitudes.shape[-1]
+                    nt_per_segment * (segment_idx + 1), source_amplitudes.shape[-1],
                 ),
             ]
             segment_nt = None
@@ -364,14 +363,14 @@ def scalarbornpropchained(
             receiver_amplitudes[
                 ...,
                 nt_per_segment * segment_idx : min(
-                    nt_per_segment * (segment_idx + 1), receiver_amplitudes.shape[-1]
+                    nt_per_segment * (segment_idx + 1), receiver_amplitudes.shape[-1],
                 ),
             ] = segment_receiver_amplitudes
         if bg_receiver_locations is not None:
             bg_receiver_amplitudes[
                 ...,
                 nt_per_segment * segment_idx : min(
-                    nt_per_segment * (segment_idx + 1), bg_receiver_amplitudes.shape[-1]
+                    nt_per_segment * (segment_idx + 1), bg_receiver_amplitudes.shape[-1],
                 ),
             ] = segment_bg_receiver_amplitudes
 
@@ -503,7 +502,6 @@ def run_born_scatter_2d(
     **kwargs,
 ):
     """Runs run_born_scatter with default parameters for 2D."""
-
     return run_born_scatter(
         c,
         dc,
@@ -587,7 +585,6 @@ def run_born_forward_2d(
     **kwargs,
 ):
     """Runs run_forward with default parameters for 2D."""
-
     return run_born_forward(
         c,
         freq,
@@ -609,10 +606,10 @@ def test_forward_cpu_gpu_match():
     """Test propagation on CPU and GPU produce the same result."""
     if torch.cuda.is_available():
         actual_cpu = run_born_forward_2d(
-            propagator=scalarbornprop, device=torch.device("cpu")
+            propagator=scalarbornprop, device=torch.device("cpu"),
         )
         actual_gpu = run_born_forward_2d(
-            propagator=scalarbornprop, device=torch.device("cuda")
+            propagator=scalarbornprop, device=torch.device("cuda"),
         )
         for cpui, gpui in zip(actual_cpu, actual_gpu):
             assert torch.allclose(cpui, gpui.cpu(), atol=1e-5)
@@ -656,7 +653,7 @@ def test_unused_source_receiver(
     x_s = _set_coords(num_shots, num_sources_per_shot, nx.tolist())
     x_r = _set_coords(num_shots, num_receivers_per_shot, nx.tolist(), "bottom")
     x_rsc = _set_coords(
-        num_shots, num_scatter_receivers_per_shot, nx.tolist(), "bottom"
+        num_shots, num_scatter_receivers_per_shot, nx.tolist(), "bottom",
     )
     sources = _set_sources(x_s, freq, dt, nt, dtype)
 
@@ -692,7 +689,7 @@ def test_unused_source_receiver(
     x_s = _set_coords(num_shots, num_sources_per_shot, nx.tolist())
     x_r = _set_coords(num_shots, num_receivers_per_shot, nx.tolist(), "bottom")
     x_rsc = _set_coords(
-        num_shots, num_scatter_receivers_per_shot, nx.tolist(), "bottom"
+        num_shots, num_scatter_receivers_per_shot, nx.tolist(), "bottom",
     )
     for i in range(num_shots):
         sources["amplitude"][i, i].fill_(0)
@@ -741,7 +738,7 @@ def run_scalarbornfunc(nt=3):
     c += 100 * torch.rand_like(c)
     scatter = torch.randn_like(c)
     wfc = torch.randn(
-        n_batch, ny - 2 * fd_pad, nx - 2 * fd_pad, dtype=torch.double, device=device
+        n_batch, ny - 2 * fd_pad, nx - 2 * fd_pad, dtype=torch.double, device=device,
     )
     wfp = torch.randn_like(wfc)
     psiy = torch.randn_like(wfc)
@@ -755,10 +752,10 @@ def run_scalarbornfunc(nt=3):
     zetaysc = torch.randn_like(wfc)
     zetaxsc = torch.randn_like(wfc)
     source_amplitudes = torch.randn(
-        nt, n_batch, n_sources_per_shot, dtype=torch.double, device=device
+        nt, n_batch, n_sources_per_shot, dtype=torch.double, device=device,
     )
     source_amplitudessc = torch.randn(
-        nt, n_batch, n_sources_per_shot, dtype=torch.double, device=device
+        nt, n_batch, n_sources_per_shot, dtype=torch.double, device=device,
     )
     sources_i = (
         torch.tensor([[7 * nx + 7, 8 * nx + 8], [9 * nx + 9, 10 * nx + 10]])
@@ -770,7 +767,7 @@ def run_scalarbornfunc(nt=3):
             [
                 [7 * nx + 7, 8 * nx + 8, 9 * nx + 9],
                 [11 * nx + 11, 12 * nx + 12, 13 * nx + 12],
-            ]
+            ],
         )
         .long()
         .to(device)
@@ -780,7 +777,7 @@ def run_scalarbornfunc(nt=3):
             [
                 [7 * nx + 7, 8 * nx + 8, 9 * nx + 9, 8 * nx + 9],
                 [11 * nx + 11, 12 * nx + 12, 13 * nx + 12, 13 * nx + 11],
-            ]
+            ],
         )
         .long()
         .to(device)
@@ -922,7 +919,7 @@ def test_born_gradcheck_2d_8th_order():
 def test_born_gradcheck_2d_cfl():
     """Test gradcheck with a timestep greater than the CFL limit."""
     run_born_gradcheck_2d(
-        propagator=scalarbornprop, dt=0.002, atol=2e-7, rtol=1e-8, nt_add=100
+        propagator=scalarbornprop, dt=0.002, atol=2e-7, rtol=1e-8, nt_add=100,
     )
 
 
@@ -954,7 +951,7 @@ def test_gradcheck_2d_no_scatter_receivers():
 def test_born_gradcheck_2d_survey_pad():
     """Test gradcheck with survey_pad."""
     run_born_gradcheck_2d(
-        propagator=scalarbornprop, survey_pad=0, provide_wavefields=False
+        propagator=scalarbornprop, survey_pad=0, provide_wavefields=False,
     )
 
 
@@ -1013,7 +1010,7 @@ def test_born_gradcheck_2d_single_cell():
 def test_born_gradcheck_2d_big():
     """Test gradcheck with a big model."""
     run_born_gradcheck_2d(
-        propagator=scalarbornprop, nx=(5 + 2 * (3 + 3 * 2), 4 + 2 * (3 + 3 * 2))
+        propagator=scalarbornprop, nx=(5 + 2 * (3 + 3 * 2), 4 + 2 * (3 + 3 * 2)),
     )
 
 
@@ -1220,14 +1217,14 @@ def test_born_gradcheck_only_wavefieldsc_0_2d():
 def test_born_gradcheck_v_batched():
     """Test gradcheck using a different velocity for each shot."""
     run_born_gradcheck_2d(
-        propagator=scalarbornprop, c=torch.tensor([[[1500.0]], [[1600.0]]])
+        propagator=scalarbornprop, c=torch.tensor([[[1500.0]], [[1600.0]]]),
     )
 
 
 def test_born_gradcheck_scatter_batched():
     """Test gradcheck using a different scatter for each shot."""
     run_born_gradcheck_2d(
-        propagator=scalarbornprop, dscatter=torch.tensor([[[150.0]], [[100.0]]])
+        propagator=scalarbornprop, dscatter=torch.tensor([[[150.0]], [[100.0]]]),
     )
 
 
@@ -1316,7 +1313,7 @@ def run_born_gradcheck(
                 nx[1] + pml_width[2] + pml_width[3],
             )
         wavefield_0 = torch.zeros(
-            num_shots, *wavefield_size, dtype=dtype, device=device
+            num_shots, *wavefield_size, dtype=dtype, device=device,
         )
         wavefield_m1 = torch.zeros_like(wavefield_0)
         psiy_m1 = torch.zeros_like(wavefield_0)
@@ -1417,7 +1414,6 @@ def run_born_gradcheck_2d(
     **kwargs,
 ):
     """Runs run_gradcheck with default parameters for 2D."""
-
     return run_born_gradcheck(
         c,
         dc,

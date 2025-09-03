@@ -1,15 +1,15 @@
-"""
-This script demonstrates Full-Waveform Inversion (FWI) using Deepwave.
+"""This script demonstrates Full-Waveform Inversion (FWI) using Deepwave.
 It covers two approaches: a simple inversion and a more advanced one
 incorporating constrained velocity and frequency filtering to address
 cycle-skipping and stability issues.
 """
 
+import matplotlib.pyplot as plt
 import torch
-from torchaudio.functional import biquad
 from scipy.ndimage import gaussian_filter
 from scipy.signal import butter
-import matplotlib.pyplot as plt
+from torchaudio.functional import biquad
+
 import deepwave
 from deepwave import scalar
 
@@ -47,7 +47,7 @@ dt = 0.004
 peak_time = 1.5 / freq
 
 observed_data = torch.from_file(
-    "marmousi_data.bin", size=n_shots * n_receivers_per_shot * nt
+    "marmousi_data.bin", size=n_shots * n_receivers_per_shot * nt,
 ).reshape(n_shots, n_receivers_per_shot, nt)
 
 # Select portion of data for inversion
@@ -55,19 +55,19 @@ n_shots_subset = 20
 n_receivers_per_shot_subset = 100
 nt_subset = 300
 observed_data = observed_data[
-    :n_shots_subset, :n_receivers_per_shot_subset, :nt_subset
+    :n_shots_subset, :n_receivers_per_shot_subset, :nt_subset,
 ].to(device)
 
 # source_locations
 source_locations = torch.zeros(
-    n_shots, n_sources_per_shot, 2, dtype=torch.long, device=device
+    n_shots, n_sources_per_shot, 2, dtype=torch.long, device=device,
 )
 source_locations[..., 1] = source_depth
 source_locations[:, 0, 0] = torch.arange(n_shots) * d_source + first_source
 
 # receiver_locations
 receiver_locations = torch.zeros(
-    n_shots, n_receivers_per_shot, 2, dtype=torch.long, device=device
+    n_shots, n_receivers_per_shot, 2, dtype=torch.long, device=device,
 )
 receiver_locations[..., 1] = receiver_depth
 receiver_locations[:, :, 0] = (
@@ -137,7 +137,7 @@ class Model(torch.nn.Module):
         self.min_vel = min_vel
         self.max_vel = max_vel
         self.model = torch.nn.Parameter(
-            torch.logit((initial - min_vel) / (max_vel - min_vel))
+            torch.logit((initial - min_vel) / (max_vel - min_vel)),
         )
 
     def forward(self):

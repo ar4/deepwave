@@ -1,13 +1,13 @@
-"""
-This script demonstrates the phenomenon of large gradients at the edges
+"""This script demonstrates the phenomenon of large gradients at the edges
 of the model in Deepwave and provides solutions, including using a free
 surface and applying a smoothing function to the model.
 """
 
+import matplotlib.pyplot as plt
 import torch
 import torchvision
+
 import deepwave
-import matplotlib.pyplot as plt
 
 # Define simulation parameters
 freq = 25

@@ -1,15 +1,16 @@
 """Common seismic wavelets."""
 
 import math
-from typing import Optional, Union
+from typing import Optional
+
 import torch
 
 
 def ricker(
-    freq: Union[int, float],
+    freq: float,
     length: int,
-    dt: Union[int, float],
-    peak_time: Union[int, float],
+    dt: float,
+    peak_time: float,
     dtype: Optional[torch.dtype] = None,
 ) -> torch.Tensor:
     """Return a Ricker wavelet with the specified central frequency.
@@ -24,13 +25,14 @@ def ricker(
 
     Returns:
         A PyTorch tensor representing the Ricker wavelet.
+
     """
     if dt == 0:
         raise ValueError("dt cannot be zero.")
 
     t: torch.Tensor = torch.arange(float(length), dtype=dtype) * dt - peak_time
     y: torch.Tensor = (1 - 2 * math.pi**2 * freq**2 * t**2) * torch.exp(
-        -(math.pi**2) * freq**2 * t**2
+        -(math.pi**2) * freq**2 * t**2,
     )
     if dtype is not None:
         return y.to(dtype)

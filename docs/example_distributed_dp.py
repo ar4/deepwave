@@ -1,13 +1,13 @@
-"""
-This script demonstrates distributed execution using PyTorch's DataParallel
+"""This script demonstrates distributed execution using PyTorch's DataParallel
 for multi-GPU wave propagation with Deepwave.
 """
 
+import matplotlib.pyplot as plt
 import torch
-from torchaudio.functional import biquad
 from scipy.ndimage import gaussian_filter
 from scipy.signal import butter
-import matplotlib.pyplot as plt
+from torchaudio.functional import biquad
+
 import deepwave
 from deepwave import scalar
 
@@ -16,7 +16,7 @@ ny_full = 2301
 nx_full = 751
 dx = 4.0
 v_true_full = torch.from_file("marmousi_vp.bin", size=ny_full * nx_full).reshape(
-    ny_full, nx_full
+    ny_full, nx_full,
 )
 
 # Select portion of model for inversion
@@ -45,7 +45,7 @@ dt = 0.004
 peak_time = 1.5 / freq
 
 observed_data_full = torch.from_file(
-    "marmousi_data.bin", size=n_shots_full * n_receivers_per_shot_full * nt_full
+    "marmousi_data.bin", size=n_shots_full * n_receivers_per_shot_full * nt_full,
 ).reshape(n_shots_full, n_receivers_per_shot_full, nt_full)
 
 
@@ -59,19 +59,19 @@ n_shots = 16
 n_receivers_per_shot = 100
 nt = 300
 observed_data = taper(observed_data_full[:n_shots, :n_receivers_per_shot, :nt]).to(
-    device
+    device,
 )
 
 # source_locations
 source_locations = torch.zeros(
-    n_shots, n_sources_per_shot, 2, dtype=torch.long, device=device
+    n_shots, n_sources_per_shot, 2, dtype=torch.long, device=device,
 )
 source_locations[..., 1] = source_depth
 source_locations[:, 0, 0] = torch.arange(n_shots) * d_source + first_source
 
 # receiver_locations
 receiver_locations = torch.zeros(
-    n_shots, n_receivers_per_shot, 2, dtype=torch.long, device=device
+    n_shots, n_receivers_per_shot, 2, dtype=torch.long, device=device,
 )
 receiver_locations[..., 1] = receiver_depth
 receiver_locations[:, :, 0] = (
@@ -93,7 +93,7 @@ class Model(torch.nn.Module):
         self.min_vel = min_vel
         self.max_vel = max_vel
         self.model = torch.nn.Parameter(
-            torch.logit((initial - min_vel) / (max_vel - min_vel))
+            torch.logit((initial - min_vel) / (max_vel - min_vel)),
         )
 
     def forward(self):

@@ -1,7 +1,10 @@
+import math
+
 import pytest
 import torch
-import math
+
 from deepwave.wavelets import ricker
+
 
 def test_ricker_basic_functionality():
     freq = 25
@@ -94,7 +97,7 @@ def test_ricker_length_one():
     # The single sample should be the value of the Ricker wavelet at t = -0.05
     t = torch.tensor([-0.05])
     expected_val = (1 - 2 * math.pi**2 * freq**2 * t**2) * torch.exp(
-        -(math.pi**2) * freq**2 * t**2
+        -(math.pi**2) * freq**2 * t**2,
     )
     assert torch.isclose(wavelet[0], expected_val[0])
 

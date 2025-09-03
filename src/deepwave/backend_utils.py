@@ -6,11 +6,13 @@ using ctypes. It ensures proper data marshalling between Python (PyTorch Tensors
 and the underlying C/CUDA implementations.
 """
 
-import platform
 import ctypes
-from ctypes import c_void_p, c_int64, c_float, c_double, c_bool
 import pathlib
+import platform
+from ctypes import c_bool, c_double, c_float, c_int64, c_void_p
 from typing import List
+
+import torch
 
 # Platform-specific shared library extension
 SO_EXT = {"Linux": "so", "Darwin": "dylib", "Windows": "dll"}.get(platform.system())
@@ -18,7 +20,7 @@ if SO_EXT is None:
     raise RuntimeError("Unsupported OS or platform type")
 
 dll = ctypes.CDLL(
-    str(pathlib.Path(__file__).resolve().parent / f"libdeepwave_C.{SO_EXT}")
+    str(pathlib.Path(__file__).resolve().parent / f"libdeepwave_C.{SO_EXT}"),
 )
 
 # Check if was compiled with OpenMP support
@@ -86,12 +88,13 @@ def _get_argtypes(template_name: str, float_type: type) -> List[type]:
     Returns:
         List[type]: A list of `ctypes` types representing the argument
             signature for a C function.
+
     """
     return [float_type if t is FLOAT_TYPE else t for t in templates[template_name]]
 
 
 def _assign_argtypes(
-    propagator: str, accuracy: int, dtype: str, direction: str, extra: str = ""
+    propagator: str, accuracy: int, dtype: str, direction: str, extra: str = "",
 ) -> None:
     """Dynamically assigns ctypes argtypes to a given C function.
 
@@ -110,6 +113,7 @@ def _assign_argtypes(
     Raises:
         AttributeError: If a function with the constructed name is not found
             in the loaded shared library (this is caught internally and skipped).
+
     """
     argtypes_name = f"{propagator}_{direction}{extra}_{dtype}_argtypes"
     argtypes = globals()[argtypes_name]
@@ -122,9 +126,6 @@ def _assign_argtypes(
             func.restype = None  # All C functions return void
         except AttributeError:
             continue
-
-
-import torch
 
 
 def get_backend_function(
@@ -151,6 +152,7 @@ def get_backend_function(
     Raises:
         AttributeError: If the function is not found in the shared library.
         TypeError: If the dtype is not torch.float32 or torch.float64.
+
     """
     if dtype == torch.float32:
         dtype_str = "float"
@@ -189,7 +191,7 @@ for current_accuracy in [2, 4, 6, 8]:
         _assign_argtypes("scalar_born", current_accuracy, current_dtype, "forward")
         _assign_argtypes("scalar_born", current_accuracy, current_dtype, "backward")
         _assign_argtypes(
-            "scalar_born", current_accuracy, current_dtype, "backward", extra="_sc"
+            "scalar_born", current_accuracy, current_dtype, "backward", extra="_sc",
         )
 
 # Elastic propagators currently only support 2nd and 4th order accuracy.

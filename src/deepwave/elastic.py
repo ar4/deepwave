@@ -11,7 +11,7 @@ wave simulations. The outputs are differentiable with respect to the
 material parameters (Lam'e parameters and buoyancy) and source amplitudes.
 """
 
-from typing import Any, cast, List, Optional, Sequence, Tuple, Union
+from typing import Any, List, Optional, Sequence, Tuple, Union, cast
 
 import torch
 
@@ -41,6 +41,7 @@ class Elastic(torch.nn.Module):
             computed for `mu`. Defaults to False.
         buoyancy_requires_grad: A bool specifying whether gradients should be
             computed for `buoyancy`. Defaults to False.
+
     """
 
     def __init__(
@@ -57,26 +58,26 @@ class Elastic(torch.nn.Module):
         super().__init__()
         if not isinstance(lamb_requires_grad, bool):
             raise TypeError(
-                f"lamb_requires_grad must be bool, got {type(lamb_requires_grad).__name__}"
+                f"lamb_requires_grad must be bool, got {type(lamb_requires_grad).__name__}",
             )
         if not isinstance(lamb, torch.Tensor):
             raise TypeError("lamb must be a torch.Tensor.")
         if not isinstance(mu_requires_grad, bool):
             raise TypeError(
-                f"mu_requires_grad must be bool, got {type(mu_requires_grad).__name__}"
+                f"mu_requires_grad must be bool, got {type(mu_requires_grad).__name__}",
             )
         if not isinstance(mu, torch.Tensor):
             raise TypeError("mu must be a torch.Tensor.")
         if not isinstance(buoyancy_requires_grad, bool):
             raise TypeError(
-                f"buoyancy_requires_grad must be bool, got {type(buoyancy_requires_grad).__name__}"
+                f"buoyancy_requires_grad must be bool, got {type(buoyancy_requires_grad).__name__}",
             )
         if not isinstance(buoyancy, torch.Tensor):
             raise TypeError("buoyancy must be a torch.Tensor.")
         self.lamb = torch.nn.Parameter(lamb, requires_grad=lamb_requires_grad)
         self.mu = torch.nn.Parameter(mu, requires_grad=mu_requires_grad)
         self.buoyancy = torch.nn.Parameter(
-            buoyancy, requires_grad=buoyancy_requires_grad
+            buoyancy, requires_grad=buoyancy_requires_grad,
         )
         self.grid_spacing = grid_spacing
 
@@ -189,6 +190,7 @@ def _average_adjacent(receiver_amplitudes: torch.Tensor) -> torch.Tensor:
 
     Returns:
         A torch.Tensor with the averaged values.
+
     """
     if receiver_amplitudes.numel() == 0:
         return receiver_amplitudes
@@ -372,7 +374,7 @@ def elastic(
     ):
         raise RuntimeError(
             "With the provided model, the maximum y source "
-            f"location in the second dimension must be less than {lamb.shape[1] - 1}."
+            f"location in the second dimension must be less than {lamb.shape[1] - 1}.",
         )
     if (
         receiver_locations_y is not None
@@ -381,7 +383,7 @@ def elastic(
         raise RuntimeError(
             "With the provided model, the maximum y "
             "receiver location in the second dimension "
-            f"must be less than {lamb.shape[1] - 1}."
+            f"must be less than {lamb.shape[1] - 1}.",
         )
     if source_locations_x is not None:
         dim_location = source_locations_x[..., 0]
@@ -390,7 +392,7 @@ def elastic(
             raise RuntimeError(
                 "The minimum x source "
                 "location in the first dimension must be "
-                "greater than 0."
+                "greater than 0.",
             )
     if receiver_locations_x is not None:
         dim_location = receiver_locations_x[..., 0]
@@ -399,7 +401,7 @@ def elastic(
             raise RuntimeError(
                 "The minimum x receiver "
                 "location in the first dimension must be "
-                "greater than 0."
+                "greater than 0.",
             )
     if receiver_locations_p is not None:
         dim_location = receiver_locations_p[..., 0]
@@ -412,12 +414,12 @@ def elastic(
                 "With the provided model, the pressure "
                 "receiver locations in the second dimension "
                 f"must be less than {lamb.shape[1] - 1} and "
-                "in the first dimension must be greater than 0."
+                "in the first dimension must be greater than 0.",
             )
     if accuracy not in [2, 4]:
         raise RuntimeError("The accuracy must be 2 or 4.")
     vp, vs, _ = deepwave.common.lambmubuoyancy_to_vpvsrho(
-        lamb.abs(), mu.abs(), buoyancy.abs()
+        lamb.abs(), mu.abs(), buoyancy.abs(),
     )
     max_model_vel = max(vp.abs().max().item(), vs.abs().max().item())
     vp_nonzero = vp[vp != 0]
@@ -504,7 +506,7 @@ def elastic(
     if any(s <= (accuracy + 1) * 2 for s in models[0].shape[1:]):
         raise RuntimeError(
             f"The model must have at least {(accuracy + 1) * 2 + 1} "
-            "elements in each dimension (including PML)."
+            "elements in each dimension (including PML).",
         )
 
     ny, nx = models[0].shape[-2:]
@@ -654,6 +656,7 @@ def zero_edges(tensor: torch.Tensor, ny: int, nx: int) -> None:
         tensor: The input 2D torch.Tensor to modify, with shape (batch, ny, nx).
         ny: The size of the second dimension (rows).
         nx: The size of the third dimension (columns).
+
     """
     tensor[:, ny - 1, :] = 0
     tensor[:, :, nx - 1] = 0
@@ -666,6 +669,7 @@ def zero_edge_top(tensor: torch.Tensor) -> None:
 
     Args:
         tensor: The input 2D torch.Tensor to modify, with shape (batch, ny, nx).
+
     """
     tensor[:, 0, :] = 0
 
@@ -676,12 +680,13 @@ def zero_edge_right(tensor: torch.Tensor, nx: int) -> None:
     Args:
         tensor: The input 2D torch.Tensor to modify, with shape (batch, ny, nx).
         nx: The size of the third dimension (columns).
+
     """
     tensor[:, :, nx - 1] = 0
 
 
 def zero_interior(
-    tensor: torch.Tensor, ybegin: int, yend: int, xbegin: int, xend: int
+    tensor: torch.Tensor, ybegin: int, yend: int, xbegin: int, xend: int,
 ) -> torch.Tensor:
     """Zeros out a specified rectangular interior region of a 2D tensor.
 
@@ -696,6 +701,7 @@ def zero_interior(
 
     Returns:
         A new torch.Tensor with the specified interior region zeroed out.
+
     """
     tensor = tensor.clone()
     tensor[:, ybegin:yend, xbegin:xend] = 0
@@ -816,6 +822,7 @@ class ElasticForwardFunc(torch.autograd.Function):
         Returns:
             A tuple containing the final wavefields, memory variables, and
             receiver amplitudes.
+
         """
         lamb = lamb.contiguous()
         mu = mu.contiguous()
@@ -861,43 +868,43 @@ class ElasticForwardFunc(torch.autograd.Function):
 
         size_with_batch = (n_shots, *lamb.shape[-2:])
         vy = deepwave.common.create_or_pad(
-            vy, 0, lamb.device, lamb.dtype, size_with_batch
+            vy, 0, lamb.device, lamb.dtype, size_with_batch,
         )
         vx = deepwave.common.create_or_pad(
-            vx, 0, lamb.device, lamb.dtype, size_with_batch
+            vx, 0, lamb.device, lamb.dtype, size_with_batch,
         )
         sigmayy = deepwave.common.create_or_pad(
-            sigmayy, 0, lamb.device, lamb.dtype, size_with_batch
+            sigmayy, 0, lamb.device, lamb.dtype, size_with_batch,
         )
         sigmaxy = deepwave.common.create_or_pad(
-            sigmaxy, 0, lamb.device, lamb.dtype, size_with_batch
+            sigmaxy, 0, lamb.device, lamb.dtype, size_with_batch,
         )
         sigmaxx = deepwave.common.create_or_pad(
-            sigmaxx, 0, lamb.device, lamb.dtype, size_with_batch
+            sigmaxx, 0, lamb.device, lamb.dtype, size_with_batch,
         )
         m_vyy = deepwave.common.create_or_pad(
-            m_vyy, 0, lamb.device, lamb.dtype, size_with_batch
+            m_vyy, 0, lamb.device, lamb.dtype, size_with_batch,
         )
         m_vyx = deepwave.common.create_or_pad(
-            m_vyx, 0, lamb.device, lamb.dtype, size_with_batch
+            m_vyx, 0, lamb.device, lamb.dtype, size_with_batch,
         )
         m_vxy = deepwave.common.create_or_pad(
-            m_vxy, 0, lamb.device, lamb.dtype, size_with_batch
+            m_vxy, 0, lamb.device, lamb.dtype, size_with_batch,
         )
         m_vxx = deepwave.common.create_or_pad(
-            m_vxx, 0, lamb.device, lamb.dtype, size_with_batch
+            m_vxx, 0, lamb.device, lamb.dtype, size_with_batch,
         )
         m_sigmayyy = deepwave.common.create_or_pad(
-            m_sigmayyy, 0, lamb.device, lamb.dtype, size_with_batch
+            m_sigmayyy, 0, lamb.device, lamb.dtype, size_with_batch,
         )
         m_sigmaxyy = deepwave.common.create_or_pad(
-            m_sigmaxyy, 0, lamb.device, lamb.dtype, size_with_batch
+            m_sigmaxyy, 0, lamb.device, lamb.dtype, size_with_batch,
         )
         m_sigmaxyx = deepwave.common.create_or_pad(
-            m_sigmaxyx, 0, lamb.device, lamb.dtype, size_with_batch
+            m_sigmaxyx, 0, lamb.device, lamb.dtype, size_with_batch,
         )
         m_sigmaxxx = deepwave.common.create_or_pad(
-            m_sigmaxxx, 0, lamb.device, lamb.dtype, size_with_batch
+            m_sigmaxxx, 0, lamb.device, lamb.dtype, size_with_batch,
         )
         zero_edges(sigmaxy, ny, nx)
         zero_edges(m_vxy, ny, nx)
@@ -950,13 +957,12 @@ class ElasticForwardFunc(torch.autograd.Function):
 
         if lamb.is_cuda:
             aux = lamb.get_device()
+        elif deepwave.backend_utils.USE_OPENMP:
+            aux = min(n_shots, torch.get_num_threads())
         else:
-            if deepwave.backend_utils.USE_OPENMP:
-                aux = min(n_shots, torch.get_num_threads())
-            else:
-                aux = 1
+            aux = 1
         forward = deepwave.backend_utils.get_backend_function(
-            "elastic", "forward", accuracy, dtype, lamb.device
+            "elastic", "forward", accuracy, dtype, lamb.device,
         )
 
         if vy.numel() > 0 and nt > 0:
@@ -1149,6 +1155,7 @@ class ElasticForwardFunc(torch.autograd.Function):
         Returns:
             A tuple containing the gradients with respect to the inputs of the
             forward pass.
+
         """
         (
             lamb,
@@ -1256,43 +1263,43 @@ class ElasticForwardFunc(torch.autograd.Function):
 
         size_with_batch = (n_shots, *lamb.shape[-2:])
         vy = deepwave.common.create_or_pad(
-            vy, 0, lamb.device, lamb.dtype, size_with_batch
+            vy, 0, lamb.device, lamb.dtype, size_with_batch,
         )
         vx = deepwave.common.create_or_pad(
-            vx, 0, lamb.device, lamb.dtype, size_with_batch
+            vx, 0, lamb.device, lamb.dtype, size_with_batch,
         )
         sigmayy = deepwave.common.create_or_pad(
-            sigmayy, 0, lamb.device, lamb.dtype, size_with_batch
+            sigmayy, 0, lamb.device, lamb.dtype, size_with_batch,
         )
         sigmaxy = deepwave.common.create_or_pad(
-            sigmaxy, 0, lamb.device, lamb.dtype, size_with_batch
+            sigmaxy, 0, lamb.device, lamb.dtype, size_with_batch,
         )
         sigmaxx = deepwave.common.create_or_pad(
-            sigmaxx, 0, lamb.device, lamb.dtype, size_with_batch
+            sigmaxx, 0, lamb.device, lamb.dtype, size_with_batch,
         )
         m_vyy = deepwave.common.create_or_pad(
-            m_vyy, 0, lamb.device, lamb.dtype, size_with_batch
+            m_vyy, 0, lamb.device, lamb.dtype, size_with_batch,
         )
         m_vyx = deepwave.common.create_or_pad(
-            m_vyx, 0, lamb.device, lamb.dtype, size_with_batch
+            m_vyx, 0, lamb.device, lamb.dtype, size_with_batch,
         )
         m_vxy = deepwave.common.create_or_pad(
-            m_vxy, 0, lamb.device, lamb.dtype, size_with_batch
+            m_vxy, 0, lamb.device, lamb.dtype, size_with_batch,
         )
         m_vxx = deepwave.common.create_or_pad(
-            m_vxx, 0, lamb.device, lamb.dtype, size_with_batch
+            m_vxx, 0, lamb.device, lamb.dtype, size_with_batch,
         )
         m_sigmayyy = deepwave.common.create_or_pad(
-            m_sigmayyy, 0, lamb.device, lamb.dtype, size_with_batch
+            m_sigmayyy, 0, lamb.device, lamb.dtype, size_with_batch,
         )
         m_sigmaxyy = deepwave.common.create_or_pad(
-            m_sigmaxyy, 0, lamb.device, lamb.dtype, size_with_batch
+            m_sigmaxyy, 0, lamb.device, lamb.dtype, size_with_batch,
         )
         m_sigmaxyx = deepwave.common.create_or_pad(
-            m_sigmaxyx, 0, lamb.device, lamb.dtype, size_with_batch
+            m_sigmaxyx, 0, lamb.device, lamb.dtype, size_with_batch,
         )
         m_sigmaxxx = deepwave.common.create_or_pad(
-            m_sigmaxxx, 0, lamb.device, lamb.dtype, size_with_batch
+            m_sigmaxxx, 0, lamb.device, lamb.dtype, size_with_batch,
         )
         m_sigmayyyn = torch.zeros_like(m_sigmayyy)
         m_sigmaxyyn = torch.zeros_like(m_sigmaxyy)
@@ -1378,7 +1385,7 @@ class ElasticForwardFunc(torch.autograd.Function):
                 grad_buoyancy_tmp.fill_(0)
                 grad_buoyancy_tmp_ptr = grad_buoyancy_tmp.data_ptr()
         backward = deepwave.backend_utils.get_backend_function(
-            "elastic", "backward", accuracy, dtype, lamb.device
+            "elastic", "backward", accuracy, dtype, lamb.device,
         )
 
         if vy.numel() > 0 and nt > 0:
@@ -1575,26 +1582,10 @@ def elastic_func(*args: Any) -> Tuple[torch.Tensor, ...]:
 
     Returns:
         The results of the forward pass from `ElasticForwardFunc.apply`.
+
     """
     result = ElasticForwardFunc.apply(*args)  # type: ignore[no-untyped-call]
     return cast(
-        Tuple[
-            torch.Tensor,
-            torch.Tensor,
-            torch.Tensor,
-            torch.Tensor,
-            torch.Tensor,
-            torch.Tensor,
-            torch.Tensor,
-            torch.Tensor,
-            torch.Tensor,
-            torch.Tensor,
-            torch.Tensor,
-            torch.Tensor,
-            torch.Tensor,
-            torch.Tensor,
-            torch.Tensor,
-            torch.Tensor,
-        ],
+        "Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]",
         result,
     )

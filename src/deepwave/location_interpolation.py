@@ -1,8 +1,10 @@
 """Interpolation of sources and receivers at arbitrary locations onto a grid."""
 
-from typing import List, Optional, Union, Dict, Tuple
 import math
+from typing import Dict, List, Optional, Tuple, Union
+
 import torch
+
 import deepwave
 
 DEFAULT_EPS = 1e-5
@@ -35,6 +37,7 @@ def _get_hicks_for_one_location_dim(
 
     Returns:
         Tuple[torch.Tensor, torch.Tensor]: Locations and corresponding weights.
+
     """
     if not isinstance(halfwidth, int):
         raise TypeError("halfwidth must be an int.")
@@ -57,7 +60,7 @@ def _get_hicks_for_one_location_dim(
         key = (int((location - int(location)) / eps), halfwidth, int(monopole))
         x = (
             torch.arange(
-                -halfwidth + 1, halfwidth + 1, dtype=beta.dtype, device=beta.device
+                -halfwidth + 1, halfwidth + 1, dtype=beta.dtype, device=beta.device,
             )
             - location
             + int(location)
@@ -87,7 +90,7 @@ def _get_hicks_for_one_location_dim(
             # idx1: first index on model side of free surface
             idx0 = int(math.ceil(free_surface_loc[0] - locations[0].item()))
             idx1 = idx0 + int(
-                math.isclose(round(free_surface_loc[0]), free_surface_loc[0])
+                math.isclose(round(free_surface_loc[0]), free_surface_loc[0]),
             )
             locations = locations[idx0:]
             flipped_weights = weights[:idx1].flip(0)
@@ -100,7 +103,7 @@ def _get_hicks_for_one_location_dim(
                 - int(math.ceil(locations[-1].item() - free_surface_loc[1]))
             )
             idx1 = idx0 - int(
-                math.isclose(round(free_surface_loc[1]), free_surface_loc[1])
+                math.isclose(round(free_surface_loc[1]), free_surface_loc[1]),
             )
             locations = locations[: idx0 + 1]
             flipped_weights = weights[idx1 + 1 :].flip(0)
@@ -136,6 +139,7 @@ def _get_hicks_locations_and_weights(
     Returns:
         Tuple[torch.Tensor, List[List[List[int]]], List[List[List[torch.Tensor]]]]:
             Interpolated locations, indices, and weights.
+
     """
     hicks_weight_cache: Dict[Tuple[int, int, int], torch.Tensor] = {}
     n_shots, n_per_shot, _ = locations.shape
@@ -196,7 +200,7 @@ def _get_hicks_locations_and_weights(
         hicks_locations_list.append(list(locations_dict.keys()))
     hicks_locations = (
         torch.ones(
-            n_shots, n_per_shot_hicks, 2, dtype=torch.long, device=locations.device
+            n_shots, n_per_shot_hicks, 2, dtype=torch.long, device=locations.device,
         )
         * deepwave.common.IGNORE_LOCATION
     )
@@ -208,7 +212,7 @@ def _get_hicks_locations_and_weights(
 
 
 def _check_shot_idxs(
-    amplitudes: torch.Tensor, shot_idxs: Optional[torch.Tensor] = None
+    amplitudes: torch.Tensor, shot_idxs: Optional[torch.Tensor] = None,
 ) -> None:
     if shot_idxs is not None and shot_idxs.shape != (len(amplitudes),):
         raise RuntimeError("shot_idxs must have the same length as amplitudes")
@@ -263,6 +267,7 @@ class Hicks:
             A small value to prevent division by zero. Points closer to
             a grid cell centre than this will be rounded to the grid cell.
             Default 1e-5.
+
     """
 
     def __init__(
@@ -297,7 +302,7 @@ class Hicks:
             raise RuntimeError("free_surface must be a list of four bools")
         if any(free_surfaces) and model_shape is None:
             raise RuntimeError(
-                "If there are free surfaces then model_shape must be specified"
+                "If there are free surfaces then model_shape must be specified",
             )
         if model_shape is not None:
             if not isinstance(model_shape, list) or len(model_shape) != 2:
@@ -306,7 +311,7 @@ class Hicks:
                 model_shape = [int(v) for v in model_shape]
             except (ValueError, TypeError) as exc:
                 raise TypeError(
-                    "model_shape entries must be convertible to int"
+                    "model_shape entries must be convertible to int",
                 ) from exc
         if free_surface_locs is not None:
             if not isinstance(free_surface_locs, list) or len(free_surface_locs) != 4:
@@ -315,7 +320,7 @@ class Hicks:
                 free_surface_locs = [float(v) for v in free_surface_locs]
             except (ValueError, TypeError) as exc:
                 raise TypeError(
-                    "free_surface_locs entries must be convertible to float"
+                    "free_surface_locs entries must be convertible to float",
                 ) from exc
         if model_shape is None:
             model_shape = [-1, -1]
@@ -364,13 +369,14 @@ class Hicks:
 
         Returns:
             A torch.Tensor containing the interpolated locations.
+
         """
         if shot_idxs is not None:
             return self.hicks_locations[shot_idxs]
         return self.hicks_locations
 
     def source(
-        self, amplitudes: torch.Tensor, shot_idxs: Optional[torch.Tensor] = None
+        self, amplitudes: torch.Tensor, shot_idxs: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """Calculate the amplitudes of the interpolated sources.
 
@@ -388,8 +394,8 @@ class Hicks:
         Returns:
             The amplitudes of the interpolated sources, ready to be provided
             to a Deepwave propagator.
-        """
 
+        """
         if not isinstance(amplitudes, torch.Tensor):
             raise TypeError("amplitudes must be a torch.Tensor.")
         if amplitudes.ndim != 3:
@@ -424,7 +430,7 @@ class Hicks:
         return out.to(amplitudes.device)
 
     def receiver(
-        self, amplitudes: torch.Tensor, shot_idxs: Optional[torch.Tensor] = None
+        self, amplitudes: torch.Tensor, shot_idxs: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """Convert receiver amplitudes from interpolated to original locations.
 
@@ -441,6 +447,7 @@ class Hicks:
 
         Returns:
             The amplitudes of receivers at the original locations.
+
         """
         if not isinstance(amplitudes, torch.Tensor):
             raise TypeError("amplitudes must be a torch.Tensor.")
@@ -451,7 +458,7 @@ class Hicks:
         n_shots, _, nt = amplitudes.shape
         n_per_shot = self.locations.shape[1]
         out = torch.zeros(
-            n_shots, n_per_shot, nt, dtype=amplitudes.dtype, device=amplitudes.device
+            n_shots, n_per_shot, nt, dtype=amplitudes.dtype, device=amplitudes.device,
         )
         for shotidx in range(n_shots):
             if shot_idxs is not None:

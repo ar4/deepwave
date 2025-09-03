@@ -1,8 +1,9 @@
 import pytest
 import torch
+from test_utils import direct_2d_approx
+
 import deepwave
 from deepwave.location_interpolation import Hicks, _get_hicks_for_one_location_dim
-from test_utils import direct_2d_approx
 
 
 def test_hicks_init_invalid_locations_type():
@@ -144,10 +145,10 @@ def test_free_surface_left(halfwidth=8):
     betas = [0.0, 1.84, 3.04, 4.14, 5.26, 6.40, 7.51, 8.56, 9.56, 10.64]
     beta = torch.tensor(betas[halfwidth - 1])
     l0, w0 = _get_hicks_for_one_location_dim(
-        {}, 0.5, halfwidth, beta, [False, False], [-0.5, 19.5], 20, True
+        {}, 0.5, halfwidth, beta, [False, False], [-0.5, 19.5], 20, True,
     )
     l1, w1 = _get_hicks_for_one_location_dim(
-        {}, 0.5, halfwidth, beta, [True, False], [-0.5, 19.5], 20, True
+        {}, 0.5, halfwidth, beta, [True, False], [-0.5, 19.5], 20, True,
     )
     assert len(l0) == 2 * halfwidth
     assert l0[0] == -halfwidth + 1
@@ -163,10 +164,10 @@ def test_free_surface_right(halfwidth=8):
     betas = [0.0, 1.84, 3.04, 4.14, 5.26, 6.40, 7.51, 8.56, 9.56, 10.64]
     beta = torch.tensor(betas[halfwidth - 1])
     l0, w0 = _get_hicks_for_one_location_dim(
-        {}, 18.5, halfwidth, beta, [False, False], [-0.5, 19.5], 20, True
+        {}, 18.5, halfwidth, beta, [False, False], [-0.5, 19.5], 20, True,
     )
     l1, w1 = _get_hicks_for_one_location_dim(
-        {}, 18.5, halfwidth, beta, [False, True], [-0.5, 19.5], 20, True
+        {}, 18.5, halfwidth, beta, [False, True], [-0.5, 19.5], 20, True,
     )
     assert len(l0) == 2 * halfwidth
     assert l0[-1] == 19 + halfwidth - 1
@@ -177,7 +178,7 @@ def test_free_surface_right(halfwidth=8):
     for i in range(halfwidth - 1):
         assert w1[len(w1) - 1 - i] == pytest.approx(
             w0[len(w0) - 1 - (halfwidth - 1 + i)]
-            - w0[len(w0) - 1 - (halfwidth - 2 - i)]
+            - w0[len(w0) - 1 - (halfwidth - 2 - i)],
         )
 
 
@@ -185,10 +186,10 @@ def test_free_surface_shift_left(halfwidth=8):
     betas = [0.0, 1.84, 3.04, 4.14, 5.26, 6.40, 7.51, 8.56, 9.56, 10.64]
     beta = torch.tensor(betas[halfwidth - 1])
     l0, w0 = _get_hicks_for_one_location_dim(
-        {}, 1.5, halfwidth, beta, [False, False], [1.0, 18.0], 20, True
+        {}, 1.5, halfwidth, beta, [False, False], [1.0, 18.0], 20, True,
     )
     l1, w1 = _get_hicks_for_one_location_dim(
-        {}, 1.5, halfwidth, beta, [True, False], [1.0, 18.0], 20, True
+        {}, 1.5, halfwidth, beta, [True, False], [1.0, 18.0], 20, True,
     )
     assert len(l0) == 2 * halfwidth
     assert l0[0] == 1 - halfwidth + 1
@@ -203,10 +204,10 @@ def test_free_surface_shift_right(halfwidth=8):
     betas = [0.0, 1.84, 3.04, 4.14, 5.26, 6.40, 7.51, 8.56, 9.56, 10.64]
     beta = torch.tensor(betas[halfwidth - 1])
     l0, w0 = _get_hicks_for_one_location_dim(
-        {}, 17.5, halfwidth, beta, [False, False], [1.0, 18.0], 20, True
+        {}, 17.5, halfwidth, beta, [False, False], [1.0, 18.0], 20, True,
     )
     l1, w1 = _get_hicks_for_one_location_dim(
-        {}, 17.5, halfwidth, beta, [False, True], [1.0, 18.0], 20, True
+        {}, 17.5, halfwidth, beta, [False, True], [1.0, 18.0], 20, True,
     )
     assert len(l0) == 2 * halfwidth
     assert l0[-1] == 18 + halfwidth - 1
@@ -216,49 +217,49 @@ def test_free_surface_shift_right(halfwidth=8):
     for i in range(halfwidth):
         assert w1[len(w1) - 1 - i] == pytest.approx(
             w0[len(w0) - 1 - (halfwidth - 1 + i)]
-            - w0[len(w0) - 1 - (halfwidth - 1 - i)]
+            - w0[len(w0) - 1 - (halfwidth - 1 - i)],
         )
 
 
 def test_get_hicks_for_one_location_dim_invalid_halfwidth():
-    with pytest.raises(RuntimeError, match="halfwidth must be in \[1, 10\]"):
+    with pytest.raises(RuntimeError, match=r"halfwidth must be in \[1, 10\]"):
         _get_hicks_for_one_location_dim(
-            {}, 0.5, 0, torch.tensor(1.0), [False, False], [-0.5, 19.5], 20
+            {}, 0.5, 0, torch.tensor(1.0), [False, False], [-0.5, 19.5], 20,
         )
-    with pytest.raises(RuntimeError, match="halfwidth must be in \[1, 10\]"):
+    with pytest.raises(RuntimeError, match=r"halfwidth must be in \[1, 10\]"):
         _get_hicks_for_one_location_dim(
-            {}, 0.5, 11, torch.tensor(1.0), [False, False], [-0.5, 19.5], 20
+            {}, 0.5, 11, torch.tensor(1.0), [False, False], [-0.5, 19.5], 20,
         )
 
 
 def test_get_hicks_for_one_location_dim_invalid_beta():
     with pytest.raises(RuntimeError, match="beta must be non-negative."):
         _get_hicks_for_one_location_dim(
-            {}, 0.5, 4, torch.tensor(-1.0), [False, False], [-0.5, 19.5], 20
+            {}, 0.5, 4, torch.tensor(-1.0), [False, False], [-0.5, 19.5], 20,
         )
 
 
 def test_get_hicks_for_one_location_dim_invalid_extent():
     with pytest.raises(RuntimeError, match="extent must be a list of two floats."):
         _get_hicks_for_one_location_dim(
-            {}, 0.5, 4, torch.tensor(1.0), [False, False], [-0.5], 20
+            {}, 0.5, 4, torch.tensor(1.0), [False, False], [-0.5], 20,
         )
     with pytest.raises(RuntimeError, match="extent must be a list of two floats."):
         _get_hicks_for_one_location_dim(
-            {}, 0.5, 4, torch.tensor(1.0), [False, False], [-0.5, 19.5, 20.0], 20
+            {}, 0.5, 4, torch.tensor(1.0), [False, False], [-0.5, 19.5, 20.0], 20,
         )
     with pytest.raises(RuntimeError, match="extent must be a list of two floats."):
         _get_hicks_for_one_location_dim(
-            {}, 0.5, 4, torch.tensor(1.0), [False, False], ["a", 19.5], 20
+            {}, 0.5, 4, torch.tensor(1.0), [False, False], ["a", 19.5], 20,
         )
 
 
 def test_get_hicks_for_one_location_dim_invalid_n_grid_points():
     with pytest.raises(RuntimeError, match="n_grid_points must be positive."):
         _get_hicks_for_one_location_dim(
-            {}, 0.5, 4, torch.tensor(1.0), [False, False], [-0.5, 19.5], 0
+            {}, 0.5, 4, torch.tensor(1.0), [False, False], [-0.5, 19.5], 0,
         )
     with pytest.raises(RuntimeError, match="n_grid_points must be positive."):
         _get_hicks_for_one_location_dim(
-            {}, 0.5, 4, torch.tensor(1.0), [False, False], [-0.5, 19.5], -1
+            {}, 0.5, 4, torch.tensor(1.0), [False, False], [-0.5, 19.5], -1,
         )

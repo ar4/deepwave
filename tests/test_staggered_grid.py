@@ -1,7 +1,10 @@
+from unittest.mock import patch
+
 import pytest
 import torch
-from unittest.mock import MagicMock, patch
+
 from deepwave.staggered_grid import set_pml_profiles
+
 
 def test_set_pml_profiles_basic_functionality():
     pml_width = [10, 10, 10, 10]
@@ -16,19 +19,19 @@ def test_set_pml_profiles_basic_functionality():
     ny = 100
     nx = 100
 
-    with patch('deepwave.common.setup_pml') as mock_setup_pml:
+    with patch("deepwave.common.setup_pml") as mock_setup_pml:
         # Configure mock_setup_pml to return dummy tensors
         # It will be called 4 times
         mock_setup_pml.side_effect = [
             (torch.ones(ny, dtype=dtype, device=device), torch.ones(ny, dtype=dtype, device=device)), # ay, by
             (torch.ones(nx, dtype=dtype, device=device), torch.ones(nx, dtype=dtype, device=device)), # ax, bx
             (torch.ones(ny, dtype=dtype, device=device), torch.ones(ny, dtype=dtype, device=device)), # ayh, byh
-            (torch.ones(nx, dtype=dtype, device=device), torch.ones(nx, dtype=dtype, device=device))  # axh, bxh
+            (torch.ones(nx, dtype=dtype, device=device), torch.ones(nx, dtype=dtype, device=device)),  # axh, bxh
         ]
 
         result = set_pml_profiles(
             pml_width, accuracy, fd_pad, dt, grid_spacing, max_vel,
-            dtype, device, pml_freq, ny, nx
+            dtype, device, pml_freq, ny, nx,
         )
 
         # Calculate pml_start values as they are in the function
@@ -47,28 +50,28 @@ def test_set_pml_profiles_basic_functionality():
             pml_width[:2],
             pml_start_y,
             pytest.approx(max_pml_val),
-            dt, ny, max_vel, dtype, device, pml_freq, start=-0.5
+            dt, ny, max_vel, dtype, device, pml_freq, start=-0.5,
         )
         # Call 2: ax, bx
         mock_setup_pml.assert_any_call(
             pml_width[2:],
             pml_start_x,
             pytest.approx(max_pml_val),
-            dt, nx, max_vel, dtype, device, pml_freq, start=0.0
+            dt, nx, max_vel, dtype, device, pml_freq, start=0.0,
         )
         # Call 3: ayh, byh
         mock_setup_pml.assert_any_call(
             pml_width[:2],
             pml_start_y,
             pytest.approx(max_pml_val),
-            dt, ny, max_vel, dtype, device, pml_freq, start=0.0
+            dt, ny, max_vel, dtype, device, pml_freq, start=0.0,
         )
         # Call 4: axh, bxh
         mock_setup_pml.assert_any_call(
             pml_width[2:],
             pml_start_x,
             pytest.approx(max_pml_val),
-            dt, nx, max_vel, dtype, device, pml_freq, start=0.5
+            dt, nx, max_vel, dtype, device, pml_freq, start=0.5,
         )
 
         # Assert the return type and shape
@@ -99,17 +102,17 @@ def test_set_pml_profiles_different_pml_width():
     ny = 200
     nx = 150
 
-    with patch('deepwave.common.setup_pml') as mock_setup_pml:
+    with patch("deepwave.common.setup_pml") as mock_setup_pml:
         mock_setup_pml.side_effect = [
             (torch.ones(ny, dtype=dtype, device=device), torch.ones(ny, dtype=dtype, device=device)),
             (torch.ones(nx, dtype=dtype, device=device), torch.ones(nx, dtype=dtype, device=device)),
             (torch.ones(ny, dtype=dtype, device=device), torch.ones(ny, dtype=dtype, device=device)),
-            (torch.ones(nx, dtype=dtype, device=device), torch.ones(nx, dtype=dtype, device=device))
+            (torch.ones(nx, dtype=dtype, device=device), torch.ones(nx, dtype=dtype, device=device)),
         ]
 
         result = set_pml_profiles(
             pml_width, accuracy, fd_pad, dt, grid_spacing, max_vel,
-            dtype, device, pml_freq, ny, nx
+            dtype, device, pml_freq, ny, nx,
         )
 
         # Calculate pml_start values as they are in the function
@@ -119,7 +122,7 @@ def test_set_pml_profiles_different_pml_width():
             pml_width[0] * grid_spacing[0],
             pml_width[1] * grid_spacing[0],
             pml_width[2] * grid_spacing[1],
-            pml_width[3] * grid_spacing[1]
+            pml_width[3] * grid_spacing[1],
         )
 
         # Assert setup_pml calls with updated pml_start and max_pml
@@ -127,25 +130,25 @@ def test_set_pml_profiles_different_pml_width():
             pml_width[:2],
             pml_start_y,
             pytest.approx(max_pml_val),
-            dt, ny, max_vel, dtype, device, pml_freq, start=-0.5
+            dt, ny, max_vel, dtype, device, pml_freq, start=-0.5,
         )
         mock_setup_pml.assert_any_call(
             pml_width[2:],
             pml_start_x,
             pytest.approx(max_pml_val),
-            dt, nx, max_vel, dtype, device, pml_freq, start=0.0
+            dt, nx, max_vel, dtype, device, pml_freq, start=0.0,
         )
         mock_setup_pml.assert_any_call(
             pml_width[:2],
             pml_start_y,
             pytest.approx(max_pml_val),
-            dt, ny, max_vel, dtype, device, pml_freq, start=0.0
+            dt, ny, max_vel, dtype, device, pml_freq, start=0.0,
         )
         mock_setup_pml.assert_any_call(
             pml_width[2:],
             pml_start_x,
             pytest.approx(max_pml_val),
-            dt, nx, max_vel, dtype, device, pml_freq, start=0.5
+            dt, nx, max_vel, dtype, device, pml_freq, start=0.5,
         )
 
         assert isinstance(result, list)
@@ -170,17 +173,17 @@ def test_set_pml_profiles_edge_cases():
     ny = 10
     nx = 10
 
-    with patch('deepwave.common.setup_pml') as mock_setup_pml:
+    with patch("deepwave.common.setup_pml") as mock_setup_pml:
         mock_setup_pml.side_effect = [
             (torch.zeros(ny, dtype=dtype, device=device), torch.zeros(ny, dtype=dtype, device=device)),
             (torch.zeros(nx, dtype=dtype, device=device), torch.zeros(nx, dtype=dtype, device=device)),
             (torch.zeros(ny, dtype=dtype, device=device), torch.zeros(ny, dtype=dtype, device=device)),
-            (torch.zeros(nx, dtype=dtype, device=device), torch.zeros(nx, dtype=dtype, device=device))
+            (torch.zeros(nx, dtype=dtype, device=device), torch.zeros(nx, dtype=dtype, device=device)),
         ]
 
         result = set_pml_profiles(
             pml_width, accuracy, fd_pad, dt, grid_spacing, max_vel,
-            dtype, device, pml_freq, ny, nx
+            dtype, device, pml_freq, ny, nx,
         )
 
         # Calculate pml_start values as they are in the function
@@ -190,32 +193,32 @@ def test_set_pml_profiles_edge_cases():
             pml_width[0] * grid_spacing[0],
             pml_width[1] * grid_spacing[0],
             pml_width[2] * grid_spacing[1],
-            pml_width[3] * grid_spacing[1]
+            pml_width[3] * grid_spacing[1],
         )
 
         mock_setup_pml.assert_any_call(
             [0, 0],
             pml_start_y,
             pytest.approx(max_pml_val),
-            dt, ny, max_vel, dtype, device, pml_freq, start=-0.5
+            dt, ny, max_vel, dtype, device, pml_freq, start=-0.5,
         )
         mock_setup_pml.assert_any_call(
             [0, 0],
             pml_start_x,
             pytest.approx(max_pml_val),
-            dt, nx, max_vel, dtype, device, pml_freq, start=0.0
+            dt, nx, max_vel, dtype, device, pml_freq, start=0.0,
         )
         mock_setup_pml.assert_any_call(
             [0, 0],
             pml_start_y,
             pytest.approx(max_pml_val),
-            dt, ny, max_vel, dtype, device, pml_freq, start=0.0
+            dt, ny, max_vel, dtype, device, pml_freq, start=0.0,
         )
         mock_setup_pml.assert_any_call(
             [0, 0],
             pml_start_x,
             pytest.approx(max_pml_val),
-            dt, nx, max_vel, dtype, device, pml_freq, start=0.5
+            dt, nx, max_vel, dtype, device, pml_freq, start=0.5,
         )
 
         assert all(torch.all(t == 0) for t in result)
@@ -226,17 +229,17 @@ def test_set_pml_profiles_edge_cases():
     ny = 2
     nx = 2
 
-    with patch('deepwave.common.setup_pml') as mock_setup_pml:
+    with patch("deepwave.common.setup_pml") as mock_setup_pml:
         mock_setup_pml.side_effect = [
             (torch.ones(ny, dtype=dtype, device=device), torch.ones(ny, dtype=dtype, device=device)),
             (torch.ones(nx, dtype=dtype, device=device), torch.ones(nx, dtype=dtype, device=device)),
             (torch.ones(ny, dtype=dtype, device=device), torch.ones(ny, dtype=dtype, device=device)),
-            (torch.ones(nx, dtype=dtype, device=device), torch.ones(nx, dtype=dtype, device=device))
+            (torch.ones(nx, dtype=dtype, device=device), torch.ones(nx, dtype=dtype, device=device)),
         ]
 
         result = set_pml_profiles(
             pml_width, accuracy, fd_pad, dt, grid_spacing, max_vel,
-            dtype, device, pml_freq, ny, nx
+            dtype, device, pml_freq, ny, nx,
         )
 
         # Calculate pml_start values as they are in the function
@@ -246,32 +249,32 @@ def test_set_pml_profiles_edge_cases():
             pml_width[0] * grid_spacing[0],
             pml_width[1] * grid_spacing[0],
             pml_width[2] * grid_spacing[1],
-            pml_width[3] * grid_spacing[1]
+            pml_width[3] * grid_spacing[1],
         )
 
         mock_setup_pml.assert_any_call(
             pml_width[:2],
             pml_start_y,
             pytest.approx(max_pml_val),
-            dt, ny, max_vel, dtype, device, pml_freq, start=-0.5
+            dt, ny, max_vel, dtype, device, pml_freq, start=-0.5,
         )
         mock_setup_pml.assert_any_call(
             pml_width[2:],
             pml_start_x,
             pytest.approx(max_pml_val),
-            dt, nx, max_vel, dtype, device, pml_freq, start=0.0
+            dt, nx, max_vel, dtype, device, pml_freq, start=0.0,
         )
         mock_setup_pml.assert_any_call(
             pml_width[:2],
             pml_start_y,
             pytest.approx(max_pml_val),
-            dt, ny, max_vel, dtype, device, pml_freq, start=0.0
+            dt, ny, max_vel, dtype, device, pml_freq, start=0.0,
         )
         mock_setup_pml.assert_any_call(
             pml_width[2:],
             pml_start_x,
             pytest.approx(max_pml_val),
-            dt, nx, max_vel, dtype, device, pml_freq, start=0.5
+            dt, nx, max_vel, dtype, device, pml_freq, start=0.5,
         )
 
         assert result[0].shape == (ny,)
