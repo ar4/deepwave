@@ -1,3 +1,5 @@
+import re
+
 import pytest
 import torch
 from test_utils import _set_coords, _set_sources
@@ -1272,3 +1274,127 @@ def run_gradcheck_2d(
         dtype=dtype,
         **kwargs,
     )
+
+
+# Tests for Elastic.__init__
+def test_elastic_init_lamb_non_tensor():
+    with pytest.raises(TypeError, match=re.escape("lamb must be a torch.Tensor.")):
+        Elastic([1, 2, 3], torch.ones(10, 10), torch.ones(10, 10), 1.0)
+
+def test_elastic_init_mu_non_tensor():
+    with pytest.raises(TypeError, match=re.escape("mu must be a torch.Tensor.")):
+        Elastic(torch.ones(10, 10), [1, 2, 3], torch.ones(10, 10), 1.0)
+
+def test_elastic_init_buoyancy_non_tensor():
+    with pytest.raises(TypeError, match=re.escape("buoyancy must be a torch.Tensor.")):
+        Elastic(torch.ones(10, 10), torch.ones(10, 10), [1, 2, 3], 1.0)
+
+def test_elastic_init_lamb_requires_grad_non_bool():
+    lamb = torch.ones(10, 10)
+    mu = torch.ones(10, 10)
+    buoyancy = torch.ones(10, 10)
+    with pytest.raises(TypeError, match=re.escape("lamb_requires_grad must be bool, got int")):
+        Elastic(lamb, mu, buoyancy, 1.0, lamb_requires_grad=1)
+
+def test_elastic_init_mu_requires_grad_non_bool():
+    lamb = torch.ones(10, 10)
+    mu = torch.ones(10, 10)
+    buoyancy = torch.ones(10, 10)
+    with pytest.raises(TypeError, match=re.escape("mu_requires_grad must be bool, got float")):
+        Elastic(lamb, mu, buoyancy, 1.0, mu_requires_grad=0.5)
+
+def test_elastic_init_buoyancy_requires_grad_non_bool():
+    lamb = torch.ones(10, 10)
+    mu = torch.ones(10, 10)
+    buoyancy = torch.ones(10, 10)
+    with pytest.raises(TypeError, match=re.escape("buoyancy_requires_grad must be bool, got str")):
+        Elastic(lamb, mu, buoyancy, 1.0, buoyancy_requires_grad="True")
+
+# Tests for elastic function (accuracy)
+def test_elastic_accuracy_invalid():
+    lamb = torch.ones(10, 10)
+    mu = torch.ones(10, 10)
+    buoyancy = torch.ones(10, 10)
+    grid_spacing = 1.0
+    dt = 0.001
+    nt = 10
+    with pytest.raises(RuntimeError, match=re.escape("The accuracy must be 2 or 4.")):
+        elastic(lamb, mu, buoyancy, grid_spacing, dt, nt=nt, accuracy=3)
+    with pytest.raises(RuntimeError, match=re.escape("The accuracy must be 2 or 4.")):
+        elastic(lamb, mu, buoyancy, grid_spacing, dt, nt=nt, accuracy=6)
+
+# Tests for elastic function (location bounds)
+def test_elastic_source_locations_y_out_of_bounds():
+    lamb = torch.ones(10, 10)
+    mu = torch.ones(10, 10)
+    buoyancy = torch.ones(10, 10)
+    grid_spacing = 1.0
+    dt = 0.001
+    source_amplitudes_y = torch.randn(1, 1, 10)
+    source_locations_y = torch.tensor([[[1, 9]]], dtype=torch.long) # y-coord is 9, max is 8 (shape[1]-1)
+    nt = 10
+    wavefield_0 = torch.zeros(1, 10 + 2*20, 10 + 2*20)
+    with pytest.raises(RuntimeError, match=re.escape("With the provided model, the maximum y source location in the second dimension must be less than 9.")):
+        elastic(lamb, mu, buoyancy, grid_spacing, dt,
+                source_amplitudes_y=source_amplitudes_y,
+                source_locations_y=source_locations_y, nt=nt,
+                vy_0=wavefield_0)
+
+def test_elastic_receiver_locations_y_out_of_bounds():
+    lamb = torch.ones(10, 10)
+    mu = torch.ones(10, 10)
+    buoyancy = torch.ones(10, 10)
+    grid_spacing = 1.0
+    dt = 0.001
+    receiver_locations_y = torch.tensor([[[1, 9]]], dtype=torch.long) # y-coord is 9, max is 8 (shape[1]-1)
+    nt = 10
+    wavefield_0 = torch.zeros(1, 10 + 2*20, 10 + 2*20)
+    with pytest.raises(RuntimeError, match=re.escape("With the provided model, the maximum y receiver location in the second dimension must be less than 9.")):
+        elastic(lamb, mu, buoyancy, grid_spacing, dt,
+                receiver_locations_y=receiver_locations_y, nt=nt,
+                vy_0=wavefield_0)
+
+def test_elastic_source_locations_x_out_of_bounds():
+    lamb = torch.ones(10, 10)
+    mu = torch.ones(10, 10)
+    buoyancy = torch.ones(10, 10)
+    grid_spacing = 1.0
+    dt = 0.001
+    source_amplitudes_x = torch.randn(1, 1, 10)
+    source_locations_x = torch.tensor([[[0, 1]]], dtype=torch.long) # x-coord is 0, min must be > 0
+    nt = 10
+    wavefield_0 = torch.zeros(1, 10 + 2*20, 10 + 2*20)
+    with pytest.raises(RuntimeError, match=re.escape("The minimum x source location in the first dimension must be greater than 0.")):
+        elastic(lamb, mu, buoyancy, grid_spacing, dt,
+                source_amplitudes_x=source_amplitudes_x,
+                source_locations_x=source_locations_x, nt=nt,
+                vy_0=wavefield_0)
+
+def test_elastic_receiver_locations_x_out_of_bounds():
+    lamb = torch.ones(10, 10)
+    mu = torch.ones(10, 10)
+    buoyancy = torch.ones(10, 10)
+    grid_spacing = 1.0
+    dt = 0.001
+    receiver_locations_x = torch.tensor([[[0, 1]]], dtype=torch.long) # x-coord is 0, min must be > 0
+    nt = 10
+    wavefield_0 = torch.zeros(1, 10 + 2*20, 10 + 2*20)
+    with pytest.raises(RuntimeError, match=re.escape("The minimum x receiver location in the first dimension must be greater than 0.")):
+        elastic(lamb, mu, buoyancy, grid_spacing, dt,
+                receiver_locations_x=receiver_locations_x, nt=nt,
+                vy_0=wavefield_0)
+
+def test_elastic_receiver_locations_p_out_of_bounds():
+    lamb = torch.ones(10, 10)
+    mu = torch.ones(10, 10)
+    buoyancy = torch.ones(10, 10)
+    grid_spacing = 1.0
+    dt = 0.001
+    # Both conditions: y-coord too large, x-coord too small
+    receiver_locations_p = torch.tensor([[[0, 9]]], dtype=torch.long)
+    nt = 10
+    wavefield_0 = torch.zeros(1, 10 + 2*20, 10 + 2*20)
+    with pytest.raises(RuntimeError, match=re.escape("With the provided model, the pressure receiver locations in the second dimension must be less than 9 and in the first dimension must be greater than 0.")):
+        elastic(lamb, mu, buoyancy, grid_spacing, dt,
+                receiver_locations_p=receiver_locations_p, nt=nt,
+                vy_0=wavefield_0)

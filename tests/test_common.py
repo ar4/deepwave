@@ -8,6 +8,7 @@ from deepwave.common import (
     check_points_per_wavelength,
     check_source_amplitudes_locations_match,
     cosine_taper_end,
+    downsample,
     get_n_batch,
     set_accuracy,
     set_freq_taper_frac,
@@ -19,6 +20,7 @@ from deepwave.common import (
     set_pml_width,
     set_source_amplitudes,
     set_time_pad_frac,
+    upsample,
     zero_last_element_of_final_dimension,
 )
 
@@ -1131,4 +1133,339 @@ def test_cfl_condition_n_empty_grid_spacing():
     dt = 0.002
     max_vel = 1500.0
     with pytest.raises(ValueError, match=re.escape("grid_spacing must not be empty.")):
+        cfl_condition_n(grid_spacing, dt, max_vel)
+
+
+# Additional tests for set_grid_spacing
+def test_set_grid_spacing_tuple_correct_length():
+    assert set_grid_spacing((10.0, 11.0), 2) == [10.0, 11.0]
+    assert set_grid_spacing((5, 6, 7), 3) == [5.0, 6.0, 7.0]
+
+def test_set_grid_spacing_complex_value():
+    with pytest.raises(TypeError):
+        set_grid_spacing(10.0 + 1j, 2)
+
+def test_set_grid_spacing_list_complex_element():
+    with pytest.raises(TypeError):
+        set_grid_spacing([10.0, 1j], 2)
+
+# Additional tests for set_pml_width
+def test_set_pml_width_tuple_correct_length():
+    assert set_pml_width((10, 11, 12, 13), 2) == [10, 11, 12, 13]
+    assert set_pml_width((1, 2, 3, 4, 5, 6), 3) == [1, 2, 3, 4, 5, 6]
+
+def test_set_pml_width_float_value():
+    assert set_pml_width(20.0, 2) == [20, 20, 20, 20]
+    with pytest.raises(
+        TypeError,
+        match=re.escape("pml_width must be an int or sequence of ints."),
+    ):
+        set_pml_width(20.5, 2)
+
+def test_set_pml_width_list_float_element():
+    with pytest.raises(
+        TypeError,
+        match=re.escape("pml_width must be an int or sequence of ints."),
+    ):
+        set_pml_width([10, 11.5], 1)
+
+def test_set_pml_width_complex_value():
+    with pytest.raises(
+        TypeError,
+        match=re.escape("pml_width must be an int or sequence of ints."),
+    ):
+        set_pml_width(10 + 1j, 2)
+
+def test_set_pml_width_list_complex_element():
+    with pytest.raises(
+        TypeError,
+        match=re.escape("pml_width must be an int or sequence of ints."),
+    ):
+        set_pml_width([10, 1j], 2)
+
+# Additional tests for set_pml_freq
+def test_set_pml_freq_complex_value():
+    with pytest.raises(
+        TypeError,
+        match=re.escape("pml_freq must be None or convertible to a float."),
+    ):
+        set_pml_freq(25.0 + 1j, 0.004)
+
+# Additional tests for set_max_vel
+def test_set_max_vel_complex_value():
+    with pytest.raises(
+        TypeError,
+        match=re.escape("max_vel must be None or convertible to a float."),
+    ):
+        set_max_vel(1500.0 + 1j, 1500.0)
+
+def test_set_max_vel_complex_max_model_vel():
+    with pytest.raises(
+        TypeError,
+        match=re.escape("max_model_vel must be convertible to a float."),
+    ):
+        set_max_vel(2000.0, 1500.0 + 1j)
+
+# Additional tests for set_nt
+def test_set_nt_complex_value():
+    source_amplitudes = [None]
+    step_ratio = 1
+    with pytest.raises(
+        TypeError,
+        match=re.escape("nt must be an int or None."),
+    ):
+        set_nt(100 + 1j, source_amplitudes, step_ratio)
+
+# Additional tests for set_model_gradient_sampling_interval
+def test_set_model_gradient_sampling_interval_complex_value():
+    with pytest.raises(
+        TypeError,
+        match=re.escape("model_gradient_sampling_interval must be an int."),
+    ):
+        set_model_gradient_sampling_interval(10 + 1j)
+
+# Additional tests for set_freq_taper_frac
+def test_set_freq_taper_frac_complex_value():
+    with pytest.raises(
+        TypeError,
+        match=".*real number.*",
+    ):
+        set_freq_taper_frac(0.5 + 1j)
+
+# Additional tests for set_time_pad_frac
+def test_set_time_pad_frac_complex_value():
+    with pytest.raises(
+        TypeError,
+        match=".*real number.*",
+    ):
+        set_time_pad_frac(0.5 + 1j)
+
+# Additional tests for check_source_amplitudes_locations_match
+def test_check_source_amplitudes_locations_match_non_tensor_amplitudes():
+    source_amplitudes = [[1, 2, 3]]
+    source_locations = [torch.zeros(1, 1, 2)]
+    with pytest.raises(TypeError, match=re.escape("source_amplitudes must be a torch.Tensor.")):
+        check_source_amplitudes_locations_match(source_amplitudes, source_locations)
+
+def test_check_source_amplitudes_locations_match_non_tensor_locations():
+    source_amplitudes = [torch.zeros(1, 1, 10)]
+    source_locations = [[1, 2, 3]]
+    with pytest.raises(TypeError, match=re.escape("source_locations must be a torch.Tensor.")):
+        check_source_amplitudes_locations_match(source_amplitudes, source_locations)
+
+# Additional tests for set_source_amplitudes
+def test_set_source_amplitudes_non_tensor_input():
+    source_amplitudes = [[1, 2, 3]]
+    n_batch = 1
+    nt = 10
+    step_ratio = 1
+    freq_taper_frac = 0.0
+    time_pad_frac = 0.0
+    time_taper = False
+    device = torch.device("cpu")
+    dtype = torch.float32
+    with pytest.raises(TypeError, match=re.escape("source_amplitudes must be a torch.Tensor.")):
+        set_source_amplitudes(
+            source_amplitudes,
+            n_batch,
+            nt,
+            step_ratio,
+            freq_taper_frac,
+            time_pad_frac,
+            time_taper,
+            device,
+            dtype,
+        )
+
+# Additional tests for check_points_per_wavelength
+def test_check_points_per_wavelength_complex_min_nonzero_vel():
+    with pytest.raises(
+        TypeError,
+    ):
+        check_points_per_wavelength(1500.0 + 1j, 25.0, [5.0, 5.0])
+
+def test_check_points_per_wavelength_complex_pml_freq():
+    with pytest.raises(
+        TypeError,
+    ):
+        check_points_per_wavelength(1500.0, 25.0 + 1j, [5.0, 5.0])
+
+def test_check_points_per_wavelength_list_complex_grid_spacing_element():
+    with pytest.raises(
+        TypeError,
+    ):
+        check_points_per_wavelength(1500.0, 25.0, [5.0, 1j])
+
+# Additional tests for cosine_taper_end
+def test_cosine_taper_end_non_tensor_signal():
+    signal = [1.0, 2.0, 3.0]
+    n_taper = 1
+    with pytest.raises(TypeError, match=re.escape("signal must be a torch.Tensor.")):
+        cosine_taper_end(signal, n_taper)
+
+def test_cosine_taper_end_float_n_taper():
+    signal = torch.ones(10)
+    n_taper = 5.0
+    with pytest.raises(TypeError, match=re.escape("n_taper must be an int.")):
+        cosine_taper_end(signal, n_taper)
+
+def test_cosine_taper_end_complex_n_taper():
+    signal = torch.ones(10)
+    n_taper = 5 + 1j
+    with pytest.raises(
+        TypeError,
+        match=re.escape("n_taper must be an int."),
+    ):
+        cosine_taper_end(signal, n_taper)
+
+# Additional tests for zero_last_element_of_final_dimension
+def test_zero_last_element_of_final_dimension_non_tensor_signal():
+    signal = [1.0, 2.0, 3.0]
+    with pytest.raises(TypeError, match=re.escape("signal must be a torch.Tensor.")):
+        zero_last_element_of_final_dimension(signal)
+
+# Additional tests for upsample
+def test_upsample_non_tensor_signal():
+    signal = [1.0, 2.0, 3.0]
+    step_ratio = 2
+    with pytest.raises(TypeError, match=re.escape("signal must be a torch.Tensor.")):
+        upsample(signal, step_ratio)
+
+def test_upsample_float_step_ratio():
+    signal = torch.ones(10)
+    step_ratio = 2.0
+    with pytest.raises(TypeError, match=re.escape("step_ratio must be an int.")):
+        upsample(signal, step_ratio)
+
+def test_upsample_complex_step_ratio():
+    signal = torch.ones(10)
+    step_ratio = 2 + 1j
+    with pytest.raises(
+        TypeError,
+        match=re.escape("step_ratio must be an int."),
+    ):
+        upsample(signal, step_ratio)
+
+def test_upsample_complex_freq_taper_frac():
+    signal = torch.ones(10)
+    step_ratio = 2
+    freq_taper_frac = 0.5 + 1j
+    with pytest.raises(
+        TypeError,
+        match=re.escape("freq_taper_frac must be a float."),
+    ):
+        upsample(signal, step_ratio, freq_taper_frac=freq_taper_frac)
+
+def test_upsample_complex_time_pad_frac():
+    signal = torch.ones(10)
+    step_ratio = 2
+    time_pad_frac = 0.5 + 1j
+    with pytest.raises(
+        TypeError,
+        match=re.escape("time_pad_frac must be a float."),
+    ):
+        upsample(signal, step_ratio, time_pad_frac=time_pad_frac)
+
+def test_upsample_non_bool_time_taper():
+    signal = torch.ones(10)
+    step_ratio = 2
+    time_taper = 1 # int instead of bool
+    with pytest.raises(TypeError, match=re.escape("time_taper must be a bool.")):
+        upsample(signal, step_ratio, time_taper=time_taper)
+
+# Additional tests for downsample
+def test_downsample_non_tensor_signal():
+    signal = [1.0, 2.0, 3.0]
+    step_ratio = 2
+    with pytest.raises(TypeError, match=re.escape("signal must be a torch.Tensor.")):
+        downsample(signal, step_ratio)
+
+def test_downsample_float_step_ratio():
+    signal = torch.ones(10)
+    step_ratio = 2.0
+    with pytest.raises(TypeError, match=re.escape("step_ratio must be an int.")):
+        downsample(signal, step_ratio)
+
+def test_downsample_complex_step_ratio():
+    signal = torch.ones(10)
+    step_ratio = 2 + 1j
+    with pytest.raises(
+        TypeError,
+        match=re.escape("step_ratio must be an int."),
+    ):
+        downsample(signal, step_ratio)
+
+def test_downsample_complex_freq_taper_frac():
+    signal = torch.ones(10)
+    step_ratio = 2
+    freq_taper_frac = 0.5 + 1j
+    with pytest.raises(
+        TypeError,
+        match=re.escape("freq_taper_frac must be a float."),
+    ):
+        downsample(signal, step_ratio, freq_taper_frac=freq_taper_frac)
+
+def test_downsample_complex_time_pad_frac():
+    signal = torch.ones(10)
+    step_ratio = 2
+    time_pad_frac = 0.5 + 1j
+    with pytest.raises(
+        TypeError,
+        match=re.escape("time_pad_frac must be a float."),
+    ):
+        downsample(signal, step_ratio, time_pad_frac=time_pad_frac)
+
+def test_downsample_non_bool_time_taper():
+    signal = torch.ones(10)
+    step_ratio = 2
+    time_taper = 1 # int instead of bool
+    with pytest.raises(TypeError, match=re.escape("time_taper must be a bool.")):
+        downsample(signal, step_ratio, time_taper=time_taper)
+
+def test_downsample_complex_shift():
+    signal = torch.ones(10)
+    step_ratio = 1
+    shift = 0.5 + 1j
+    with pytest.raises(
+        TypeError,
+        match=re.escape("shift must be a float."),
+    ):
+        downsample(signal, step_ratio, shift=shift)
+
+# Additional tests for cfl_condition_n
+def test_cfl_condition_n_tuple_grid_spacing():
+    grid_spacing = (5.0, 5.0)
+    dt = 0.001
+    max_vel = 1500.0
+    inner_dt, step_ratio = cfl_condition_n(grid_spacing, dt, max_vel)
+    assert step_ratio == 1
+    assert inner_dt == pytest.approx(0.001)
+
+def test_cfl_condition_n_complex_dt():
+    grid_spacing = [5.0, 5.0]
+    dt = 0.001 + 1j
+    max_vel = 1500.0
+    with pytest.raises(
+        TypeError,
+        match=re.escape("dt must be a float."),
+    ):
+        cfl_condition_n(grid_spacing, dt, max_vel)
+
+def test_cfl_condition_n_complex_max_abs_vel():
+    grid_spacing = [5.0, 5.0]
+    dt = 0.001
+    max_vel = 1500.0 + 1j
+    with pytest.raises(
+        TypeError,
+        match=re.escape("max_abs_vel must be a float."),
+    ):
+        cfl_condition_n(grid_spacing, dt, max_vel)
+
+def test_cfl_condition_n_list_complex_grid_spacing_element():
+    grid_spacing = [5.0, 1j]
+    dt = 0.001
+    max_vel = 1500.0
+    with pytest.raises(
+        TypeError,
+    ):
         cfl_condition_n(grid_spacing, dt, max_vel)
