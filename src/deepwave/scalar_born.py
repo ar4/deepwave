@@ -610,79 +610,14 @@ class ScalarBornForwardFunc(torch.autograd.Function):
 
         if v.is_cuda:
             aux = v.get_device()
-            if dtype == torch.float32:
-                if accuracy == 2:
-                    forward = (
-                        deepwave.backend_utils.dll.scalar_born_iso_2_float_forward_cuda
-                    )
-                elif accuracy == 4:
-                    forward = (
-                        deepwave.backend_utils.dll.scalar_born_iso_4_float_forward_cuda
-                    )
-                elif accuracy == 6:
-                    forward = (
-                        deepwave.backend_utils.dll.scalar_born_iso_6_float_forward_cuda
-                    )
-                else:
-                    forward = (
-                        deepwave.backend_utils.dll.scalar_born_iso_8_float_forward_cuda
-                    )
-            else:
-                if accuracy == 2:
-                    forward = (
-                        deepwave.backend_utils.dll.scalar_born_iso_2_double_forward_cuda
-                    )
-                elif accuracy == 4:
-                    forward = (
-                        deepwave.backend_utils.dll.scalar_born_iso_4_double_forward_cuda
-                    )
-                elif accuracy == 6:
-                    forward = (
-                        deepwave.backend_utils.dll.scalar_born_iso_6_double_forward_cuda
-                    )
-                else:
-                    forward = (
-                        deepwave.backend_utils.dll.scalar_born_iso_8_double_forward_cuda
-                    )
         else:
             if deepwave.backend_utils.USE_OPENMP:
                 aux = min(n_shots, torch.get_num_threads())
             else:
                 aux = 1
-            if dtype == torch.float32:
-                if accuracy == 2:
-                    forward = (
-                        deepwave.backend_utils.dll.scalar_born_iso_2_float_forward_cpu
-                    )
-                elif accuracy == 4:
-                    forward = (
-                        deepwave.backend_utils.dll.scalar_born_iso_4_float_forward_cpu
-                    )
-                elif accuracy == 6:
-                    forward = (
-                        deepwave.backend_utils.dll.scalar_born_iso_6_float_forward_cpu
-                    )
-                else:
-                    forward = (
-                        deepwave.backend_utils.dll.scalar_born_iso_8_float_forward_cpu
-                    )
-            else:
-                if accuracy == 2:
-                    forward = (
-                        deepwave.backend_utils.dll.scalar_born_iso_2_double_forward_cpu
-                    )
-                elif accuracy == 4:
-                    forward = (
-                        deepwave.backend_utils.dll.scalar_born_iso_4_double_forward_cpu
-                    )
-                elif accuracy == 6:
-                    forward = (
-                        deepwave.backend_utils.dll.scalar_born_iso_6_double_forward_cpu
-                    )
-                else:
-                    forward = (
-                        deepwave.backend_utils.dll.scalar_born_iso_8_double_forward_cpu
-                    )
+        forward = deepwave.backend_utils.get_backend_function(
+            "scalar_born", "forward", accuracy, dtype, v.device
+        )
 
         if wfc.numel() > 0 and nt > 0:
             start_t = 0
@@ -1010,40 +945,6 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                 grad_scatter_tmp.resize_(n_shots, *scatter.shape[-2:])
                 grad_scatter_tmp.fill_(0)
                 grad_scatter_tmp_ptr = grad_scatter_tmp.data_ptr()
-            if dtype == torch.float32:
-                if accuracy == 2:
-                    backward = (
-                        deepwave.backend_utils.dll.scalar_born_iso_2_float_backward_cuda
-                    )
-                    backward_sc = deepwave.backend_utils.dll.scalar_born_iso_2_float_backward_sc_cuda
-                elif accuracy == 4:
-                    backward = (
-                        deepwave.backend_utils.dll.scalar_born_iso_4_float_backward_cuda
-                    )
-                    backward_sc = deepwave.backend_utils.dll.scalar_born_iso_4_float_backward_sc_cuda
-                elif accuracy == 6:
-                    backward = (
-                        deepwave.backend_utils.dll.scalar_born_iso_6_float_backward_cuda
-                    )
-                    backward_sc = deepwave.backend_utils.dll.scalar_born_iso_6_float_backward_sc_cuda
-                else:
-                    backward = (
-                        deepwave.backend_utils.dll.scalar_born_iso_8_float_backward_cuda
-                    )
-                    backward_sc = deepwave.backend_utils.dll.scalar_born_iso_8_float_backward_sc_cuda
-            else:
-                if accuracy == 2:
-                    backward = deepwave.backend_utils.dll.scalar_born_iso_2_double_backward_cuda
-                    backward_sc = deepwave.backend_utils.dll.scalar_born_iso_2_double_backward_sc_cuda
-                elif accuracy == 4:
-                    backward = deepwave.backend_utils.dll.scalar_born_iso_4_double_backward_cuda
-                    backward_sc = deepwave.backend_utils.dll.scalar_born_iso_4_double_backward_sc_cuda
-                elif accuracy == 6:
-                    backward = deepwave.backend_utils.dll.scalar_born_iso_6_double_backward_cuda
-                    backward_sc = deepwave.backend_utils.dll.scalar_born_iso_6_double_backward_sc_cuda
-                else:
-                    backward = deepwave.backend_utils.dll.scalar_born_iso_8_double_backward_cuda
-                    backward_sc = deepwave.backend_utils.dll.scalar_born_iso_8_double_backward_sc_cuda
         else:
             if deepwave.backend_utils.USE_OPENMP:
                 aux = min(n_shots, torch.get_num_threads())
@@ -1067,48 +968,12 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                 grad_scatter_tmp.resize_(aux, *scatter.shape[-2:])
                 grad_scatter_tmp.fill_(0)
                 grad_scatter_tmp_ptr = grad_scatter_tmp.data_ptr()
-            if dtype == torch.float32:
-                if accuracy == 2:
-                    backward = (
-                        deepwave.backend_utils.dll.scalar_born_iso_2_float_backward_cpu
-                    )
-                    backward_sc = deepwave.backend_utils.dll.scalar_born_iso_2_float_backward_sc_cpu
-                elif accuracy == 4:
-                    backward = (
-                        deepwave.backend_utils.dll.scalar_born_iso_4_float_backward_cpu
-                    )
-                    backward_sc = deepwave.backend_utils.dll.scalar_born_iso_4_float_backward_sc_cpu
-                elif accuracy == 6:
-                    backward = (
-                        deepwave.backend_utils.dll.scalar_born_iso_6_float_backward_cpu
-                    )
-                    backward_sc = deepwave.backend_utils.dll.scalar_born_iso_6_float_backward_sc_cpu
-                else:
-                    backward = (
-                        deepwave.backend_utils.dll.scalar_born_iso_8_float_backward_cpu
-                    )
-                    backward_sc = deepwave.backend_utils.dll.scalar_born_iso_8_float_backward_sc_cpu
-            else:
-                if accuracy == 2:
-                    backward = (
-                        deepwave.backend_utils.dll.scalar_born_iso_2_double_backward_cpu
-                    )
-                    backward_sc = deepwave.backend_utils.dll.scalar_born_iso_2_double_backward_sc_cpu
-                elif accuracy == 4:
-                    backward = (
-                        deepwave.backend_utils.dll.scalar_born_iso_4_double_backward_cpu
-                    )
-                    backward_sc = deepwave.backend_utils.dll.scalar_born_iso_4_double_backward_sc_cpu
-                elif accuracy == 6:
-                    backward = (
-                        deepwave.backend_utils.dll.scalar_born_iso_6_double_backward_cpu
-                    )
-                    backward_sc = deepwave.backend_utils.dll.scalar_born_iso_6_double_backward_sc_cpu
-                else:
-                    backward = (
-                        deepwave.backend_utils.dll.scalar_born_iso_8_double_backward_cpu
-                    )
-                    backward_sc = deepwave.backend_utils.dll.scalar_born_iso_8_double_backward_sc_cpu
+        backward = deepwave.backend_utils.get_backend_function(
+            "scalar_born", "backward", accuracy, dtype, v.device
+        )
+        backward_sc = deepwave.backend_utils.get_backend_function(
+            "scalar_born", "backward", accuracy, dtype, v.device, extra="_sc"
+        )
 
         wfp = -wfp
         wfpsc = -wfpsc

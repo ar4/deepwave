@@ -950,43 +950,14 @@ class ElasticForwardFunc(torch.autograd.Function):
 
         if lamb.is_cuda:
             aux = lamb.get_device()
-            if dtype == torch.float32:
-                if accuracy == 2:
-                    forward = (
-                        deepwave.backend_utils.dll.elastic_iso_2_float_forward_cuda
-                    )
-                elif accuracy == 4:
-                    forward = (
-                        deepwave.backend_utils.dll.elastic_iso_4_float_forward_cuda
-                    )
-            else:
-                if accuracy == 2:
-                    forward = (
-                        deepwave.backend_utils.dll.elastic_iso_2_double_forward_cuda
-                    )
-                elif accuracy == 4:
-                    forward = (
-                        deepwave.backend_utils.dll.elastic_iso_4_double_forward_cuda
-                    )
         else:
             if deepwave.backend_utils.USE_OPENMP:
                 aux = min(n_shots, torch.get_num_threads())
             else:
                 aux = 1
-            if dtype == torch.float32:
-                if accuracy == 2:
-                    forward = deepwave.backend_utils.dll.elastic_iso_2_float_forward_cpu
-                elif accuracy == 4:
-                    forward = deepwave.backend_utils.dll.elastic_iso_4_float_forward_cpu
-            else:
-                if accuracy == 2:
-                    forward = (
-                        deepwave.backend_utils.dll.elastic_iso_2_double_forward_cpu
-                    )
-                elif accuracy == 4:
-                    forward = (
-                        deepwave.backend_utils.dll.elastic_iso_4_double_forward_cpu
-                    )
+        forward = deepwave.backend_utils.get_backend_function(
+            "elastic", "forward", accuracy, dtype, lamb.device
+        )
 
         if vy.numel() > 0 and nt > 0:
             start_t = 0
@@ -1374,24 +1345,6 @@ class ElasticForwardFunc(torch.autograd.Function):
                 grad_buoyancy_tmp.resize_(n_shots, *buoyancy.shape[-2:])
                 grad_buoyancy_tmp.fill_(0)
                 grad_buoyancy_tmp_ptr = grad_buoyancy_tmp.data_ptr()
-            if dtype == torch.float32:
-                if accuracy == 2:
-                    backward = (
-                        deepwave.backend_utils.dll.elastic_iso_2_float_backward_cuda
-                    )
-                elif accuracy == 4:
-                    backward = (
-                        deepwave.backend_utils.dll.elastic_iso_4_float_backward_cuda
-                    )
-            else:
-                if accuracy == 2:
-                    backward = (
-                        deepwave.backend_utils.dll.elastic_iso_2_double_backward_cuda
-                    )
-                elif accuracy == 4:
-                    backward = (
-                        deepwave.backend_utils.dll.elastic_iso_4_double_backward_cuda
-                    )
         else:
             if deepwave.backend_utils.USE_OPENMP:
                 aux = min(n_shots, torch.get_num_threads())
@@ -1403,7 +1356,7 @@ class ElasticForwardFunc(torch.autograd.Function):
                 and aux > 1
                 and deepwave.backend_utils.USE_OPENMP
             ):
-                grad_lamb_tmp.resize_(n_shots, *lamb.shape[-2:])
+                grad_lamb_tmp.resize_(aux, *lamb.shape[-2:])
                 grad_lamb_tmp.fill_(0)
                 grad_lamb_tmp_ptr = grad_lamb_tmp.data_ptr()
             if (
@@ -1424,24 +1377,9 @@ class ElasticForwardFunc(torch.autograd.Function):
                 grad_buoyancy_tmp.resize_(n_shots, *buoyancy.shape[-2:])
                 grad_buoyancy_tmp.fill_(0)
                 grad_buoyancy_tmp_ptr = grad_buoyancy_tmp.data_ptr()
-            if dtype == torch.float32:
-                if accuracy == 2:
-                    backward = (
-                        deepwave.backend_utils.dll.elastic_iso_2_float_backward_cpu
-                    )
-                elif accuracy == 4:
-                    backward = (
-                        deepwave.backend_utils.dll.elastic_iso_4_float_backward_cpu
-                    )
-            else:
-                if accuracy == 2:
-                    backward = (
-                        deepwave.backend_utils.dll.elastic_iso_2_double_backward_cpu
-                    )
-                elif accuracy == 4:
-                    backward = (
-                        deepwave.backend_utils.dll.elastic_iso_4_double_backward_cpu
-                    )
+        backward = deepwave.backend_utils.get_backend_function(
+            "elastic", "backward", accuracy, dtype, lamb.device
+        )
 
         if vy.numel() > 0 and nt > 0:
             start_t = 0

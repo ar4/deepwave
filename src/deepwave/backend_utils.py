@@ -124,6 +124,52 @@ def _assign_argtypes(
             continue
 
 
+import torch
+
+
+def get_backend_function(
+    propagator: str,
+    pass_name: str,
+    accuracy: int,
+    dtype: torch.dtype,
+    device: torch.device,
+    extra: str = "",
+) -> ctypes.CDLL._FuncPtr:
+    """Selects and returns the appropriate backend C/CUDA function.
+
+    Args:
+        propagator: The name of the propagator (e.g., "scalar", "elastic").
+        pass_name: The name of the pass (e.g., "forward", "backward").
+        accuracy: The finite-difference accuracy order.
+        dtype: The torch.dtype of the tensors.
+        device: The torch.device the tensors are on.
+        extra: An optional extra suffix for the function name.
+
+    Returns:
+        The backend function pointer.
+
+    Raises:
+        AttributeError: If the function is not found in the shared library.
+        TypeError: If the dtype is not torch.float32 or torch.float64.
+    """
+    if dtype == torch.float32:
+        dtype_str = "float"
+    elif dtype == torch.float64:
+        dtype_str = "double"
+    else:
+        raise TypeError(f"Unsupported dtype {dtype}")
+
+    device_str = device.type
+
+    func_name = f"{propagator}_iso_{accuracy}_{dtype_str}_{pass_name}{extra}_{device_str}"
+
+    try:
+        func = getattr(dll, func_name)
+        return func
+    except AttributeError as e:
+        raise AttributeError(f"Backend function {func_name} not found.") from e
+
+
 # Loop through all permutations and assign argtypes
 # First, create specific argtype lists for each combination of template and dtype.
 # This pre-generates the ctypes argument signatures for all functions,
