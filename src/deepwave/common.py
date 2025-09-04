@@ -10,11 +10,8 @@ import warnings
 from collections import abc
 from typing import (
     Any,
-    Iterable,
     List,
     Optional,
-    Sequence,
-    SupportsFloat,
     SupportsInt,
     Tuple,
     Union,
@@ -28,23 +25,23 @@ IGNORE_LOCATION = -1 << 31
 
 
 def setup_propagator(
-    models: Sequence[torch.Tensor],
-    model_pad_modes: Sequence[str],
-    grid_spacing: Union[float, Iterable[float]],
+    models: abc.Sequence[torch.Tensor],
+    model_pad_modes: abc.Sequence[str],
+    grid_spacing: Union[float, abc.Iterable[float]],
     dt: float,
-    source_amplitudes: Sequence[Optional[torch.Tensor]],
-    source_locations: Sequence[Optional[torch.Tensor]],
-    receiver_locations: Sequence[Optional[torch.Tensor]],
+    source_amplitudes: abc.Sequence[Optional[torch.Tensor]],
+    source_locations: abc.Sequence[Optional[torch.Tensor]],
+    receiver_locations: abc.Sequence[Optional[torch.Tensor]],
     accuracy: int,
-    fd_pad: Sequence[int],
-    pml_width: Union[int, Iterable[int]],
+    fd_pad: abc.Sequence[int],
+    pml_width: Union[int, abc.Iterable[int]],
     pml_freq: Optional[float],
     max_vel: Optional[float],
     min_nonzero_model_vel: float,
     max_model_vel: float,
-    survey_pad: Optional[Union[int, Sequence[Optional[int]]]],
-    wavefields: Sequence[Optional[torch.Tensor]],
-    origin: Optional[Sequence[int]],
+    survey_pad: Optional[Union[int, abc.Sequence[Optional[int]]]],
+    wavefields: abc.Sequence[Optional[torch.Tensor]],
+    origin: Optional[abc.Sequence[int]],
     nt: Optional[int],
     model_gradient_sampling_interval: int,
     freq_taper_frac: float,
@@ -84,22 +81,22 @@ def setup_propagator(
             parameters (e.g., velocity, density).
         model_pad_modes:
             A sequence of strings specifying the padding mode
-            for each model (e.g., 'constant', 'reflect', 'replicate', 'circular').
+            for each model
         grid_spacing:
             The spacing between grid points in each dimension.
             Can be a single float (for isotropic spacing) or a sequence of
             floats (for anisotropic spacing).
         dt:
-            The desired time step interval for the simulation.
+            The time step interval.
         source_amplitudes:
             A sequence of optional Tensors, where each torch.Tensor
-            contains the amplitudes of the sources for a given shot.
+            contains the amplitudes of the sources for a source type.
         source_locations:
             A sequence of optional Tensors, where each torch.Tensor
-            contains the locations of the sources for a given shot.
+            contains the locations of the sources for a source type.
         receiver_locations:
             A sequence of optional Tensors, where each torch.Tensor
-            contains the locations of the receivers for a given shot.
+            contains the locations of the receivers for receiver type.
         accuracy:
             The finite-difference accuracy order (e.g., 2, 4, 6, 8).
         fd_pad:
@@ -107,13 +104,13 @@ def setup_propagator(
             difference stencils in each dimension.
         pml_width:
             The width of the PML (Perfectly Matched Layer) in grid
-            cells. Can be a single integer or a sequence of integers for
-            each side of each dimension.
+            cells. Can be a single integer for all edges or an
+            integer for each edge.
         pml_freq:
             The dominant frequency for PML absorption. If None, defaults
             to 25.0 Hz.
         max_vel:
-            The maximum velocity in the model. Used for CFL condition
+            The maximum velocity to use for CFL condition
             calculation. If None, inferred from `max_model_vel`.
         min_nonzero_model_vel:
             The minimum non-zero velocity in the model.
@@ -122,8 +119,8 @@ def setup_propagator(
             The maximum velocity in the model. Used for CFL
             condition calculation.
         survey_pad:
-            Optional padding around the survey area. Can be an int
-            or a sequence of optional ints.
+            Optional padding around the survey area. Can be an optional
+            int for all edges or an optional int for each edge.
         wavefields:
             A sequence of optional Tensors representing initial
             wavefields.
@@ -247,14 +244,14 @@ def setup_propagator(
 
 
 def get_n_batch(
-    source_locations: Sequence[Optional[torch.Tensor]],
-    wavefields: Sequence[Optional[torch.Tensor]],
+    source_locations: abc.Iterable[Optional[torch.Tensor]],
+    wavefields: abc.Iterable[Optional[torch.Tensor]],
 ) -> int:
     """Get the batch size from source_locations or wavefields.
 
     Args:
-        source_locations: Sequence of source location tensors (or None).
-        wavefields: Sequence of wavefield tensors (or None).
+        source_locations: Iterable source location tensors (or None).
+        wavefields: Iterable wavefield tensors (or None).
 
     Returns:
         Batch size (first dimension of any non-None tensor).
@@ -317,15 +314,15 @@ def downsample_and_movedim(
 
 
 def set_grid_spacing(
-    grid_spacing: Union[float, Iterable[float]],
+    grid_spacing: Union[float, abc.Iterable[float]],
     n_dims: int,
 ) -> List[float]:
     """Ensures grid_spacing is a sequence of length n_dims.
 
     Args:
         grid_spacing: The spacing between grid points in each dimension.
-            Can be a single float (for isotropic spacing) or a sequence of
-            floats (for anisotropic spacing).
+            Can be a single float (for isotropic spacing) or a float for
+            each dimension (for anisotropic spacing).
         n_dims: The number of spatial dimensions.
 
     Returns:
@@ -337,21 +334,14 @@ def set_grid_spacing(
         RuntimeError: If the length of `grid_spacing` is not 1 or `n_dims`.
 
     """
-    if (
-        isinstance(grid_spacing, abc.Iterable)
-        and not isinstance(grid_spacing, (str, bytes))
-        and not (hasattr(grid_spacing, "ndim") and grid_spacing.ndim == 0)
-    ):
+    # Validate input and convert to list even for edge-cases such as 0-dim Tensors
+    try:
+        # Check if convertible to a float
+        processed_grid_spacing = [float(grid_spacing)] * n_dims  # type: ignore
+    except (TypeError, ValueError):
+        # Check if an Iterable of values convertible to floats
         try:
-            processed_grid_spacing = [float(spacing) for spacing in grid_spacing]
-        except (TypeError, ValueError) as e:
-            raise TypeError(
-                "grid_spacing must be a float or sequence of floats."
-            ) from e
-    else:
-        try:
-            scalar_grid_spacing = cast("SupportsFloat", grid_spacing)
-            processed_grid_spacing = [float(scalar_grid_spacing)] * n_dims
+            processed_grid_spacing = [float(spacing) for spacing in grid_spacing]  # type: ignore
         except (TypeError, ValueError) as e:
             raise TypeError(
                 "grid_spacing must be a float or sequence of floats."
@@ -389,7 +379,7 @@ def set_accuracy(accuracy: int) -> int:
     return accuracy
 
 
-def set_pml_width(pml_width: Union[int, Iterable[int]], n_dims: int) -> List[int]:
+def set_pml_width(pml_width: Union[int, abc.Iterable[int]], n_dims: int) -> List[int]:
     """Ensures pml_width is a sequence of length 2 * n_dims.
 
     Args:
@@ -408,21 +398,23 @@ def set_pml_width(pml_width: Union[int, Iterable[int]], n_dims: int) -> List[int
         RuntimeError: If the length of `pml_width` is not 1 or `2 * n_dims`.
 
     """
-    if (
-        isinstance(pml_width, abc.Iterable)
-        and not isinstance(pml_width, (str, bytes))
-        and not (hasattr(pml_width, "ndim") and pml_width.ndim == 0)
-    ):
+    # Validate input and covert to list even for edge-cases such as 0-dim Tensors
+    try:
+        # Check if convertible to an int
+        processed_pml_width = [int(pml_width)] * 2 * n_dims  # type: ignore
+        if float(pml_width) != float(int(pml_width)):  # type: ignore
+            raise TypeError("pml_width must be an int or sequence of ints.")
+    except (TypeError, ValueError):
+        # Check if an Iterable of values convertible to ints
         try:
-            processed_pml_width = [int(width) for width in pml_width]
+            pml_width_list = list(pml_width)  # type: ignore
+            if any(float(width) != float(int(width)) for width in pml_width_list):
+                raise TypeError("pml_width must be an int or sequence of ints.")
+            processed_pml_width = [int(width) for width in pml_width_list]
         except (TypeError, ValueError) as e:
-            raise TypeError("pml_width must be an int or sequence of ints.") from e
-    else:
-        try:
-            scalar_pml_width = cast("SupportsInt", pml_width)
-            processed_pml_width = [int(scalar_pml_width)] * 2 * n_dims
-        except (TypeError, ValueError) as e:
-            raise TypeError("pml_width must be an int or sequence of ints.") from e
+            raise TypeError(
+                "pml_width must be an int or sequence of ints."
+            ) from e
 
     if any(width < 0 for width in processed_pml_width):
         raise ValueError("pml_width must be non-negative.")
@@ -458,34 +450,37 @@ def set_pml_freq(pml_freq: Optional[float], dt: float) -> float:
             pml_freq = float(pml_freq)
         except (TypeError, ValueError) as e:
             raise TypeError("pml_freq must be None or convertible to a float.") from e
-    if dt <= 0:
-        raise ValueError("dt must be greater than zero to calculate Nyquist frequency.")
-    nyquist = 0.5 / abs(dt)
+    if not isinstance(dt, float):
+        raise TypeError("dt must be a float.")
+    try:
+        nyquist = 0.5 / abs(dt)
+    except ZeroDivisionError as e:
+        raise ValueError("dt is too small.") from e
     if pml_freq is None:
         pml_freq = 25.0
         warnings.warn(
-            f"pml_freq was not set, so defaulting to {pml_freq}.", stacklevel=2
+            f"pml_freq was not set, so defaulting to {pml_freq}.", stacklevel=1
         )
     if pml_freq < 0:
         raise ValueError("pml_freq must be non-negative.")
     if pml_freq > nyquist:
         warnings.warn(
             f"pml_freq {pml_freq} is greater than the Nyquist frequency {nyquist}.",
-            stacklevel=2,
+            stacklevel=1,
         )
     return pml_freq
 
 
-def set_max_vel(max_vel: Optional[float], max_model_vel: float) -> float:
+def set_max_vel(max_vel: Optional[float], max_abs_model_vel: float) -> float:
     """Sets or validates the maximum velocity for the CFL condition.
 
     Args:
-        max_vel: The maximum velocity in the model. If None, `max_model_vel`
+        max_vel: The user-specified maximum velocity. If None, `max_model_vel`
             is used.
-        max_model_vel: The maximum velocity present in the model.
+        max_abs_model_vel: The maximum absolute velocity present in the model.
 
     Returns:
-        The validated maximum velocity.
+        The validated maximum absolute velocity.
 
     Raises:
         TypeError: If `max_vel` or `max_model_vel` are not convertible to a float.
@@ -498,22 +493,22 @@ def set_max_vel(max_vel: Optional[float], max_model_vel: float) -> float:
         except (TypeError, ValueError) as e:
             raise TypeError("max_vel must be None or convertible to a float.") from e
     try:
-        max_model_vel = float(max_model_vel)
+        max_abs_model_vel = float(max_abs_model_vel)
     except (TypeError, ValueError) as e:
-        raise TypeError("max_model_vel must be convertible to a float.") from e
-    if max_model_vel <= 0:
-        raise ValueError("max_model_vel must be greater than zero.")
+        raise TypeError("max_abs_model_vel must be convertible to a float.") from e
+    if max_abs_model_vel <= 0:
+        raise ValueError("max_abs_model_vel must be greater than zero.")
     if max_vel is None:
-        return max_model_vel
+        return max_abs_model_vel
     max_vel = abs(max_vel)
-    if max_vel < max_model_vel:
-        warnings.warn("max_vel is less than the actual maximum velocity.", stacklevel=2)
+    if max_vel < max_abs_model_vel:
+        warnings.warn("max_vel is less than the actual maximum velocity.", stacklevel=1)
     return max_vel
 
 
 def set_nt(
     nt: Optional[int],
-    source_amplitudes: Sequence[Optional[torch.Tensor]],
+    source_amplitudes: abc.Sequence[Optional[torch.Tensor]],
     step_ratio: int,
 ) -> int:
     """Sets or validates the number of time steps.
@@ -522,7 +517,7 @@ def set_nt(
         nt: The desired number of time steps. If None, it is inferred from
             `source_amplitudes`.
         source_amplitudes: A sequence of optional Tensors, where each torch.Tensor
-            contains the amplitudes of the sources for a given shot.
+            contains the amplitudes of the sources for a source type.
         step_ratio: The ratio between the user-specified time step and the
             internal time step.
 
@@ -630,8 +625,8 @@ def set_time_pad_frac(time_pad_frac: float) -> float:
 
 
 def check_source_amplitudes_locations_match(
-    source_amplitudes: Sequence[Optional[torch.Tensor]],
-    source_locations: Sequence[Optional[torch.Tensor]],
+    source_amplitudes: abc.Sequence[Optional[torch.Tensor]],
+    source_locations: abc.Sequence[Optional[torch.Tensor]],
 ) -> None:
     """Ensures source_amplitudes and source_locations match.
 
@@ -643,9 +638,9 @@ def check_source_amplitudes_locations_match(
 
     Args:
         source_amplitudes: A sequence of optional Tensors, where each
-            torch.Tensor contains the amplitudes of the sources for a given shot.
+            torch.Tensor contains the amplitudes of the sources for a source type.
         source_locations: A sequence of optional Tensors, where each
-            torch.Tensor contains the locations of the sources for a given shot.
+            torch.Tensor contains the locations of the sources for a source type.
 
     Raises:
         RuntimeError: If the lengths of `source_amplitudes` and
@@ -681,7 +676,7 @@ def check_source_amplitudes_locations_match(
 
 
 def set_source_amplitudes(
-    source_amplitudes: Sequence[Optional[torch.Tensor]],
+    source_amplitudes: abc.Sequence[Optional[torch.Tensor]],
     n_batch: int,
     nt: int,
     step_ratio: int,
@@ -694,11 +689,12 @@ def set_source_amplitudes(
     """Prepares source amplitudes for propagation.
 
     This function validates the input source amplitudes, ensures consistency
-    in device, dtype, and shape, and upsamples them if necessary.
+    in device, dtype, and shape, upsamples them if necessary, and moves the
+    time dimension to the slowest dimension.
 
     Args:
         source_amplitudes: A sequence of optional Tensors, where each
-            torch.Tensor contains the amplitudes of the sources for a given shot.
+            torch.Tensor contains the amplitudes of the sources for a source type.
         n_batch: The batch size.
         nt: The total number of time steps.
         step_ratio: The ratio between the user-specified time step and the
@@ -774,7 +770,7 @@ def set_source_amplitudes(
 def check_points_per_wavelength(
     min_nonzero_vel: float,
     pml_freq: float,
-    grid_spacing: Sequence[float],
+    grid_spacing: abc.Sequence[float],
 ) -> None:
     """Checks if there are enough grid points per wavelength.
 
@@ -808,7 +804,7 @@ def check_points_per_wavelength(
             f"frequency of {pml_freq}, a minimum non-zero velocity of "
             f"{min_nonzero_vel}, and a grid cell spacing of {max_spacing}, "
             f"there are only {cells_per_wavelength:.2f}.",
-            stacklevel=2,
+            stacklevel=1,
         )
 
 
@@ -1070,15 +1066,15 @@ def downsample(
 
 
 def extract_survey(
-    models: Sequence[torch.Tensor],
-    source_locations: Sequence[Optional[torch.Tensor]],
-    receiver_locations: Sequence[Optional[torch.Tensor]],
-    wavefields: Sequence[Optional[torch.Tensor]],
-    survey_pad: Optional[Union[int, Sequence[Optional[int]]]],
-    origin: Optional[Sequence[int]],
-    fd_pad: Sequence[int],
-    pml_width: Sequence[int],
-    model_pad_modes: Sequence[str],
+    models: abc.Sequence[torch.Tensor],
+    source_locations: abc.Sequence[Optional[torch.Tensor]],
+    receiver_locations: abc.Sequence[Optional[torch.Tensor]],
+    wavefields: abc.Sequence[Optional[torch.Tensor]],
+    survey_pad: Optional[Union[int, abc.Sequence[Optional[int]]]],
+    origin: Optional[abc.Sequence[int]],
+    fd_pad: abc.Sequence[int],
+    pml_width: abc.Sequence[int],
+    model_pad_modes: abc.Sequence[str],
     n_batch: int,
     n_dims: int,
     device: torch.device,
@@ -1110,9 +1106,9 @@ def extract_survey(
         models: A sequence of PyTorch Tensors representing the model
             parameters (e.g., velocity, density).
         source_locations: A sequence of optional Tensors, where each
-            torch.Tensor contains the locations of the sources for a given shot.
+            torch.Tensor contains the locations of the sources for source type.
         receiver_locations: A sequence of optional Tensors, where each
-            torch.Tensor contains the locations of the receivers for a given shot.
+            torch.Tensor contains the locations of the receivers for a receiver type.
         wavefields: A sequence of optional Tensors representing initial
             wavefields.
         survey_pad: Optional padding around the survey area. Can be an int
@@ -1210,8 +1206,8 @@ def extract_survey(
 
 
 def check_locations_are_within_model(
-    model_shape: Sequence[int],
-    locations: Sequence[Optional[torch.Tensor]],
+    model_shape: abc.Sequence[int],
+    locations: abc.Sequence[Optional[torch.Tensor]],
 ) -> None:
     """Checks if all locations are within the bounds of the model.
 
@@ -1246,7 +1242,7 @@ def check_locations_are_within_model(
 
 
 def set_survey_pad(
-    survey_pad: Optional[Union[int, Sequence[Optional[int]]]],
+    survey_pad: Optional[Union[int, abc.Sequence[Optional[int]]]],
     ndim: int,
 ) -> List[int]:
     """Checks `survey_pad` and converts it to a list if it is a scalar.
@@ -1300,9 +1296,9 @@ def set_survey_pad(
 
 
 def get_survey_extents_from_locations(
-    model_shape: Sequence[int],
-    locations: Sequence[Optional[torch.Tensor]],
-    survey_pad: Optional[Union[int, Sequence[Optional[int]]]],
+    model_shape: abc.Sequence[int],
+    locations: abc.Sequence[Optional[torch.Tensor]],
+    survey_pad: Optional[Union[int, abc.Sequence[Optional[int]]]],
 ) -> List[Tuple[int, int]]:
     """Calculate the extents of the model to use for the survey.
 
@@ -1357,7 +1353,7 @@ def get_survey_extents_one_side(
     pad: int,
     side: str,
     dim: int,
-    locations: Sequence[Optional[torch.Tensor]],
+    locations: abc.Sequence[Optional[torch.Tensor]],
     shape: int,
 ) -> int:
     """Get the survey extent for the left or right side of one dimension.
@@ -1432,9 +1428,9 @@ def get_survey_extents_one_side(
 
 
 def get_survey_extents_from_wavefields(
-    wavefields: Sequence[Optional[torch.Tensor]],
-    origin: Optional[Sequence[int]],
-    pml_width: Sequence[int],
+    wavefields: abc.Sequence[Optional[torch.Tensor]],
+    origin: Optional[abc.Sequence[int]],
+    pml_width: abc.Sequence[int],
 ) -> List[Tuple[int, int]]:
     """Determine the extent of the model to extract from the wavefields.
 
@@ -1454,8 +1450,8 @@ def get_survey_extents_from_wavefields(
         for each dimension, that will be used for wave propagation.
 
     """
-    if not isinstance(pml_width, Sequence):
-        raise RuntimeError("pml_width must be a Sequence")
+    if not isinstance(pml_width, abc.Sequence):
+        raise RuntimeError("pml_width must be an abc.Sequence")
     ndims = len(pml_width) // 2
     if origin is not None:
         if len(origin) != ndims:
@@ -1485,15 +1481,15 @@ def get_survey_extents_from_wavefields(
                 warnings.warn(
                     "Survey extents were inferred from the wavefield shape to "
                     f"be {extents} because origin was not provided.",
-                    stacklevel=2,
+                    stacklevel=1,
                 )
             return extents
     raise RuntimeError("At least one wavefield must be non-None.")
 
 
 def check_extents_within_model(
-    extents: Sequence[Tuple[int, int]],
-    model_shape: Sequence[int],
+    extents: abc.Sequence[Tuple[int, int]],
+    model_shape: abc.Sequence[int],
 ) -> None:
     """Checks if the survey extents are within the bounds of the model.
 
@@ -1517,8 +1513,8 @@ def check_extents_within_model(
 
 
 def check_locations_within_extents(
-    extents: Sequence[Tuple[int, int]],
-    locations: Sequence[Optional[torch.Tensor]],
+    extents: abc.Sequence[Tuple[int, int]],
+    locations: abc.Sequence[Optional[torch.Tensor]],
 ) -> None:
     """Checks if all locations are within the specified survey extents.
 
@@ -1552,9 +1548,9 @@ def check_locations_within_extents(
 
 
 def check_extents_match_wavefields_shape(
-    extents: Sequence[Tuple[int, int]],
-    wavefields: Sequence[Optional[torch.Tensor]],
-    pad: Sequence[int],
+    extents: abc.Sequence[Tuple[int, int]],
+    wavefields: abc.Sequence[Optional[torch.Tensor]],
+    pad: abc.Sequence[int],
 ) -> None:
     """Checks if wavefield shapes match the calculated extents and padding.
 
@@ -1593,12 +1589,12 @@ def check_extents_match_wavefields_shape(
                     )
 
 
-def reverse_pad(pad: Sequence[int]) -> List[int]:
+def reverse_pad(pad: abc.Sequence[int]) -> List[int]:
     """Reverses the order of padding for each dimension.
 
     Given a sequence of padding values in the order
     [dim0_start, dim0_end, dim1_start, dim1_end, ...], this function returns
-    a new list with the padding for each dimension reversed.
+    a new list with the order of the dimensions reversed.
 
     Args:
         pad: A sequence of integers representing padding values for each
@@ -1619,10 +1615,10 @@ def reverse_pad(pad: Sequence[int]) -> List[int]:
 
 
 def extract_models(
-    models: Sequence[torch.Tensor],
-    extents: Sequence[Tuple[int, int]],
-    pad: Sequence[int],
-    pad_modes: Sequence[str],
+    models: abc.Sequence[torch.Tensor],
+    extents: abc.Sequence[Tuple[int, int]],
+    pad: abc.Sequence[int],
+    pad_modes: abc.Sequence[str],
     n_batch: int,
     device: torch.device,
     dtype: torch.dtype,
@@ -1713,7 +1709,7 @@ def _validate_location_tensor(
             "that is not centred on a cell, please consider "
             "using the Hick's method, which is implemented "
             "in deepwave.location_interpolation.",
-            stacklevel=2,
+            stacklevel=1,
         )
     if location.ndim != 3:
         raise RuntimeError(
@@ -1733,12 +1729,12 @@ def _validate_location_tensor(
         )
 
 
-def _calculate_origin_shape_stride(
-    extents: Sequence[Tuple[int, int]],
-    pad: Sequence[int],
+def _calculate_origin_and_stride(
+    extents: abc.Sequence[Tuple[int, int]],
+    pad: abc.Sequence[int],
     n_dims: int,
 ) -> Tuple[List[int], List[int]]:
-    """Calculate origin, shape, and stride for extracted survey."""
+    """Calculate origin and stride for extracted survey."""
     origin: List[int] = []
     shape: List[int] = []
     stride: List[int] = [1] * n_dims
@@ -1798,9 +1794,9 @@ def _convert_to_1d_and_check_uniqueness(
 
 def extract_locations(
     name: str,
-    locations: Sequence[Optional[torch.Tensor]],
-    extents: Sequence[Tuple[int, int]],
-    pad: Sequence[int],
+    locations: abc.Sequence[Optional[torch.Tensor]],
+    extents: abc.Sequence[Tuple[int, int]],
+    pad: abc.Sequence[int],
     n_batch: int,
     device: torch.device,
     dtype: torch.dtype = torch.long,
@@ -1839,7 +1835,7 @@ def extract_locations(
 
     """
     n_dims = len(extents)
-    origin, stride = _calculate_origin_shape_stride(extents, pad, n_dims)
+    origin, stride = _calculate_origin_and_stride(extents, pad, n_dims)
 
     extracted_locations: List[torch.Tensor] = []
     for location in locations:
@@ -1857,9 +1853,9 @@ def extract_locations(
 
 
 def prepare_wavefields(
-    wavefields: Sequence[Optional[torch.Tensor]],
-    extents: Sequence[Tuple[int, int]],
-    pad: Sequence[int],
+    wavefields: abc.Sequence[Optional[torch.Tensor]],
+    extents: abc.Sequence[Tuple[int, int]],
+    pad: abc.Sequence[int],
     n_batch: int,
     device: torch.device,
     dtype: torch.dtype,
@@ -1940,7 +1936,7 @@ def prepare_wavefields(
 
 
 def cfl_condition_n(
-    grid_spacing: Sequence[float],
+    grid_spacing: abc.Sequence[float],
     dt: float,
     max_abs_vel: float,
     eps: float = 1e-15,
@@ -2088,8 +2084,8 @@ def lambmubuoyancy_to_vpvsrho(
 
 
 def setup_pml(
-    pml_width: Sequence[int],
-    pml_start: Sequence[float],
+    pml_width: abc.Sequence[int],
+    pml_start: abc.Sequence[float],
     max_pml: float,
     dt: float,
     n: int,
@@ -2098,9 +2094,9 @@ def setup_pml(
     device: torch.device,
     pml_freq: float,
     start: float = 0.0,
-    eps: float = 1e-9,
     r_val: float = 0.001,
     n_power: int = 2,
+    eps: float = 1e-9,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """Creates a and b profiles for C-PML.
 
@@ -2124,10 +2120,10 @@ def setup_pml(
             dominant frequency in the wavefield.
         start: Float specifying the coordinate (in grid cells) of the first
             element. Optional, default 0.
-        eps: A small number to prevent division by zero. Optional,
-            default 1e-9.
         r_val: The reflection coefficient. Optional, default 0.001.
         n_power: The power for the profile. Optional, default 2.
+        eps: A small number to prevent division by zero. Optional,
+            default 1e-9.
 
     Returns:
         A tuple containing the a and b profiles as Tensors.
@@ -2160,10 +2156,10 @@ def setup_pml(
 
 def create_or_pad(
     tensor: torch.Tensor,
-    fd_pad: Union[int, Sequence[int]],
+    fd_pad: Union[int, abc.Sequence[int]],
     device: torch.device,
     dtype: torch.dtype,
-    size: Sequence[int],
+    size: abc.Sequence[int],
 ) -> torch.Tensor:
     """Creates a zero tensor of a specified size or pads an existing tensor.
 
@@ -2196,14 +2192,11 @@ def create_or_pad(
 
 def zero_interior(
     tensor: torch.Tensor,
-    fd_pad: Union[int, Sequence[int]],
-    pml_width: Sequence[int],
+    fd_pad: Union[int, abc.Sequence[int]],
+    pml_width: abc.Sequence[int],
     y: bool,
 ) -> torch.Tensor:
     """Zeros out the interior region of a 2D tensor.
-
-    This function is typically used for debugging or visualization purposes to
-    inspect the effects of padding and PML.
 
     Args:
         tensor: The input 2D torch.Tensor.

@@ -298,7 +298,7 @@ def test_set_pml_freq_invalid_type():
 def test_set_pml_freq_zero_dt():
     with pytest.raises(
         ValueError,
-        match=re.escape("dt must be greater than zero to calculate Nyquist frequency."),
+        match=re.escape("dt is too small."),
     ):
         set_pml_freq(30.0, 0.0)
 
@@ -336,7 +336,7 @@ def test_set_max_vel_invalid_type():
 def test_set_max_vel_zero_actual_max_vel():
     with pytest.raises(
         ValueError,
-        match=re.escape("max_model_vel must be greater than zero."),
+        match=re.escape("max_abs_model_vel must be greater than zero."),
     ):
         set_max_vel(2000.0, 0.0)
 
@@ -1212,7 +1212,7 @@ def test_set_max_vel_complex_value():
 def test_set_max_vel_complex_max_model_vel():
     with pytest.raises(
         TypeError,
-        match=re.escape("max_model_vel must be convertible to a float."),
+        match=re.escape("max_abs_model_vel must be convertible to a float."),
     ):
         set_max_vel(2000.0, 1500.0 + 1j)
 
