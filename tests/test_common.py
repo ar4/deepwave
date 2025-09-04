@@ -22,6 +22,7 @@ from deepwave.common import (
     set_time_pad_frac,
     upsample,
     zero_last_element_of_final_dimension,
+    extract_survey,
 )
 
 
@@ -1516,3 +1517,45 @@ def test_cfl_condition_n_list_complex_grid_spacing_element():
         TypeError,
     ):
         cfl_condition_n(grid_spacing, dt, max_vel)
+
+
+def test_locations_float_raises_error():
+    models = [torch.ones(10, 10)]
+    source_amplitudes = [torch.zeros(1, 1, 10)]
+    source_locations = [torch.tensor([[[1.5, 2.0]]], dtype=torch.float32)]
+    receiver_locations = [None]
+    wavefields = [None, None, None, None, None, None]
+    survey_pad = None
+    origin = None
+    fd_pad = [0, 0, 0, 0]
+    pml_width = [0, 0, 0, 0]
+    model_pad_modes = ["replicate"]
+    n_batch = 1
+    n_dims = 2
+    device = torch.device("cpu")
+    dtype = torch.float32
+
+    with pytest.raises(
+        ValueError,
+        match=re.escape(
+            "Locations should be specified as integer numbers of cells. "
+            "If you wish to have a source or receiver that is not centred on a cell, "
+            "please consider using the Hick's method, which is implemented "
+            "in deepwave.location_interpolation.",
+        ),
+    ):
+        extract_survey(
+            models,
+            source_locations,
+            receiver_locations,
+            wavefields,
+            survey_pad,
+            origin,
+            fd_pad,
+            pml_width,
+            model_pad_modes,
+            n_batch,
+            n_dims,
+            device,
+            dtype,
+        )

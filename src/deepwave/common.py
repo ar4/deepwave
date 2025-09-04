@@ -1701,13 +1701,11 @@ def _validate_location_tensor(
     if not isinstance(location, torch.Tensor):
         raise TypeError("locations must be a torch.Tensor.")
     if location.numel() > 0 and eps < (location - location.long()).abs().max():
-        warnings.warn(
-            "Locations should be specified as integer numbers "
-            "of cells. If you wish to have a source or receiver "
-            "that is not centred on a cell, please consider "
-            "using the Hick's method, which is implemented "
-            "in deepwave.location_interpolation.",
-            stacklevel=1,
+        raise ValueError(
+            "Locations should be specified as integer numbers of cells. "
+            "If you wish to have a source or receiver that is not centred on a cell, "
+            "please consider using the Hick's method, which is implemented "
+            "in deepwave.location_interpolation."
         )
     if location.ndim != 3:
         raise RuntimeError(
