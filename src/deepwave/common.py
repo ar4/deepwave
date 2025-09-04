@@ -12,10 +12,8 @@ from typing import (
     Any,
     List,
     Optional,
-    SupportsInt,
     Tuple,
     Union,
-    cast,
 )
 
 import torch
@@ -27,14 +25,14 @@ IGNORE_LOCATION = -1 << 31
 def setup_propagator(
     models: abc.Sequence[torch.Tensor],
     model_pad_modes: abc.Sequence[str],
-    grid_spacing: Union[float, abc.Iterable[float]],
+    grid_spacing: Union[float, abc.Sequence[float]],
     dt: float,
     source_amplitudes: abc.Sequence[Optional[torch.Tensor]],
     source_locations: abc.Sequence[Optional[torch.Tensor]],
     receiver_locations: abc.Sequence[Optional[torch.Tensor]],
     accuracy: int,
     fd_pad: abc.Sequence[int],
-    pml_width: Union[int, abc.Iterable[int]],
+    pml_width: Union[int, abc.Sequence[int]],
     pml_freq: Optional[float],
     max_vel: Optional[float],
     min_nonzero_model_vel: float,
@@ -244,14 +242,14 @@ def setup_propagator(
 
 
 def get_n_batch(
-    source_locations: abc.Iterable[Optional[torch.Tensor]],
-    wavefields: abc.Iterable[Optional[torch.Tensor]],
+    source_locations: abc.Sequence[Optional[torch.Tensor]],
+    wavefields: abc.Sequence[Optional[torch.Tensor]],
 ) -> int:
     """Get the batch size from source_locations or wavefields.
 
     Args:
-        source_locations: Iterable source location tensors (or None).
-        wavefields: Iterable wavefield tensors (or None).
+        source_locations: Sequence of source location tensors (or None).
+        wavefields: Sequence of wavefield tensors (or None).
 
     Returns:
         Batch size (first dimension of any non-None tensor).
@@ -314,7 +312,7 @@ def downsample_and_movedim(
 
 
 def set_grid_spacing(
-    grid_spacing: Union[float, abc.Iterable[float]],
+    grid_spacing: Union[float, abc.Sequence[float]],
     n_dims: int,
 ) -> List[float]:
     """Ensures grid_spacing is a sequence of length n_dims.
@@ -339,7 +337,7 @@ def set_grid_spacing(
         # Check if convertible to a float
         processed_grid_spacing = [float(grid_spacing)] * n_dims  # type: ignore
     except (TypeError, ValueError):
-        # Check if an Iterable of values convertible to floats
+        # Check if a sequence of values convertible to floats
         try:
             processed_grid_spacing = [float(spacing) for spacing in grid_spacing]  # type: ignore
         except (TypeError, ValueError) as e:
@@ -379,7 +377,7 @@ def set_accuracy(accuracy: int) -> int:
     return accuracy
 
 
-def set_pml_width(pml_width: Union[int, abc.Iterable[int]], n_dims: int) -> List[int]:
+def set_pml_width(pml_width: Union[int, abc.Sequence[int]], n_dims: int) -> List[int]:
     """Ensures pml_width is a sequence of length 2 * n_dims.
 
     Args:
@@ -405,7 +403,7 @@ def set_pml_width(pml_width: Union[int, abc.Iterable[int]], n_dims: int) -> List
         if float(pml_width) != float(int(pml_width)):  # type: ignore
             raise TypeError("pml_width must be an int or sequence of ints.")
     except (TypeError, ValueError):
-        # Check if an Iterable of values convertible to ints
+        # Check if a sequence of values convertible to ints
         try:
             pml_width_list = list(pml_width)  # type: ignore
             if any(float(width) != float(int(width)) for width in pml_width_list):
