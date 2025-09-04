@@ -1521,7 +1521,6 @@ def test_cfl_condition_n_list_complex_grid_spacing_element():
 
 def test_locations_float_raises_error():
     models = [torch.ones(10, 10)]
-    source_amplitudes = [torch.zeros(1, 1, 10)]
     source_locations = [torch.tensor([[[1.5, 2.0]]], dtype=torch.float32)]
     receiver_locations = [None]
     wavefields = [None, None, None, None, None, None]

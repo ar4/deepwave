@@ -68,6 +68,7 @@ class ScalarBorn(torch.nn.Module):
                 attribute of the wavespeed should be set.
             scatter_requires_grad: A bool specifying whether the `requires_grad`
                 attribute of the scattering potential should be set.
+
         """
         super().__init__()
         if not isinstance(v_requires_grad, bool):
@@ -1410,6 +1411,7 @@ def scalar_born_func(
 
     Returns:
         The results of the forward pass from `ScalarBornForwardFunc.apply`.
+
     """
     return cast(
         "Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, "

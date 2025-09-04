@@ -79,8 +79,8 @@ def test_get_backend_function_unsupported_dtype():
 
 
 def test_get_backend_function_not_found():
-    with patch("deepwave.backend_utils.dll", spec=ctypes.CDLL) as mock_dll:
-        # Now, mock_dll should behave like a ctypes.CDLL instance.
+    with patch("deepwave.backend_utils.dll", spec=ctypes.CDLL):
+        # Now, the mock dll should behave like a ctypes.CDLL instance.
         # Accessing a non-existent attribute on it should raise AttributeError.
         with pytest.raises(AttributeError, match="Backend function .* not found."):
             backend_utils.get_backend_function(
@@ -104,7 +104,7 @@ def test_use_openmp_true():
 
 def test_use_openmp_false():
     original_hasattr = builtins.hasattr  # Store the original hasattr
-    with patch("deepwave.backend_utils.dll") as mock_dll:
+    with patch("deepwave.backend_utils.dll"):
         with patch(
             "builtins.hasattr",
             side_effect=lambda obj, name: False

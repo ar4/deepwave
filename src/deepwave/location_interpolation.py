@@ -306,6 +306,7 @@ class Hicks:
                 dimension in which the dipole is oriented.
             dtype: The datatype to use.
             eps: A small value to prevent division by zero.
+
         """
         if not isinstance(locations, torch.Tensor):
             raise TypeError("locations must be a torch.Tensor.")
