@@ -869,6 +869,42 @@ def zero_last_element_of_final_dimension(signal: torch.Tensor) -> torch.Tensor:
     return signal * zeroer
 
 
+def _validate_sample_args(
+    signal: torch.Tensor,
+    step_ratio: int,
+    freq_taper_frac: float,
+    time_pad_frac: float,
+    time_taper: bool,
+    shift: Optional[float] = None,
+) -> None:
+    """Validate arguments for upsample and downsample."""
+    if not isinstance(signal, torch.Tensor):
+        raise TypeError("signal must be a torch.Tensor.")
+    if not isinstance(step_ratio, int):
+        raise TypeError("step_ratio must be an int.")
+    if step_ratio <= 0:
+        raise ValueError("step_ratio must be positive.")
+    try:
+        float(freq_taper_frac)
+    except (TypeError, ValueError) as e:
+        raise TypeError("freq_taper_frac must be a float.") from e
+    if not 0.0 <= freq_taper_frac <= 1.0:
+        raise ValueError(f"freq_taper_frac must be in [0, 1], got {freq_taper_frac}.")
+    try:
+        float(time_pad_frac)
+    except (TypeError, ValueError) as e:
+        raise TypeError("time_pad_frac must be a float.") from e
+    if not 0.0 <= time_pad_frac <= 1.0:
+        raise ValueError(f"time_pad_frac must be in [0, 1], got {time_pad_frac}.")
+    if not isinstance(time_taper, bool):
+        raise TypeError("time_taper must be a bool.")
+    if shift is not None:
+        try:
+            float(shift)
+        except (TypeError, ValueError) as e:
+            raise TypeError("shift must be a float.") from e
+
+
 def upsample(
     signal: torch.Tensor,
     step_ratio: int,
@@ -913,32 +949,12 @@ def upsample(
         The signal after upsampling.
 
     """
-    if not isinstance(signal, torch.Tensor):
-        raise TypeError("signal must be a torch.Tensor.")
-    if signal.numel() == 0:
+    _validate_sample_args(
+        signal, step_ratio, freq_taper_frac, time_pad_frac, time_taper
+    )
+    if signal.numel() == 0 or step_ratio == 1:
         return signal
 
-    if not isinstance(step_ratio, int):
-        raise TypeError("step_ratio must be an int.")
-    if step_ratio <= 0:
-        raise ValueError("step_ratio must be positive.")
-    try:
-        freq_taper_frac = float(freq_taper_frac)
-    except (TypeError, ValueError) as e:
-        raise TypeError("freq_taper_frac must be a float.") from e
-    if not 0.0 <= freq_taper_frac <= 1.0:
-        raise ValueError(f"freq_taper_frac must be in [0, 1], got {freq_taper_frac}.")
-    try:
-        time_pad_frac = float(time_pad_frac)
-    except (TypeError, ValueError) as e:
-        raise TypeError("time_pad_frac must be a float.") from e
-    if not 0.0 <= time_pad_frac <= 1.0:
-        raise ValueError(f"time_pad_frac must be in [0, 1], got {time_pad_frac}.")
-    if not isinstance(time_taper, bool):
-        raise TypeError("time_taper must be a bool.")
-
-    if step_ratio == 1:
-        return signal
     n_time_pad = int(time_pad_frac * signal.shape[-1]) if time_pad_frac > 0.0 else 0
     if n_time_pad > 0:
         signal = torch.nn.functional.pad(signal, (0, n_time_pad))
@@ -1015,36 +1031,12 @@ def downsample(
         The signal after downsampling.
 
     """
-    if not isinstance(signal, torch.Tensor):
-        raise TypeError("signal must be a torch.Tensor.")
-    if signal.numel() == 0:
+    _validate_sample_args(
+        signal, step_ratio, freq_taper_frac, time_pad_frac, time_taper, shift=shift
+    )
+    if signal.numel() == 0 or (step_ratio == 1 and shift == 0.0):
         return signal
 
-    if not isinstance(step_ratio, int):
-        raise TypeError("step_ratio must be an int.")
-    if step_ratio <= 0:
-        raise ValueError("step_ratio must be positive.")
-    try:
-        freq_taper_frac = float(freq_taper_frac)
-    except (TypeError, ValueError) as e:
-        raise TypeError("freq_taper_frac must be a float.") from e
-    if not 0.0 <= freq_taper_frac <= 1.0:
-        raise ValueError(f"freq_taper_frac must be in [0, 1], got {freq_taper_frac}.")
-    try:
-        time_pad_frac = float(time_pad_frac)
-    except (TypeError, ValueError) as e:
-        raise TypeError("time_pad_frac must be a float.") from e
-    if not 0.0 <= time_pad_frac <= 1.0:
-        raise ValueError(f"time_pad_frac must be in [0, 1], got {time_pad_frac}.")
-    if not isinstance(time_taper, bool):
-        raise TypeError("time_taper must be a bool.")
-    try:
-        shift = float(shift)
-    except (TypeError, ValueError) as e:
-        raise TypeError("shift must be a float.") from e
-
-    if step_ratio == 1 and shift == 0.0:
-        return signal
     if time_taper:
         signal = signal * torch.hann_window(
             signal.shape[-1],
@@ -1474,13 +1466,13 @@ def get_survey_extents_from_wavefields(
             raise RuntimeError("origin coordinates must be non-negative.")
     if any(dim_pml_width < 0 for dim_pml_width in pml_width):
         raise RuntimeError("pml_width must be non-negative.")
-    extents: List[Tuple[int, int]] = []
     for wavefield in wavefields:
         if wavefield is not None:
             if wavefield.ndim != ndims + 1:
                 raise RuntimeError(
                     f"wavefields must have {ndims + 1} dimensions (batch + spatial).",
                 )
+            extents: List[Tuple[int, int]] = []
             for dim in range(ndims):
                 dim_origin = 0 if origin is None else origin[dim]
                 extent_size = (
@@ -1704,6 +1696,106 @@ def extract_models(
     ]
 
 
+def _validate_location_tensor(
+    location: torch.Tensor,
+    name: str,
+    n_dims: int,
+    n_batch: int,
+    eps: float,
+) -> None:
+    """Validate a single location tensor."""
+    if not isinstance(location, torch.Tensor):
+        raise TypeError("locations must be a torch.Tensor.")
+    if location.numel() > 0 and eps < (location - location.long()).abs().max():
+        warnings.warn(
+            "Locations should be specified as integer numbers "
+            "of cells. If you wish to have a source or receiver "
+            "that is not centred on a cell, please consider "
+            "using the Hick's method, which is implemented "
+            "in deepwave.location_interpolation.",
+            stacklevel=2,
+        )
+    if location.ndim != 3:
+        raise RuntimeError(
+            name + " location Tensors must have three dimensions",
+        )
+    if location.shape[0] != n_batch:
+        raise RuntimeError(
+            "Inconsistent batch size: Expected all Tensors to have a "
+            f"batch size of {n_batch}, but found a {name.lower()} "
+            "locations torch.Tensor with a batch size of "
+            f"{location.shape[0]}.",
+        )
+    if location.shape[-1] != n_dims:
+        raise RuntimeError(
+            f"{name} locations must have {n_dims} dimensional "
+            f"coordinates, but found one with {location.shape[-1]}.",
+        )
+
+
+def _calculate_origin_shape_stride(
+    extents: Sequence[Tuple[int, int]],
+    pad: Sequence[int],
+    n_dims: int,
+) -> Tuple[List[int], List[int]]:
+    """Calculate origin, shape, and stride for extracted survey."""
+    origin: List[int] = []
+    shape: List[int] = []
+    stride: List[int] = [1] * n_dims
+    for dim in range(n_dims):
+        origin.append(extents[dim][0] - pad[2 * dim])
+        shape.append(
+            extents[dim][1] - extents[dim][0] + pad[2 * dim] + pad[2 * dim + 1],
+        )
+    for dim in range(n_dims - 2, -1, -1):
+        stride[dim] = stride[dim + 1] * shape[dim + 1]
+    return origin, stride
+
+
+def _convert_to_1d_and_check_uniqueness(
+    location: torch.Tensor,
+    name: str,
+    n_dims: int,
+    n_batch: int,
+    origin: List[int],
+    stride: List[int],
+    device: torch.device,
+) -> torch.Tensor:
+    """Convert locations to 1D and check for uniqueness."""
+    shifted_location = location.clone().long().to(device)
+    for dim in range(n_dims):
+        shifted_location[..., dim] = torch.where(
+            shifted_location[..., dim] != IGNORE_LOCATION,
+            shifted_location[..., dim] - origin[dim],
+            IGNORE_LOCATION,
+        )
+
+    location_1d = torch.where(
+        shifted_location[..., 0] != IGNORE_LOCATION,
+        0,
+        IGNORE_LOCATION,
+    )
+    for dim in range(n_dims):
+        location_1d += torch.where(
+            shifted_location[..., dim] != IGNORE_LOCATION,
+            shifted_location[..., dim] * stride[dim],
+            0,
+        )
+
+    for batch_idx in range(n_batch):
+        shot_locations = location_1d[batch_idx]
+        shot_locations = shot_locations[shot_locations != IGNORE_LOCATION]
+        if len(shot_locations) != len(torch.unique(shot_locations)):
+            raise RuntimeError(
+                f"{name} locations must be unique within each shot. "
+                "You cannot have two in the same cell, but in shot "
+                f"{batch_idx} there is/are {len(shot_locations)} "
+                f"active {name.lower()} locations while only "
+                f"{len(torch.unique(shot_locations))} is/are unique.",
+            )
+    return location_1d.contiguous()
+
+
 def extract_locations(
     name: str,
     locations: Sequence[Optional[torch.Tensor]],
@@ -1747,91 +1839,16 @@ def extract_locations(
 
     """
     n_dims = len(extents)
-    origin: List[int] = []  # origin of extracted survey, including padding
-    shape: List[int] = []  # shape of extracted survey, including padding
-    stride: List[int] = [
-        1,
-    ] * n_dims  # stride of each dim in extracted survey, including padding
-    for dim in range(n_dims):
-        origin.append(extents[dim][0] - pad[2 * dim])
-        shape.append(
-            extents[dim][1] - extents[dim][0] + pad[2 * dim] + pad[2 * dim + 1],
-        )
-    for dim in range(n_dims - 2, -1, -1):
-        stride[dim] = stride[dim + 1] * shape[dim + 1]
+    origin, stride = _calculate_origin_shape_stride(extents, pad, n_dims)
 
     extracted_locations: List[torch.Tensor] = []
     for location in locations:
         if location is not None:
-            if not isinstance(location, torch.Tensor):
-                raise TypeError("locations must be a torch.Tensor.")
-            if location.numel() > 0 and eps < (location - location.long()).abs().max():
-                warnings.warn(
-                    "Locations should be specified as integer numbers "
-                    "of cells. If you wish to have a source or receiver "
-                    "that is not centred on a cell, please consider "
-                    "using the Hick's method, which is implemented "
-                    "in deepwave.location_interpolation.",
-                    stacklevel=2,
-                )
-
-            if location.ndim != 3:
-                raise RuntimeError(
-                    name + " location Tensors must have three dimensions",
-                )
-
-            if location.shape[0] != n_batch:
-                raise RuntimeError(
-                    "Inconsistent batch size: Expected all Tensors to have a "
-                    f"batch size of {n_batch}, but found a {name.lower()} "
-                    "locations torch.Tensor with a batch size of "
-                    f"{location.shape[0]}.",
-                )
-
-            if location.shape[-1] != n_dims:
-                raise RuntimeError(
-                    f"{name} locations must have {n_dims} dimensional "
-                    f"coordinates, but found one with {location.shape[-1]}.",
-                )
-
-            # Shift locations to be relative to new origin in extracted
-            # (and padded) model
-            shifted_location = location.clone().long().to(device)
-            for dim in range(n_dims):
-                shifted_location[..., dim] = torch.where(
-                    shifted_location[..., dim] != IGNORE_LOCATION,
-                    shifted_location[..., dim] - origin[dim],
-                    IGNORE_LOCATION,
-                )
-
-            # Convert locations to 1d coordinate
-            location_1d = torch.where(
-                shifted_location[..., 0] != IGNORE_LOCATION,
-                0,
-                IGNORE_LOCATION,
+            _validate_location_tensor(location, name, n_dims, n_batch, eps)
+            location_1d = _convert_to_1d_and_check_uniqueness(
+                location, name, n_dims, n_batch, origin, stride, device
             )
-            for dim in range(n_dims):
-                location_1d += torch.where(
-                    shifted_location[..., dim] != IGNORE_LOCATION,
-                    shifted_location[..., dim] * stride[dim],
-                    0,
-                )
-
-            # Check that locations are unique within each shot (as they may not
-            # be added atomically)
-            for batch_idx in range(n_batch):
-                shot_locations = location_1d[batch_idx]
-                shot_locations = shot_locations[shot_locations != IGNORE_LOCATION]
-                if len(shot_locations) != len(torch.unique(shot_locations)):
-                    raise RuntimeError(
-                        f"{name} locations must be unique within each shot. "
-                        "You cannot have two in the same cell, but in shot "
-                        f"{batch_idx} there is/are {len(shot_locations)} "
-                        f"active {name.lower()} locations while only "
-                        f"{len(torch.unique(shot_locations))} is/are unique.",
-                    )
-
-            extracted_locations.append(location_1d.contiguous())
+            extracted_locations.append(location_1d)
         else:
             extracted_locations.append(
                 torch.empty(n_batch, 0, device=device, dtype=dtype),
@@ -1988,7 +2005,7 @@ def cfl_condition_n(
     return inner_dt, step_ratio
 
 
-def cfl_condition(dy: float, dx: float, *args: Any, **kwargs: Any) -> Tuple[float, int]:  # type: ignore[ANN401]
+def cfl_condition(dy: float, dx: float, *args: Any, **kwargs: Any) -> Tuple[float, int]:
     """Calculates the time step interval for 2D models.
 
     This is a convenience wrapper around `cfl_condition_n` for 2D models.

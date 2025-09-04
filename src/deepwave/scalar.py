@@ -482,7 +482,7 @@ class ScalarForwardFunc(torch.autograd.Function):
 
     @staticmethod
     def forward(
-        ctx: Any,  # type: ignore[ANN401]
+        ctx: Any,
         v: torch.Tensor,
         source_amplitudes: torch.Tensor,
         wfc: torch.Tensor,
@@ -760,7 +760,7 @@ class ScalarForwardFunc(torch.autograd.Function):
 
     @staticmethod
     def backward(
-        ctx: Any,  # type: ignore[ANN401]
+        ctx: Any,
         gwfc: torch.Tensor,
         gwfp: torch.Tensor,
         gpsiy: torch.Tensor,
@@ -875,7 +875,7 @@ class ScalarBackwardFunc(torch.autograd.Function):
 
     @staticmethod
     def forward(
-        ctx: Any,  # type: ignore[ANN401]
+        ctx: Any,
         gwfc: torch.Tensor,
         gwfp: torch.Tensor,
         gpsiy: torch.Tensor,
@@ -1195,7 +1195,7 @@ class ScalarBackwardFunc(torch.autograd.Function):
     @staticmethod
     @torch.autograd.function.once_differentiable  # type: ignore[misc]
     def backward(
-        ctx: Any,  # type: ignore[ANN401]
+        ctx: Any,
         ggv: torch.Tensor,
         ggf: torch.Tensor,
         ggwfc: torch.Tensor,
@@ -1850,7 +1850,7 @@ class ScalarBackwardFunc(torch.autograd.Function):
         )
 
 
-def scalar_func(*args: Any) -> Tuple[torch.Tensor, ...]:  # type: ignore[ANN401]
+def scalar_func(*args: Any) -> Tuple[torch.Tensor, ...]:
     """Helper function to apply the ScalarForwardFunc.
 
     This function serves as a convenient wrapper to call the `apply` method

@@ -454,7 +454,7 @@ class ScalarBornForwardFunc(torch.autograd.Function):
 
     @staticmethod
     def forward(
-        ctx: Any,  # type: ignore[ANN401]
+        ctx: Any,
         v: torch.Tensor,
         scatter: torch.Tensor,
         source_amplitudes: torch.Tensor,
@@ -846,7 +846,7 @@ class ScalarBornForwardFunc(torch.autograd.Function):
     @staticmethod
     @torch.autograd.function.once_differentiable  # type: ignore[misc]
     def backward(
-        ctx: Any,  # type: ignore[ANN401]
+        ctx: Any,
         *grad_outputs: torch.Tensor,
     ) -> Tuple[Optional[torch.Tensor], ...]:
         """Backward propagation of the scalar Born wave equation.
@@ -1381,7 +1381,7 @@ class ScalarBornForwardFunc(torch.autograd.Function):
 
 
 def scalar_born_func(
-    *args: Any,  # type: ignore[ANN401]
+    *args: Any,
 ) -> Tuple[
     torch.Tensor,
     torch.Tensor,

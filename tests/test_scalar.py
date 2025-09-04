@@ -1312,11 +1312,18 @@ def test_scalar_init_v_non_tensor():
     with pytest.raises(TypeError, match=re.escape("v must be a torch.Tensor.")):
         Scalar([1, 2, 3], 1.0)
 
+
 def test_scalar_init_v_requires_grad_non_bool():
     v = torch.ones(10, 10)
-    with pytest.raises(TypeError, match=re.escape("v_requires_grad must be bool, got int")):
+    with pytest.raises(
+        TypeError, match=re.escape("v_requires_grad must be bool, got int")
+    ):
         Scalar(v, 1.0, v_requires_grad=1)
-    with pytest.raises(TypeError, match=re.escape("v_requires_grad must be bool, got float")):
+    with pytest.raises(
+        TypeError, match=re.escape("v_requires_grad must be bool, got float")
+    ):
         Scalar(v, 1.0, v_requires_grad=0.5)
-    with pytest.raises(TypeError, match=re.escape("v_requires_grad must be bool, got str")):
+    with pytest.raises(
+        TypeError, match=re.escape("v_requires_grad must be bool, got str")
+    ):
         Scalar(v, 1.0, v_requires_grad="True")

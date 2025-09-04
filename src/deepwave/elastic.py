@@ -732,7 +732,7 @@ class ElasticForwardFunc(torch.autograd.Function):
 
     @staticmethod
     def forward(
-        ctx: Any,  # type: ignore[ANN401]
+        ctx: Any,
         lamb: torch.Tensor,
         mu: torch.Tensor,
         buoyancy: torch.Tensor,
@@ -1185,7 +1185,7 @@ class ElasticForwardFunc(torch.autograd.Function):
     @staticmethod
     @torch.autograd.function.once_differentiable  # type: ignore[misc]
     def backward(
-        ctx: Any,  # type: ignore[ANN401]
+        ctx: Any,
         vy: torch.Tensor,
         vx: torch.Tensor,
         sigmayy: torch.Tensor,
@@ -1700,7 +1700,7 @@ class ElasticForwardFunc(torch.autograd.Function):
         )
 
 
-def elastic_func(*args: Any) -> Tuple[torch.Tensor, ...]:  # type: ignore[ANN401]
+def elastic_func(*args: Any) -> Tuple[torch.Tensor, ...]:
     """A helper function to apply the ElasticForwardFunc.
 
     This function serves as a convenient wrapper to call the `apply` method
