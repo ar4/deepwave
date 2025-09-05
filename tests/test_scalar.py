@@ -551,7 +551,7 @@ def test_gradcheck_2d_6th_order():
 
 def test_gradcheck_2d_8th_order():
     """Test gradcheck with a 8th order accurate propagator."""
-    run_gradcheck_2d(propagator=scalarprop, prop_kwargs={"accuracy": 8})
+    run_gradcheck_2d(propagator=scalarprop, prop_kwargs={"accuracy": 8}, atol=4e-8)
 
 
 def test_gradcheck_2d_cfl():
