@@ -77,6 +77,9 @@
 #define FUNC(name) CAT(name, DW_ACCURACY, DW_DTYPE, DW_DEVICE)
 
 // Access the wavefield at offset (dy, dx) from the current index i
+// Note: arrays are row-major with flattened index i = y*nx + x. For batched
+// shots the base pointer is shot_offset = shot * ny * nx, so callers pass
+// pointers already offset into the shot's memory region.
 #define WFC(dy, dx) wfc[i + dy * nx + dx]
 
 // Compute the product of the PML profile ay and the auxiliary field psiy at

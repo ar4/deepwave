@@ -26,6 +26,9 @@ inline void add_to_wavefield(DW_DTYPE* __restrict const wavefield,
 }
 
 // Combine gradients from multiple threads into a single gradient array.
+// grad_thread is expected to be laid out as n_threads blocks each of size ny*nx
+// (i.e. threadidx * ny * nx + y*nx + x). This helper sums those per-thread
+// buffers into `grad` for the interior grid (skipping FD_PAD margins).
 static void combine_grad(DW_DTYPE* __restrict const grad,
                          DW_DTYPE const* __restrict const grad_thread,
                          int64_t const n_threads, int64_t const ny,

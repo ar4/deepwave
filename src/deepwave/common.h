@@ -1,6 +1,12 @@
 #ifndef DW_COMMON_H
 #define DW_COMMON_H
 
+/* common.h
+ * Small collection of finite-difference helper macros used by CPU and GPU
+ * implementations. DIFF* macros implement spatial FD operators; FD_PAD is
+ * the stencil 'radius' (number of guard cells required to evaluate stencils).
+ */
+
 #if DW_ACCURACY == 2
 
 #define DIFFY1(a) (((DW_DTYPE)(1.0 / 2.0) * (a(1, 0) - a(-1, 0))) * rdy)
