@@ -37,23 +37,35 @@
 #define CAT(name, accuracy, dtype, device) CAT_I(name, accuracy, dtype, device)
 #define FUNC(name) CAT(name, DW_ACCURACY, DW_DTYPE, DW_DEVICE)
 
+// Access the background wavefield at offset (dy, dx) from i
 #define WFC(dy, dx) wfc[i + dy * nx + dx]
+// Access the scattered wavefield at offset (dy, dx) from i
 #define WFCSC(dy, dx) wfcsc[i + dy * nx + dx]
+// PML profile ay times auxiliary field psiy (background)
 #define AY_PSIY(dy, dx) ay[y + dy] * psiy[i + dy * nx + dx]
+// PML profile ax times auxiliary field psix (background)
 #define AX_PSIX(dy, dx) ax[x + dx] * psix[i + dy * nx + dx]
+// PML profile ay times auxiliary field psiysc (scattered)
 #define AY_PSIYSC(dy, dx) ay[y + dy] * psiysc[i + dy * nx + dx]
+// PML profile ax times auxiliary field psixsc (scattered)
 #define AX_PSIXSC(dy, dx) ax[x + dx] * psixsc[i + dy * nx + dx]
+// Access velocity at offset (dy, dx) from i
 #define V(dy, dx) v[i + dy * nx + dx]
+// v * dt^2 at offset
 #define VDT2(dy, dx) V(dy, dx) * dt2
+// v^2 * dt^2 at offset
 #define V2DT2(dy, dx) V(dy, dx) * V(dy, dx) * dt2
+// Scattering potential at offset
 #define SCATTER(dy, dx) scatter[i + dy * nx + dx]
+// Second derivative term in the backward background wavefield update
 #define V2DT2_WFC(dy, dx)        \
   (V2DT2(dy, dx) * WFC(dy, dx) + \
    2 * VDT2(dy, dx) * SCATTER(dy, dx) * WFCSC(dy, dx))
+// Second derivative term in the backward scattered wavefield update
 #define V2DT2_WFCSC(dy, dx) V2DT2(dy, dx) * WFCSC(dy, dx)
 /* Update term for the y-derivative of the wavefield in the PML region, used
- * in the backward pass. This corresponds to the first term in the update
- * equation for the auxiliary wavefield psi.
+ * in the backward pass. This corresponds to the first derivative term in the
+ * update equation.
  */
 #define UT_TERMY1(dy, dx)                                                      \
   (dbydy[y + dy] * ((1 + by[y + dy]) *                                         \
@@ -62,8 +74,8 @@
                     by[y + dy] * zetay[i + dy * nx]) +                         \
    by[y + dy] * psiy[i + dy * nx])
 /* Update term for the x-derivative of the wavefield in the PML region, used
- * in the backward pass. This corresponds to the first term in the update
- * equation for the auxiliary wavefield psi.
+ * in the backward pass. This corresponds to the first derivative term in the
+ * update equation.
  */
 #define UT_TERMX1(dy, dx)                                                      \
   (dbxdx[x + dx] * ((1 + bx[x + dx]) *                                         \
@@ -72,14 +84,18 @@
                     bx[x + dx] * zetax[i + dx]) +                              \
    bx[x + dx] * psix[i + dx])
 /* Update term for the y-derivative of the wavefield in the PML region, used
- * in the backward pass. This corresponds to the second term in the update
- * equation for the auxiliary wavefield psi.
+ * in the backward pass. This corresponds to the second derivative term in the
+ * update equation.
  */
 #define UT_TERMY2(dy, dx)                                                     \
   ((1 + by[y + dy]) *                                                         \
    ((1 + by[y + dy]) * (V2DT2(dy, dx) * WFC(dy, dx) +                         \
                         2 * VDT2(dy, dx) * SCATTER(dy, dx) * WFCSC(dy, dx)) + \
     by[y + dy] * zetay[i + dy * nx]))
+/* Update term for the x-derivative of the wavefield in the PML region, used
+ * in the backward pass. This corresponds to the second derivative term in the
+ * update equation.
+ */
 #define UT_TERMX2(dy, dx)                                                     \
   ((1 + bx[x + dx]) *                                                         \
    ((1 + bx[x + dx]) * (V2DT2(dy, dx) * WFC(dy, dx) +                         \
@@ -293,6 +309,7 @@ static void forward_kernel(
     int64_t const pml_x1) {
   int64_t y, x, y_begin, y_end, x_begin, x_end;
   DW_DTYPE w_sum, wsc_sum;
+  // Dispatch to the correct kernel macro for all PML regions and grad configs
   if (v_requires_grad) {
     if (scatter_requires_grad) {
       FORWARD_KERNEL(0, 0, 1, 1)
@@ -367,6 +384,7 @@ static void backward_kernel(
     bool const scatter_requires_grad, int64_t const pml_y0,
     int64_t const pml_y1, int64_t const pml_x0, int64_t const pml_x1) {
   int64_t y, x, y_begin, y_end, x_begin, x_end;
+  // Dispatch to the correct kernel macro for all PML regions and grad configs
   if (v_requires_grad) {
     if (scatter_requires_grad) {
       BACKWARD_KERNEL(0, 0, 1, 1)

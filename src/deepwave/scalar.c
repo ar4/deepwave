@@ -76,51 +76,61 @@
 #define CAT(name, accuracy, dtype, device) CAT_I(name, accuracy, dtype, device)
 #define FUNC(name) CAT(name, DW_ACCURACY, DW_DTYPE, DW_DEVICE)
 
+// Access the wavefield at offset (dy, dx) from the current index i
 #define WFC(dy, dx) wfc[i + dy * nx + dx]
+
+// Compute the product of the PML profile ay and the auxiliary field psiy at
+// (y+dy, x+dx)
 #define AY_PSIY(dy, dx) ay[y + dy] * psiy[i + dy * nx + dx]
+
+// Compute the product of the PML profile ax and the auxiliary field psix at
+// (y+dy, x+dx)
 #define AX_PSIX(dy, dx) ax[x + dx] * psix[i + dy * nx + dx]
+
+// Compute v^2 * dt^2 * wfc at offset (dy, dx)
 #define V2DT2_WFC(dy, dx) v2dt2[i + dy * nx + dx] * wfc[i + dy * nx + dx]
-/* Update term for the y-derivative of the wavefield in the PML region, used
- * in the backward pass. This corresponds to the first term in the update
- * equation for the auxiliary wavefield psi.
- */
-#define UT_TERMY1(dy, dx)                                           \
-  ((dbydy[y + dy] *                                                 \
-        ((1 + by[y + dy]) * v2dt2[i + dy * nx] * wfc[i + dy * nx] + \
-         by[y + dy] * zetay[i + dy * nx]) +                         \
-    by[y + dy] * psiy[i + dy * nx]))
-/* Update term for the x-derivative of the wavefield in the PML region, used
- * in the backward pass. This corresponds to the first term in the update
- * equation for the auxiliary wavefield psi.
- */
-#define UT_TERMX1(dy, dx)                                             \
-  ((dbxdx[x + dx] * ((1 + bx[x + dx]) * v2dt2[i + dx] * wfc[i + dx] + \
-                     bx[x + dx] * zetax[i + dx]) +                    \
-    bx[x + dx] * psix[i + dx]))
-/* Update term for the y-derivative of the wavefield in the PML region, used
- * in the backward pass. This corresponds to the second term in the update
- * equation for the auxiliary wavefield psi.
- */
+
+// --- PML Update Terms ---
+
+// Update term for the y-derivative of the wavefield in the PML region (backward
+// pass). This corresponds to the first derivative term in the update equation
+// for the auxiliary wavefield psi (y-direction).
+#define UT_TERMY1(dy, dx)                                                      \
+  (dbydy[y + dy] * ((1 + by[y + dy]) * v2dt2[i + dy * nx] * wfc[i + dy * nx] + \
+                    by[y + dy] * zetay[i + dy * nx]) +                         \
+   by[y + dy] * psiy[i + dy * nx])
+
+// Update term for the x-derivative of the wavefield in the PML region (backward
+// pass). This corresponds to the first derivative term in the update equation
+// for the auxiliary wavefield psi (x-direction).
+#define UT_TERMX1(dy, dx)                                            \
+  (dbxdx[x + dx] * ((1 + bx[x + dx]) * v2dt2[i + dx] * wfc[i + dx] + \
+                    bx[x + dx] * zetax[i + dx]) +                    \
+   bx[x + dx] * psix[i + dx])
+
+// Update term for the y-derivative of the wavefield in the PML region (backward
+// pass). This corresponds to the second derivative term in the update equation
+// for the auxiliary wavefield psi (y-direction).
 #define UT_TERMY2(dy, dx)                                      \
   ((1 + by[y + dy]) *                                          \
    ((1 + by[y + dy]) * v2dt2[i + dy * nx] * wfc[i + dy * nx] + \
     by[y + dy] * zetay[i + dy * nx]))
-/* Update term for the x-derivative of the wavefield in the PML region, used
- * in the backward pass. This corresponds to the second term in the update
- * equation for the auxiliary wavefield psi.
- */
+
+// Update term for the x-derivative of the wavefield in the PML region (backward
+// pass). This corresponds to the second derivative term in the update equation
+// for the auxiliary wavefield psi (x-direction).
 #define UT_TERMX2(dy, dx)                                               \
   ((1 + bx[x + dx]) * ((1 + bx[x + dx]) * v2dt2[i + dx] * wfc[i + dx] + \
                        bx[x + dx] * zetax[i + dx]))
-/* Term used in the update of the auxiliary wavefield psi in the PML region,
- * for the y-derivative.
- */
+
+// Term used in the update of the auxiliary wavefield psi in the PML region
+// (y-derivative)
 #define PSIY_TERM(dy, dx)                                     \
   ((1 + by[y + dy]) * v2dt2[i + dy * nx] * wfc[i + dy * nx] + \
    by[y + dy] * zetay[i + dy * nx])
-/* Term used in the update of the auxiliary wavefield psi in the PML region,
- * for the x-derivative.
- */
+
+// Term used in the update of the auxiliary wavefield psi in the PML region
+// (x-derivative)
 #define PSIX_TERM(dy, dx) \
   ((1 + bx[x + dx]) * v2dt2[i + dx] * wfc[i + dx] + bx[x + dx] * zetax[i + dx])
 
@@ -228,6 +238,7 @@ static void forward_kernel(
   int64_t y, x, y_begin, y_end, x_begin, x_end;
   DW_DTYPE w_sum;
   if (v_requires_grad) {
+    // Execute forward kernel for all PML configurations with gradients
     FORWARD_KERNEL(0, 0, 1)
     FORWARD_KERNEL(0, 1, 1)
     FORWARD_KERNEL(0, 2, 1)
@@ -238,6 +249,7 @@ static void forward_kernel(
     FORWARD_KERNEL(2, 1, 1)
     FORWARD_KERNEL(2, 2, 1)
   } else {
+    // Execute forward kernel for all PML configurations without gradients
     FORWARD_KERNEL(0, 0, 0)
     FORWARD_KERNEL(0, 1, 0)
     FORWARD_KERNEL(0, 2, 0)

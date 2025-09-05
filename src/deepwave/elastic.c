@@ -63,7 +63,7 @@
 #error DW_ACCURACY must be specified and either 2 or 4
 #endif /* DW_ACCURACY */
 
-#define A DW_ACCURACY
+#define A DW_ACCURACY  // Macro for finite difference accuracy order
 
 #define FORWARD_KERNEL_V(pml_y, pml_x, buoyancy_requires_grad)                 \
   {                                                                            \
@@ -1489,7 +1489,9 @@ __attribute__ ((noinline))
                                int64_t const pml_x0, int64_t const pml_x1) {
   int64_t y, x, y_begin_y, y_end_y, x_begin_y, x_end_y, y_begin_x, y_end_x,
       x_begin_x, x_end_x;
+  // Check if gradients are required for buoyancy (density)
   if (buoyancy_requires_grad) {
+    // Execute forward kernel for all PML configurations with gradients
     FORWARD_KERNEL_V(0, 0, 1)
     FORWARD_KERNEL_V(0, 1, 1)
     FORWARD_KERNEL_V(0, 2, 1)
@@ -1500,6 +1502,7 @@ __attribute__ ((noinline))
     FORWARD_KERNEL_V(2, 1, 1)
     FORWARD_KERNEL_V(2, 2, 1)
   } else {
+    // Execute forward kernel for all PML configurations without gradients
     FORWARD_KERNEL_V(0, 0, 0)
     FORWARD_KERNEL_V(0, 1, 0)
     FORWARD_KERNEL_V(0, 2, 0)

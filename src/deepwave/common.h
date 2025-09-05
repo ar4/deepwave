@@ -85,7 +85,7 @@
     (DW_DTYPE)(8.0 / 315.0) * (a(0, 3) + a(0, -3)) +   \
     (DW_DTYPE)(-1.0 / 560.0) * (a(0, 4) + a(0, -4))) * \
    rdx2)
-#define FD_PAD 4
+#define FD_PAD 4  // Number of grid points padded for finite difference stencils
 
 #else
 
@@ -94,10 +94,11 @@
 #endif /* DW_ACCURACY */
 
 #ifdef DW_DEBUG
-#define CHECK_KERNEL_ERROR { \
-    gpuErrchk(cudaPeekAtLastError()); \
+#define CHECK_KERNEL_ERROR              \
+  {                                     \
+    gpuErrchk(cudaPeekAtLastError());   \
     gpuErrchk(cudaDeviceSynchronize()); \
-}
+  }
 #else
 #define CHECK_KERNEL_ERROR gpuErrchk(cudaPeekAtLastError());
 #endif /* DW_DEBUG */

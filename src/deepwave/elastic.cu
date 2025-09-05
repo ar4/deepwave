@@ -36,7 +36,7 @@
 #error DW_ACCURACY must be specified and either 2 or 4
 #endif /* DW_ACCURACY */
 
-#define A DW_ACCURACY
+#define A DW_ACCURACY  // Macro for finite difference accuracy order
 
 #define gpuErrchk(ans) \
   { gpuAssert((ans), __FILE__, __LINE__); }
