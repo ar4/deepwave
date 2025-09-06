@@ -639,7 +639,7 @@ def test_set_source_amplitudes_invalid_ndim():
 
 def test_set_source_amplitudes_inconsistent_device():
     source_amplitudes = [
-        torch.randn(2, 3, 100, device="cuda")
+            torch.randn(2, 3, 100, device="cuda:0")
         if torch.cuda.is_available()
         else torch.randn(2, 3, 100),
     ]
@@ -655,7 +655,7 @@ def test_set_source_amplitudes_inconsistent_device():
         with pytest.raises(
             RuntimeError,
             match=re.escape(
-                "Inconsistent device: Expected all Tensors be on device cpu, but found a source amplitudes Tensor on device cuda.",
+                "Inconsistent device: Expected all Tensors be on device cpu, but found a source amplitudes Tensor on device cuda:0.",
             ),
         ):
             set_source_amplitudes(
