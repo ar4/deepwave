@@ -14,6 +14,16 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Check if tests should be skipped
+        id: check-skip
+        run: |
+          if echo "${{ github.event.head_commit.message }}" | grep -q "\[skip tests\]"; then
+            echo "skip_tests=true" >> $GITHUB_OUTPUT
+          else
+            echo "skip_tests=false" >> $GITHUB_OUTPUT
+          fi
+        shell: bash
+
       - name: Build wheels
         uses: pypa/cibuildwheel@v3.1.4
         env:
@@ -33,6 +43,7 @@ jobs:
             cuda_12.4.0_windows_network.exe -s nvcc_12.4 cudart_12.4 visual_studio_integration_12.4
           CIBW_ENVIRONMENT_WINDOWS: PATH="$PATH;C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4\\bin" CudaToolkitDir="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4" CUDA_PATH="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4" CUDA_HOME="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4" CUDAToolkit_ROOT="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4" CUDACXX="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4\\bin\\nvcc.exe"
           CIBW_BEFORE_TEST_MACOS: pip install "numpy<2"
+          CIBW_TEST_SKIP: ${{ steps.check-skip.outputs.skip_tests == 'true' && '*' || '' }}
 
       - uses: actions/upload-artifact@v4
         with:
