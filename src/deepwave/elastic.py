@@ -285,12 +285,16 @@ def elastic(
         source_locations_y: A Tensor with dimensions [shot, source, 2],
             containing the index in the two spatial dimensions of the cell
             that each source oriented in the first spatial dimension is
-            located in, relative to the origin of the model.
+            located in, relative to the origin of the model. Setting both
+            coordinates to deepwave.IGNORE_LOCATION will result in the
+            source being ignored.
         source_locations_x: A Tensor containing the locations of sources
             oriented in the second spatial dimension.
         receiver_locations_y: A Tensor with dimensions [shot, receiver, 2],
             containing the coordinates of the cell containing each receiver
-            oriented in the first spatial dimension.
+            oriented in the first spatial dimension. Setting both
+            coordinates to deepwave.IGNORE_LOCATION will result in the
+            receiver being ignored.
         receiver_locations_x: A Tensor containing the coordinates of the
             receivers oriented in the second spatial dimension.
         receiver_locations_p: A Tensor containing the coordinates of the

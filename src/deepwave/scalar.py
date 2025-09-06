@@ -192,7 +192,9 @@ def scalar(
             should have torch.long (int64) datatype. The location of each
             source must be unique within the same shot (you cannot have two
             sources in the same shot that both have location [1, 2], for
-            example).
+            example). Setting both coordinates to
+            deepwave.IGNORE_LOCATION will result in the source being
+            ignored.
         receiver_locations: A torch.Tensor with dimensions
             [shot, receiver, 2], containing the coordinates of the cell
             containing each receiver. Optional. It should have torch.long
@@ -200,6 +202,8 @@ def scalar(
             `receiver_amplitudes` torch.Tensor will be empty. If
             backpropagation will be performed, the location of each
             receiver must be unique within the same shot.
+            Setting both coordinates to deepwave.IGNORE_LOCATION will
+            result in the receiver being ignored.
         accuracy: An int specifying the finite difference order of accuracy.
             Possible values are 2, 4, 6, and 8, with larger numbers resulting
             in more accurate results but greater computational cost. Optional,

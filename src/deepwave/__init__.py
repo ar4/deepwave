@@ -13,6 +13,7 @@ CUDA.
 """
 
 __all__ = [
+    "IGNORE_LOCATION",
     "Elastic",
     "Scalar",
     "ScalarBorn",
@@ -32,3 +33,4 @@ from deepwave.scalar_born import ScalarBorn, scalar_born
 
 # Import backend utilities to ensure DLL is loaded and functions are assigned
 from . import _version, backend_utils, location_interpolation, wavelets
+from .common import IGNORE_LOCATION

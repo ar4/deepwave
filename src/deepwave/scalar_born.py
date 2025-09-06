@@ -220,7 +220,9 @@ def scalar_born(
             It should have torch.long (int64) datatype. If not provided,
             the output `bg_receiver_amplitudes` torch.Tensor will be empty.
             If backpropagation will be performed, the location of each
-            background receiver must be unique within the same shot.
+            background receiver must be unique within the same shot. Setting
+            both coordinates to deepwave.IGNORE_LOCATION will result in the
+            receiver being ignored.
         accuracy: The spatial accuracy of the finite difference stencil.
         pml_width: The width of the PML in grid cells.
         pml_freq: The frequency of the PML.
