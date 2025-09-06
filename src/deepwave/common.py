@@ -473,7 +473,7 @@ def set_max_vel(max_vel: Optional[float], max_abs_model_vel: float) -> float:
     """Sets or validates the maximum velocity for the CFL condition.
 
     Args:
-        max_vel: The user-specified maximum velocity. If None, `max_model_vel`
+        max_vel: The user-specified maximum velocity. If None, `max_abs_model_vel`
             is used.
         max_abs_model_vel: The maximum absolute velocity present in the model.
 
@@ -494,11 +494,11 @@ def set_max_vel(max_vel: Optional[float], max_abs_model_vel: float) -> float:
         max_abs_model_vel = float(max_abs_model_vel)
     except (TypeError, ValueError) as e:
         raise TypeError("max_abs_model_vel must be convertible to a float.") from e
-    if max_abs_model_vel <= 0:
-        raise ValueError("max_abs_model_vel must be greater than zero.")
     if max_vel is None:
         return max_abs_model_vel
     max_vel = abs(max_vel)
+    if max_vel <= 0:
+        raise ValueError("maximum absolute velocity must be greater than zero.")
     if max_vel < max_abs_model_vel:
         warnings.warn("max_vel is less than the actual maximum velocity.", stacklevel=1)
     return max_vel
