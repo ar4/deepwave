@@ -416,7 +416,7 @@ extern "C"
             int64_t const pml_y0_h, int64_t const pml_y1_h,
             int64_t const pml_x0_h, int64_t const pml_x1_h,
             int64_t const device) {
-  dim3 dimBlock(32, 16, 1);
+  dim3 dimBlock(32, 8, 1);
   unsigned int gridx = ceil_div(nx_h - 2 * FD_PAD, dimBlock.x);
   unsigned int gridy = ceil_div(ny_h - 2 * FD_PAD, dimBlock.y);
   unsigned int gridz = ceil_div(n_shots_h, dimBlock.z);
