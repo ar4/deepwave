@@ -49,6 +49,7 @@ ax[1].plot(out[-1].detach().flatten())
 ax[1].set_title("Receiver data")
 ax[2].imshow(v.grad.detach(), vmin=-1e-5, vmax=1e-5)
 ax[2].set_title("Gradient")
+plt.show()
 ```
 ![Output from quick example](quick_example.jpg)
 
@@ -58,14 +59,14 @@ There are more examples in [the documentation](https://ausargeo.com/deepwave).
 
 If you would like to cite Deepwave, I suggest:
 ```bibtex
-@software{richardson_alan_2023,
+@software{richardson_alan_2025,
   author       = {Richardson, Alan},
   title        = {Deepwave},
   month        = sep,
-  year         = 2023,
+  year         = 2025,
   publisher    = {Zenodo},
-  version      = {v0.0.20},
-  doi          = {10.5281/zenodo.8381177},
-  url          = {https://doi.org/10.5281/zenodo.8381177}
+  version      = {v0.0.21},
+  doi          = {10.5281/zenodo.17069833},
+  url          = {https://doi.org/10.5281/zenodo.17069833}
 }
 ```
