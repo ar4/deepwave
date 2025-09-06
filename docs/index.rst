@@ -19,7 +19,7 @@ As Deepwave is built on PyTorch, a good understanding of PyTorch will significan
 Building from source
 --------------------
 
-Deepwave utilizes `cibuildwheel` and `scikit-build-core` for its build process. When you run `pip install deepwave`, pip will first attempt to download a precompiled wheel if one is available for your system. If a suitable precompiled wheel is not found, pip will automatically download the source distribution and attempt to compile it on your system. You will need to have a C compiler and CMake available, and a CUDA compiler if you wish to have CUDA support.
+Deepwave uses `cibuildwheel` and `scikit-build-core` for its build process. When you run `pip install deepwave`, pip will first attempt to download a precompiled wheel if one is available for your system. If a suitable precompiled wheel is not found, pip will automatically download the source distribution and attempt to compile it on your system. You will need to have a C compiler and CMake available, and a CUDA compiler if you wish to have CUDA support.
 
 If you wish to force building from source rather than using a wheel (such as because your system does not have AVX2 support, which the wheels assume is available), you can use the following command:
 
