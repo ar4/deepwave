@@ -5,8 +5,8 @@ import pytest
 import torch
 from test_utils import _set_coords, _set_sources, direct_2d_approx, scattered_2d
 
-from deepwave import Scalar, scalar
-from deepwave.common import IGNORE_LOCATION, cfl_condition, downsample, upsample
+from deepwave import IGNORE_LOCATION, Scalar, scalar
+from deepwave.common import cfl_condition, downsample, upsample
 
 
 def scalarprop(

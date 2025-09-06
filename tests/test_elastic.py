@@ -4,9 +4,8 @@ import pytest
 import torch
 from test_utils import _set_coords, _set_sources
 
-from deepwave import Elastic, elastic
+from deepwave import IGNORE_LOCATION, Elastic, elastic
 from deepwave.common import (
-    IGNORE_LOCATION,
     cfl_condition,
     downsample,
     lambmubuoyancy_to_vpvsrho,
