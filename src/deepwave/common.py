@@ -410,9 +410,7 @@ def set_pml_width(pml_width: Union[int, abc.Sequence[int]], n_dims: int) -> List
                 raise TypeError("pml_width must be an int or sequence of ints.")
             processed_pml_width = [int(width) for width in pml_width_list]
         except (TypeError, ValueError) as e:
-            raise TypeError(
-                "pml_width must be an int or sequence of ints."
-            ) from e
+            raise TypeError("pml_width must be an int or sequence of ints.") from e
 
     if any(width < 0 for width in processed_pml_width):
         raise ValueError("pml_width must be non-negative.")

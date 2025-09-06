@@ -299,7 +299,8 @@ def direct_2d_approx(x, x_s, dx, dt, c, f):
     nt = len(f)
     w = torch.fft.rfftfreq(nt, dt)
     fw = torch.fft.rfft(f)
-    G = 1j / 4 * scipy.special.hankel1(0, -2 * math.pi * w * r / c)
+    h = scipy.special.hankel1(0, -2 * math.pi * w.numpy() * r / c)
+    G = 1j / 4 * torch.tensor(h)
     G[0] = 0
     s = G * fw * torch.prod(dx).item()
     u = torch.fft.irfft(s, nt)

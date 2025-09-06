@@ -337,9 +337,9 @@ def test_set_max_vel_invalid_type():
 def test_set_max_vel_zero_actual_max_vel():
     with pytest.raises(
         ValueError,
-        match=re.escape("max_abs_model_vel must be greater than zero."),
+        match=re.escape("maximum absolute velocity must be greater than zero."),
     ):
-        set_max_vel(2000.0, 0.0)
+        set_max_vel(0.0, 0.0)
 
 
 # Tests for set_nt
