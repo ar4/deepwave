@@ -12,6 +12,7 @@ These examples demonstrate how to use Deepwave. Each is designed to show differe
     example_rtm
     example_checkpointing
     example_batched_models
+    example_callback_animation
     example_target_wavefield
     example_location_interpolation
     example_taper_and_pad

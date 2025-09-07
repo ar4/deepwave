@@ -1838,7 +1838,7 @@ __declspec(dllexport)
         buoyancy_batched ? buoyancy + si : buoyancy;
     int64_t t;
 
-    for (t = 0; t < nt; ++t) {
+    for (t = start_t; t < start_t + nt; ++t) {
       int64_t store_i = (t / step_ratio) * n_shots * ny * nx + shot * ny * nx;
       if (n_receivers_y_per_shot > 0) {
         record_from_wavefield(vy + si, receivers_y_i + riy,
@@ -1860,7 +1860,7 @@ __declspec(dllexport)
           sigmaxx + si, m_sigmayyy + si, m_sigmaxyy + si, m_sigmaxyx + si,
           m_sigmaxxx + si, dvydbuoyancy + store_i, dvxdbuoyancy + store_i, ay,
           ayh, ax, axh, by, byh, bx, bxh, dt, ny, nx,
-          buoyancy_requires_grad && (((t + start_t) % step_ratio) == 0), pml_y0,
+          buoyancy_requires_grad && ((t % step_ratio) == 0), pml_y0,
           pml_y1, pml_x0, pml_x1);
 
       if (n_sources_y_per_shot > 0) {
@@ -1878,8 +1878,8 @@ __declspec(dllexport)
           sigmaxx + si, m_vyy + si, m_vyx + si, m_vxy + si, m_vxx + si,
           dvydy_store + store_i, dvxdx_store + store_i,
           dvydxdvxdy_store + store_i, ay, ayh, ax, axh, by, byh, bx, bxh, dt,
-          ny, nx, lamb_requires_grad && (((t + start_t) % step_ratio) == 0),
-          mu_requires_grad && (((t + start_t) % step_ratio) == 0), pml_y0,
+          ny, nx, lamb_requires_grad && ((t % step_ratio) == 0),
+          mu_requires_grad && ((t % step_ratio) == 0), pml_y0,
           pml_y1, pml_x0, pml_x1);
     }
     if (n_receivers_y_per_shot > 0) {
@@ -1992,9 +1992,9 @@ __declspec(dllexport)
                        grad_r_x + t * n_shots * n_receivers_x_per_shot + rix,
                        n_receivers_x_per_shot);
     }
-    for (t = nt - 1; t >= 0; --t) {
+    for (t = start_t - 1; t >= start_t - nt; --t) {
       int64_t store_i = (t / step_ratio) * n_shots * ny * nx + shot * ny * nx;
-      if ((nt - 1 - t) & 1) {
+      if ((start_t - 1 - t) & 1) {
         backward_shot(
             lamb_shot, mu_shot, buoyancy_shot,
             grad_r_y + t * n_shots * n_receivers_y_per_shot + riy,
@@ -2015,9 +2015,9 @@ __declspec(dllexport)
             receivers_x_i + rix, receivers_p_i + rip, dt, ny, nx,
             n_sources_y_per_shot, n_sources_x_per_shot, n_receivers_y_per_shot,
             n_receivers_x_per_shot, n_receivers_p_per_shot, step_ratio,
-            lamb_requires_grad && (((t + start_t) % step_ratio) == 0),
-            mu_requires_grad && (((t + start_t) % step_ratio) == 0),
-            buoyancy_requires_grad && (((t + start_t) % step_ratio) == 0),
+            lamb_requires_grad && ((t % step_ratio) == 0),
+            mu_requires_grad && ((t % step_ratio) == 0),
+            buoyancy_requires_grad && ((t % step_ratio) == 0),
             spml_y0, spml_y1, spml_x0, spml_x1, vpml_y0, vpml_y1, vpml_x0,
             vpml_x1);
       } else {
@@ -2041,9 +2041,9 @@ __declspec(dllexport)
             receivers_x_i + rix, receivers_p_i + rip, dt, ny, nx,
             n_sources_y_per_shot, n_sources_x_per_shot, n_receivers_y_per_shot,
             n_receivers_x_per_shot, n_receivers_p_per_shot, step_ratio,
-            lamb_requires_grad && (((t + start_t) % step_ratio) == 0),
-            mu_requires_grad && (((t + start_t) % step_ratio) == 0),
-            buoyancy_requires_grad && (((t + start_t) % step_ratio) == 0),
+            lamb_requires_grad && ((t % step_ratio) == 0),
+            mu_requires_grad && ((t % step_ratio) == 0),
+            buoyancy_requires_grad && ((t % step_ratio) == 0),
             spml_y0, spml_y1, spml_x0, spml_x1, vpml_y0, vpml_y1, vpml_x0,
             vpml_x1);
       }

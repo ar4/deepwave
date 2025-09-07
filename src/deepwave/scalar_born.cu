@@ -621,8 +621,8 @@ extern "C"
              pml_x0_h, pml_x1_h, v_batched_h, scatter_batched_h);
   // --- Time-stepping loop for forward propagation ---
   // Alternates between wfc/wfp and wfp/wfc for memory efficiency
-  for (t = 0; t < nt; ++t) {
-    if (t & 1) {
+  for (t = start_t; t < start_t + nt; ++t) {
+    if ((t - start_t) & 1) {
       // Launch CUDA kernel for forward propagation (odd/even time step)
       forward_kernel<<<dimGrid, dimBlock>>>(
           v, scatter, wfp, wfc, psiyn, psixn, psiy, psix, zetay, zetax, wfpsc,
@@ -630,8 +630,8 @@ extern "C"
           w_store + (t / step_ratio_h) * ny_h * nx_h * n_shots_h,
           wsc_store + (t / step_ratio_h) * ny_h * nx_h * n_shots_h, ay, ax, by,
           bx, dbydy, dbxdx,
-          v_requires_grad && (((t + start_t) % step_ratio_h) == 0),
-          scatter_requires_grad && (((t + start_t) % step_ratio_h) == 0));
+          v_requires_grad && ((t % step_ratio_h) == 0),
+          scatter_requires_grad && ((t % step_ratio_h) == 0));
       CHECK_KERNEL_ERROR
       // Add sources to both background and scattered wavefields
       if (n_sources_per_shot_h > 0) {
@@ -662,8 +662,8 @@ extern "C"
           w_store + (t / step_ratio_h) * ny_h * nx_h * n_shots_h,
           wsc_store + (t / step_ratio_h) * ny_h * nx_h * n_shots_h, ay, ax, by,
           bx, dbydy, dbxdx,
-          v_requires_grad && (((t + start_t) % step_ratio_h) == 0),
-          scatter_requires_grad && (((t + start_t) % step_ratio_h) == 0));
+          v_requires_grad && ((t % step_ratio_h) == 0),
+          scatter_requires_grad && ((t % step_ratio_h) == 0));
       CHECK_KERNEL_ERROR
       // Add sources to both background and scattered wavefields
       if (n_sources_per_shot_h > 0) {
@@ -802,9 +802,9 @@ extern "C"
              scatter_batched_h);
   // --- Time-reversed loop for adjoint propagation ---
   // Alternates between wfc/wfp and wfp/wfc for memory efficiency
-  for (t = nt - 1; t >= 0; --t) {
+  for (t = start_t - 1; t >= start_t - nt; --t) {
     // Odd/even time step logic for ping-ponging wavefield arrays
-    if ((nt - 1 - t) & 1) {
+    if ((start_t - 1 - t) & 1) {
       // Record adjoint sources for background and scattered fields
       if (n_sources_per_shot_h > 0) {
         record_adjoint_receivers<<<dimGrid_sources, dimBlock_sources>>>(
@@ -825,8 +825,8 @@ extern "C"
           w_store + (t / step_ratio_h) * n_shots_h * ny_h * nx_h,
           wsc_store + (t / step_ratio_h) * n_shots_h * ny_h * nx_h, grad_v_shot,
           grad_scatter_shot, ay, ax, by, bx, dbydy, dbxdx,
-          v_requires_grad && (((t + start_t) % step_ratio_h) == 0),
-          scatter_requires_grad && (((t + start_t) % step_ratio_h) == 0));
+          v_requires_grad && ((t % step_ratio_h) == 0),
+          scatter_requires_grad && ((t % step_ratio_h) == 0));
       CHECK_KERNEL_ERROR
       // Add receiver gradients as adjoint sources
       if (n_receivers_per_shot_h > 0) {
@@ -861,8 +861,8 @@ extern "C"
           w_store + (t / step_ratio_h) * n_shots_h * ny_h * nx_h,
           wsc_store + (t / step_ratio_h) * n_shots_h * ny_h * nx_h, grad_v_shot,
           grad_scatter_shot, ay, ax, by, bx, dbydy, dbxdx,
-          v_requires_grad && (((t + start_t) % step_ratio_h) == 0),
-          scatter_requires_grad && (((t + start_t) % step_ratio_h) == 0));
+          v_requires_grad && ((t % step_ratio_h) == 0),
+          scatter_requires_grad && ((t % step_ratio_h) == 0));
       CHECK_KERNEL_ERROR
       // Add receiver gradients as adjoint sources
       if (n_receivers_per_shot_h > 0) {
@@ -969,9 +969,9 @@ extern "C"
              scatter_batched_h);
   // --- Time-reversed loop for adjoint propagation (scattered field only)
   // ---
-  for (t = nt - 1; t >= 0; --t) {
+  for (t = start_t - 1; t >= start_t - nt; --t) {
     // Odd/even time step logic for ping-ponging wavefield arrays
-    if ((nt - 1 - t) & 1) {
+    if ((start_t - 1 - t) & 1) {
       // Record source gradients for scattered field
       if (n_sourcessc_per_shot_h > 0) {
         record_adjoint_receiverssc<<<dimGrid_sourcessc, dimBlock_sourcessc>>>(
@@ -985,7 +985,7 @@ extern "C"
           zetaysc, zetaxsc,
           w_store + (t / step_ratio_h) * n_shots_h * ny_h * nx_h,
           grad_scatter_shot, ay, ax, by, bx, dbydy, dbxdx,
-          scatter_requires_grad && (((t + start_t) % step_ratio_h) == 0));
+          scatter_requires_grad && ((t % step_ratio_h) == 0));
       CHECK_KERNEL_ERROR
       // Add receiver gradients as adjoint sources
       if (n_receiverssc_per_shot_h > 0) {
@@ -1008,7 +1008,7 @@ extern "C"
           zetaynsc, zetaxnsc,
           w_store + (t / step_ratio_h) * n_shots_h * ny_h * nx_h,
           grad_scatter_shot, ay, ax, by, bx, dbydy, dbxdx,
-          scatter_requires_grad && (((t + start_t) % step_ratio_h) == 0));
+          scatter_requires_grad && ((t % step_ratio_h) == 0));
       CHECK_KERNEL_ERROR
       // Add receiver gradients as adjoint sources
       if (n_receiverssc_per_shot_h > 0) {

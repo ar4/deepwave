@@ -1,49 +1,49 @@
 Custom imaging condition
 ========================
 
-The operation that is applied to the forward and backward wavefields in order to calculate the gradient with respect to the model is often referred to as the "imaging condition" in seismic inversion. Deepwave uses the imaging condition that will calculate the gradients correctly, but sometimes you might wish to implement your own custom imaging condition. In this example I present two possible ways of achieving this. The first combines Deepwave's standard propagator interface with PyTorch's `backward hooks <https://pytorch.org/docs/stable/generated/torch.Tensor.register_hook.html>`_. The second is a lower level implementation that might provide better performance. In both cases we will implement the same imaging condition as Deepwave: the scaled sum over time and shots of the pointwise product of the backward wavefield and the second time derivative of the forward wavefield. The full code for both methods is linked at the bottom of the page.
+This example demonstrates how to use callbacks to implement a custom imaging condition. In seismic imaging, the "imaging condition" is the operation that combines the forward-propagating source wavefield and the backward-propagating receiver wavefield to produce an image of the subsurface. In Full Waveform Inversion (FWI), this image is the gradient of the objective function. The standard imaging condition is a cross-correlation of the two wavefields. This can result in a gradient that is much stronger in areas of high illumination (e.g. near the sources) than in poorly illuminated areas (e.g. deeper in the model or in shadow zones).
 
-Method 1: public interface and hooks
-------------------------------------
+To counteract this, we can apply "illumination compensation", where the gradient is divided by an "illumination map". This map estimates the amount of source energy that reaches each point in the model, and dividing by it boosts the gradient in poorly illuminated regions. This can help the inversion to converge more quickly and produce a more accurate final model.
 
-The advantages of Method 1 are that it uses Deepwave's public interface, benefiting from its documentation and the lower risk (compared to Method 2's approach) that future versions of Deepwave will cause it to break. It is also simpler than Method 2. The cost of this is that it can be quite a bit slower than Method 2, due to the overhead of doing a lot of work in Python every timestep.
+We will implement a simple source-side illumination compensation using callbacks. First, we calculate the standard gradient for comparison. Then, we define two callback functions to calculate and apply the illumination compensation. The `forward_callback` is used to create the illumination map by summing the squared wavefield over time and shots. The `backward_callback` is then used to divide the gradient by this map at the end of the backpropagation step. A small value is added to the illumination map before division to ensure stability.
 
-The idea is that we will use a loop over timesteps in Python. We will save the second time derivative of the forward wavefield, and we will create a backward hook for the wavefield. This hook will cause the hook function that we define to run when we reach the timestep where it was defined during backpropagation. We can thus use this hook function to implement our custom imaging condition, accumulating the product of the wavefield at the current step of backpropagation and the second time derivative that we stored for this timestep during forward propagation::
+::
 
-    # Create a hook to apply the imaging condition during backpropagation
-    def hook_closure():
-        bi = i
-    
-        def hook(x):
-            if x is not None:
-                # Apply the imaging condition
-                out[0] += 2 / v.detach() * step_ratio * (
-                    source_wavefields[bi] *
-                    x.detach()[:, pml_width:-pml_width,
-                               pml_width:-pml_width]).sum(dim=0)
-    
-        return hook
-    
-    wavefield_0.register_hook(hook_closure())
+        # Calculate the gradient with illumination compensation
+        illumination = None
 
-There are only two small complications. The first is that, since we call Deepwave's propagator with time chunks of the source amplitudes, we first need to upsample the source amplitudes. The same issue was discussed in the :doc:`checkpointing example <example_checkpointing>`. The second is that to calculate the second time derivative of the wavefield in the last time step of each time chunk we need three timesteps of the forward wavefield, but Deepwave only stores two. We overcome this problem by saving the input wavefield to the time chunk's last timestep, and its two output wavefields.
+        def forward_callback(state):
+            global illumination
+            if illumination is None:
+                illumination = (state.get_wavefield("wavefield_0", view="full").detach()**2).sum(dim=0)
+            else:
+                illumination += (state.get_wavefield("wavefield_0", view="full").detach()**2).sum(dim=0)
 
-Method 2: internal interface
-----------------------------
 
-Method 2 avoids the overhead of doing a lot of work in Python each timestep by operating at a lower level. Rather than calling Deepwave's public interface, which performs a lot of setup each time it is called, Method 2 performs that setup once itself and then directly calls Deepwave's C or CUDA code within its loop over timesteps. It is based on Deepwave's own propagator code, for example the `scalar propagator <https://github.com/ar4/deepwave/blob/master/src/deepwave/scalar.py>`_. Although the code is quite long and might look complicated, the majority of it should not need to be altered if you wish to implement a different imaging condition. In the implementation that I used for this example, the initial setup and forward propagation are the same as the regular scalar propagator. I only needed to change backpropagation so that instead of doing the entire loop over timesteps within the C/CUDA code, I use a loop over time chunks in Python. This enables me to access the backward wavefield at the desired timesteps for the imaging condition. It was particularly easy in this case because Deepwave's C/CUDA forward propagator already stores snapshots of the second time derivative of the forward wavefield, so I didn't need to make any changes to that. If you wish to use something other than the second time derivative of the forward wavefield then you might need to use a Python loop over timesteps in the  forward propagator as well, in order to store snapshots of your desired wavefield.
+        def backward_callback(state):
+            if state.step == 0:
+                gradient = state.get_gradient("v", view="full")
+                gradient /= (illumination + 1e-3 * illumination.max())
 
-Results
--------
+
+        out = deepwave.scalar(
+            v,
+            dx,
+            dt,
+            source_amplitudes=source_amplitudes,
+            source_locations=source_locations,
+            receiver_locations=receiver_locations,
+            forward_callback=forward_callback,
+            backward_callback=backward_callback,
+            callback_frequency=1,
+        )
+        torch.nn.MSELoss()(out[-1], out_true[-1]).backward()
+
+The `forward_callback` is called at each time step of the forward propagation. It gets the wavefield for the current time step (which includes all shots) and adds its squared value to the `illumination` tensor. At the end of the forward pass, `illumination` will contain the illumination map. The `backward_callback` is called during backpropagation. We only want it to act at the end, when the full gradient has been computed, so we check if `state.step == 0`. It then gets a reference to the gradient tensor and divides it in-place by the illumination map. We use `view="full"` to ensure we get the tensors for the whole model, including the PML regions.
+
+The image below compares the standard gradient (left) with the illumination-compensated gradient (right). The compensated gradient is more balanced and has greater amplitude at depth compared to the standard gradient, which could lead to better FWI results.
+
 
 .. image:: example_custom_imaging_condition.jpg
-
-All three methods produce almost identical results, as expected. The runtimes are not equal, however. On a CPU, the runtimes when I tested it were::
-
-    Method 1: 5.5 s
-    Method 2: 0.8 s
-    Regular Deepwave: 0.7 s
-
-The additional complexity of Method 2 might thus be worth it if you plan to run many iterations. As always, the full codes for both methods are available at the link below.
 
 `Full example code <https://github.com/ar4/deepwave/blob/master/docs/example_custom_imaging_condition.py>`_

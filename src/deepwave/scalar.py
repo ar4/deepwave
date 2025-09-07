@@ -84,6 +84,9 @@ class Scalar(torch.nn.Module):
         freq_taper_frac: float = 0.0,
         time_pad_frac: float = 0.0,
         time_taper: bool = False,
+        forward_callback: Optional[deepwave.common.Callback] = None,
+        backward_callback: Optional[deepwave.common.Callback] = None,
+        callback_frequency: int = 1,
     ) -> Tuple[
         torch.Tensor,
         torch.Tensor,
@@ -121,6 +124,9 @@ class Scalar(torch.nn.Module):
             freq_taper_frac=freq_taper_frac,
             time_pad_frac=time_pad_frac,
             time_taper=time_taper,
+            forward_callback=forward_callback,
+            backward_callback=backward_callback,
+            callback_frequency=callback_frequency,
         )
 
 
@@ -148,6 +154,9 @@ def scalar(
     freq_taper_frac: float = 0.0,
     time_pad_frac: float = 0.0,
     time_taper: bool = False,
+    forward_callback: Optional[deepwave.common.Callback] = None,
+    backward_callback: Optional[deepwave.common.Callback] = None,
+    callback_frequency: int = 1,
 ) -> Tuple[
     torch.Tensor,
     torch.Tensor,
@@ -342,6 +351,14 @@ def scalar(
             during correctness tests of the propagators as it ensures that
             signals taper to zero at their edges in time, avoiding the
             possibility of high frequencies being introduced.
+        forward_callback: A function that will be called during the forward
+            pass. See :class:`deepwave.common.CallbackState` for the
+            state that will be provided to the function.
+        backward_callback: A function that will be called during the backward
+            pass. See :class:`deepwave.common.CallbackState` for the
+            state that will be provided to the function.
+        callback_frequency: The number of time steps between calls to the
+            callback.
 
     Returns:
         Tuple:
@@ -449,6 +466,11 @@ def scalar(
         nx,
     )
 
+    if not isinstance(callback_frequency, int):
+        raise TypeError("callback_frequency must be an int.")
+    if callback_frequency <= 0:
+        raise ValueError("callback_frequency must be positive.")
+
     (wfc, wfp, psiy, psix, zetay, zetax, receiver_amplitudes) = scalar_func(
         *models,
         *source_amplitudes_out,
@@ -463,6 +485,9 @@ def scalar(
         accuracy,
         pml_width,
         n_shots,
+        forward_callback,
+        backward_callback,
+        callback_frequency,
     )
 
     receiver_amplitudes = deepwave.common.downsample_and_movedim(
@@ -511,6 +536,9 @@ class ScalarForwardFunc(torch.autograd.Function):
         accuracy: int,
         pml_width: List[int],
         n_shots: int,
+        forward_callback: Optional[deepwave.common.Callback],
+        backward_callback: Optional[deepwave.common.Callback],
+        callback_frequency: int,
     ) -> Tuple[
         torch.Tensor,
         torch.Tensor,
@@ -553,6 +581,9 @@ class ScalarForwardFunc(torch.autograd.Function):
             accuracy: Finite difference accuracy order.
             pml_width: List of PML widths for each side.
             n_shots: Number of shots in the batch.
+            forward_callback: The forward callback.
+            backward_callback: The backward callback.
+            callback_frequency: The callback frequency.
 
         Returns:
             A tuple containing the output wavefields and receiver amplitudes.
@@ -595,6 +626,8 @@ class ScalarForwardFunc(torch.autograd.Function):
             ctx.accuracy = accuracy
             ctx.pml_width = pml_width
             ctx.source_amplitudes_requires_grad = source_amplitudes.requires_grad
+            ctx.backward_callback = backward_callback
+            ctx.callback_frequency = callback_frequency
 
         v = v.contiguous()
         source_amplitudes = source_amplitudes.contiguous()
@@ -694,69 +727,90 @@ class ScalarForwardFunc(torch.autograd.Function):
             v.device,
         )
 
+        if forward_callback is None:
+            callback_frequency = nt // step_ratio
+
         if wfc.numel() > 0 and nt > 0:
-            start_t = 0
-            forward(
-                v.data_ptr(),
-                source_amplitudes.data_ptr(),
-                wfc.data_ptr(),
-                wfp.data_ptr(),
-                psiy.data_ptr(),
-                psix.data_ptr(),
-                psiyn.data_ptr(),
-                psixn.data_ptr(),
-                zetay.data_ptr(),
-                zetax.data_ptr(),
-                dwdv.data_ptr(),
-                receiver_amplitudes.data_ptr(),
-                ay.data_ptr(),
-                ax.data_ptr(),
-                by.data_ptr(),
-                bx.data_ptr(),
-                dbydy.data_ptr(),
-                dbxdx.data_ptr(),
-                sources_i.data_ptr(),
-                receivers_i.data_ptr(),
-                1 / dy,
-                1 / dx,
-                1 / dy**2,
-                1 / dx**2,
-                dt**2,
-                nt,
-                n_shots,
-                ny,
-                nx,
-                n_sources_per_shot,
-                n_receivers_per_shot,
-                step_ratio,
-                v.requires_grad,
-                v_batched,
-                start_t,
-                pml_y0,
-                pml_y1,
-                pml_x0,
-                pml_x1,
-                aux,
-            )
+            for step in range(0, nt // step_ratio, callback_frequency):
+                if forward_callback is not None:
+                    state = deepwave.common.CallbackState(
+                        dt,
+                        step,
+                        {
+                            "wavefield_0": wfc,
+                            "wavefield_m1": wfp,
+                            "psiy_m1": psiy,
+                            "psix_m1": psix,
+                            "zetay_m1": zetay,
+                            "zetax_m1": zetax,
+                        },
+                        {"v": v},
+                        {},
+                        [fd_pad] * 4,
+                        pml_width,
+                    )
+                    forward_callback(state)
+                step_nt = min(nt // step_ratio - step, callback_frequency)
+                forward(
+                    v.data_ptr(),
+                    source_amplitudes.data_ptr(),
+                    wfc.data_ptr(),
+                    wfp.data_ptr(),
+                    psiy.data_ptr(),
+                    psix.data_ptr(),
+                    psiyn.data_ptr(),
+                    psixn.data_ptr(),
+                    zetay.data_ptr(),
+                    zetax.data_ptr(),
+                    dwdv.data_ptr(),
+                    receiver_amplitudes.data_ptr(),
+                    ay.data_ptr(),
+                    ax.data_ptr(),
+                    by.data_ptr(),
+                    bx.data_ptr(),
+                    dbydy.data_ptr(),
+                    dbxdx.data_ptr(),
+                    sources_i.data_ptr(),
+                    receivers_i.data_ptr(),
+                    1 / dy,
+                    1 / dx,
+                    1 / dy**2,
+                    1 / dx**2,
+                    dt**2,
+                    step_nt * step_ratio,
+                    n_shots,
+                    ny,
+                    nx,
+                    n_sources_per_shot,
+                    n_receivers_per_shot,
+                    step_ratio,
+                    v.requires_grad,
+                    v_batched,
+                    step * step_ratio,
+                    pml_y0,
+                    pml_y1,
+                    pml_x0,
+                    pml_x1,
+                    aux,
+                )
+                if (step_nt * step_ratio) % 2 != 0:
+                    wfc, wfp, psiy, psix, psiyn, psixn = (
+                        wfp,
+                        wfc,
+                        psiyn,
+                        psixn,
+                        psiy,
+                        psix,
+                    )
 
         ctx.dwdv = dwdv
 
         s = (slice(None), slice(fd_pad, -fd_pad), slice(fd_pad, -fd_pad))
-        if nt % 2 == 0:
-            return (
-                wfc[s],
-                wfp[s],
-                psiy[s],
-                psix[s],
-                zetay[s],
-                zetax[s],
-                receiver_amplitudes,
-            )
         return (
-            wfp[s],
             wfc[s],
-            psiyn[s],
-            psixn[s],
+            wfp[s],
+            psiy[s],
+            psix[s],
             zetay[s],
             zetax[s],
             receiver_amplitudes,
@@ -856,6 +910,8 @@ class ScalarForwardFunc(torch.autograd.Function):
             accuracy,
             pml_width,
             source_amplitudes_requires_grad,
+            ctx.backward_callback,
+            ctx.callback_frequency,
         )
         return (
             cast(
@@ -865,7 +921,7 @@ class ScalarForwardFunc(torch.autograd.Function):
                 "Optional[torch.Tensor], Optional[torch.Tensor]]",
                 result,
             )
-            + (None,) * 16
+            + (None,) * 19
         )
 
 
@@ -913,6 +969,8 @@ class ScalarBackwardFunc(torch.autograd.Function):
         accuracy: int,
         pml_width: List[int],
         source_amplitudes_requires_grad: bool,
+        backward_callback: Optional[deepwave.common.Callback],
+        callback_frequency: int,
     ) -> Tuple[
         torch.Tensor,
         torch.Tensor,
@@ -963,6 +1021,8 @@ class ScalarBackwardFunc(torch.autograd.Function):
             accuracy: Finite difference accuracy order.
             pml_width: List of PML widths for each side.
             source_amplitudes_requires_grad: If source amplitudes need grads.
+            backward_callback: The backward callback.
+            callback_frequency: The callback frequency.
 
         Returns:
             A tuple containing the gradients of the inputs.
@@ -1125,75 +1185,110 @@ class ScalarBackwardFunc(torch.autograd.Function):
         v2dt2 = v**2 * dt**2
         gwfp = -gwfp
 
+        if backward_callback is None:
+            callback_frequency = nt // step_ratio
+
         if gwfc.numel() > 0 and nt > 0:
-            start_t = 0
-            backward(
-                v2dt2.data_ptr(),
-                grad_r.data_ptr(),
-                gwfc.data_ptr(),
-                gwfp.data_ptr(),
-                gpsiy.data_ptr(),
-                gpsix.data_ptr(),
-                gpsiyn.data_ptr(),
-                gpsixn.data_ptr(),
-                gzetay.data_ptr(),
-                gzetax.data_ptr(),
-                gzetayn.data_ptr(),
-                gzetaxn.data_ptr(),
-                dwdv.data_ptr(),
-                grad_f.data_ptr(),
-                grad_v.data_ptr(),
-                grad_v_tmp_ptr,
-                ay.data_ptr(),
-                ax.data_ptr(),
-                by.data_ptr(),
-                bx.data_ptr(),
-                dbydy.data_ptr(),
-                dbxdx.data_ptr(),
-                sources_i.data_ptr(),
-                receivers_i.data_ptr(),
-                1 / dy,
-                1 / dx,
-                1 / dy**2,
-                1 / dx**2,
-                nt,
-                n_shots,
-                ny,
-                nx,
-                n_sources_per_shot * source_amplitudes_requires_grad,
-                n_receivers_per_shot,
-                step_ratio,
-                v.requires_grad,
-                v_batched,
-                start_t,
-                pml_y0,
-                pml_y1,
-                pml_x0,
-                pml_x1,
-                aux,
-            )
+            for step in range(nt // step_ratio, 0, -callback_frequency):
+                step_nt = min(step, callback_frequency)
+                backward(
+                    v2dt2.data_ptr(),
+                    grad_r.data_ptr(),
+                    gwfc.data_ptr(),
+                    gwfp.data_ptr(),
+                    gpsiy.data_ptr(),
+                    gpsix.data_ptr(),
+                    gpsiyn.data_ptr(),
+                    gpsixn.data_ptr(),
+                    gzetay.data_ptr(),
+                    gzetax.data_ptr(),
+                    gzetayn.data_ptr(),
+                    gzetaxn.data_ptr(),
+                    dwdv.data_ptr(),
+                    grad_f.data_ptr(),
+                    grad_v.data_ptr(),
+                    grad_v_tmp_ptr,
+                    ay.data_ptr(),
+                    ax.data_ptr(),
+                    by.data_ptr(),
+                    bx.data_ptr(),
+                    dbydy.data_ptr(),
+                    dbxdx.data_ptr(),
+                    sources_i.data_ptr(),
+                    receivers_i.data_ptr(),
+                    1 / dy,
+                    1 / dx,
+                    1 / dy**2,
+                    1 / dx**2,
+                    step_nt * step_ratio,
+                    n_shots,
+                    ny,
+                    nx,
+                    n_sources_per_shot * source_amplitudes_requires_grad,
+                    n_receivers_per_shot,
+                    step_ratio,
+                    v.requires_grad,
+                    v_batched,
+                    step * step_ratio,
+                    pml_y0,
+                    pml_y1,
+                    pml_x0,
+                    pml_x1,
+                    aux,
+                )
+                if (step_nt * step_ratio) % 2 != 0:
+                    (
+                        gwfc,
+                        gwfp,
+                        gpsiy,
+                        gpsix,
+                        gpsiyn,
+                        gpsixn,
+                        gzetay,
+                        gzetax,
+                        gzetayn,
+                        gzetaxn,
+                    ) = (
+                        gwfp,
+                        gwfc,
+                        gpsiyn,
+                        gpsixn,
+                        gpsiy,
+                        gpsix,
+                        gzetayn,
+                        gzetaxn,
+                        gzetay,
+                        gzetax,
+                    )
+                if backward_callback is not None:
+                    state = deepwave.common.CallbackState(
+                        dt,
+                        step - 1,
+                        {
+                            "wavefield_0": gwfc,
+                            "wavefield_m1": gwfp,
+                            "psiy_m1": gpsiy,
+                            "psix_m1": gpsix,
+                            "zetay_m1": gzetay,
+                            "zetax_m1": gzetax,
+                        },
+                        {"v": v},
+                        {"v": grad_v},
+                        [fd_pad] * 4,
+                        pml_width,
+                    )
+                    backward_callback(state)
 
         s = (slice(None), slice(fd_pad, -fd_pad), slice(fd_pad, -fd_pad))
-        if nt % 2 == 0:
-            return (
-                grad_v,
-                grad_f,
-                gwfc[s],
-                -gwfp[s],
-                gpsiy[s],
-                gpsix[s],
-                gzetay[s],
-                gzetax[s],
-            )
         return (
             grad_v,
             grad_f,
-            gwfp[s],
-            -gwfc[s],
-            gpsiyn[s],
-            gpsixn[s],
-            gzetayn[s],
-            gzetaxn[s],
+            gwfc[s],
+            -gwfp[s],
+            gpsiy[s],
+            gpsix[s],
+            gzetay[s],
+            gzetax[s],
         )
 
     @staticmethod

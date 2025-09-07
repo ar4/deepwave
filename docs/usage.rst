@@ -36,6 +36,11 @@ Elastic Function
 
 .. autofunction:: deepwave.elastic
 
+CallbackState
+-------------
+
+.. autoclass:: deepwave.common.CallbackState
+   :members:
 
 cosine_taper_end Function
 -------------------------

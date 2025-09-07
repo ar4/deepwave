@@ -344,13 +344,13 @@ extern "C"
   set_config(dt2_h, rdy_h, rdx_h, rdy2_h, rdx2_h, n_shots_h, ny_h, nx_h,
              n_sources_per_shot_h, n_receivers_per_shot_h, step_ratio_h,
              pml_y0_h, pml_y1_h, pml_x0_h, pml_x1_h, v_batched_h);
-  for (t = 0; t < nt; ++t) {
-    if (t & 1) {
+  for (t = start_t; t < start_t + nt; ++t) {
+    if ((t - start_t) & 1) {
       forward_kernel<<<dimGrid, dimBlock>>>(
           v, wfp, wfc, psiyn, psixn, psiy, psix, zetay, zetax,
           dwdv + (t / step_ratio_h) * ny_h * nx_h * n_shots_h, ay, ax, by, bx,
           dbydy, dbxdx,
-          v_requires_grad && (((t + start_t) % step_ratio_h) == 0));
+          v_requires_grad && ((t % step_ratio_h) == 0));
       CHECK_KERNEL_ERROR
       if (n_sources_per_shot_h > 0) {
         add_sources<<<dimGrid_sources, dimBlock_sources>>>(
@@ -367,7 +367,7 @@ extern "C"
           v, wfc, wfp, psiy, psix, psiyn, psixn, zetay, zetax,
           dwdv + (t / step_ratio_h) * ny_h * nx_h * n_shots_h, ay, ax, by, bx,
           dbydy, dbxdx,
-          v_requires_grad && (((t + start_t) % step_ratio_h) == 0));
+          v_requires_grad && ((t % step_ratio_h) == 0));
       CHECK_KERNEL_ERROR
       if (n_sources_per_shot_h > 0) {
         add_sources<<<dimGrid_sources, dimBlock_sources>>>(
@@ -443,8 +443,8 @@ extern "C"
   set_config(0, rdy_h, rdx_h, rdy2_h, rdx2_h, n_shots_h, ny_h, nx_h,
              n_receivers_per_shot_h, n_sources_per_shot_h, step_ratio_h,
              pml_y0_h, pml_y1_h, pml_x0_h, pml_x1_h, v_batched_h);
-  for (t = nt - 1; t >= 0; --t) {
-    if ((nt - 1 - t) & 1) {
+  for (t = start_t - 1; t >= start_t - nt; --t) {
+    if ((start_t - 1 - t) & 1) {
       if (n_sources_per_shot_h > 0) {
         record_receivers<<<dimGrid_sources, dimBlock_sources>>>(
             grad_f + t * n_shots_h * n_sources_per_shot_h, wfp, sources_i);
@@ -454,7 +454,7 @@ extern "C"
           v2dt2, wfp, wfc, psiyn, psixn, psiy, psix, zetayn, zetaxn, zetay,
           zetax, dwdv + (t / step_ratio_h) * n_shots_h * ny_h * nx_h,
           grad_v_shot, ay, ax, by, bx, dbydy, dbxdx,
-          v_requires_grad && (((t + start_t) % step_ratio_h) == 0));
+          v_requires_grad && ((t % step_ratio_h) == 0));
       CHECK_KERNEL_ERROR
       if (n_receivers_per_shot_h > 0) {
         add_sources<<<dimGrid_receivers, dimBlock_receivers>>>(
@@ -471,7 +471,7 @@ extern "C"
           v2dt2, wfc, wfp, psiy, psix, psiyn, psixn, zetay, zetax, zetayn,
           zetaxn, dwdv + (t / step_ratio_h) * n_shots_h * ny_h * nx_h,
           grad_v_shot, ay, ax, by, bx, dbydy, dbxdx,
-          v_requires_grad && (((t + start_t) % step_ratio_h) == 0));
+          v_requires_grad && ((t % step_ratio_h) == 0));
       CHECK_KERNEL_ERROR
       if (n_receivers_per_shot_h > 0) {
         add_sources<<<dimGrid_receivers, dimBlock_receivers>>>(

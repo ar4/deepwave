@@ -1828,7 +1828,7 @@ extern "C"
              pml_y0_h, pml_y1_h, pml_x0_h, pml_x1_h, 0, 0, 0, 0, 0, 0, 0, 0,
              lamb_batched_h, mu_batched_h, buoyancy_batched_h);
 
-  for (t = 0; t < nt; ++t) {
+  for (t = start_t; t < start_t + nt; ++t) {
     if (n_receivers_y_per_shot_h > 0) {
       record_receivers_y<<<dimGrid_receivers_y, dimBlock_receivers>>>(
           r_y + t * n_shots_h * n_receivers_y_per_shot_h, vy, receivers_y_i);
@@ -1851,7 +1851,7 @@ extern "C"
         dvydbuoyancy + (t / step_ratio_h) * ny_h * nx_h * n_shots_h,
         dvxdbuoyancy + (t / step_ratio_h) * ny_h * nx_h * n_shots_h, ay, ayh,
         ax, axh, by, byh, bx, bxh,
-        buoyancy_requires_grad && (((t + start_t) % step_ratio_h) == 0));
+        buoyancy_requires_grad && ((t % step_ratio_h) == 0));
     CHECK_KERNEL_ERROR
     if (n_sources_y_per_shot_h > 0) {
       add_sources_y<<<dimGrid_sources_y, dimBlock_sources>>>(
@@ -1869,8 +1869,8 @@ extern "C"
         dvxdx_store + (t / step_ratio_h) * ny_h * nx_h * n_shots_h,
         dvydxdvxdy_store + (t / step_ratio_h) * ny_h * nx_h * n_shots_h, ay,
         ayh, ax, axh, by, byh, bx, bxh,
-        lamb_requires_grad && (((t + start_t) % step_ratio_h) == 0),
-        mu_requires_grad && (((t + start_t) % step_ratio_h) == 0));
+        lamb_requires_grad && ((t % step_ratio_h) == 0),
+        mu_requires_grad && ((t % step_ratio_h) == 0));
     CHECK_KERNEL_ERROR
   }
   if (n_receivers_y_per_shot_h > 0) {
@@ -1985,9 +1985,9 @@ extern "C"
         receivers_x_i);
     CHECK_KERNEL_ERROR
   }
-  for (t = nt - 1; t >= 0; --t) {
+  for (t = start_t - 1; t >= start_t - nt; --t) {
     int64_t store_i = (t / step_ratio_h) * n_shots_h * ny_h * nx_h;
-    if ((nt - 1 - t) & 1) {
+    if ((start_t - 1 - t) & 1) {
       backward_batch(
           lamb, mu, buoyancy,
           grad_r_y + t * n_shots_h * n_receivers_y_per_shot_h,
@@ -2005,9 +2005,9 @@ extern "C"
           n_shots_h, ny_h, nx_h, n_sources_y_per_shot_h, n_sources_x_per_shot_h,
           n_receivers_y_per_shot_h, n_receivers_x_per_shot_h,
           n_receivers_p_per_shot_h,
-          lamb_requires_grad && (((t + start_t) % step_ratio_h) == 0),
-          mu_requires_grad && (((t + start_t) % step_ratio_h) == 0),
-          buoyancy_requires_grad && (((t + start_t) % step_ratio_h) == 0));
+          lamb_requires_grad && ((t % step_ratio_h) == 0),
+          mu_requires_grad && ((t % step_ratio_h) == 0),
+          buoyancy_requires_grad && ((t % step_ratio_h) == 0));
     } else {
       backward_batch(
           lamb, mu, buoyancy,
@@ -2026,9 +2026,9 @@ extern "C"
           n_shots_h, ny_h, nx_h, n_sources_y_per_shot_h, n_sources_x_per_shot_h,
           n_receivers_y_per_shot_h, n_receivers_x_per_shot_h,
           n_receivers_p_per_shot_h,
-          lamb_requires_grad && (((t + start_t) % step_ratio_h) == 0),
-          mu_requires_grad && (((t + start_t) % step_ratio_h) == 0),
-          buoyancy_requires_grad && (((t + start_t) % step_ratio_h) == 0));
+          lamb_requires_grad && ((t % step_ratio_h) == 0),
+          mu_requires_grad && ((t % step_ratio_h) == 0),
+          buoyancy_requires_grad && ((t % step_ratio_h) == 0));
     }
   }
   if (lamb_requires_grad && !lamb_batched_h && n_shots_h > 1) {

@@ -10,6 +10,8 @@ To help users and developers avoid mistakes, the code should use type hinting. S
 
 Consistent style across all files is important. Deepwave uses the Google style guides, and they should be rigorously enforced.
 
+Many of the users are not native English speakers. The documentation should therefore be written using simple and easily understood language. Many of the users are also students who might only be beginning to learn about seismic imaging and inversion, so jargon and concepts should not be used without clear explanation.
+
 ## 1. High-Level Architecture
 
 Deepwave uses a hybrid architecture to balance high performance with a user-friendly Python API. The core wave propagation logic is implemented in C (for CPUs) and CUDA (for GPUs). A Python layer provides the user interface and integrates with PyTorch for automatic differentiation.

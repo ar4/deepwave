@@ -64,9 +64,9 @@ def closure():
         pml_width=0,
     )
     y = out[0][0]
-    loss = loss_fn(y, target) + 1e-4 * source_amplitudes.norm()
+    loss = loss_fn(y, target) + 1e-3 * source_amplitudes.norm()
     loss.backward()
-    return loss
+    return loss.item()
 
 
 for i in range(50):
@@ -74,35 +74,65 @@ for i in range(50):
 
 (source_amplitudes.detach().cpu().numpy().tofile("source_amplitudes.bin"))
 
-dt, step_ratio = deepwave.common.cfl_condition(dx, dx, dt, 2000)
-source_amplitudes = deepwave.common.upsample(source_amplitudes, step_ratio)
-
 target_abs_max = target.abs().max()
-for i in range(nt):
-    chunk = source_amplitudes[..., i * step_ratio : (i + 1) * step_ratio]
-    if i == 0:
-        out = deepwave.scalar(
-            v,
-            dx,
-            dt,
-            source_amplitudes=chunk,
-            source_locations=source_locations,
-            pml_width=0,
-        )
-    else:
-        out = deepwave.scalar(
-            v,
-            dx,
-            dt,
-            source_amplitudes=chunk,
-            source_locations=source_locations,
-            pml_width=0,
-            wavefield_0=out[0],
-            wavefield_m1=out[1],
-            psiy_m1=out[2],
-            psix_m1=out[3],
-            zetay_m1=out[4],
-            zetax_m1=out[5],
-        )
-    val = out[0][0] / target_abs_max / 2 + 0.5
-    torchvision.utils.save_image(val, f"wavefield_{i:03d}.jpg")
+
+
+def forward_callback(state):
+    """A function called during the forward pass."""
+    # Scale the wavefield to be between 0 and 1 and save as an image
+    val = state.get_wavefield("wavefield_0")[0].cpu() / target_abs_max / 2 + 0.5
+    torchvision.utils.save_image(val, f"wavefield_{state.step:03d}.jpg")
+
+
+deepwave.scalar(
+    v,
+    dx,
+    dt,
+    source_amplitudes=source_amplitudes.detach(),
+    source_locations=source_locations,
+    pml_width=0,
+    forward_callback=forward_callback,
+    callback_frequency=1,
+)
+
+# Alternative method of saving snapshots
+# We want to save every time step, so we will create a loop over time steps.
+# When we call the wave propagator, we only want it to advance by one time step.
+# We can achieve this by calling the propagator with each time sample of the
+# source amplitudes. As we discussed in the checkpointing example, however,
+# that might not give us exactly the result that we want due to upscaling within
+# Deepwave to obey the CFL condition. We therefore perform the upscaling
+# ourselves and then call the propagator with chunks of the upscaled source
+# amplitudes that correspond to one pre-upsampling time step.
+#
+# dt, step_ratio = deepwave.common.cfl_condition(dx, dx, dt, 2000)
+# source_amplitudes = deepwave.common.upsample(source_amplitudes.detach(), step_ratio)
+#
+# for i in range(nt):
+#    chunk = source_amplitudes[..., i * step_ratio : (i + 1) * step_ratio]
+#    if i == 0:
+#        out = deepwave.scalar(
+#            v,
+#            dx,
+#            dt,
+#            source_amplitudes=chunk,
+#            source_locations=source_locations,
+#            pml_width=0,
+#        )
+#    else:
+#        out = deepwave.scalar(
+#            v,
+#            dx,
+#            dt,
+#            source_amplitudes=chunk,
+#            source_locations=source_locations,
+#            pml_width=0,
+#            wavefield_0=out[0],
+#            wavefield_m1=out[1],
+#            psiy_m1=out[2],
+#            psix_m1=out[3],
+#            zetay_m1=out[4],
+#            zetax_m1=out[5],
+#        )
+#    val = out[0][0] / target_abs_max / 2 + 0.5
+#    torchvision.utils.save_image(val, f"wavefield_{i:03d}.jpg")

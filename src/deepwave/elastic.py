@@ -118,6 +118,9 @@ class Elastic(torch.nn.Module):
         freq_taper_frac: float = 0.0,
         time_pad_frac: float = 0.0,
         time_taper: bool = False,
+        forward_callback: Optional[deepwave.common.Callback] = None,
+        backward_callback: Optional[deepwave.common.Callback] = None,
+        callback_frequency: int = 1,
     ) -> Tuple[
         torch.Tensor,
         torch.Tensor,
@@ -179,6 +182,9 @@ class Elastic(torch.nn.Module):
             freq_taper_frac=freq_taper_frac,
             time_pad_frac=time_pad_frac,
             time_taper=time_taper,
+            forward_callback=forward_callback,
+            backward_callback=backward_callback,
+            callback_frequency=callback_frequency,
         )
 
 
@@ -237,6 +243,9 @@ def elastic(
     freq_taper_frac: float = 0.0,
     time_pad_frac: float = 0.0,
     time_taper: bool = False,
+    forward_callback: Optional[deepwave.common.Callback] = None,
+    backward_callback: Optional[deepwave.common.Callback] = None,
+    callback_frequency: int = 1,
 ) -> Tuple[
     torch.Tensor,
     torch.Tensor,
@@ -367,6 +376,14 @@ def elastic(
             fraction of their length.
         time_taper: Whether to apply a Hann window in time to source and
             receiver amplitudes.
+        forward_callback: A function that will be called during the forward
+            pass. See :class:`deepwave.common.CallbackState` for the
+            state that will be provided to the function.
+        backward_callback: A function that will be called during the backward
+            pass. See :class:`deepwave.common.CallbackState` for the
+            state that will be provided to the function.
+        callback_frequency: The number of internal time steps between calls
+            to the callback.
 
     Returns:
         Tuple:
@@ -590,6 +607,11 @@ def elastic(
         nx,
     )
 
+    if not isinstance(callback_frequency, int):
+        raise TypeError("callback_frequency must be an int.")
+    if callback_frequency <= 0:
+        raise ValueError("callback_frequency must be positive.")
+
     # Run the forward propagator
     (
         vy,
@@ -622,6 +644,9 @@ def elastic(
         accuracy,
         pml_width,
         n_shots,
+        forward_callback,
+        backward_callback,
+        callback_frequency,
     )
 
     receiver_amplitudes_y = _average_adjacent(receiver_amplitudes_y)
@@ -776,6 +801,9 @@ class ElasticForwardFunc(torch.autograd.Function):
         accuracy: int,
         pml_width: List[int],
         n_shots: int,
+        forward_callback: Optional[deepwave.common.Callback],
+        backward_callback: Optional[deepwave.common.Callback],
+        callback_frequency: int,
     ) -> Tuple[
         torch.Tensor,
         torch.Tensor,
@@ -841,6 +869,9 @@ class ElasticForwardFunc(torch.autograd.Function):
             accuracy: Finite difference accuracy order.
             pml_width: List of PML widths for each side.
             n_shots: Number of shots in the batch.
+            forward_callback: The forward callback.
+            backward_callback: The backward callback.
+            callback_frequency: The callback frequency.
 
         Returns:
             A tuple containing the final wavefields, memory variables, and
@@ -1044,74 +1075,103 @@ class ElasticForwardFunc(torch.autograd.Function):
             lamb.device,
         )
 
+        if forward_callback is None:
+            callback_frequency = nt // step_ratio
+
         if vy.numel() > 0 and nt > 0:
-            start_t = 0
-            forward(
-                lamb.data_ptr(),
-                mu.data_ptr(),
-                buoyancy.data_ptr(),
-                source_amplitudes_y.data_ptr(),
-                source_amplitudes_x.data_ptr(),
-                vy.data_ptr(),
-                vx.data_ptr(),
-                sigmayy.data_ptr(),
-                sigmaxy.data_ptr(),
-                sigmaxx.data_ptr(),
-                m_vyy.data_ptr(),
-                m_vyx.data_ptr(),
-                m_vxy.data_ptr(),
-                m_vxx.data_ptr(),
-                m_sigmayyy.data_ptr(),
-                m_sigmaxyy.data_ptr(),
-                m_sigmaxyx.data_ptr(),
-                m_sigmaxxx.data_ptr(),
-                dvydbuoyancy.data_ptr(),
-                dvxdbuoyancy.data_ptr(),
-                dvydy_store.data_ptr(),
-                dvxdx_store.data_ptr(),
-                dvydxdvxdy_store.data_ptr(),
-                receiver_amplitudes_y.data_ptr(),
-                receiver_amplitudes_x.data_ptr(),
-                receiver_amplitudes_p.data_ptr(),
-                ay.data_ptr(),
-                ayh.data_ptr(),
-                ax.data_ptr(),
-                axh.data_ptr(),
-                by.data_ptr(),
-                byh.data_ptr(),
-                bx.data_ptr(),
-                bxh.data_ptr(),
-                sources_y_i.data_ptr(),
-                sources_x_i.data_ptr(),
-                receivers_y_i.data_ptr(),
-                receivers_x_i.data_ptr(),
-                receivers_p_i.data_ptr(),
-                dy,
-                dx,
-                dt,
-                nt,
-                n_shots,
-                ny,
-                nx,
-                n_sources_y_per_shot,
-                n_sources_x_per_shot,
-                n_receivers_y_per_shot,
-                n_receivers_x_per_shot,
-                n_receivers_p_per_shot,
-                step_ratio,
-                lamb.requires_grad,
-                mu.requires_grad,
-                buoyancy.requires_grad,
-                lamb_batched,
-                mu_batched,
-                buoyancy_batched,
-                start_t,
-                pml_y0,
-                pml_y1,
-                pml_x0,
-                pml_x1,
-                aux,
-            )
+            for step in range(0, nt // step_ratio, callback_frequency):
+                if forward_callback is not None:
+                    state = deepwave.common.CallbackState(
+                        dt,
+                        step,
+                        {
+                            "vy_0": vy,
+                            "vx_0": vx,
+                            "sigmayy_0": sigmayy,
+                            "sigmaxy_0": sigmaxy,
+                            "sigmaxx_0": sigmaxx,
+                            "m_vyy_0": m_vyy,
+                            "m_vyx_0": m_vyx,
+                            "m_vxy_0": m_vxy,
+                            "m_vxx_0": m_vxx,
+                            "m_sigmayyy_0": m_sigmayyy,
+                            "m_sigmaxyy_0": m_sigmaxyy,
+                            "m_sigmaxyx_0": m_sigmaxyx,
+                            "m_sigmaxxx_0": m_sigmaxxx,
+                        },
+                        {"lamb": lamb, "mu": mu, "buoyancy": buoyancy},
+                        {},
+                        [0] * 4,
+                        pml_width,
+                    )
+                    forward_callback(state)
+                step_nt = min(nt // step_ratio - step, callback_frequency)
+                forward(
+                    lamb.data_ptr(),
+                    mu.data_ptr(),
+                    buoyancy.data_ptr(),
+                    source_amplitudes_y.data_ptr(),
+                    source_amplitudes_x.data_ptr(),
+                    vy.data_ptr(),
+                    vx.data_ptr(),
+                    sigmayy.data_ptr(),
+                    sigmaxy.data_ptr(),
+                    sigmaxx.data_ptr(),
+                    m_vyy.data_ptr(),
+                    m_vyx.data_ptr(),
+                    m_vxy.data_ptr(),
+                    m_vxx.data_ptr(),
+                    m_sigmayyy.data_ptr(),
+                    m_sigmaxyy.data_ptr(),
+                    m_sigmaxyx.data_ptr(),
+                    m_sigmaxxx.data_ptr(),
+                    dvydbuoyancy.data_ptr(),
+                    dvxdbuoyancy.data_ptr(),
+                    dvydy_store.data_ptr(),
+                    dvxdx_store.data_ptr(),
+                    dvydxdvxdy_store.data_ptr(),
+                    receiver_amplitudes_y.data_ptr(),
+                    receiver_amplitudes_x.data_ptr(),
+                    receiver_amplitudes_p.data_ptr(),
+                    ay.data_ptr(),
+                    ayh.data_ptr(),
+                    ax.data_ptr(),
+                    axh.data_ptr(),
+                    by.data_ptr(),
+                    byh.data_ptr(),
+                    bx.data_ptr(),
+                    bxh.data_ptr(),
+                    sources_y_i.data_ptr(),
+                    sources_x_i.data_ptr(),
+                    receivers_y_i.data_ptr(),
+                    receivers_x_i.data_ptr(),
+                    receivers_p_i.data_ptr(),
+                    dy,
+                    dx,
+                    dt,
+                    step_nt * step_ratio,
+                    n_shots,
+                    ny,
+                    nx,
+                    n_sources_y_per_shot,
+                    n_sources_x_per_shot,
+                    n_receivers_y_per_shot,
+                    n_receivers_x_per_shot,
+                    n_receivers_p_per_shot,
+                    step_ratio,
+                    lamb.requires_grad,
+                    mu.requires_grad,
+                    buoyancy.requires_grad,
+                    lamb_batched,
+                    mu_batched,
+                    buoyancy_batched,
+                    step * step_ratio,
+                    pml_y0,
+                    pml_y1,
+                    pml_x0,
+                    pml_x1,
+                    aux,
+                )
 
         if (
             lamb.requires_grad
@@ -1166,6 +1226,8 @@ class ElasticForwardFunc(torch.autograd.Function):
             ctx.pml_width = pml_width
             ctx.source_amplitudes_y_requires_grad = source_amplitudes_y.requires_grad
             ctx.source_amplitudes_x_requires_grad = source_amplitudes_x.requires_grad
+            ctx.backward_callback = backward_callback
+            ctx.callback_frequency = callback_frequency
 
         return (
             vy,
@@ -1290,6 +1352,8 @@ class ElasticForwardFunc(torch.autograd.Function):
         pml_width = ctx.pml_width
         source_amplitudes_y_requires_grad = ctx.source_amplitudes_y_requires_grad
         source_amplitudes_x_requires_grad = ctx.source_amplitudes_x_requires_grad
+        backward_callback = ctx.backward_callback
+        callback_frequency = ctx.callback_frequency
         device = lamb.device
         dtype = lamb.dtype
         ny = lamb.shape[-2]
@@ -1523,144 +1587,134 @@ class ElasticForwardFunc(torch.autograd.Function):
             lamb.device,
         )
 
+        if backward_callback is None:
+            callback_frequency = nt // step_ratio
+
         if vy.numel() > 0 and nt > 0:
-            start_t = 0
-            backward(
-                lamb.data_ptr(),
-                mu.data_ptr(),
-                buoyancy.data_ptr(),
-                grad_r_y.data_ptr(),
-                grad_r_x.data_ptr(),
-                grad_r_p.data_ptr(),
-                vy.data_ptr(),
-                vx.data_ptr(),
-                sigmayy.data_ptr(),
-                sigmaxy.data_ptr(),
-                sigmaxx.data_ptr(),
-                m_vyy.data_ptr(),
-                m_vyx.data_ptr(),
-                m_vxy.data_ptr(),
-                m_vxx.data_ptr(),
-                m_sigmayyy.data_ptr(),
-                m_sigmaxyy.data_ptr(),
-                m_sigmaxyx.data_ptr(),
-                m_sigmaxxx.data_ptr(),
-                m_sigmayyyn.data_ptr(),
-                m_sigmaxyyn.data_ptr(),
-                m_sigmaxyxn.data_ptr(),
-                m_sigmaxxxn.data_ptr(),
-                dvydbuoyancy.data_ptr(),
-                dvxdbuoyancy.data_ptr(),
-                dvydy_store.data_ptr(),
-                dvxdx_store.data_ptr(),
-                dvydxdvxdy_store.data_ptr(),
-                grad_f_y.data_ptr(),
-                grad_f_x.data_ptr(),
-                grad_lamb.data_ptr(),
-                grad_lamb_tmp_ptr,
-                grad_mu.data_ptr(),
-                grad_mu_tmp_ptr,
-                grad_buoyancy.data_ptr(),
-                grad_buoyancy_tmp_ptr,
-                ay.data_ptr(),
-                ayh.data_ptr(),
-                ax.data_ptr(),
-                axh.data_ptr(),
-                by.data_ptr(),
-                byh.data_ptr(),
-                bx.data_ptr(),
-                bxh.data_ptr(),
-                sources_y_i.data_ptr(),
-                sources_x_i.data_ptr(),
-                receivers_y_i.data_ptr(),
-                receivers_x_i.data_ptr(),
-                receivers_p_i.data_ptr(),
-                dy,
-                dx,
-                dt,
-                nt,
-                n_shots,
-                ny,
-                nx,
-                n_sources_y_per_shot * source_amplitudes_y_requires_grad,
-                n_sources_x_per_shot * source_amplitudes_x_requires_grad,
-                n_receivers_y_per_shot,
-                n_receivers_x_per_shot,
-                n_receivers_p_per_shot,
-                step_ratio,
-                lamb.requires_grad,
-                mu.requires_grad,
-                buoyancy.requires_grad,
-                lamb_batched,
-                mu_batched,
-                buoyancy_batched,
-                start_t,
-                spml_y0,
-                spml_y1,
-                spml_x0,
-                spml_x1,
-                vpml_y0,
-                vpml_y1,
-                vpml_x0,
-                vpml_x1,
-                aux,
-            )
+            for step in range(nt // step_ratio, 0, -callback_frequency):
+                step_nt = min(step, callback_frequency)
+                backward(
+                    lamb.data_ptr(),
+                    mu.data_ptr(),
+                    buoyancy.data_ptr(),
+                    grad_r_y.data_ptr(),
+                    grad_r_x.data_ptr(),
+                    grad_r_p.data_ptr(),
+                    vy.data_ptr(),
+                    vx.data_ptr(),
+                    sigmayy.data_ptr(),
+                    sigmaxy.data_ptr(),
+                    sigmaxx.data_ptr(),
+                    m_vyy.data_ptr(),
+                    m_vyx.data_ptr(),
+                    m_vxy.data_ptr(),
+                    m_vxx.data_ptr(),
+                    m_sigmayyy.data_ptr(),
+                    m_sigmaxyy.data_ptr(),
+                    m_sigmaxyx.data_ptr(),
+                    m_sigmaxxx.data_ptr(),
+                    m_sigmayyyn.data_ptr(),
+                    m_sigmaxyyn.data_ptr(),
+                    m_sigmaxyxn.data_ptr(),
+                    m_sigmaxxxn.data_ptr(),
+                    dvydbuoyancy.data_ptr(),
+                    dvxdbuoyancy.data_ptr(),
+                    dvydy_store.data_ptr(),
+                    dvxdx_store.data_ptr(),
+                    dvydxdvxdy_store.data_ptr(),
+                    grad_f_y.data_ptr(),
+                    grad_f_x.data_ptr(),
+                    grad_lamb.data_ptr(),
+                    grad_lamb_tmp_ptr,
+                    grad_mu.data_ptr(),
+                    grad_mu_tmp_ptr,
+                    grad_buoyancy.data_ptr(),
+                    grad_buoyancy_tmp_ptr,
+                    ay.data_ptr(),
+                    ayh.data_ptr(),
+                    ax.data_ptr(),
+                    axh.data_ptr(),
+                    by.data_ptr(),
+                    byh.data_ptr(),
+                    bx.data_ptr(),
+                    bxh.data_ptr(),
+                    sources_y_i.data_ptr(),
+                    sources_x_i.data_ptr(),
+                    receivers_y_i.data_ptr(),
+                    receivers_x_i.data_ptr(),
+                    receivers_p_i.data_ptr(),
+                    dy,
+                    dx,
+                    dt,
+                    step_nt * step_ratio,
+                    n_shots,
+                    ny,
+                    nx,
+                    n_sources_y_per_shot * source_amplitudes_y_requires_grad,
+                    n_sources_x_per_shot * source_amplitudes_x_requires_grad,
+                    n_receivers_y_per_shot,
+                    n_receivers_x_per_shot,
+                    n_receivers_p_per_shot,
+                    step_ratio,
+                    lamb.requires_grad,
+                    mu.requires_grad,
+                    buoyancy.requires_grad,
+                    lamb_batched,
+                    mu_batched,
+                    buoyancy_batched,
+                    step * step_ratio,
+                    spml_y0,
+                    spml_y1,
+                    spml_x0,
+                    spml_x1,
+                    vpml_y0,
+                    vpml_y1,
+                    vpml_x0,
+                    vpml_x1,
+                    aux,
+                )
+                if (step_nt * step_ratio) % 2 != 0:
+                    m_sigmayyy, m_sigmaxyx, m_sigmaxyy, m_sigmaxxx = (
+                        m_sigmayyyn,
+                        m_sigmaxyxn,
+                        m_sigmaxyyn,
+                        m_sigmaxxxn,
+                    )
+                if backward_callback is not None:
+                    state = deepwave.common.CallbackState(
+                        dt,
+                        step - 1,
+                        {
+                            "vy_0": vy,
+                            "vx_0": vx,
+                            "sigmayy_0": sigmayy,
+                            "sigmaxy_0": sigmaxy,
+                            "sigmaxx_0": sigmaxx,
+                            "m_vyy_0": m_vyy,
+                            "m_vyx_0": m_vyx,
+                            "m_vxy_0": m_vxy,
+                            "m_vxx_0": m_vxx,
+                            "m_sigmayyy_0": m_sigmayyy,
+                            "m_sigmaxyy_0": m_sigmaxyy,
+                            "m_sigmaxyx_0": m_sigmaxyx,
+                            "m_sigmaxxx_0": m_sigmaxxx,
+                        },
+                        {"lamb": lamb, "mu": mu, "buoyancy": buoyancy},
+                        {"lamb": grad_lamb, "mu": grad_mu, "buoyancy": grad_buoyancy},
+                        [0] * 4,
+                        pml_width,
+                    )
+                    backward_callback(state)
 
         m_vyy = zero_interior(m_vyy, pml_y0 + 1, pml_y1, 0, nx)
         m_vxx = zero_interior(m_vxx, 0, ny, pml_x0, pml_x1 - 1)
         m_vyx = zero_interior(m_vyx, 0, ny, pml_x0 + 1, pml_x1 - 1)
         m_vxy = zero_interior(m_vxy, pml_y0 + 1, pml_y1 - 1, 0, nx)
 
-        if nt % 2 == 0:
-            m_sigmayyy = zero_interior(m_sigmayyy, pml_y0, pml_y1, 0, nx)
-            m_sigmaxyx = zero_interior(m_sigmaxyx, 0, ny, pml_x0, pml_x1 - 1)
-            m_sigmaxyy = zero_interior(m_sigmaxyy, pml_y0 + 1, pml_y1, 0, nx)
-            m_sigmaxxx = zero_interior(m_sigmaxxx, 0, ny, pml_x0, pml_x1)
-            return (
-                grad_lamb,
-                grad_mu,
-                grad_buoyancy,
-                grad_f_y,
-                grad_f_x,
-                vy,
-                vx,
-                sigmayy,
-                sigmaxy,
-                sigmaxx,
-                m_vyy,
-                m_vyx,
-                m_vxy,
-                m_vxx,
-                m_sigmayyy,
-                m_sigmaxyy,
-                m_sigmaxyx,
-                m_sigmaxxx,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-            )
-        m_sigmayyyn = zero_interior(m_sigmayyyn, pml_y0, pml_y1, 0, nx)
-        m_sigmaxyxn = zero_interior(m_sigmaxyxn, 0, ny, pml_x0, pml_x1 - 1)
-        m_sigmaxyyn = zero_interior(m_sigmaxyyn, pml_y0 + 1, pml_y1, 0, nx)
-        m_sigmaxxxn = zero_interior(m_sigmaxxxn, 0, ny, pml_x0, pml_x1)
+        m_sigmayyy = zero_interior(m_sigmayyy, pml_y0, pml_y1, 0, nx)
+        m_sigmaxyx = zero_interior(m_sigmaxyx, 0, ny, pml_x0, pml_x1 - 1)
+        m_sigmaxyy = zero_interior(m_sigmaxyy, pml_y0 + 1, pml_y1, 0, nx)
+        m_sigmaxxx = zero_interior(m_sigmaxxx, 0, ny, pml_x0, pml_x1)
         return (
             grad_lamb,
             grad_mu,
@@ -1676,10 +1730,13 @@ class ElasticForwardFunc(torch.autograd.Function):
             m_vyx,
             m_vxy,
             m_vxx,
-            m_sigmayyyn,
-            m_sigmaxyyn,
-            m_sigmaxyxn,
-            m_sigmaxxxn,
+            m_sigmayyy,
+            m_sigmaxyy,
+            m_sigmaxyx,
+            m_sigmaxxx,
+            None,
+            None,
+            None,
             None,
             None,
             None,

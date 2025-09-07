@@ -873,6 +873,9 @@ def run_scalarbornfunc(nt=3):
             accuracy,
             pml_width,
             n_batch,
+            None,
+            None,
+            1,
         ),
     )
     torch.autograd.gradcheck(
@@ -912,6 +915,9 @@ def run_scalarbornfunc(nt=3):
             accuracy,
             pml_width,
             n_batch,
+            None,
+            None,
+            1,
         ),
     )
 

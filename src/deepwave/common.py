@@ -10,6 +10,8 @@ import warnings
 from collections import abc
 from typing import (
     Any,
+    Callable,
+    Dict,
     List,
     Optional,
     Tuple,
@@ -18,6 +20,111 @@ from typing import (
 
 import torch
 import torch.fft
+
+
+class CallbackState:
+    """State provided to user callbacks."""
+
+    def __init__(
+        self,
+        dt: float,
+        step: int,
+        wavefields: Dict[str, torch.Tensor],
+        models: Dict[str, torch.Tensor],
+        gradients: Dict[str, torch.Tensor],
+        fd_pad: List[int],
+        pml_width: List[int],
+    ) -> None:
+        """Initialise the state.
+
+        Args:
+            dt: The time step size.
+            step: The current time step number.
+            wavefields: A dictionary of wavefields.
+            models: A dictionary of models.
+            gradients: A dictionary of gradients.
+            fd_pad: The padding used for the finite difference stencil.
+            pml_width: The width of the PML.
+        """
+        self.dt = dt
+        self.step = step
+        self._wavefields = wavefields
+        self._models = models
+        self._gradients = gradients
+        self._fd_pad = fd_pad
+        self._pml_width = pml_width
+
+    def get_wavefield(self, name: str, view: str = "inner") -> torch.Tensor:
+        """Get a wavefield.
+
+        Args:
+            name: The name of the wavefield.
+            view: The part of the wavefield to return. One of
+                'inner' (the model region, default),
+                'pml' (the model region plus the PML), or
+                'full' (the entire wavefield, including finite
+                difference padding).
+
+        Returns:
+            The specified part of the wavefield.
+        """
+        return self._get_view(self._wavefields[name], view)
+
+    def get_model(self, name: str, view: str = "inner") -> torch.Tensor:
+        """Get a model.
+
+        Args:
+            name: The name of the model.
+            view: The part of the model to return. One of
+                'inner' (the model region, default),
+                'pml' (the model region plus the PML), or
+                'full' (the entire model, including finite
+                difference padding).
+
+        Returns:
+            The specified part of the model.
+        """
+        return self._get_view(self._models[name], view)
+
+    def get_gradient(self, name: str, view: str = "inner") -> torch.Tensor:
+        """Get a gradient.
+
+        Args:
+            name: The name of the gradient.
+            view: The part of the gradient to return. One of
+                'inner' (the model region, default),
+                'pml' (the model region plus the PML), or
+                'full' (the entire gradient, including finite
+                difference padding).
+
+        Returns:
+            The specified part of the gradient.
+        """
+        return self._get_view(self._gradients[name], view)
+
+    def _get_view(self, x: torch.Tensor, view: str) -> torch.Tensor:
+        if view == "full":
+            return x
+        if view == "pml":
+            return x[
+                ...,
+                self._fd_pad[0] : x.shape[-2] - self._fd_pad[1],
+                self._fd_pad[2] : x.shape[-1] - self._fd_pad[3],
+            ]
+        if view == "inner":
+            return x[
+                ...,
+                self._fd_pad[0] + self._pml_width[0] : x.shape[-2]
+                - self._fd_pad[1]
+                - self._pml_width[1],
+                self._fd_pad[2] + self._pml_width[2] : x.shape[-1]
+                - self._fd_pad[3]
+                - self._pml_width[3],
+            ]
+        raise ValueError(f"view must be 'full', 'pml', or 'inner', but got {view}")
+
+
+Callback = Callable[[CallbackState], None]
 
 IGNORE_LOCATION = -1 << 31
 

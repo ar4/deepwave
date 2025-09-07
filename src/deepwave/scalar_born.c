@@ -522,8 +522,8 @@ __declspec(dllexport)
     DW_DTYPE const *__restrict const scatter_shot =
         scatter_batched ? scatter + i : scatter;
     int64_t t;
-    for (t = 0; t < nt; ++t) {
-      if (t & 1) {
+    for (t = start_t; t < start_t + nt; ++t) {
+      if ((t - start_t) & 1) {
         forward_kernel(
             v_shot, scatter_shot, wfp + i, wfc + i, psiyn + i, psixn + i,
             psiy + i, psix + i, zetay + i, zetax + i, wfpsc + i, wfcsc + i,
@@ -532,8 +532,8 @@ __declspec(dllexport)
             w_store + (t / step_ratio) * n_shots * ny * nx + shot * ny * nx,
             wsc_store + (t / step_ratio) * n_shots * ny * nx + shot * ny * nx,
             ay, ax, by, bx, dbydy, dbxdx, rdy, rdx, rdy2, rdx2, dt2, ny, nx,
-            v_requires_grad && (((t + start_t) % step_ratio) == 0),
-            scatter_requires_grad && (((t + start_t) % step_ratio) == 0),
+            v_requires_grad && ((t % step_ratio) == 0),
+            scatter_requires_grad && ((t % step_ratio) == 0),
             pml_y0, pml_y1, pml_x0, pml_x1);
         add_to_wavefield(wfc + i, sources_i + si,
                          f + t * n_shots * n_sources_per_shot + si,
@@ -556,8 +556,8 @@ __declspec(dllexport)
             w_store + (t / step_ratio) * n_shots * ny * nx + shot * ny * nx,
             wsc_store + (t / step_ratio) * n_shots * ny * nx + shot * ny * nx,
             ay, ax, by, bx, dbydy, dbxdx, rdy, rdx, rdy2, rdx2, dt2, ny, nx,
-            v_requires_grad && (((t + start_t) % step_ratio) == 0),
-            scatter_requires_grad && (((t + start_t) % step_ratio) == 0),
+            v_requires_grad && ((t % step_ratio) == 0),
+            scatter_requires_grad && ((t % step_ratio) == 0),
             pml_y0, pml_y1, pml_x0, pml_x1);
         add_to_wavefield(wfp + i, sources_i + si,
                          f + t * n_shots * n_sources_per_shot + si,
@@ -641,8 +641,8 @@ __declspec(dllexport)
     DW_DTYPE const *__restrict const scatter_shot =
         scatter_batched ? scatter + i : scatter;
     int64_t t;
-    for (t = nt - 1; t >= 0; --t) {
-      if ((nt - 1 - t) & 1) {
+    for (t = start_t - 1; t >= start_t - nt; --t) {
+      if ((start_t - 1 - t) & 1) {
         record_from_wavefield(wfp + i, sources_i + si,
                               grad_f + t * n_shots * n_sources_per_shot + si,
                               n_sources_per_shot);
@@ -659,8 +659,8 @@ __declspec(dllexport)
             wsc_store + (t / step_ratio) * n_shots * ny * nx + shot * ny * nx,
             grad_v_thread + grad_v_i, grad_scatter_thread + grad_scatter_i, ay,
             ax, by, bx, dbydy, dbxdx, rdy, rdx, rdy2, rdx2, dt2, ny, nx,
-            step_ratio, v_requires_grad && (((t + start_t) % step_ratio) == 0),
-            scatter_requires_grad && (((t + start_t) % step_ratio) == 0),
+            step_ratio, v_requires_grad && ((t % step_ratio) == 0),
+            scatter_requires_grad && ((t % step_ratio) == 0),
             pml_y0, pml_y1, pml_x0, pml_x1);
         add_to_wavefield(wfc + i, receivers_i + ri,
                          grad_r + t * n_shots * n_receivers_per_shot + ri,
@@ -685,8 +685,8 @@ __declspec(dllexport)
             wsc_store + (t / step_ratio) * n_shots * ny * nx + shot * ny * nx,
             grad_v_thread + grad_v_i, grad_scatter_thread + grad_scatter_i, ay,
             ax, by, bx, dbydy, dbxdx, rdy, rdx, rdy2, rdx2, dt2, ny, nx,
-            step_ratio, v_requires_grad && (((t + start_t) % step_ratio) == 0),
-            scatter_requires_grad && (((t + start_t) % step_ratio) == 0),
+            step_ratio, v_requires_grad && ((t % step_ratio) == 0),
+            scatter_requires_grad && ((t % step_ratio) == 0),
             pml_y0, pml_y1, pml_x0, pml_x1);
         add_to_wavefield(wfp + i, receivers_i + ri,
                          grad_r + t * n_shots * n_receivers_per_shot + ri,
@@ -755,8 +755,8 @@ __declspec(dllexport)
     int64_t const grad_scatter_i = scatter_batched ? i : threadi;
     DW_DTYPE const *__restrict const v_shot = v_batched ? v + i : v;
     int64_t t;
-    for (t = nt - 1; t >= 0; --t) {
-      if ((nt - 1 - t) & 1) {
+    for (t = start_t - 1; t >= start_t - nt; --t) {
+      if ((start_t - 1 - t) & 1) {
         record_from_wavefield(
             wfpsc + i, sources_i + sisc,
             grad_fsc + t * n_shots * n_sourcessc_per_shot + sisc,
@@ -767,7 +767,7 @@ __declspec(dllexport)
             w_store + (t / step_ratio) * n_shots * ny * nx + shot * ny * nx,
             grad_scatter_thread + grad_scatter_i, ay, ax, by, bx, dbydy, dbxdx,
             rdy, rdx, rdy2, rdx2, dt2, ny, nx, step_ratio,
-            scatter_requires_grad && (((t + start_t) % step_ratio) == 0),
+            scatter_requires_grad && ((t % step_ratio) == 0),
             pml_y0, pml_y1, pml_x0, pml_x1);
         add_to_wavefield(wfcsc + i, receiverssc_i + risc,
                          grad_rsc + t * n_shots * n_receiverssc_per_shot + risc,
@@ -783,7 +783,7 @@ __declspec(dllexport)
             w_store + (t / step_ratio) * n_shots * ny * nx + shot * ny * nx,
             grad_scatter_thread + grad_scatter_i, ay, ax, by, bx, dbydy, dbxdx,
             rdy, rdx, rdy2, rdx2, dt2, ny, nx, step_ratio,
-            scatter_requires_grad && (((t + start_t) % step_ratio) == 0),
+            scatter_requires_grad && ((t % step_ratio) == 0),
             pml_y0, pml_y1, pml_x0, pml_x1);
         add_to_wavefield(wfpsc + i, receiverssc_i + risc,
                          grad_rsc + t * n_shots * n_receiverssc_per_shot + risc,

@@ -491,6 +491,9 @@ def run_scalarfunc(nt=3, gradgrad=False):
             accuracy,
             pml_width,
             n_batch,
+            None,
+            None,
+            1,
         ),
     )
     if gradgrad:
@@ -521,6 +524,9 @@ def run_scalarfunc(nt=3, gradgrad=False):
                 accuracy,
                 pml_width,
                 n_batch,
+                None,
+                None,
+                1,
             ),
         )
 
