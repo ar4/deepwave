@@ -1,3 +1,5 @@
+"""Tests for deepwave.extract."""
+
 import re
 
 import pytest
@@ -7,7 +9,7 @@ import deepwave
 import deepwave.common
 
 
-def test_set_survey_pad():
+def test_set_survey_pad() -> None:
     """Check set_survey_pad."""
     survey_pad = deepwave.common.set_survey_pad(1, 2)
     assert survey_pad == [1, 1, 1, 1]
@@ -65,15 +67,13 @@ def test_set_survey_pad():
         deepwave.common.set_survey_pad([1, "a", 3, 4], 2)
 
 
-def test_check_locations_are_within_model():
+def test_check_locations_are_within_model() -> None:
+    """Test check_locations_are_within_model with valid inputs."""
     model_shape = [2, 3]
     locations = [None, None]
     deepwave.common.check_locations_are_within_model(model_shape, locations)
     locations = [None, torch.ones(2, 3, 2)]
     deepwave.common.check_locations_are_within_model(model_shape, locations)
-    locations = [None, torch.ones(2, 3, 2)]
-    deepwave.common.check_locations_are_within_model(model_shape, locations)
-    locations = [None, torch.ones(2, 3, 2)]
     locations[1][1, 1, 1] = -1
     with pytest.raises(RuntimeError):
         deepwave.common.check_locations_are_within_model(model_shape, locations)
@@ -83,28 +83,32 @@ def test_check_locations_are_within_model():
         deepwave.common.check_locations_are_within_model(model_shape, locations)
 
 
-def test_check_locations_are_within_model_empty_model_shape():
+def test_check_locations_are_within_model_empty_model_shape() -> None:
+    """Test check_locations_are_within_model with empty model_shape."""
     model_shape = []
     locations = [torch.zeros(1, 1, 0)]
     with pytest.raises(RuntimeError, match="model_shape must not be empty."):
         deepwave.common.check_locations_are_within_model(model_shape, locations)
 
 
-def test_check_locations_are_within_model_non_positive_model_shape():
+def test_check_locations_are_within_model_non_positive_model_shape() -> None:
+    """Test check_locations_are_within_model with non-positive model_shape."""
     model_shape = [2, 0]
     locations = [torch.zeros(1, 1, 2)]
     with pytest.raises(RuntimeError, match="model_shape elements must be positive."):
         deepwave.common.check_locations_are_within_model(model_shape, locations)
 
 
-def test_check_locations_are_within_model_negative_model_shape():
+def test_check_locations_are_within_model_negative_model_shape() -> None:
+    """Test check_locations_are_within_model with negative model_shape."""
     model_shape = [2, -1]
     locations = [torch.zeros(1, 1, 2)]
     with pytest.raises(RuntimeError, match="model_shape elements must be positive."):
         deepwave.common.check_locations_are_within_model(model_shape, locations)
 
 
-def test_get_extents_from_locations():
+def test_get_extents_from_locations() -> None:
+    """Test get_extents_from_locations with various inputs."""
     model_shape = [8, 9]
     locations = [None, None]
     survey_pad = None
@@ -155,7 +159,8 @@ def test_get_extents_from_locations():
     ) == [(1, 6), (0, 9)]
 
 
-def test_get_extents_from_locations_empty_model_shape():
+def test_get_extents_from_locations_empty_model_shape() -> None:
+    """Test get_extents_from_locations with empty model_shape."""
     model_shape = []
     locations = [None]
     survey_pad = None
@@ -167,7 +172,8 @@ def test_get_extents_from_locations_empty_model_shape():
         )
 
 
-def test_get_extents_from_locations_non_positive_model_shape():
+def test_get_extents_from_locations_non_positive_model_shape() -> None:
+    """Test get_extents_from_locations with non-positive model_shape."""
     model_shape = [8, 0]
     locations = [None]
     survey_pad = None
@@ -179,7 +185,8 @@ def test_get_extents_from_locations_non_positive_model_shape():
         )
 
 
-def test_get_extents_from_locations_negative_model_shape():
+def test_get_extents_from_locations_negative_model_shape() -> None:
+    """Test get_extents_from_locations with negative model_shape."""
     model_shape = [8, -1]
     locations = [None]
     survey_pad = None
@@ -191,7 +198,8 @@ def test_get_extents_from_locations_negative_model_shape():
         )
 
 
-def test_get_extents_from_wavefields():
+def test_get_extents_from_wavefields() -> None:
+    """Test get_extents_from_wavefields with various inputs."""
     wavefields = [None, torch.zeros(2, 8, 9)]
     origin = None
     pml_width = [0, 0, 0, 0]
@@ -257,7 +265,8 @@ def test_get_extents_from_wavefields():
         )
 
 
-def test_get_extents_from_wavefields_empty_wavefields():
+def test_get_extents_from_wavefields_empty_wavefields() -> None:
+    """Test get_extents_from_wavefields with empty wavefields list."""
     wavefields = []
     origin = [1, 2]
     pml_width = [1, 2, 3, 4]
@@ -269,7 +278,8 @@ def test_get_extents_from_wavefields_empty_wavefields():
         )
 
 
-def test_extract_survey():
+def test_extract_survey() -> None:
+    """Test extract_survey function."""
     nx = (8, 9)
     models = [
         torch.arange(nx[0] * nx[1]).reshape(nx).float(),
@@ -331,8 +341,8 @@ def test_extract_survey():
     # will be subtracted from the locations, and the padding for the
     # beginning of each dimension will be added (4 for y, 2 for x).
     # The locations will then be converted to 1D indices. The nx used
-    # to convert to 1D will be the length of the extent in x (9) plus the padding (2 + 1),
-    # so 12.
+    # to convert to 1D will be the length of the extent in x (9) plus the
+    # padding (2 + 1), so 12.
     locations_2d = (
         source_locations[0] - torch.Tensor([1, 0]).long() + torch.Tensor([4, 2]).long()
     )
@@ -346,10 +356,10 @@ def test_extract_survey():
 
     wavefields = [torch.zeros(3, 4 + 5, 6 + 1)]
     origin = [2, 3]
-    # The extent from the origin and wavefields should be y in [2, 2+9-3-2=6), x in [3, 3+7-1=9),
-    # but from the locations and survey_pad it should be y in [1, 5], x in [0, 12]. This
-    # sort of conflict is why specifying both survey_pad and origin is not allowed and
-    # should raise an error.
+    # The extent from the origin and wavefields should be y in [2, 2+9-3-2=6),
+    # x in [3, 3+7-1=9), but from the locations and survey_pad it should be
+    # y in [1, 5], x in [0, 12]. This sort of conflict is why specifying both
+    # survey_pad and origin is not allowed and should raise an error.
     with pytest.raises(RuntimeError):
         out = deepwave.common.extract_survey(
             models,
@@ -399,7 +409,8 @@ def test_extract_survey():
             mode="replicate",
         ),
     )
-    # The nx for the 1D index conversion should be (given x range from 3 to 8, padding of 3) 9.
+    # The nx for the 1D index conversion should be (given x range from 3 to 8,
+    # padding of 3) 9.
     locations_2d = (
         source_locations[0] - torch.Tensor([2, 3]).long() + torch.Tensor([4, 2]).long()
     )
@@ -412,7 +423,8 @@ def test_extract_survey():
     assert torch.allclose(out[2][0], locations_2d[..., 0] * 9 + locations_2d[..., 1])
 
 
-def test_extract_survey_zero_n_batch():
+def test_extract_survey_zero_n_batch() -> None:
+    """Test extract_survey with zero n_batch."""
     nx = (8, 9)
     models = [
         torch.arange(nx[0] * nx[1]).reshape(nx).float(),
@@ -452,7 +464,8 @@ def test_extract_survey_zero_n_batch():
     assert out[3][0].shape[0] == 0
 
 
-def test_check_extents_match_wavefields_shape():
+def test_check_extents_match_wavefields_shape() -> None:
+    """Test check_extents_match_wavefields_shape with valid inputs."""
     survey_extents = [(2, 5), (6, 9)]
     pad = [0, 1, 2, 3]
     # Wavefields are None, so all extents match
@@ -490,6 +503,7 @@ def test_check_extents_match_wavefields_shape():
 
 
 def test_check_extents_match_wavefields_shape_incorrect_extents_length():
+    """Test check_extents_match_wavefields_shape with incorrect extents length."""
     survey_extents = [(2, 5)]  # Should be 2 elements for 2D
     pad = [0, 1, 2, 3]
     wavefields = [None, torch.zeros(2, 4, 8)]
@@ -502,6 +516,7 @@ def test_check_extents_match_wavefields_shape_incorrect_extents_length():
 
 
 def test_check_extents_match_wavefields_shape_incorrect_pad_length():
+    """Test check_extents_match_wavefields_shape with incorrect pad length."""
     survey_extents = [(2, 5), (6, 9)]
     pad = [0, 1, 2]  # Should be 4 elements for 2D
     wavefields = [None, torch.zeros(2, 4, 8)]
@@ -514,6 +529,7 @@ def test_check_extents_match_wavefields_shape_incorrect_pad_length():
 
 
 def test_check_extents_match_wavefields_shape_empty_wavefields():
+    """Test check_extents_match_wavefields_shape with empty wavefields."""
     survey_extents = [(2, 5), (6, 9)]
     pad = [0, 1, 2, 3]
     wavefields = []

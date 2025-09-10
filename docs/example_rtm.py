@@ -1,6 +1,8 @@
-"""This script demonstrates Reverse-Time Migration (RTM) using Deepwave,
-focusing on memory reduction by accumulating gradients over batches.
-It also shows how to use a tapered mute to attenuate direct arrivals.
+"""Demonstrates Reverse-Time Migration (RTM) using Deepwave.
+
+This script focuses on memory reduction by accumulating gradients over
+batches. It also shows how to use a tapered mute to attenuate direct
+arrivals.
 """
 
 import math
@@ -16,7 +18,9 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 ny_full = 2301
 nx_full = 751
 dx_full = 4.0
-v = torch.from_file("marmousi_vp.bin", size=ny_full * nx_full).reshape(ny_full, nx_full)
+v = torch.from_file("marmousi_vp.bin", size=ny_full * nx_full).reshape(
+    ny_full, nx_full
+)
 
 # Smooth to use as migration model
 v_mig = torch.tensor(1 / gaussian_filter(1 / v.numpy(), 40))
@@ -75,7 +79,9 @@ source_amplitudes = (
 
 # Load observed data
 observed_data = (
-    torch.from_file("marmousi_data.bin", size=n_shots * n_receivers_per_shot * nt)
+    torch.from_file(
+        "marmousi_data.bin", size=n_shots * n_receivers_per_shot * nt
+    )
     .reshape(n_shots, n_receivers_per_shot, nt)
     .to(device)
 )
@@ -102,14 +108,25 @@ for shot_idx in range(n_shots):
             continue
         actual_mute_start = max(mute_start, 0)
         actual_mute_end = min(mute_end, nt)
-        mask[shot_idx, receiver_idx, actual_mute_start:actual_mute_end] = mute[
-            actual_mute_start - mute_start : actual_mute_end - mute_start
-        ]
+        mask[shot_idx, receiver_idx, actual_mute_start:actual_mute_end] = (
+            mute[
+                actual_mute_start - mute_start : actual_mute_end
+                - mute_start
+            ]
+        )
 observed_scatter_masked = observed_data * mask
 
-vmin, vmax = torch.quantile(observed_data[0], torch.tensor([0.05, 0.95]).to(device))
+vmin, vmax = torch.quantile(
+    observed_data[0], torch.tensor([0.05, 0.95]).to(device)
+)
 _, ax = plt.subplots(1, 3, figsize=(10.5, 3.5), sharex=True, sharey=True)
-ax[0].imshow(observed_data[0].cpu().T, aspect="auto", cmap="gray", vmin=vmin, vmax=vmax)
+ax[0].imshow(
+    observed_data[0].cpu().T,
+    aspect="auto",
+    cmap="gray",
+    vmin=vmin,
+    vmax=vmax,
+)
 ax[0].set_title("Observed")
 ax[1].imshow(mask[0].cpu().T, aspect="auto", cmap="gray")
 ax[1].set_title("Mask")
@@ -136,7 +153,7 @@ loss_fn = torch.nn.MSELoss()
 n_epochs = 1
 n_batch = 46  # The number of batches to use
 n_shots_per_batch = (n_shots + n_batch - 1) // n_batch
-for epoch in range(n_epochs):
+for _epoch in range(n_epochs):
     epoch_loss = 0
     optimiser.zero_grad()
     for batch in range(n_batch):
@@ -162,9 +179,17 @@ for epoch in range(n_epochs):
     optimiser.step()
 
 # Plot
-vmin, vmax = torch.quantile(scatter.detach(), torch.tensor([0.05, 0.95]).to(device))
+vmin, vmax = torch.quantile(
+    scatter.detach(), torch.tensor([0.05, 0.95]).to(device)
+)
 plt.figure(figsize=(10.5, 3.5))
-plt.imshow(scatter.detach().cpu().T, aspect="auto", cmap="gray", vmin=vmin, vmax=vmax)
+plt.imshow(
+    scatter.detach().cpu().T,
+    aspect="auto",
+    cmap="gray",
+    vmin=vmin,
+    vmax=vmax,
+)
 plt.savefig("example_rtm.jpg")
 
 scatter.detach().cpu().numpy().tofile("marmousi_scatter.bin")

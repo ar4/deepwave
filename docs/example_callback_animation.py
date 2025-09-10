@@ -1,14 +1,17 @@
-"""This script demonstrates the use of callbacks to create an animation of
-wave propagation and gradient formation during Reverse-Time Migration (RTM).
+"""Demonstrates callbacks for recording snapshots.
+
+This script records snapshots of the forward and backward propagated
+wavefields, and the velocity gradient, and creates an animation of them.
 """
 
-import torch
-import deepwave
 import matplotlib
+import torch
+
+import deepwave
 
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 import matplotlib.animation as animation
+import matplotlib.pyplot as plt
 
 # Set device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -27,9 +30,13 @@ peak_time = 1.5 / freq
 
 # Set up the source and receiver
 source_amplitudes = (
-    deepwave.wavelets.ricker(freq, nt, dt, peak_time).reshape(1, 1, -1).to(device)
+    deepwave.wavelets.ricker(freq, nt, dt, peak_time)
+    .reshape(1, 1, -1)
+    .to(device)
 )
-source_locations = torch.tensor([[[0, nx // 2]]], dtype=torch.long, device=device)
+source_locations = torch.tensor(
+    [[[0, nx // 2]]], dtype=torch.long, device=device
+)
 receiver_locations = torch.zeros(1, nx, 2, dtype=torch.long, device=device)
 receiver_locations[0, :, 0] = 0
 receiver_locations[0, :, 1] = torch.arange(nx)
@@ -59,7 +66,10 @@ gradient_snapshots = torch.zeros(nt // callback_frequency, ny, nx)
 
 # A callable class, just to show how it is done
 class ForwardCallback:
+    """A callable class to store snapshots during forward propagation."""
+
     def __init__(self):
+        """Initialises the ForwardCallback."""
         self.step = 0  # Forward propagation starts at time step 0
 
     def __call__(self, state):
@@ -81,8 +91,12 @@ class ForwardCallback:
 def backward_callback(state):
     """A function called during the backward pass."""
     # We use [0] to select the first shot in the batch
-    backward_snapshots[state.step] = state.get_wavefield("wavefield_0")[0].cpu().clone()
-    gradient_snapshots[state.step] = state.get_gradient("v")[0].cpu().clone()
+    backward_snapshots[state.step] = (
+        state.get_wavefield("wavefield_0")[0].cpu().clone()
+    )
+    gradient_snapshots[state.step] = (
+        state.get_gradient("v")[0].cpu().clone()
+    )
 
 
 # Run the propagation
@@ -141,6 +155,7 @@ for ax in axes:
 
 
 def init():
+    """Initialises the animation."""
     im1.set_data(forward_snapshots[-1])
     im2.set_data(backward_snapshots[-1])
     im3.set_data(gradient_snapshots[-1])
@@ -148,6 +163,7 @@ def init():
 
 
 def update(frame):
+    """Updates the animation for each frame."""
     # Plot frames backwards in time
     idx = len(backward_snapshots) - 1 - frame
     im1.set_data(forward_snapshots[idx])
@@ -159,7 +175,12 @@ def update(frame):
 
 
 ani = animation.FuncAnimation(
-    fig, update, frames=len(backward_snapshots), init_func=init, interval=10, blit=True
+    fig,
+    update,
+    frames=len(backward_snapshots),
+    init_func=init,
+    interval=10,
+    blit=True,
 )
 
 ani.save("example_callback_animation.gif", writer="pillow")

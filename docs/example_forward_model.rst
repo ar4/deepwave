@@ -1,7 +1,7 @@
 Forward modelling with Marmousi velocity model
 ==============================================
 
-In this example we will load the Marmousi 1 Vp model, specify source and receiver locations, and then use Deepwave to perform forward modelling, propagating the sources through the model to generate synthetic receiver data.
+In this example we will load the Marmousi 1 Vp (P-wave velocity) model, specify source and receiver locations, and then use Deepwave to perform forward modelling, propagating the sources through the model to generate synthetic receiver data.
 
 First, we need to import the necessary packages::
 
@@ -98,6 +98,6 @@ Finally, we will plot one common shot gather and one common receiver gather of t
 
 .. image:: example_forward_model.jpg
 
-We did not need to use them in this case, but if the output receiver amplitudes contain undesirable wraparound artifacts (where high amplitudes at the end of a trace cause artifacts at the beginning of the trace) then the Deepwave propagator options `freq_taper_frac` and `time_pad_frac` should be helpful. You can read more about them in the :doc:`usage` section.
+We did not need to use them in this case, but if the output receiver amplitudes contain undesirable wraparound artefacts (where high amplitudes at the end of a trace cause artefacts at the beginning of the trace) then the Deepwave propagator options `freq_taper_frac` and `time_pad_frac` should be helpful. You can read more about them in the :doc:`usage` section.
 
 `Full example code <https://github.com/ar4/deepwave/blob/master/docs/example_forward_model.py>`_

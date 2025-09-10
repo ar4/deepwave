@@ -1,11 +1,16 @@
-"""This script demonstrates the use of callbacks to implement a
-custom imaging condition (illumination compensation).
+"""Demonstrates callbacks for custom imaging condition (illumination comp.).
+
+The script uses Deepwave's callback feature to record source-side
+illumination during forward propagation and to divide the velocity
+gradient by the illumination during backward propagation to implement
+a simple illumination compensation.
 """
 
+import matplotlib.pyplot as plt
 import torch
 from scipy.ndimage import gaussian_filter
+
 import deepwave
-import matplotlib.pyplot as plt
 
 # Set device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -33,7 +38,9 @@ nt = 500
 peak_time = 1.5 / freq
 
 # Smooth to use as starting model
-v = torch.tensor(1 / gaussian_filter(1 / v_true.numpy(), 40)).to(device)
+v = torch.tensor(1 / gaussian_filter(1 / v_true.cpu().numpy(), 40)).to(
+    device
+)
 v.requires_grad_()
 
 # source_locations
@@ -56,7 +63,9 @@ receiver_locations = torch.zeros(
     device=device,
 )
 receiver_locations[..., 0] = receiver_depth
-receiver_locations[:, :, 1] = (torch.arange(n_receivers_per_shot)).repeat(n_shots, 1)
+receiver_locations[:, :, 1] = (torch.arange(n_receivers_per_shot)).repeat(
+    n_shots, 1
+)
 
 # source_amplitudes
 source_amplitudes = (
@@ -95,6 +104,7 @@ illumination = None
 
 
 def forward_callback(state):
+    """Callback function for the forward pass to calculate illumination."""
     global illumination
     if illumination is None:
         illumination = (
@@ -107,6 +117,7 @@ def forward_callback(state):
 
 
 def backward_callback(state):
+    """Applies illumination compensation during the backward pass."""
     if state.step == 0:
         gradient = state.get_gradient("v", view="full")
         gradient /= illumination + 1e-3 * illumination.max()

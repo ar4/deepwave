@@ -51,7 +51,7 @@ def _get_hicks_for_one_location_dim(
         or not all(isinstance(f, (int, float)) for f in free_surface_loc)
     ):
         raise RuntimeError("extent must be a list of two floats.")
-    if size <= 0:
+    if (free_surface[0] or free_surface[1]) and size <= 0:
         raise RuntimeError("n_grid_points must be positive.")
     if monopole and abs(location - round(location)) < eps:
         locations = torch.tensor([location]).round().long().to(beta.device)

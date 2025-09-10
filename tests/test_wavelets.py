@@ -1,3 +1,5 @@
+"""Tests for deepwave.wavelets."""
+
 import math
 
 import pytest
@@ -6,7 +8,8 @@ import torch
 from deepwave.wavelets import ricker
 
 
-def test_ricker_basic_functionality():
+def test_ricker_basic_functionality() -> None:
+    """Test the basic functionality of the ricker wavelet generation."""
     freq = 25
     length = 100
     dt = 0.001
@@ -26,7 +29,8 @@ def test_ricker_basic_functionality():
     assert torch.isclose(wavelet[-1], torch.tensor(0.0), atol=1e-4)  # Increased atol
 
 
-def test_ricker_different_freq():
+def test_ricker_different_freq() -> None:
+    """Test ricker wavelet generation with different frequencies."""
     length = 100
     dt = 0.001
     peak_time = 0.05
@@ -42,7 +46,8 @@ def test_ricker_different_freq():
     assert abs(wavelet_high_freq[40]) < abs(wavelet_low_freq[40])
 
 
-def test_ricker_different_length():
+def test_ricker_different_length() -> None:
+    """Test ricker wavelet generation with different lengths."""
     freq = 25
     dt = 0.001
 
@@ -55,7 +60,8 @@ def test_ricker_different_length():
     assert torch.isclose(wavelet_long[50], torch.tensor(1.0))
 
 
-def test_ricker_different_dt():
+def test_ricker_different_dt() -> None:
+    """Test ricker wavelet generation with different time steps (dt)."""
     freq = 25
     length = 100
 
@@ -67,7 +73,8 @@ def test_ricker_different_dt():
     assert torch.isclose(wavelet_large_dt[25], torch.tensor(1.0))  # 0.05 / 0.002 = 25
 
 
-def test_ricker_different_peak_time():
+def test_ricker_different_peak_time() -> None:
+    """Test ricker wavelet generation with different peak times."""
     freq = 25
     length = 100
     dt = 0.001
@@ -79,7 +86,8 @@ def test_ricker_different_peak_time():
     assert torch.isclose(wavelet_late_peak[80], torch.tensor(1.0))  # 0.08 / 0.001 = 80
 
 
-def test_ricker_different_dtype():
+def test_ricker_different_dtype() -> None:
+    """Test ricker wavelet generation with different dtypes."""
     freq = 25
     length = 100
     dt = 0.001
@@ -94,7 +102,8 @@ def test_ricker_different_dtype():
     assert torch.isclose(wavelet_float64[50], torch.tensor(1.0, dtype=torch.float64))
 
 
-def test_ricker_length_one():
+def test_ricker_length_one() -> None:
+    """Test ricker wavelet generation with a length of one."""
     freq = 25
     length = 1
     dt = 0.001
@@ -110,7 +119,8 @@ def test_ricker_length_one():
     assert torch.isclose(wavelet[0], expected_val[0])
 
 
-def test_ricker_freq_zero():
+def test_ricker_freq_zero() -> None:
+    """Test ricker wavelet generation when frequency is zero."""
     # Ricker wavelet formula becomes 1 * exp(0) = 1 when freq is 0
     freq = 0
     length = 10
@@ -121,7 +131,8 @@ def test_ricker_freq_zero():
     assert torch.allclose(wavelet, torch.ones(length))
 
 
-def test_ricker_dt_zero_raises_error():
+def test_ricker_dt_zero_raises_error() -> None:
+    """Test that ricker raises an error when dt is zero."""
     freq = 25
     length = 10
     dt = 0  # dt cannot be zero

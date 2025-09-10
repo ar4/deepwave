@@ -1,6 +1,7 @@
-"""This script demonstrates the phenomenon of large gradients at the edges
-of the model in Deepwave and provides solutions, including using a free
-surface and applying a smoothing function to the model.
+"""Demonstrates large gradients at model edges and provides solutions.
+
+This script shows that using a free surface and applying a smoothing
+function to the model can mitigate these large gradients.
 """
 
 import matplotlib.pyplot as plt
@@ -18,7 +19,9 @@ dx = 4
 ny_model = 50
 nx_model = 100
 
-source_amplitudes = deepwave.wavelets.ricker(freq, nt, dt, peak_time).reshape(1, 1, -1)
+source_amplitudes = deepwave.wavelets.ricker(
+    freq, nt, dt, peak_time
+).reshape(1, 1, -1)
 source_locations = torch.tensor([[[0, 10]]])
 receiver_locations = torch.tensor([[[0, 90]]])
 
@@ -102,7 +105,9 @@ out_true = deepwave.scalar(
 )[-1]
 
 # Smooth model
-v_smooth = torchvision.transforms.functional.gaussian_blur(v[None], [11, 11]).squeeze()
+v_smooth = torchvision.transforms.functional.gaussian_blur(
+    v[None], [11, 11]
+).squeeze()
 
 out = deepwave.scalar(
     v_smooth,  # <-- Pass smoothed model to Deepwave
@@ -123,7 +128,9 @@ plt.savefig("example_large_edge_gradient3.jpg")
 # Apply gradient and forward through smoothing
 optimiser = torch.optim.SGD([v], lr=1e9)
 optimiser.step()
-v_smooth = torchvision.transforms.functional.gaussian_blur(v[None], [11, 11]).squeeze()
+v_smooth = torchvision.transforms.functional.gaussian_blur(
+    v[None], [11, 11]
+).squeeze()
 
 plt.figure(figsize=(10.5, 5))
 plt.imshow(v_smooth.detach())

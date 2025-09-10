@@ -1,3 +1,5 @@
+"""Demonstrates elastic propagation with different source types."""
+
 import matplotlib.pyplot as plt
 import torch
 
@@ -21,7 +23,9 @@ peak_time = 1.5 / freq
 
 # source_amplitudes
 source_amplitudes = (
-    (deepwave.wavelets.ricker(freq, nt, dt, peak_time)).reshape(1, 1, -1).to(device)
+    (deepwave.wavelets.ricker(freq, nt, dt, peak_time))
+    .reshape(1, 1, -1)
+    .to(device)
 )
 
 # single body forces in y and x dimensions

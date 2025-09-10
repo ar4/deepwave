@@ -1,6 +1,9 @@
-"""This script demonstrates optimizing source amplitudes to match a target
-final wavefield using Deepwave. It also shows how to save wavefield
-snapshots for animation.
+"""Demonstrates optimizing source amplitudes to match a target wavefield.
+
+This script optimises source amplitudes to minimise the difference between
+the final wavefield and a target wavefield. This shows that optimization
+can involve any of the inputs and outputs, not just the usual task of
+adjusting the velocity model to match the receiver data.
 """
 
 import torch
@@ -19,7 +22,9 @@ n_sources_per_shot = 400
 freq = 25
 peak_time = 1.5 / freq
 target = (
-    torchvision.io.read_image("target.jpg", torchvision.io.ImageReadMode.GRAY).float()
+    torchvision.io.read_image(
+        "target.jpg", torchvision.io.ImageReadMode.GRAY
+    ).float()
     / 255
 )
 target = (target[0] - target.mean()).to(device)
@@ -38,7 +43,10 @@ torch.manual_seed(1)
 grid_cells = torch.cartesian_prod(torch.arange(ny), torch.arange(nx))
 source_cell_idxs = torch.randperm(len(grid_cells))[:n_sources_per_shot]
 source_locations = (
-    grid_cells[source_cell_idxs].reshape(1, n_sources_per_shot, 2).long().to(device)
+    grid_cells[source_cell_idxs]
+    .reshape(1, n_sources_per_shot, 2)
+    .long()
+    .to(device)
 )
 
 # source_amplitudes
@@ -54,6 +62,7 @@ loss_fn = torch.nn.MSELoss()
 
 
 def closure():
+    """Closure function for the LBFGS optimiser."""
     optimiser.zero_grad()
     out = deepwave.scalar(
         v,
@@ -69,18 +78,21 @@ def closure():
     return loss.item()
 
 
-for i in range(50):
+for _i in range(50):
     optimiser.step(closure)
 
 (source_amplitudes.detach().cpu().numpy().tofile("source_amplitudes.bin"))
 
-target_abs_max = target.abs().max()
+target_abs_max = target.abs().max().item()
 
 
 def forward_callback(state):
     """A function called during the forward pass."""
     # Scale the wavefield to be between 0 and 1 and save as an image
-    val = state.get_wavefield("wavefield_0")[0].cpu() / target_abs_max / 2 + 0.5
+    val = (
+        state.get_wavefield("wavefield_0")[0].cpu() / target_abs_max / 2
+        + 0.5
+    )
     torchvision.utils.save_image(val, f"wavefield_{state.step:03d}.jpg")
 
 
@@ -97,16 +109,19 @@ deepwave.scalar(
 
 # Alternative method of saving snapshots
 # We want to save every time step, so we will create a loop over time steps.
-# When we call the wave propagator, we only want it to advance by one time step.
+# When we call the wave propagator, we only want it to advance by
+# one time step.
 # We can achieve this by calling the propagator with each time sample of the
 # source amplitudes. As we discussed in the checkpointing example, however,
-# that might not give us exactly the result that we want due to upscaling within
-# Deepwave to obey the CFL condition. We therefore perform the upscaling
-# ourselves and then call the propagator with chunks of the upscaled source
-# amplitudes that correspond to one pre-upsampling time step.
+# that might not give us exactly the result that we want due to
+# upscaling within Deepwave to obey the CFL condition. We therefore perform
+# the upscaling ourselves and then call the propagator with chunks of the
+# upscaled source amplitudes that correspond to one pre-upsampling time
+# step.
 #
 # dt, step_ratio = deepwave.common.cfl_condition(dx, dx, dt, 2000)
-# source_amplitudes = deepwave.common.upsample(source_amplitudes.detach(), step_ratio)
+# source_amplitudes = deepwave.common.upsample(source_amplitudes.detach(),
+# step_ratio)
 #
 # for i in range(nt):
 #    chunk = source_amplitudes[..., i * step_ratio : (i + 1) * step_ratio]

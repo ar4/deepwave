@@ -1,5 +1,9 @@
-"""This script demonstrates joint migration inversion using Deepwave,
-where both the velocity model and the scattering potential are inverted simultaneously.
+"""Demonstrates joint migration inversion using Deepwave.
+
+Both the velocity model and the scattering potential are inverted
+simultaneously.
+
+*** NOTE: This example does not currently seem to be working correctly. ***
 """
 
 import matplotlib.pyplot as plt
@@ -14,7 +18,9 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 ny_full = 2301
 nx_full = 751
 dx = 4.0
-v_true_full = torch.from_file("marmousi_vp.bin", size=ny_full * nx_full).reshape(
+v_true_full = torch.from_file(
+    "marmousi_vp.bin", size=ny_full * nx_full
+).reshape(
     ny_full,
     nx_full,
 )
@@ -25,40 +31,42 @@ nx = 250
 v_true = v_true_full[:ny, :nx]
 
 # Smooth to use as starting model
-v_init = torch.tensor(1 / gaussian_filter(1 / v_true.numpy(), 40)).to(device)
+v_init = torch.tensor(1 / gaussian_filter(1 / v_true.numpy(), 40)).to(
+    device
+)
 v = v_init.clone()
 v.requires_grad_()
 
-n_shots = 115
+n_shots_full = 115
 
 n_sources_per_shot = 1
 d_source = 20  # 20 * 4m = 80m
 first_source = 10  # 10 * 4m = 40m
 source_depth = 2  # 2 * 4m = 8m
 
-n_receivers_per_shot = 384
+n_receivers_per_shot_full = 384
 d_receiver = 6  # 6 * 4m = 24m
 first_receiver = 0  # 0 * 4m = 0m
 receiver_depth = 2  # 2 * 4m = 8m
 
 freq = 25
-nt = 750
+nt_full = 750
 dt = 0.004
 peak_time = 1.5 / freq
 
-observed_data = torch.from_file(
+observed_data_full = torch.from_file(
     "marmousi_data.bin",
-    size=n_shots * n_receivers_per_shot * nt,
-).reshape(n_shots, n_receivers_per_shot, nt)
+    size=n_shots_full * n_receivers_per_shot_full * nt_full,
+).reshape(n_shots_full, n_receivers_per_shot_full, nt_full)
 
 # Select portion of data for inversion
-n_shots_subset = 20
-n_receivers_per_shot_subset = 100
-nt_subset = 300
-observed_data = observed_data[
-    :n_shots_subset,
-    :n_receivers_per_shot_subset,
-    :nt_subset,
+n_shots = 20
+n_receivers_per_shot = 100
+nt = 300
+observed_data = observed_data_full[
+    :n_shots,
+    :n_receivers_per_shot,
+    :nt,
 ].to(device)
 
 # source_locations
@@ -103,6 +111,7 @@ n_epochs = 14
 
 
 def closure():
+    """Closure function for the LBFGS optimiser."""
     optimiser.zero_grad()
     # Remove high wavenumbers from the velocity model
     v_smooth = torchvision.transforms.functional.gaussian_blur(
@@ -133,8 +142,8 @@ def closure():
     return loss.item()
 
 
-for epoch in range(n_epochs):
-    print(epoch)
+for _epoch in range(n_epochs):
+    print(_epoch)
     optimiser.step(closure)
 
 v_smooth = torchvision.transforms.functional.gaussian_blur(
@@ -153,13 +162,19 @@ vmin = v_true.min()
 vmax = v_true.max()
 smin, smax = torch.quantile(scatter_sharp, torch.tensor([0.02, 0.98]))
 _, ax = plt.subplots(4, figsize=(10.5, 12.5), sharex=True, sharey=True)
-ax[0].imshow(v_init.cpu().T, aspect="auto", cmap="gray", vmin=vmin, vmax=vmax)
+ax[0].imshow(
+    v_init.cpu().T, aspect="auto", cmap="gray", vmin=vmin, vmax=vmax
+)
 ax[0].set_title("Initial")
 ax[1].imshow(v_smooth.T, aspect="auto", cmap="gray", vmin=vmin, vmax=vmax)
 ax[1].set_title("Out velocity")
-ax[2].imshow(scatter_sharp.T, aspect="auto", cmap="gray", vmin=smin, vmax=smax)
+ax[2].imshow(
+    scatter_sharp.T, aspect="auto", cmap="gray", vmin=smin, vmax=smax
+)
 ax[2].set_title("Out scatter")
-ax[3].imshow(v_true.cpu().T, aspect="auto", cmap="gray", vmin=vmin, vmax=vmax)
+ax[3].imshow(
+    v_true.cpu().T, aspect="auto", cmap="gray", vmin=vmin, vmax=vmax
+)
 ax[3].set_title("True")
 plt.tight_layout()
 plt.savefig("example_joint_migration_inversion.jpg")

@@ -1,3 +1,5 @@
+"""Tests for deepwave.location_interpolation."""
+
 import pytest
 import torch
 from test_utils import direct_2d_approx
@@ -6,30 +8,35 @@ import deepwave
 from deepwave.location_interpolation import Hicks, _get_hicks_for_one_location_dim
 
 
-def test_hicks_init_invalid_locations_type():
+def test_hicks_init_invalid_locations_type() -> None:
+    """Test that Hicks.__init__ raises TypeError if locations is not a tensor."""
     with pytest.raises(TypeError, match="locations must be a torch.Tensor."):
         Hicks([1, 2, 3])
 
 
-def test_hicks_init_invalid_locations_ndim():
+def test_hicks_init_invalid_locations_ndim() -> None:
+    """Test raises if locations does not have three dimensions."""
     locations = torch.randn(10, 2)  # Should be 3D
     with pytest.raises(RuntimeError, match="locations must have three dimensions."):
         Hicks(locations)
 
 
-def test_hicks_init_zero_batch_size():
+def test_hicks_init_zero_batch_size() -> None:
+    """Test that Hicks.__init__ handles zero batch size."""
     locations = torch.randn(0, 10, 2)
     hicks = Hicks(locations)
     assert hicks.locations.shape[0] == 0
 
 
-def test_hicks_init_zero_sources_per_shot():
+def test_hicks_init_zero_sources_per_shot() -> None:
+    """Test that Hicks.__init__ handles zero sources per shot."""
     locations = torch.randn(10, 0, 2)
     hicks = Hicks(locations)
     assert hicks.locations.shape[1] == 0
 
 
-def test_hicks_init_invalid_dtype():
+def test_hicks_init_invalid_dtype() -> None:
+    """Test that Hicks.__init__ raises TypeError if dtype is not a torch.dtype."""
     locations = torch.randn(10, 10, 2)
     with pytest.raises(TypeError, match="dtype must be a torch.dtype."):
         Hicks(locations, dtype="float")
@@ -45,6 +52,7 @@ def test_monopole(
     device=None,
     dtype=torch.double,
 ):
+    """Test monopole source and receiver with Hicks interpolation."""
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     peak_time = 1.5 / freq
@@ -96,6 +104,7 @@ def test_monopole(
 
 
 def test_shot_idxs(n_shots=10, n_per_shot=3, nt=5, device=None, dtype=torch.double):
+    """Test that Hicks handles shot_idxs correctly."""
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     torch.manual_seed(1)
@@ -111,14 +120,16 @@ def test_shot_idxs(n_shots=10, n_per_shot=3, nt=5, device=None, dtype=torch.doub
     assert torch.allclose(hicks_amplitudes_fwd.flip(0), hicks_amplitudes_bwd)
 
 
-def test_hicks_source_invalid_amplitudes_type():
+def test_hicks_source_invalid_amplitudes_type() -> None:
+    """Test that Hicks.source raises TypeError if amplitudes is not a tensor."""
     locations = torch.randn(1, 1, 2)
     hicks = Hicks(locations, model_shape=[100, 100])
     with pytest.raises(TypeError, match="amplitudes must be a torch.Tensor."):
         hicks.source([1, 2, 3])
 
 
-def test_hicks_source_invalid_amplitudes_ndim():
+def test_hicks_source_invalid_amplitudes_ndim() -> None:
+    """Test Hicks.source raises if amplitudes.ndim != 3."""
     locations = torch.randn(1, 1, 2)
     hicks = Hicks(locations, model_shape=[100, 100])
     amplitudes = torch.randn(10)  # Should be 3D
@@ -126,14 +137,16 @@ def test_hicks_source_invalid_amplitudes_ndim():
         hicks.source(amplitudes)
 
 
-def test_hicks_receiver_invalid_amplitudes_type():
+def test_hicks_receiver_invalid_amplitudes_type() -> None:
+    """Test that Hicks.receiver raises TypeError if amplitudes is not a tensor."""
     locations = torch.randn(1, 1, 2)
     hicks = Hicks(locations, model_shape=[100, 100])
     with pytest.raises(TypeError, match="amplitudes must be a torch.Tensor."):
         hicks.receiver([1, 2, 3])
 
 
-def test_hicks_receiver_invalid_amplitudes_ndim():
+def test_hicks_receiver_invalid_amplitudes_ndim() -> None:
+    """Test Hicks.receiver raises if amplitudes.ndim != 3."""
     locations = torch.randn(1, 1, 2)
     hicks = Hicks(locations, model_shape=[100, 100])
     amplitudes = torch.randn(10)  # Should be 3D
@@ -142,6 +155,7 @@ def test_hicks_receiver_invalid_amplitudes_ndim():
 
 
 def test_free_surface_left(halfwidth=8):
+    """Test _get_hicks_for_one_location_dim with free surface on the left."""
     betas = [0.0, 1.84, 3.04, 4.14, 5.26, 6.40, 7.51, 8.56, 9.56, 10.64]
     beta = torch.tensor(betas[halfwidth - 1])
     l0, w0 = _get_hicks_for_one_location_dim(
@@ -175,6 +189,7 @@ def test_free_surface_left(halfwidth=8):
 
 
 def test_free_surface_right(halfwidth=8):
+    """Test _get_hicks_for_one_location_dim with free surface on the right."""
     betas = [0.0, 1.84, 3.04, 4.14, 5.26, 6.40, 7.51, 8.56, 9.56, 10.64]
     beta = torch.tensor(betas[halfwidth - 1])
     l0, w0 = _get_hicks_for_one_location_dim(
@@ -211,6 +226,7 @@ def test_free_surface_right(halfwidth=8):
 
 
 def test_free_surface_shift_left(halfwidth=8):
+    """Test _get_hicks_for_one_location_dim with free surface and shifted left."""
     betas = [0.0, 1.84, 3.04, 4.14, 5.26, 6.40, 7.51, 8.56, 9.56, 10.64]
     beta = torch.tensor(betas[halfwidth - 1])
     l0, w0 = _get_hicks_for_one_location_dim(
@@ -243,6 +259,7 @@ def test_free_surface_shift_left(halfwidth=8):
 
 
 def test_free_surface_shift_right(halfwidth=8):
+    """Test _get_hicks_for_one_location_dim with free surface and shifted right."""
     betas = [0.0, 1.84, 3.04, 4.14, 5.26, 6.40, 7.51, 8.56, 9.56, 10.64]
     beta = torch.tensor(betas[halfwidth - 1])
     l0, w0 = _get_hicks_for_one_location_dim(
@@ -277,7 +294,8 @@ def test_free_surface_shift_right(halfwidth=8):
         )
 
 
-def test_get_hicks_for_one_location_dim_invalid_halfwidth():
+def test_get_hicks_for_one_location_dim_invalid_halfwidth() -> None:
+    """Test _get_hicks_for_one_location_dim with invalid halfwidth."""
     with pytest.raises(RuntimeError, match=r"halfwidth must be in \[1, 10\]"):
         _get_hicks_for_one_location_dim(
             {},
@@ -300,7 +318,8 @@ def test_get_hicks_for_one_location_dim_invalid_halfwidth():
         )
 
 
-def test_get_hicks_for_one_location_dim_invalid_beta():
+def test_get_hicks_for_one_location_dim_invalid_beta() -> None:
+    """Test _get_hicks_for_one_location_dim with invalid beta."""
     with pytest.raises(RuntimeError, match="beta must be non-negative."):
         _get_hicks_for_one_location_dim(
             {},
@@ -313,7 +332,8 @@ def test_get_hicks_for_one_location_dim_invalid_beta():
         )
 
 
-def test_get_hicks_for_one_location_dim_invalid_extent():
+def test_get_hicks_for_one_location_dim_invalid_extent() -> None:
+    """Test _get_hicks_for_one_location_dim with invalid extent."""
     with pytest.raises(RuntimeError, match="extent must be a list of two floats."):
         _get_hicks_for_one_location_dim(
             {},
@@ -346,7 +366,8 @@ def test_get_hicks_for_one_location_dim_invalid_extent():
         )
 
 
-def test_get_hicks_for_one_location_dim_invalid_n_grid_points():
+def test_get_hicks_for_one_location_dim_invalid_n_grid_points() -> None:
+    """Test _get_hicks_for_one_location_dim with invalid n_grid_points."""
     with pytest.raises(RuntimeError, match="n_grid_points must be positive."):
         _get_hicks_for_one_location_dim(
             {},

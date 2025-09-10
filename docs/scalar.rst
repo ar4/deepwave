@@ -59,13 +59,13 @@ Deepwave implements the scalar wave equation in the form:
 
     \nabla^2 u - \frac{1}{c^2}\ddot{u} = f,
 
-where :math:`u` is a scalar field (e.g., pressure) that obeys the wave equation, :math:`c` is the wave speed, and :math:`f` is a scalar source term. Sources are applied at grid cell centers. For instance, if :math:`u` represents pressure (as in :eq:`constant_density_acoustic_wave_equation`), an explosive point source centered on a grid cell corresponds to a single scalar source in :eq:`scalar_wave_equation`.
+where :math:`u` is a scalar field (e.g., pressure) that obeys the wave equation, :math:`c` is the wave speed, and :math:`f` is a scalar source term. Sources are applied at grid cell centres. For instance, if :math:`u` represents pressure (as in :eq:`constant_density_acoustic_wave_equation`), an explosive point source centred on a grid cell corresponds to a single scalar source in :eq:`scalar_wave_equation`.
 
 Deepwave employs central finite differences for both time (second-order accurate) and space (user-specified order of accuracy) to numerically solve this equation within a defined time and space domain.
 
 **Perfectly Matched Layer (PML)**
 
-To prevent unwanted reflections from the spatial boundaries of the computational domain, Deepwave utilizes a `Perfectly Matched Layer (PML) <https://en.wikipedia.org/wiki/Perfectly_matched_layer>`_. For the scalar wave equation, Deepwave adopts the method proposed by `Pasalic and McGarry <https://doi.org/10.1190/1.3513453>`_. In this approach, spatial derivatives are modified within the PML regions:
+To prevent unwanted reflections from the spatial boundaries of the computational domain, Deepwave uses a `Perfectly Matched Layer (PML) <https://en.wikipedia.org/wiki/Perfectly_matched_layer>`_. For the scalar wave equation, Deepwave adopts the method proposed by `Pasalic and McGarry <https://doi.org/10.1190/1.3513453>`_. In this approach, spatial derivatives are modified within the PML regions:
 
 .. math::
     :label: pml_deriv
@@ -121,7 +121,7 @@ To ensure computational efficiency, especially on GPUs where independent calcula
 
     z^t = az^{t-1} + b\left(\frac{\partial^2 u^t}{\partial_x^2} + \frac{\partial p^t}{\partial x}\right)
 
-The direct dependence of :math:`z^t` on the spatial derivative of :math:`p^t` is problematic for parallel computation. Substituting :eq:`p_update` into :eq:`z_update` yields an expression for :math:`z^t` that is more amenable to parallelization:
+The direct dependence of :math:`z^t` on the spatial derivative of :math:`p^t` is problematic for parallel computation. Substituting :eq:`p_update` into :eq:`z_update` yields an expression for :math:`z^t` that is more amenable to parallelisation:
 
 .. math::
     :label: z_update_independent
@@ -157,7 +157,11 @@ Through further rearrangement, each time step can be expressed in a compact matr
     \delta_r & 0 & 0 & 0 & 0
     \end{pmatrix}
     \begin{pmatrix}
-    u^t \n    u^{t-1} \n    z^{t-1} \n    p^{t-1} \n    f^t
+    u^t \\
+    u^{t-1} \\
+    z^{t-1} \\
+    p^{t-1} \\
+    f^t
     \end{pmatrix}
 
 **Output Data**

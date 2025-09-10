@@ -1,7 +1,7 @@
 Matching a target final wavefield
 =================================
 
-In addition to calculating the gradient with respect to the velocity model of a loss function involving the receiver amplitudes, Deepwave can also calculate gradients involving any of the propagation outputs with respect to any of the float tensor inputs. So the Born scalar propagator, for example, supports calculating gradients not only with respect to the scattering potential, but also with respect to the velocity model and source. This can involve multiple inputs and outputs of a propagation simultaneously, so you can calculate the gradient with respect to multiple inputs (say velocity and source amplitudes) of a loss function that involves multiples outputs (such as receiver amplitudes and final wavefield amplitudes).
+In addition to calculating the gradient with respect to the velocity model of a loss function involving the receiver amplitudes, Deepwave can also calculate gradients involving any of the propagation outputs with respect to any of the float tensor inputs. So the Born scalar propagator, for example, supports calculating gradients not only with respect to the scattering potential, but also with respect to the velocity model and source. This can involve multiple inputs and outputs of a propagation simultaneously, so you can calculate the gradient with respect to multiple inputs (say velocity and source amplitudes) of a loss function that involves multiple outputs (such as receiver amplitudes and final wavefield amplitudes).
 
 In previous examples we have seen several demonstrations of typical optimisations of the velocity model or scattering potential to reduce the difference between predicted and observed data. This time, let's optimise source amplitudes to make the final wavefield match a target.
 
@@ -58,7 +58,7 @@ The optimisation loop is then not very dissimilar to earlier examples. We'll set
     for i in range(50):
         optimiser.step(closure)
 
-Lastly, we will save the wave propagation time steps so that we can make them into an animated GIF. The full example code shows two ways of achieving this. The simplest is to use Deepwave's `callback feature <example_callback_animation>`. The other uses the approach discussed in :doc:`the checkpointing example <example_checkpointing>`.
+Lastly, we will save the wave propagation time steps so that we can make them into an animated GIF. The full example code shows two ways of achieving this. The simplest is to use Deepwave's :doc:`callback feature <example_callback_animation>`. The other uses the approach discussed in :doc:`the checkpointing example <example_checkpointing>`.
 
 Using `FFmpeg <https://ffmpeg.org>`_ to join these individual time steps into an animated GIF (although you could use other tools, such as Matplotlib)::
 

@@ -1,7 +1,7 @@
 Deepwave
 ========
 
-Deepwave offers PyTorch-integrated wave propagators, enabling efficient forward modeling and backpropagation for gradient calculation in inversion and optimization tasks. It currently supports 2D standard and Born modeling of the scalar wave equation, alongside propagation with the elastic wave equation, optimized for both CPUs and GPUs.
+Deepwave offers PyTorch-integrated wave propagators, enabling efficient forward modelling and backpropagation for gradient calculation in inversion and optimisation tasks. It currently supports 2D standard and Born modelling of the scalar wave equation, alongside propagation with the elastic wave equation, optimised for both CPUs and GPUs.
 
 Installation
 ------------
@@ -32,7 +32,7 @@ This command forces pip to download and compile the source distribution on your 
 Support
 -------
 
-If you encounter any issues (e.g., typos, broken links, unexpected behavior), or have suggestions for improvement, please `file an issue on GitHub <https://github.com/ar4/deepwave/issues>`_ or `send me an email <mailto:alan@ausargeo.com>`_. Your feedback is highly appreciated.
+If you encounter any issues (e.g., typos, broken links, unexpected behaviour, examples that don't work), or have suggestions for improvement, please `file an issue on GitHub <https://github.com/ar4/deepwave/issues>`_ or `send me an email <mailto:alan@ausargeo.com>`_. Your feedback is highly appreciated.
 
 .. toctree::
    :maxdepth: 2

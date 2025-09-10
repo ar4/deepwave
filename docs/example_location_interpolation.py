@@ -1,6 +1,8 @@
-"""This script demonstrates the Hicks method for location interpolation
-and dipole sources/receivers in Deepwave. It compares the accuracy
-of the Hicks method against simple rounding and a denser grid.
+"""Demonstrates Hicks method for location interp. and dipole sources/rcvrs.
+
+This script shows how to use the Hicks method to accurately model sources
+and receivers not on the grid, and compares the accuracy of the Hicks
+method against simple rounding and a denser grid.
 """
 
 import matplotlib.pyplot as plt
@@ -22,7 +24,9 @@ peak_time = 1.5 / freq
 
 # source_amplitudes
 source_amplitudes = (
-    deepwave.wavelets.ricker(freq, nt, dt, peak_time).repeat(1, 3, 1).to(device)
+    deepwave.wavelets.ricker(freq, nt, dt, peak_time)
+    .repeat(1, 3, 1)
+    .to(device)
 )
 
 # Location interpolation
@@ -95,7 +99,7 @@ out2 = scalar(
     dt,
     source_amplitudes=source_amplitudes,
     source_locations=source_locations.long(),
-    receiver_locations=receiver_locations.long(),
+    receiver_locations=receiver_locations[:, :1].long(),
     pml_freq=freq,
 )
 
@@ -106,7 +110,7 @@ out3 = scalar(
     dt,
     source_amplitudes=source_amplitudes * 4,
     source_locations=(source_locations * 2).long(),
-    receiver_locations=(receiver_locations * 2).long(),
+    receiver_locations=(receiver_locations * 2)[:, :1].long(),
     pml_freq=freq,
 )
 

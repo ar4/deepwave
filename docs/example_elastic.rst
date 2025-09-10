@@ -134,7 +134,8 @@ Another interesting aspect of the elastic wave equation is that it can produce t
 
 .. image:: example_elastic_groundroll.jpg
 
-As discussed in the section on :doc:`elastic propagator implementation <elastic>`, an explosive source can be simulated in Deepwave's elastic propagator with multiple sources oriented away from the explosive source location. Using one source before and after it in both dimensions, we will thus have four sources per shot, two in the x dimension and two in the y dimension. For example, for one shot with an explosive source located at `(35, 35.5)` (the half cell shift in the x dimension is due to the staggered grid) we would use::
+As discussed in the section on :doc:`elastic propagator implementation <elastic>`, an explosive source can be simulated in Deepwave's elastic propagator with multiple sources oriented away from the explosive source location. Using one source before and after it in both dimensions, we will thus have four sources per shot: two in the x dimension and two in the y dimension. For example, for one shot with an explosive source located at `(35, 35.5)` (the half cell shift in the x dimension is due to the staggered grid) we would use::
+
 
     source_locations_y = torch.tensor([[[34, 35], [35, 35]]]).to(device)
     source_locations_x = torch.tensor([[[35, 35], [35, 36]]]).to(device)

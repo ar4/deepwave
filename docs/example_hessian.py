@@ -1,5 +1,7 @@
-"""This script demonstrates how to calculate and use Hessian matrices
-in Deepwave for optimization, specifically using the Newton-Raphson method.
+"""Demonstrates Hessian matrix calculation in Deepwave.
+
+This script shows how to compute the Hessian and use it in a
+Newton-Raphson optimization scheme.
 """
 
 import matplotlib.pyplot as plt
@@ -27,15 +29,23 @@ v_init = torchvision.transforms.functional.gaussian_blur(
 ).squeeze()
 v = v_init.clone().requires_grad_()
 
-source_locations = torch.tensor([[[1, 15]]], dtype=torch.long, device=device)
-source_amplitudes = deepwave.wavelets.ricker(
-    freq,
-    nt,
-    dt,
-    1.3 / freq,
-    dtype=dtype,
-).reshape(1, 1, -1)
-receiver_locations = torch.ones(1, nx - 20, 2, dtype=torch.long, device=device)
+source_locations = torch.tensor(
+    [[[1, 15]]], dtype=torch.long, device=device
+)
+source_amplitudes = (
+    deepwave.wavelets.ricker(
+        freq,
+        nt,
+        dt,
+        1.3 / freq,
+        dtype=dtype,
+    )
+    .reshape(1, 1, -1)
+    .to(device)
+)
+receiver_locations = torch.ones(
+    1, nx - 20, 2, dtype=torch.long, device=device
+)
 receiver_locations[0, :, 1] = torch.arange(10, nx - 10)
 
 d_true = deepwave.scalar(
@@ -53,6 +63,7 @@ loss_fn = torch.nn.MSELoss()
 
 
 def wrap(v):
+    """Wraps the scalar propagation function for Hessian calculation."""
     d = deepwave.scalar(
         v,
         grid_spacing=dx,
@@ -80,16 +91,18 @@ ax[0].imshow(
     vmax=vmax,
 )
 ax[0].set_title("Hessian")
-ax[1].imshow(hess[10, 10].cpu(), aspect="auto", cmap="gray", vmin=-vmax, vmax=vmax)
+ax[1].imshow(
+    hess[10, 10].cpu(), aspect="auto", cmap="gray", vmin=-vmax, vmax=vmax
+)
 ax[1].set_title("Hessian at (10, 10)")
 ax[1].set_xlabel("X")
 ax[1].set_ylabel("Y")
 plt.tight_layout()
 plt.savefig("example_hessian.jpg")
 
-eig0 = eigsh(hess.cpu().numpy().reshape(v.numel(), v.numel()), k=1, which="SA")[
-    0
-].item()
+eig0 = eigsh(
+    hess.cpu().numpy().reshape(v.numel(), v.numel()), k=1, which="SA"
+)[0].item()
 tau = max(-1.5 * eig0, 0)
 L = torch.linalg.cholesky(
     hess.reshape(v.numel(), v.numel())
@@ -107,16 +120,17 @@ ax[0].set_ylabel("Y")
 plt.tight_layout()
 plt.savefig("example_hessian_vs_gradient.jpg")
 
-for epoch in range(3):
+for _epoch in range(3):
     hess = torch.autograd.functional.hessian(wrap, v).detach()
     wrap(v).backward()
     grad = v.grad.detach()
-    eig0 = eigsh(hess.cpu().numpy().reshape(v.numel(), v.numel()), k=1, which="SA")[
-        0
-    ].item()
+    eig0 = eigsh(
+        hess.cpu().numpy().reshape(v.numel(), v.numel()), k=1, which="SA"
+    )[0].item()
     tau = max(-1.5 * eig0, 0)
     L = torch.linalg.cholesky(
-        hess.reshape(v.numel(), v.numel()) + tau * torch.eye(v.numel()),
+        hess.reshape(v.numel(), v.numel())
+        + tau * torch.eye(v.numel(), dtype=v.dtype, device=v.device),
     )
     h = torch.cholesky_solve(grad.reshape(-1, 1).neg(), L).reshape(ny, nx)
     v = (v.detach() + h).requires_grad_()

@@ -1,3 +1,5 @@
+"""Tests for deepwave.staggered_grid."""
+
 from unittest.mock import patch
 
 import pytest
@@ -6,7 +8,8 @@ import torch
 from deepwave.staggered_grid import set_pml_profiles
 
 
-def test_set_pml_profiles_basic_functionality():
+def test_set_pml_profiles_basic_functionality() -> None:
+    """Test set_pml_profiles with basic functionality."""
     pml_width = [10, 10, 10, 10]
     accuracy = 4  # Not used in staggered_grid.set_pml_profiles
     fd_pad = [0, 0, 0, 0]  # Not used in staggered_grid.set_pml_profiles
@@ -135,7 +138,8 @@ def test_set_pml_profiles_basic_functionality():
         assert result[7].shape == (nx,)  # bxh
 
 
-def test_set_pml_profiles_different_pml_width():
+def test_set_pml_profiles_different_pml_width() -> None:
+    """Test set_pml_profiles with different PML widths."""
     pml_width = [20, 5, 15, 0]  # Different widths, one side zero
     accuracy = 2
     fd_pad = [1, 1, 1, 1]
@@ -149,6 +153,7 @@ def test_set_pml_profiles_different_pml_width():
     nx = 150
 
     with patch("deepwave.common.setup_pml") as mock_setup_pml:
+        # Configure mock_setup_pml to return dummy tensors
         mock_setup_pml.side_effect = [
             (
                 torch.ones(ny, dtype=dtype, device=device),
@@ -242,6 +247,7 @@ def test_set_pml_profiles_different_pml_width():
             start=0.5,
         )
 
+        # Assert the return type and shape
         assert isinstance(result, list)
         assert len(result) == 8
         assert all(isinstance(t, torch.Tensor) for t in result)
@@ -252,7 +258,9 @@ def test_set_pml_profiles_different_pml_width():
         assert result[3].shape == (nx,)
 
 
-def test_set_pml_profiles_edge_cases():
+def test_set_pml_profiles_edge_cases() -> None:
+    """Test set_pml_profiles with edge cases (zero PML width)."""
+    # Test with zero pml_width everywhere
     pml_width = [0, 0, 0, 0]
     accuracy = 4
     fd_pad = [0, 0, 0, 0]
@@ -358,12 +366,12 @@ def test_set_pml_profiles_edge_cases():
             start=0.5,
         )
 
-        assert all(torch.all(t == 0) for t in result)
+        assert all(torch.all(t == 0) for t in result)  # All profiles should be zero
 
     # Test with minimal grid size where PML might overlap
     pml_width = [1, 1, 1, 1]
     fd_pad = [0, 0, 0, 0]
-    ny = 2
+    ny = 2  # Minimal size
     nx = 2
 
     with patch("deepwave.common.setup_pml") as mock_setup_pml:

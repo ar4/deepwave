@@ -1,4 +1,5 @@
 target-version = "py38"
+line-length = 88
 
 [lint]
 select = ["E", "F", "W", "I", "N", "D", "UP", "B", "C4", "SIM", "ANN", "A", "BLE", "C90", "DTZ", "ERA", "EXE", "G", "ISC", "PIE", "PT", "PTH", "Q", "RET", "RUF", "S", "TID", "TCH", "YTT", "SLF", "INP"]
@@ -6,3 +7,6 @@ ignore = ["ANN401", "C901"]
 
 [lint.pydocstyle]
 convention = "google"
+
+[lint.per-file-ignores]
+"tests/**.py" = ["ANN", "S101", "PT028", "INP001"]

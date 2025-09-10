@@ -1,6 +1,7 @@
-"""This script demonstrates elastic wave propagation and Full-Waveform Inversion (FWI).
-It shows how to set up elastic models, generate synthetic data, and perform
-inversion for vp, vs, and rho parameters.
+"""Demonstrates elastic wave propagation and Full-Waveform Inversion (FWI).
+
+This script shows how to set up elastic models, generate
+synthetic data, and perform inversion for vp, vs, and rho parameters.
 """
 
 import matplotlib.pyplot as plt
@@ -94,9 +95,10 @@ loss_fn = torch.nn.MSELoss()
 # Run optimisation/inversion
 n_epochs = 20
 
-for epoch in range(n_epochs):
+for _epoch in range(n_epochs):
 
     def closure():
+        """Closure function for the LBFGS optimiser."""
         optimiser.zero_grad()
         out = elastic(
             *deepwave.common.vpvsrho_to_lambmubuoyancy(vp, vs, rho),
@@ -109,7 +111,7 @@ for epoch in range(n_epochs):
         )[-2]
         loss = 1e20 * loss_fn(out, observed_data)
         loss.backward()
-        return loss
+        return loss.item()
 
     optimiser.step(closure)
 
@@ -121,15 +123,25 @@ vsmax = vs_true.max()
 rhomin = rho_true.min()
 rhomax = rho_true.max()
 _, ax = plt.subplots(2, 3, figsize=(10.5, 5.25), sharex=True, sharey=True)
-ax[0, 0].imshow(vp_true.cpu(), aspect="auto", cmap="gray", vmin=vpmin, vmax=vpmax)
+ax[0, 0].imshow(
+    vp_true.cpu(), aspect="auto", cmap="gray", vmin=vpmin, vmax=vpmax
+)
 ax[0, 0].set_title("True vp")
-ax[0, 1].imshow(vs_true.cpu(), aspect="auto", cmap="gray", vmin=vsmin, vmax=vsmax)
+ax[0, 1].imshow(
+    vs_true.cpu(), aspect="auto", cmap="gray", vmin=vsmin, vmax=vsmax
+)
 ax[0, 1].set_title("True vs")
-ax[0, 2].imshow(rho_true.cpu(), aspect="auto", cmap="gray", vmin=rhomin, vmax=rhomax)
+ax[0, 2].imshow(
+    rho_true.cpu(), aspect="auto", cmap="gray", vmin=rhomin, vmax=rhomax
+)
 ax[0, 2].set_title("True rho")
-ax[1, 0].imshow(vp.detach().cpu(), aspect="auto", cmap="gray", vmin=vpmin, vmax=vpmax)
+ax[1, 0].imshow(
+    vp.detach().cpu(), aspect="auto", cmap="gray", vmin=vpmin, vmax=vpmax
+)
 ax[1, 0].set_title("Out vp")
-ax[1, 1].imshow(vs.detach().cpu(), aspect="auto", cmap="gray", vmin=vsmin, vmax=vsmax)
+ax[1, 1].imshow(
+    vs.detach().cpu(), aspect="auto", cmap="gray", vmin=vsmin, vmax=vsmax
+)
 ax[1, 1].set_title("Out vs")
 ax[1, 2].imshow(
     rho.detach().cpu(),

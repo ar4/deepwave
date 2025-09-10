@@ -53,7 +53,7 @@ This batching also works for backpropagation. When we compute the gradient, a se
 Inversion with a Model-Difference Penalty
 ------------------------------------------
 
-As an example of the kind of idea this feature enables you to implement with Deepwave, we will now apply inversion to a survey, but each shot will have its own velocity model. We will then add a penalty term to the loss function to encourage all of these individual models to converge towards a similar result.
+As an example of the kind of ideas that this feature enables, we will now apply inversion to a survey, but each shot will have its own velocity model. We will then add a penalty term to the loss function to encourage all of these individual models to converge towards a similar result.
 
 First, we create a single "true" model and use it to generate synthetic data for three shots.
 
@@ -73,7 +73,7 @@ The total loss is the sum of these two terms. We also introduce a ``penalty_weig
         # The weight of the penalty term increases with epochs
         penalty_weight = 1e4 * (epoch / (n_epochs - 1)) ** 2
     
-        optimizer.zero_grad()
+        optimiser.zero_grad()
     
         # Forward propagate all shots, each with its own model
         pred_data = deepwave.scalar(
@@ -89,13 +89,13 @@ The total loss is the sum of these two terms. We also introduce a ``penalty_weig
         loss_mse = 1e9 * loss_fn(pred_data, true_data)
     
         # Model difference penalty
-        # Penalize the variance between the models
+        # Penalise the variance between the models
         loss_penalty = torch.pow(v_init - v_init.mean(dim=0), 2).mean()
     
         # Total loss
         loss = loss_mse + penalty_weight * loss_penalty
         loss.backward()
-        optimizer.step()
+        optimiser.step()
 
 The figure below shows the inverted velocity models of the three shots as the inversion progresses, with lower rows corresponding to later epochs. We can see that each model initially only includes contributions from the corresponding shot (since the penalty term for variance across the models is initially zero). After several epochs, the penalty term gets stronger and all three models converge to a similar result.
 

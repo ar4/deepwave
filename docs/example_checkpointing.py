@@ -1,6 +1,8 @@
-"""This script demonstrates how to use PyTorch's checkpointing feature
-with Deepwave to reduce memory consumption during wave propagation,
-at the cost of increased computation.
+"""Demonstrates PyTorch checkpointing to reduce memory usage.
+
+This script performs a simple Full-Waveform Inversion (FWI), using
+PyTorch's checkpointing feature to reduce memory consumption during wave
+propagation, at the cost of increased computation.
 """
 
 import matplotlib.pyplot as plt
@@ -17,7 +19,9 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 ny_full = 2301
 nx_full = 751
 dx = 4.0
-v_true_full = torch.from_file("marmousi_vp.bin", size=ny_full * nx_full).reshape(
+v_true_full = torch.from_file(
+    "marmousi_vp.bin", size=ny_full * nx_full
+).reshape(
     ny_full,
     nx_full,
 )
@@ -57,7 +61,9 @@ observed_data_full = torch.from_file(
 n_shots = 20
 n_receivers_per_shot = 100
 nt = 300
-observed_data = observed_data_full[:n_shots, :n_receivers_per_shot, :nt].to(device)
+observed_data = observed_data_full[:n_shots, :n_receivers_per_shot, :nt].to(
+    device
+)
 
 # source_locations
 source_locations = torch.zeros(
@@ -100,7 +106,16 @@ nt = source_amplitudes.shape[-1]
 
 # Generate a velocity model constrained to be within a desired range
 class Model(torch.nn.Module):
+    """A PyTorch module that represents the velocity model."""
+
     def __init__(self, initial, min_vel, max_vel):
+        """Initialises the Model.
+
+        Args:
+            initial (torch.Tensor): The initial velocity model.
+            min_vel (float): The minimum allowed velocity.
+            max_vel (float): The maximum allowed velocity.
+        """
         super().__init__()
         self.min_vel = min_vel
         self.max_vel = max_vel
@@ -109,13 +124,19 @@ class Model(torch.nn.Module):
         )
 
     def forward(self):
-        return torch.sigmoid(self.model) * (self.max_vel - self.min_vel) + self.min_vel
+        """Performs the forward pass of the model."""
+        return (
+            torch.sigmoid(self.model) * (self.max_vel - self.min_vel)
+            + self.min_vel
+        )
 
 
 model = Model(v_init, 1000, 2500).to(device)
 
 # Setup optimiser to perform inversion
-optimiser = torch.optim.LBFGS(model.parameters(), line_search_fn="strong_wolfe")
+optimiser = torch.optim.LBFGS(
+    model.parameters(), line_search_fn="strong_wolfe"
+)
 loss_fn = torch.nn.MSELoss()
 
 # Run optimisation/inversion
@@ -124,18 +145,32 @@ n_segments = 5
 cutoff_freq = 10
 
 sos = butter(6, cutoff_freq, fs=1 / dt, output="sos")
-sos = [torch.tensor(sosi).to(observed_data.dtype).to(device) for sosi in sos]
+sos = [
+    torch.tensor(sosi).to(observed_data.dtype).to(device) for sosi in sos
+]
 
 
 def taper(x):
+    """Applies a cosine taper to the end of the input tensor."""
     return deepwave.common.cosine_taper_end(x, 600)
 
 
 def filt(x):
+    """Applies a Butterworth filter to the input tensor."""
     return biquad(biquad(biquad(x, *sos[0]), *sos[1]), *sos[2])
 
 
-def wrap(v, chunk, wavefield_0, wavefield_m1, psiy_m1, psix_m1, zetay_m1, zetax_m1):
+def wrap(
+    v,
+    chunk,
+    wavefield_0,
+    wavefield_m1,
+    psiy_m1,
+    psix_m1,
+    zetay_m1,
+    zetax_m1,
+):
+    """Wraps the scalar propagation function for checkpointing."""
     return scalar(
         v,
         dx,
@@ -157,9 +192,10 @@ def wrap(v, chunk, wavefield_0, wavefield_m1, psiy_m1, psix_m1, zetay_m1, zetax_
 
 observed_data = filt(taper(observed_data))
 
-for epoch in range(n_epochs):
+for _epoch in range(n_epochs):
 
     def closure():
+        """Closure function for the LBFGS optimiser."""
         pml_width = 20
         wavefield_size = [n_shots, ny + 2 * pml_width, nx + 2 * pml_width]
         wavefield_0 = torch.zeros(*wavefield_size, device=device)
@@ -177,7 +213,9 @@ for epoch in range(n_epochs):
         )
         v = model()
         k = 0
-        for i, chunk in enumerate(torch.chunk(source_amplitudes, n_segments, dim=-1)):
+        for i, chunk in enumerate(
+            torch.chunk(source_amplitudes, n_segments, dim=-1)
+        ):
             if i == n_segments - 1:
                 (
                     wavefield_0,
@@ -233,11 +271,17 @@ v = model()
 vmin = v_true.min()
 vmax = v_true.max()
 _, ax = plt.subplots(3, figsize=(10.5, 10.5), sharex=True, sharey=True)
-ax[0].imshow(v_init.cpu().T, aspect="auto", cmap="gray", vmin=vmin, vmax=vmax)
+ax[0].imshow(
+    v_init.cpu().T, aspect="auto", cmap="gray", vmin=vmin, vmax=vmax
+)
 ax[0].set_title("Initial")
-ax[1].imshow(v.detach().cpu().T, aspect="auto", cmap="gray", vmin=vmin, vmax=vmax)
+ax[1].imshow(
+    v.detach().cpu().T, aspect="auto", cmap="gray", vmin=vmin, vmax=vmax
+)
 ax[1].set_title("Out")
-ax[2].imshow(v_true.cpu().T, aspect="auto", cmap="gray", vmin=vmin, vmax=vmax)
+ax[2].imshow(
+    v_true.cpu().T, aspect="auto", cmap="gray", vmin=vmin, vmax=vmax
+)
 ax[2].set_title("True")
 plt.tight_layout()
 plt.savefig("example_checkpointing.jpg")

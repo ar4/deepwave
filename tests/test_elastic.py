@@ -1,4 +1,8 @@
+"""Tests for deepwave.elastic."""
+
 import re
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import pytest
 import torch
@@ -20,40 +24,40 @@ DEFAULT_BUOYANCY = 1 / 2200
 
 
 def elasticprop(
-    lamb,
-    mu,
-    buoyancy,
-    dx,
-    dt,
-    source_amplitudes_y,
-    source_amplitudes_x,
-    source_locations_y,
-    source_locations_x,
-    receiver_locations_y,
-    receiver_locations_x,
-    receiver_locations_p,
-    prop_kwargs=None,
-    pml_width=None,
-    survey_pad=None,
-    origin=None,
-    vy0=None,
-    vx0=None,
-    sigmayy0=None,
-    sigmaxy0=None,
-    sigmaxx0=None,
-    m_vyy0=None,
-    m_vyx0=None,
-    m_vxy0=None,
-    m_vxx0=None,
-    m_sigmayyy0=None,
-    m_sigmaxyy0=None,
-    m_sigmaxyx0=None,
-    m_sigmaxxx0=None,
-    nt=None,
-    model_gradient_sampling_interval=1,
-    functional=True,
-):
-    """Wraps the scalar propagator."""
+    lamb: torch.Tensor,
+    mu: torch.Tensor,
+    buoyancy: torch.Tensor,
+    dx: Union[float, List[float]],
+    dt: float,
+    source_amplitudes_y: Optional[torch.Tensor],
+    source_amplitudes_x: Optional[torch.Tensor],
+    source_locations_y: Optional[torch.Tensor],
+    source_locations_x: Optional[torch.Tensor],
+    receiver_locations_y: Optional[torch.Tensor],
+    receiver_locations_x: Optional[torch.Tensor],
+    receiver_locations_p: Optional[torch.Tensor],
+    prop_kwargs: Optional[Dict[str, Any]] = None,
+    pml_width: Optional[Union[int, List[int]]] = None,
+    survey_pad: Optional[Union[int, List[int]]] = None,
+    origin: Optional[List[int]] = None,
+    vy0: Optional[torch.Tensor] = None,
+    vx0: Optional[torch.Tensor] = None,
+    sigmayy0: Optional[torch.Tensor] = None,
+    sigmaxy0: Optional[torch.Tensor] = None,
+    sigmaxx0: Optional[torch.Tensor] = None,
+    m_vyy0: Optional[torch.Tensor] = None,
+    m_vyx0: Optional[torch.Tensor] = None,
+    m_vxy0: Optional[torch.Tensor] = None,
+    m_vxx0: Optional[torch.Tensor] = None,
+    m_sigmayyy0: Optional[torch.Tensor] = None,
+    m_sigmaxyy0: Optional[torch.Tensor] = None,
+    m_sigmaxyx0: Optional[torch.Tensor] = None,
+    m_sigmaxxx0: Optional[torch.Tensor] = None,
+    nt: Optional[int] = None,
+    model_gradient_sampling_interval: int = 1,
+    functional: bool = True,
+) -> Tuple[torch.Tensor, ...]:
+    """Wraps the elastic propagator for testing purposes."""
     if prop_kwargs is None:
         prop_kwargs = {}
     # For consistency when actual max speed changes
@@ -141,41 +145,41 @@ def elasticprop(
 
 
 def elasticpropchained(
-    lamb,
-    mu,
-    buoyancy,
-    dx,
-    dt,
-    source_amplitudes_y,
-    source_amplitudes_x,
-    source_locations_y,
-    source_locations_x,
-    receiver_locations_y,
-    receiver_locations_x,
-    receiver_locations_p,
-    prop_kwargs=None,
-    pml_width=None,
-    survey_pad=None,
-    origin=None,
-    vy0=None,
-    vx0=None,
-    sigmayy0=None,
-    sigmaxy0=None,
-    sigmaxx0=None,
-    m_vyy0=None,
-    m_vyx0=None,
-    m_vxy0=None,
-    m_vxx0=None,
-    m_sigmayyy0=None,
-    m_sigmaxyy0=None,
-    m_sigmaxyx0=None,
-    m_sigmaxxx0=None,
-    nt=None,
-    model_gradient_sampling_interval=1,
-    functional=True,
-    n_chained=2,
-):
-    """Wraps multiple scalar propagators chained sequentially."""
+    lamb: torch.Tensor,
+    mu: torch.Tensor,
+    buoyancy: torch.Tensor,
+    dx: Union[float, List[float]],
+    dt: float,
+    source_amplitudes_y: Optional[torch.Tensor],
+    source_amplitudes_x: Optional[torch.Tensor],
+    source_locations_y: Optional[torch.Tensor],
+    source_locations_x: Optional[torch.Tensor],
+    receiver_locations_y: Optional[torch.Tensor],
+    receiver_locations_x: Optional[torch.Tensor],
+    receiver_locations_p: Optional[torch.Tensor],
+    prop_kwargs: Optional[Dict[str, Any]] = None,
+    pml_width: Optional[Union[int, List[int]]] = None,
+    survey_pad: Optional[Union[int, List[int]]] = None,
+    origin: Optional[List[int]] = None,
+    vy0: Optional[torch.Tensor] = None,
+    vx0: Optional[torch.Tensor] = None,
+    sigmayy0: Optional[torch.Tensor] = None,
+    sigmaxy0: Optional[torch.Tensor] = None,
+    sigmaxx0: Optional[torch.Tensor] = None,
+    m_vyy0: Optional[torch.Tensor] = None,
+    m_vyx0: Optional[torch.Tensor] = None,
+    m_vxy0: Optional[torch.Tensor] = None,
+    m_vxx0: Optional[torch.Tensor] = None,
+    m_sigmayyy0: Optional[torch.Tensor] = None,
+    m_sigmaxyy0: Optional[torch.Tensor] = None,
+    m_sigmaxyx0: Optional[torch.Tensor] = None,
+    m_sigmaxxx0: Optional[torch.Tensor] = None,
+    nt: Optional[int] = None,
+    model_gradient_sampling_interval: int = 1,
+    functional: bool = True,
+    n_chained: int = 2,
+) -> Tuple[torch.Tensor, ...]:
+    """Wraps multiple elastic propagators chained sequentially for testing purposes."""
     if prop_kwargs is None:
         prop_kwargs = {}
     # For consistency when actual max speed changes
@@ -421,10 +425,10 @@ def elasticpropchained(
 
 def test_forward():
     """Compare the recorded data with that generated by another code."""
-    with open("tests/Uz_file_ascii") as f:
+    with Path("tests/Uz_file_ascii").open() as f:
         d = f.read().split()
         expected_vy = torch.tensor([float(di) for di in d[:3000]])
-    with open("tests/Ux_file_ascii") as f:
+    with Path("tests/Ux_file_ascii").open() as f:
         d = f.read().split()
         expected_vx = torch.tensor([float(di) for di in d[3000:]])
     expected_scale = expected_vy.abs().max().item()
@@ -446,20 +450,20 @@ def test_forward():
             assert (vx[1:] - expected_vx[:-1]).norm().item() < target_err
 
 
-def test_wavefield_decays():
+def test_wavefield_decays() -> None:
     """Test that the PML causes the wavefield amplitude to decay."""
     out = run_forward_2d(propagator=elasticprop, nt=10000)
     for outi in out[:-3]:
         assert outi.norm() < 2e-6
 
 
-def test_model_too_small():
+def test_model_too_small() -> None:
     """Test that an error is raised when the model is too small."""
     with pytest.raises(RuntimeError):
         run_forward_2d(propagator=elasticprop, nx=(3, 3), pml_width=3)
 
 
-def test_forward_cpu_gpu_match():
+def test_forward_cpu_gpu_match() -> None:
     """Test propagation on CPU and GPU produce the same result."""
     if torch.cuda.is_available():
         actual_cpu = run_forward_2d(propagator=elasticprop, device=torch.device("cpu"))
@@ -625,7 +629,8 @@ def test_unused_source_receiver(
     assert torch.allclose(buoyancyf.grad, buoyancyi.grad)
 
 
-def run_elasticfunc(nt=3):
+def run_elasticfunc(nt: int = 3) -> None:
+    """Run elastic_func for testing purposes."""
     from deepwave.elastic import elastic_func
 
     torch.manual_seed(1)
@@ -744,13 +749,15 @@ def run_elasticfunc(nt=3):
     axh[pml_width[2] : nx - 1 - pml_width[3]].fill_(0)
     bxh[pml_width[2] : nx - 1 - pml_width[3]].fill_(0)
 
-    def wrap(vp, vs, rho, *args):
+    def wrap(
+        vp: torch.Tensor, vs: torch.Tensor, rho: torch.Tensor, *args: Any
+    ) -> Tuple[torch.Tensor, ...]:
         # Scale the outputs for the gradient check to be of a similar order of
         # magnitude.
         o = list(elastic_func(*vpvsrho_to_lambmubuoyancy(vp, vs, rho), *args))
         for i in [2, 3, 4, 9, 10, 11, 12, 13]:
             o[i] /= 1e6
-        return o
+        return tuple(o)
 
     torch.autograd.gradcheck(
         wrap,
@@ -802,6 +809,7 @@ def run_elasticfunc(nt=3):
 
 
 def test_elasticfunc():
+    """Test elastic_func with different time steps."""
     run_elasticfunc(nt=1)
     run_elasticfunc(nt=2)
     run_elasticfunc(nt=3)
@@ -915,6 +923,7 @@ def run_forward_lamb(
     pml_width=20,
     **kwargs,
 ):
+    """Runs a forward elastic propagation with a specific source orientation."""
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     ny = 20
@@ -1238,24 +1247,24 @@ def run_gradcheck(
 
 
 def run_gradcheck_2d(
-    lamb=DEFAULT_LAMB,
-    mu=DEFAULT_MU,
-    buoyancy=DEFAULT_BUOYANCY,
-    freq=25,
-    dx=(5, 5),
-    dt=0.001,
-    nx=(10, 10),
-    num_shots=2,
-    num_sources_per_shot=2,
-    num_receivers_per_shot=2,
-    propagator=None,
-    prop_kwargs=None,
-    pml_width=3,
-    survey_pad=None,
-    device=None,
-    dtype=torch.double,
-    **kwargs,
-):
+    lamb: float = DEFAULT_LAMB,
+    mu: float = DEFAULT_MU,
+    buoyancy: float = DEFAULT_BUOYANCY,
+    freq: float = 25,
+    dx: Tuple[float, float] = (5, 5),
+    dt: float = 0.001,
+    nx: Tuple[int, int] = (10, 10),
+    num_shots: int = 2,
+    num_sources_per_shot: int = 2,
+    num_receivers_per_shot: int = 2,
+    propagator: Any = elasticprop,
+    prop_kwargs: Optional[Dict[str, Any]] = None,
+    pml_width: Union[int, List[int]] = 3,
+    survey_pad: Optional[Union[int, List[int]]] = None,
+    device: Optional[torch.device] = None,
+    dtype: torch.dtype = torch.double,
+    **kwargs: Any,
+) -> None:
     """Runs run_gradcheck with default parameters for 2D."""
     return run_gradcheck(
         lamb,
@@ -1279,22 +1288,26 @@ def run_gradcheck_2d(
 
 
 # Tests for Elastic.__init__
-def test_elastic_init_lamb_non_tensor():
+def test_elastic_init_lamb_non_tensor() -> None:
+    """Test that Elastic.__init__ raises TypeError if lamb is not a tensor."""
     with pytest.raises(TypeError, match=re.escape("lamb must be a torch.Tensor.")):
         Elastic([1, 2, 3], torch.ones(10, 10), torch.ones(10, 10), 1.0)
 
 
-def test_elastic_init_mu_non_tensor():
+def test_elastic_init_mu_non_tensor() -> None:
+    """Test that Elastic.__init__ raises TypeError if mu is not a tensor."""
     with pytest.raises(TypeError, match=re.escape("mu must be a torch.Tensor.")):
         Elastic(torch.ones(10, 10), [1, 2, 3], torch.ones(10, 10), 1.0)
 
 
-def test_elastic_init_buoyancy_non_tensor():
+def test_elastic_init_buoyancy_non_tensor() -> None:
+    """Test that Elastic.__init__ raises TypeError if buoyancy is not a tensor."""
     with pytest.raises(TypeError, match=re.escape("buoyancy must be a torch.Tensor.")):
         Elastic(torch.ones(10, 10), torch.ones(10, 10), [1, 2, 3], 1.0)
 
 
-def test_elastic_init_lamb_requires_grad_non_bool():
+def test_elastic_init_lamb_requires_grad_non_bool() -> None:
+    """Test Elastic.__init__ raises TypeError if lamb_requires_grad is not bool."""
     lamb = torch.ones(10, 10)
     mu = torch.ones(10, 10)
     buoyancy = torch.ones(10, 10)
@@ -1304,7 +1317,8 @@ def test_elastic_init_lamb_requires_grad_non_bool():
         Elastic(lamb, mu, buoyancy, 1.0, lamb_requires_grad=1)
 
 
-def test_elastic_init_mu_requires_grad_non_bool():
+def test_elastic_init_mu_requires_grad_non_bool() -> None:
+    """Test that Elastic.__init__ raises TypeError if mu_requires_grad is not a bool."""
     lamb = torch.ones(10, 10)
     mu = torch.ones(10, 10)
     buoyancy = torch.ones(10, 10)
@@ -1314,7 +1328,8 @@ def test_elastic_init_mu_requires_grad_non_bool():
         Elastic(lamb, mu, buoyancy, 1.0, mu_requires_grad=0.5)
 
 
-def test_elastic_init_buoyancy_requires_grad_non_bool():
+def test_elastic_init_buoyancy_requires_grad_non_bool() -> None:
+    """Test Elastic.__init__ raises TypeError if buoyancy_requires_grad is not bool."""
     lamb = torch.ones(10, 10)
     mu = torch.ones(10, 10)
     buoyancy = torch.ones(10, 10)
@@ -1325,7 +1340,8 @@ def test_elastic_init_buoyancy_requires_grad_non_bool():
 
 
 # Tests for elastic function (accuracy)
-def test_elastic_accuracy_invalid():
+def test_elastic_accuracy_invalid() -> None:
+    """Test that elastic function raises RuntimeError for invalid accuracy."""
     lamb = torch.ones(10, 10)
     mu = torch.ones(10, 10)
     buoyancy = torch.ones(10, 10)
@@ -1339,7 +1355,8 @@ def test_elastic_accuracy_invalid():
 
 
 # Tests for elastic function (location bounds)
-def test_elastic_source_locations_y_out_of_bounds():
+def test_elastic_source_locations_y_out_of_bounds() -> None:
+    """Test raises for source locations out of y bounds."""
     lamb = torch.ones(10, 10)
     mu = torch.ones(10, 10)
     buoyancy = torch.ones(10, 10)
@@ -1354,7 +1371,8 @@ def test_elastic_source_locations_y_out_of_bounds():
     with pytest.raises(
         RuntimeError,
         match=re.escape(
-            "With the provided model, the maximum y source location in the second dimension must be less than 9."
+            "With the provided model, the maximum y source location in the "
+            "second dimension must be less than 9."
         ),
     ):
         elastic(
@@ -1370,7 +1388,8 @@ def test_elastic_source_locations_y_out_of_bounds():
         )
 
 
-def test_elastic_receiver_locations_y_out_of_bounds():
+def test_elastic_receiver_locations_y_out_of_bounds() -> None:
+    """Test raises for receiver locations out of y bounds."""
     lamb = torch.ones(10, 10)
     mu = torch.ones(10, 10)
     buoyancy = torch.ones(10, 10)
@@ -1384,7 +1403,8 @@ def test_elastic_receiver_locations_y_out_of_bounds():
     with pytest.raises(
         RuntimeError,
         match=re.escape(
-            "With the provided model, the maximum y receiver location in the second dimension must be less than 9."
+            "With the provided model, the maximum y receiver location in the "
+            "second dimension must be less than 9."
         ),
     ):
         elastic(
@@ -1399,7 +1419,8 @@ def test_elastic_receiver_locations_y_out_of_bounds():
         )
 
 
-def test_elastic_source_locations_x_out_of_bounds():
+def test_elastic_source_locations_x_out_of_bounds() -> None:
+    """Test raises for source locations out of x bounds."""
     lamb = torch.ones(10, 10)
     mu = torch.ones(10, 10)
     buoyancy = torch.ones(10, 10)
@@ -1414,7 +1435,8 @@ def test_elastic_source_locations_x_out_of_bounds():
     with pytest.raises(
         RuntimeError,
         match=re.escape(
-            "The minimum x source location in the first dimension must be greater than 0."
+            "The minimum x source location in the first dimension must be "
+            "greater than 0."
         ),
     ):
         elastic(
@@ -1430,7 +1452,8 @@ def test_elastic_source_locations_x_out_of_bounds():
         )
 
 
-def test_elastic_receiver_locations_x_out_of_bounds():
+def test_elastic_receiver_locations_x_out_of_bounds() -> None:
+    """Test raises for receiver locations out of x bounds."""
     lamb = torch.ones(10, 10)
     mu = torch.ones(10, 10)
     buoyancy = torch.ones(10, 10)
@@ -1444,7 +1467,8 @@ def test_elastic_receiver_locations_x_out_of_bounds():
     with pytest.raises(
         RuntimeError,
         match=re.escape(
-            "The minimum x receiver location in the first dimension must be greater than 0."
+            "The minimum x receiver location in the first dimension must be "
+            "greater than 0."
         ),
     ):
         elastic(
@@ -1459,7 +1483,8 @@ def test_elastic_receiver_locations_x_out_of_bounds():
         )
 
 
-def test_elastic_receiver_locations_p_out_of_bounds():
+def test_elastic_receiver_locations_p_out_of_bounds() -> None:
+    """Test raises for pressure receiver locations out of bounds."""
     lamb = torch.ones(10, 10)
     mu = torch.ones(10, 10)
     buoyancy = torch.ones(10, 10)
@@ -1472,7 +1497,9 @@ def test_elastic_receiver_locations_p_out_of_bounds():
     with pytest.raises(
         RuntimeError,
         match=re.escape(
-            "With the provided model, the pressure receiver locations in the second dimension must be less than 9 and in the first dimension must be greater than 0."
+            "With the provided model, the pressure receiver locations in the "
+            "second dimension must be less than 9 and in the first dimension "
+            "must be greater than 0."
         ),
     ):
         elastic(

@@ -1,12 +1,12 @@
-"""
-This script demonstrates how to use batched models in Deepwave.
+"""This script demonstrates how to use batched models in Deepwave.
 
 This is useful when you want to propagate multiple shots through different
 models simultaneously.
 """
 
-import torch
 import matplotlib.pyplot as plt
+import torch
+
 import deepwave
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -51,14 +51,14 @@ peak_time = 1.5 / freq
 source_locations = torch.zeros(
     n_shots, n_sources_per_shot, 2, dtype=torch.long, device=device
 )
-source_locations[..., 0] = 5  # y source
-source_locations[..., 1] = nx // 2  # x source
+source_locations[..., 0] = 5  # y
+source_locations[..., 1] = nx // 2  # x
 
 receiver_locations = torch.zeros(
     n_shots, n_receivers_per_shot, 2, dtype=torch.long, device=device
 )
-receiver_locations[..., 0] = 5  # y receiver
-receiver_locations[..., 1] = torch.arange(n_receivers_per_shot)  # x receiver
+receiver_locations[..., 0] = 5  # y
+receiver_locations[..., 1] = torch.arange(n_receivers_per_shot)  # x
 
 # Create source amplitudes
 source_amplitudes = (
@@ -83,11 +83,19 @@ receiver_data = out[-1]
 vmax = torch.quantile(receiver_data, 0.95)
 _, ax = plt.subplots(1, 2, figsize=(8, 4), sharey=True)
 ax[0].imshow(
-    receiver_data[0].cpu().T, aspect="auto", cmap="gray", vmin=-vmax, vmax=vmax
+    receiver_data[0].cpu().T,
+    aspect="auto",
+    cmap="gray",
+    vmin=-vmax,
+    vmax=vmax,
 )
 ax[0].set_title("Data from Model 1")
 ax[1].imshow(
-    receiver_data[1].cpu().T, aspect="auto", cmap="gray", vmin=-vmax, vmax=vmax
+    receiver_data[1].cpu().T,
+    aspect="auto",
+    cmap="gray",
+    vmin=-vmax,
+    vmax=vmax,
 )
 ax[1].set_title("Data from Model 2")
 plt.tight_layout()
@@ -175,15 +183,19 @@ v_init.requires_grad_()
 # Store a copy for plotting
 v_start = v_init.clone().detach()
 
-# Set up optimizer
-optimizer = torch.optim.SGD([v_init], lr=1.0)
+# Set up optimiser
+optimiser = torch.optim.SGD([v_init], lr=1.0)
 loss_fn = torch.nn.MSELoss()
 
 n_plots = 3
 plot_freq = 20
 
 fig, ax = plt.subplots(
-    n_plots + 1, n_shots_inversion, figsize=(12, 8), sharex=True, sharey=True
+    n_plots + 1,
+    n_shots_inversion,
+    figsize=(12, 8),
+    sharex=True,
+    sharey=True,
 )
 for i in range(n_shots_inversion):
     ax[0, i].set_title(f"Shot {i}")
@@ -194,7 +206,7 @@ for epoch in range(n_epochs):
     # The weight of the penalty term increases with epochs
     penalty_weight = 1e4 * (epoch / (n_epochs - 1)) ** 2
 
-    optimizer.zero_grad()
+    optimiser.zero_grad()
 
     # Forward propagate all shots, each with its own model
     pred_data = deepwave.scalar(
@@ -210,17 +222,19 @@ for epoch in range(n_epochs):
     loss_mse = 1e9 * loss_fn(pred_data, true_data)
 
     # Model difference penalty
-    # Penalize the variance between the models
+    # Penalise the variance between the models
     loss_penalty = torch.pow(v_init - v_init.mean(dim=0), 2).mean()
 
     # Total loss
     loss = loss_mse + penalty_weight * loss_penalty
     loss.backward()
-    optimizer.step()
+    optimiser.step()
 
     if epoch % plot_freq == 0:
         plot_idx = epoch // plot_freq
-        vmin, vmax = torch.quantile(v_init.cpu().detach(), torch.tensor([0.05, 0.95]))
+        vmin, vmax = torch.quantile(
+            v_init.cpu().detach(), torch.tensor([0.05, 0.95])
+        )
         for i, v in enumerate(v_init):
             ax[plot_idx, i].imshow(
                 v.cpu().detach(), cmap="viridis", vmin=vmin, vmax=vmax

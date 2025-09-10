@@ -1529,7 +1529,6 @@ class ScalarBackwardFunc(torch.autograd.Function):
         )
 
         if wfc.numel() > 0 and nt > 0:
-            start_t = 0
             forward(
                 v.data_ptr(),
                 ggv.data_ptr(),
@@ -1581,7 +1580,7 @@ class ScalarBackwardFunc(torch.autograd.Function):
                 False,
                 v_batched,
                 ggv_batched,
-                start_t,
+                0,
                 pml_y0,
                 pml_y1,
                 pml_x0,
@@ -1743,7 +1742,6 @@ class ScalarBackwardFunc(torch.autograd.Function):
         gwfp = -gwfp
 
         if wfc.numel() > 0 and nt > 0 and v.requires_grad:
-            start_t = 0
             backward(
                 v.data_ptr(),
                 ggv.data_ptr(),
@@ -1804,7 +1802,7 @@ class ScalarBackwardFunc(torch.autograd.Function):
                 False,
                 v_batched,
                 ggv_batched,
-                start_t,
+                nt,
                 pml_y0,
                 pml_y1,
                 pml_x0,
@@ -1848,6 +1846,9 @@ class ScalarBackwardFunc(torch.autograd.Function):
                 None,
                 None,
                 None,
+                None,
+                None,
+                None,
             )
         return (
             ggwfp[s],
@@ -1874,6 +1875,9 @@ class ScalarBackwardFunc(torch.autograd.Function):
             psixn[s],
             zetayn[s],
             zetaxn[s],
+            None,
+            None,
+            None,
             None,
             None,
             None,

@@ -1,6 +1,7 @@
-"""This script demonstrates Full-Waveform Inversion (FWI) using Deepwave.
-It covers two approaches: a simple inversion and a more advanced one
-incorporating constrained velocity and frequency filtering to address
+"""Demonstrates Full-Waveform Inversion (FWI) using Deepwave.
+
+This script covers two approaches: a simple inversion and a more advanced
+one incorporating constrained velocity and frequency filtering to address
 cycle-skipping and stability issues.
 """
 
@@ -14,51 +15,54 @@ import deepwave
 from deepwave import scalar
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-ny = 2301
-nx = 751
+ny_full = 2301
+nx_full = 751
 dx = 4.0
-v_true = torch.from_file("marmousi_vp.bin", size=ny * nx).reshape(ny, nx)
+v_true_full = torch.from_file("marmousi_vp.bin", size=ny_full * nx_full)
+v_true_full = v_true_full.reshape(ny_full, nx_full)
 
 # Select portion of model for inversion
-ny_subset = 600
-nx_subset = 250
-v_true = v_true[:ny_subset, :nx_subset]
+ny = 600
+nx = 250
+v_true = v_true_full[:ny, :nx]
 
 # Smooth to use as starting model
-v_init = torch.tensor(1 / gaussian_filter(1 / v_true.numpy(), 40)).to(device)
+v_init = torch.tensor(1 / gaussian_filter(1 / v_true.numpy(), 40)).to(
+    device
+)
 v = v_init.clone()
 v.requires_grad_()
 
-n_shots = 115
+n_shots_full = 115
 
 n_sources_per_shot = 1
 d_source = 20  # 20 * 4m = 80m
 first_source = 10  # 10 * 4m = 40m
 source_depth = 2  # 2 * 4m = 8m
 
-n_receivers_per_shot = 384
+n_receivers_per_shot_full = 384
 d_receiver = 6  # 6 * 4m = 24m
 first_receiver = 0  # 0 * 4m = 0m
 receiver_depth = 2  # 2 * 4m = 8m
 
 freq = 25
-nt = 750
+nt_full = 750
 dt = 0.004
 peak_time = 1.5 / freq
 
-observed_data = torch.from_file(
+observed_data_full = torch.from_file(
     "marmousi_data.bin",
-    size=n_shots * n_receivers_per_shot * nt,
-).reshape(n_shots, n_receivers_per_shot, nt)
+    size=n_shots_full * n_receivers_per_shot_full * nt_full,
+).reshape(n_shots_full, n_receivers_per_shot_full, nt_full)
 
 # Select portion of data for inversion
-n_shots_subset = 20
-n_receivers_per_shot_subset = 100
-nt_subset = 300
-observed_data = observed_data[
-    :n_shots_subset,
-    :n_receivers_per_shot_subset,
-    :nt_subset,
+n_shots = 20
+n_receivers_per_shot = 100
+nt = 300
+observed_data = observed_data_full[
+    :n_shots,
+    :n_receivers_per_shot,
+    :nt,
 ].to(device)
 
 # source_locations
@@ -103,7 +107,7 @@ loss_fn = torch.nn.MSELoss()
 # Run optimisation/inversion
 n_epochs = 250
 
-for epoch in range(n_epochs):
+for _epoch in range(n_epochs):
     optimiser.zero_grad()
     out = scalar(
         v,
@@ -116,18 +120,26 @@ for epoch in range(n_epochs):
     )
     loss = loss_fn(out[-1], observed_data)
     loss.backward()
-    torch.nn.utils.clip_grad_value_(v, torch.quantile(v.grad.detach().abs(), 0.98))
+    torch.nn.utils.clip_grad_value_(
+        v, torch.quantile(v.grad.detach().abs(), 0.98)
+    )
     optimiser.step()
 
 # Plot
 vmin = v_true.min()
 vmax = v_true.max()
 _, ax = plt.subplots(3, figsize=(10.5, 10.5), sharex=True, sharey=True)
-ax[0].imshow(v_init.cpu().T, aspect="auto", cmap="gray", vmin=vmin, vmax=vmax)
+ax[0].imshow(
+    v_init.cpu().T, aspect="auto", cmap="gray", vmin=vmin, vmax=vmax
+)
 ax[0].set_title("Initial")
-ax[1].imshow(v.detach().cpu().T, aspect="auto", cmap="gray", vmin=vmin, vmax=vmax)
+ax[1].imshow(
+    v.detach().cpu().T, aspect="auto", cmap="gray", vmin=vmin, vmax=vmax
+)
 ax[1].set_title("Out")
-ax[2].imshow(v_true.cpu().T, aspect="auto", cmap="gray", vmin=vmin, vmax=vmax)
+ax[2].imshow(
+    v_true.cpu().T, aspect="auto", cmap="gray", vmin=vmin, vmax=vmax
+)
 ax[2].set_title("True")
 plt.tight_layout()
 plt.savefig("example_simple_fwi.jpg")
@@ -138,12 +150,22 @@ plt.savefig("example_simple_fwi.jpg")
 
 # Define a function to taper the ends of traces
 def taper(x):
+    """Tapers the ends of traces using a cosine taper."""
     return deepwave.common.cosine_taper_end(x, 100)
 
 
 # Generate a velocity model constrained to be within a desired range
 class Model(torch.nn.Module):
+    """A PyTorch module that represents the velocity model."""
+
     def __init__(self, initial, min_vel, max_vel):
+        """Initialises the Model.
+
+        Args:
+            initial (torch.Tensor): The initial velocity model.
+            min_vel (float): The minimum allowed velocity.
+            max_vel (float): The maximum allowed velocity.
+        """
         super().__init__()
         self.min_vel = min_vel
         self.max_vel = max_vel
@@ -152,7 +174,11 @@ class Model(torch.nn.Module):
         )
 
     def forward(self):
-        return torch.sigmoid(self.model) * (self.max_vel - self.min_vel) + self.min_vel
+        """Performs the forward pass of the model."""
+        return (
+            torch.sigmoid(self.model) * (self.max_vel - self.min_vel)
+            + self.min_vel
+        )
 
 
 observed_data = taper(observed_data)
@@ -163,16 +189,23 @@ n_epochs = 2
 
 for cutoff_freq in [10, 15, 20, 25, 30]:
     sos = butter(6, cutoff_freq, fs=1 / dt, output="sos")
-    sos = [torch.tensor(sosi).to(observed_data.dtype).to(device) for sosi in sos]
+    sos = [
+        torch.tensor(sosi).to(observed_data.dtype).to(device)
+        for sosi in sos
+    ]
 
-    def filt(x):
+    def filt(x, sos):
+        """Applies a Butterworth filter to the input tensor."""
         return biquad(biquad(biquad(x, *sos[0]), *sos[1]), *sos[2])
 
-    observed_data_filt = filt(observed_data)
-    optimiser = torch.optim.LBFGS(model.parameters(), line_search_fn="strong_wolfe")
-    for epoch in range(n_epochs):
+    observed_data_filt = filt(observed_data, sos)
+    optimiser = torch.optim.LBFGS(
+        model.parameters(), line_search_fn="strong_wolfe"
+    )
+    for _epoch in range(n_epochs):
 
         def closure():
+            """Closure function for the LBFGS optimiser."""
             optimiser.zero_grad()
             v = model()
             out = scalar(
@@ -186,7 +219,7 @@ for cutoff_freq in [10, 15, 20, 25, 30]:
                 pml_freq=freq,
                 time_pad_frac=0.2,
             )
-            out_filt = filt(taper(out[-1]))
+            out_filt = filt(taper(out[-1]), sos)
             loss = 1e6 * loss_fn(out_filt, observed_data_filt)
             loss.backward()
             return loss
@@ -197,11 +230,17 @@ v = model()
 vmin = v_true.min()
 vmax = v_true.max()
 _, ax = plt.subplots(3, figsize=(10.5, 10.5), sharex=True, sharey=True)
-ax[0].imshow(v_init.cpu().T, aspect="auto", cmap="gray", vmin=vmin, vmax=vmax)
+ax[0].imshow(
+    v_init.cpu().T, aspect="auto", cmap="gray", vmin=vmin, vmax=vmax
+)
 ax[0].set_title("Initial")
-ax[1].imshow(v.detach().cpu().T, aspect="auto", cmap="gray", vmin=vmin, vmax=vmax)
+ax[1].imshow(
+    v.detach().cpu().T, aspect="auto", cmap="gray", vmin=vmin, vmax=vmax
+)
 ax[1].set_title("Out")
-ax[2].imshow(v_true.cpu().T, aspect="auto", cmap="gray", vmin=vmin, vmax=vmax)
+ax[2].imshow(
+    v_true.cpu().T, aspect="auto", cmap="gray", vmin=vmin, vmax=vmax
+)
 ax[2].set_title("True")
 plt.tight_layout()
 plt.savefig("example_increasing_freq_fwi.jpg")

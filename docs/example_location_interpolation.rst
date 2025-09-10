@@ -56,7 +56,7 @@ In the wavefield of the final time step of this propagation, we can see the thre
 
 .. image:: example_location_interpolation_wavefield.jpg
 
-Just as we used the `source` function of the `Hicks` object to convert the source amplitudes of our original point sources into the amplitudes for the array of grid-centred sources, we can use the `receiver` function to convert the receiver amplitudes recorded at the locations of the array of grid-centred receivers into the amplitudes that we would have recorded if we could have receivers at our desired non-grid-centred receiver locations::
+Just as we used the `source` function of the `Hicks` object to convert the source amplitudes of our original point sources into the amplitudes for the array of grid-centred sources, we can use the `receiver` function to convert the receiver amplitudes recorded at the locations of the array of grid-centred receivers into the amplitudes that we would have recorded if we could have had receivers at our desired non-grid-centred receiver locations::
 
     receiver_hicks_amplitudes = out[-1]
     receiver_amplitudes = hicks_receiver.receiver(
@@ -118,7 +118,7 @@ We can also simulate sources and receivers oriented in arbitrary directions by c
     source_dipole_dim = torch.zeros(n_shots, n_sources_per_shot,
                                     dtype=torch.int, device=device)
 
-    source_dipole_dim[0, 1::2] = 1  # every second source is x-oriented
+    source_dipole_dim[0, 1::2] = 1  # every second source is x-orientated
     hicks_source = deepwave.location_interpolation.Hicks(
         source_locations,
         monopole=source_monopole,

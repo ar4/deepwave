@@ -1,0 +1,9 @@
+extend = "../ruff.toml"
+src = ["../src"]
+
+# Make code examples wrap around ~76 columns so Sphinx's code blocks
+# won't usually trigger a horizontal scrollbar.
+line-length = 76
+
+[lint]
+extend-ignore = ["ANN", "INP001", "ERA001"]

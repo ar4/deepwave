@@ -1,6 +1,7 @@
-"""This script demonstrates Least-Squares Reverse-Time Migration (LSRTM)
-using Deepwave. It shows how to invert for the scattering potential
-with Born modeling, including handling direct arrivals.
+"""Demonstrates Least-Squares Reverse-Time Migration (LSRTM) using Deepwave.
+
+This script shows how to invert for the scattering potential with Born
+modelling, including handling direct arrivals.
 """
 
 import matplotlib.pyplot as plt
@@ -11,49 +12,50 @@ import deepwave
 from deepwave import scalar, scalar_born
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-ny = 2301
-nx = 751
+ny_full = 2301
+nx_full = 751
 dx = 4.0
-v_true = torch.from_file("marmousi_vp.bin", size=ny * nx).reshape(ny, nx)
+v_true_full = torch.from_file("marmousi_vp.bin", size=ny_full * nx_full)
+v_true_full = v_true_full.reshape(ny_full, nx_full)
 
 # Select portion of model for inversion
-ny_subset = 600
-nx_subset = 250
-v_true = v_true[:ny_subset, :nx_subset]
+ny = 600
+nx = 250
+v_true = v_true_full[:ny, :nx]
 
 # Smooth to use as starting model
 v_mig = torch.tensor(1 / gaussian_filter(1 / v_true.numpy(), 5)).to(device)
 
-n_shots = 115
+n_shots_full = 115
 
 n_sources_per_shot = 1
 d_source = 20  # 20 * 4m = 80m
 first_source = 10  # 10 * 4m = 40m
 source_depth = 2  # 2 * 4m = 8m
 
-n_receivers_per_shot = 384
+n_receivers_per_shot_full = 384
 d_receiver = 6  # 6 * 4m = 24m
 first_receiver = 0  # 0 * 4m = 0m
 receiver_depth = 2  # 2 * 4m = 8m
 
 freq = 25
-nt = 750
+nt_full = 750
 dt = 0.004
 peak_time = 1.5 / freq
 
-observed_data = torch.from_file(
+observed_data_full = torch.from_file(
     "marmousi_data.bin",
-    size=n_shots * n_receivers_per_shot * nt,
-).reshape(n_shots, n_receivers_per_shot, nt)
+    size=n_shots_full * n_receivers_per_shot_full * nt_full,
+).reshape(n_shots_full, n_receivers_per_shot_full, nt_full)
 
 # Select portion of data for inversion
-n_shots_subset = 20
-n_receivers_per_shot_subset = 100
-nt_subset = 300
-observed_data = observed_data[
-    :n_shots_subset,
-    :n_receivers_per_shot_subset,
-    :nt_subset,
+n_shots = 20
+n_receivers_per_shot = 100
+nt = 300
+observed_data = observed_data_full[
+    :n_shots,
+    :n_receivers_per_shot,
+    :nt,
 ].to(device)
 
 # source_locations
@@ -127,9 +129,10 @@ loss_fn = torch.nn.MSELoss()
 # Run optimisation/inversion
 n_epochs = 3
 
-for epoch in range(n_epochs):
+for _epoch in range(n_epochs):
 
     def closure():
+        """Closure function for the LBFGS optimiser."""
         optimiser.zero_grad()
         out = scalar_born(
             v_mig,
@@ -148,7 +151,15 @@ for epoch in range(n_epochs):
     optimiser.step(closure)
 
 # Plot
-vmin, vmax = torch.quantile(scatter.detach(), torch.tensor([0.05, 0.95]).to(device))
+vmin, vmax = torch.quantile(
+    scatter.detach(), torch.tensor([0.05, 0.95]).to(device)
+)
 plt.figure(figsize=(10.5, 3.5))
-plt.imshow(scatter.detach().cpu().T, aspect="auto", cmap="gray", vmin=vmin, vmax=vmax)
+plt.imshow(
+    scatter.detach().cpu().T,
+    aspect="auto",
+    cmap="gray",
+    vmin=vmin,
+    vmax=vmax,
+)
 plt.savefig("example_lsrtm.jpg")

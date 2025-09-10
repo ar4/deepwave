@@ -1,7 +1,7 @@
-Visualizing wavefields and gradients with callbacks
+Visualising wavefields and gradients with callbacks
 ===================================================
 
-This example demonstrates how to use the callback feature to visualize the wavefields and gradients during forward and backward propagation. Callbacks allow you to execute arbitrary Python code at specified intervals during a simulation, giving you access to the wavefields, models, and gradients.
+This example demonstrates how to use the callback feature to visualise the wavefields and gradients during forward and backward propagation. Callbacks allow you to execute arbitrary Python code at specified intervals during a simulation, giving you access to the wavefields, models, and gradients.
 
 In this example, we will create an animation that shows three things side-by-side:
 
@@ -9,7 +9,7 @@ In this example, we will create an animation that shows three things side-by-sid
 2. The backward-propagating wavefield (the adjoint wavefield).
 3. The formation of the model gradient during backpropagation.
 
-We set-up the propagation as normal, using a simple single layer model. Next, we define two callback functions to store the forward and backward wavefields and the current value of the gradient with respect to the velocity model as backpropagation progresses. We can use regular Python functions for these, but, to show you how it is done, I will use a callable class for the forward callback. The `ForwardCallback` instance will be called during the forward pass, and the `backward_callback` function will be called during the backward pass. Each receives a `CallbackState <class-deepwave.common.CallbackState>` object when it is called that provides access to the simulation data. We use these to save the relevant tensors to our snapshot storage. The wavefield names are the same as those in the propagator signature, so the current wavefield is `wavefield_0`::
+We setup the propagation as normal, using a simple single layer model. Next, we define two callback functions to store the forward and backward wavefields and the current value of the gradient with respect to the velocity model as backpropagation progresses. We can use regular Python functions for these, but, to show you how it is done, I will use a callable class for the forward callback. The `ForwardCallback` instance will be called during the forward pass, and the `backward_callback` function will be called during the backward pass. Each receives a :py:class:`CallbackState <deepwave.common.CallbackState>` object when it is called that provides access to the simulation data. We use these to save the relevant tensors to our snapshot storage. The wavefield names are the same as those in the propagator signature, so the current wavefield is `wavefield_0`::
 
         # Storage for snapshots from callbacks
         callback_frequency = 1

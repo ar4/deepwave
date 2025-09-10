@@ -1,3 +1,5 @@
+"""Demonstrates elastic wave propagation with a focus on groundroll."""
+
 import matplotlib.pyplot as plt
 import torch
 
@@ -37,11 +39,15 @@ ax[1].imshow(out[1][0, :-20, 20:-20], cmap="gray")
 ax[1].set_title("Wavefield x")
 ax[1].set_xticks([])
 ax[1].set_yticks([])
-ax[2].imshow(out[-2][0].T, cmap="gray", aspect="auto", vmin=-1e-8, vmax=1e-8)
+ax[2].imshow(
+    out[-2][0].T, cmap="gray", aspect="auto", vmin=-1e-8, vmax=1e-8
+)
 ax[2].set_title("Data (y)")
 ax[2].set_xticks([])
 ax[2].set_yticks([])
-ax[3].imshow(out[-1][0].T, cmap="gray", aspect="auto", vmin=-1e-8, vmax=1e-8)
+ax[3].imshow(
+    out[-1][0].T, cmap="gray", aspect="auto", vmin=-1e-8, vmax=1e-8
+)
 ax[3].set_title("Data (x)")
 ax[3].set_xticks([])
 ax[3].set_yticks([])

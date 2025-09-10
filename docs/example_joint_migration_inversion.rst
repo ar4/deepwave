@@ -1,6 +1,8 @@
 Joint Migration Inversion
 =========================
 
+**Note:** This example does not currently seem to be working properly. It becomes unstable after several iterations.
+
 Previous examples have looked at inverting for velocity models by using the regular `scalar` wave propagator to perform FWI. Another example used the Born propagator `scalar_born` to obtain a scattering model (also known as a migrated image) with LSRTM. It is also possible to use Deepwave's Born propagator to invert for the velocity model, and even to do so at the same time as inverting for the image.
 
 The setup is the same as in previous FWI examples, with the only difference being that we inform the optimiser that we wish to optimise both the velocity and the scattering model::

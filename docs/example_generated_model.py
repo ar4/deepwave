@@ -1,4 +1,6 @@
-"""This script demonstrates how to use a custom model generation function
+"""Demonstrates custom model generation for layered velocity inversion.
+
+This script demonstrates how to use a custom model generation function
 within Deepwave's optimization framework to invert for layered velocities.
 """
 
@@ -20,6 +22,14 @@ class Model(torch.nn.Module):
     """
 
     def __init__(self, layer_thickness, nx):
+        """Initialises the Model.
+
+        Args:
+            layer_thickness (int): The number of cells thick each layer
+                                   is in the first dimension.
+            nx (int): The number of cells of the model
+                      in the second dimension.
+        """
         super().__init__()
         self.layer_thickness = layer_thickness
         self.nx = nx
@@ -85,6 +95,7 @@ loss_fn = torch.nn.MSELoss()
 
 
 def closure():
+    """Closure function for the Adam optimiser."""
     opt.zero_grad()
     v = m(x)
     y = deepwave.scalar(
@@ -101,7 +112,7 @@ def closure():
     return loss
 
 
-for i in range(100):
+for _i in range(100):
     opt.step(closure)
 
 print(x.detach())

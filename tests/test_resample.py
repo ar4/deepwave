@@ -1,5 +1,8 @@
+"""Tests for deepwave.resample."""
+
 import math
 import re
+from typing import Any, Callable
 
 import pytest
 import torch
@@ -7,18 +10,20 @@ import torch
 from deepwave.common import downsample, upsample
 
 
-def test_upsample_invalid_signal_type():
+def test_upsample_invalid_signal_type() -> None:
+    """Test that upsample raises TypeError if signal is not a torch.Tensor."""
     with pytest.raises(TypeError, match="signal must be a torch.Tensor."):
         upsample([1, 2, 3], 2)
 
 
-def test_downsample_invalid_signal_type():
+def test_downsample_invalid_signal_type() -> None:
+    """Test that downsample raises TypeError if signal is not a torch.Tensor."""
     with pytest.raises(TypeError, match="signal must be a torch.Tensor."):
         downsample([1, 2, 3], 2)
 
 
 @pytest.mark.parametrize(
-    "func, arg_name, arg_value, expected_error_match, expected_error_type",
+    ("func", "arg_name", "arg_value", "expected_error_match", "expected_error_type"),
     [
         (upsample, "step_ratio", 0, "step_ratio must be positive.", ValueError),
         (upsample, "step_ratio", -1, "step_ratio must be positive.", ValueError),
@@ -116,12 +121,13 @@ def test_downsample_invalid_signal_type():
     ],
 )
 def test_resample_invalid_args(
-    func,
-    arg_name,
-    arg_value,
-    expected_error_match,
-    expected_error_type,
-):
+    func: Callable[..., torch.Tensor],
+    arg_name: str,
+    arg_value: Any,
+    expected_error_match: str,
+    expected_error_type: Any,
+) -> None:
+    """Test that upsample and downsample raise errors for invalid arguments."""
     signal = torch.randn(10)
 
     if arg_name == "step_ratio":

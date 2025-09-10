@@ -1,3 +1,5 @@
+"""Demonstrates location interpolation for sources/receivers in a circle."""
+
 import math
 
 import matplotlib.pyplot as plt
@@ -46,8 +48,12 @@ source_locations = torch.zeros(
 
 for idx in range(n_source_locations):
     angle = idx / n_source_locations * 2 * math.pi
-    source_locations[0, idx * 2 : (idx + 1) * 2, 0] = math.sin(angle) * radius + cy
-    source_locations[0, idx * 2 : (idx + 1) * 2, 1] = math.cos(angle) * radius + cx
+    source_locations[0, idx * 2 : (idx + 1) * 2, 0] = (
+        math.sin(angle) * radius + cy
+    )
+    source_locations[0, idx * 2 : (idx + 1) * 2, 1] = (
+        math.cos(angle) * radius + cx
+    )
     source_amplitudes[0, idx * 2] *= math.sin(angle)
     source_amplitudes[0, idx * 2 + 1] *= math.cos(angle)
 

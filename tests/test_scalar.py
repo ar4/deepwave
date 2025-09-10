@@ -1,5 +1,8 @@
+"""Tests for deepwave.scalar."""
+
 import math
 import re
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import pytest
 import torch
@@ -10,26 +13,26 @@ from deepwave.common import cfl_condition, downsample, upsample
 
 
 def scalarprop(
-    model,
-    dx,
-    dt,
-    source_amplitudes,
-    source_locations,
-    receiver_locations,
-    prop_kwargs=None,
-    pml_width=None,
-    survey_pad=None,
-    origin=None,
-    wavefield_0=None,
-    wavefield_m1=None,
-    psiy_m1=None,
-    psix_m1=None,
-    zetay_m1=None,
-    zetax_m1=None,
-    nt=None,
-    model_gradient_sampling_interval=1,
-    functional=True,
-):
+    model: torch.Tensor,
+    dx: Union[float, List[float]],
+    dt: float,
+    source_amplitudes: Optional[torch.Tensor],
+    source_locations: Optional[torch.Tensor],
+    receiver_locations: Optional[torch.Tensor],
+    prop_kwargs: Optional[Dict[str, Any]] = None,
+    pml_width: Optional[Union[int, List[int]]] = None,
+    survey_pad: Optional[Union[int, List[int]]] = None,
+    origin: Optional[List[int]] = None,
+    wavefield_0: Optional[torch.Tensor] = None,
+    wavefield_m1: Optional[torch.Tensor] = None,
+    psiy_m1: Optional[torch.Tensor] = None,
+    psix_m1: Optional[torch.Tensor] = None,
+    zetay_m1: Optional[torch.Tensor] = None,
+    zetax_m1: Optional[torch.Tensor] = None,
+    nt: Optional[int] = None,
+    model_gradient_sampling_interval: int = 1,
+    functional: bool = True,
+) -> Tuple[torch.Tensor, ...]:
     """Wraps the scalar propagator."""
     if prop_kwargs is None:
         prop_kwargs = {}
@@ -87,27 +90,27 @@ def scalarprop(
 
 
 def scalarpropchained(
-    model,
-    dx,
-    dt,
-    source_amplitudes,
-    source_locations,
-    receiver_locations,
-    prop_kwargs=None,
-    pml_width=None,
-    survey_pad=None,
-    origin=None,
-    wavefield_0=None,
-    wavefield_m1=None,
-    psiy_m1=None,
-    psix_m1=None,
-    zetay_m1=None,
-    zetax_m1=None,
-    nt=None,
-    model_gradient_sampling_interval=1,
-    functional=True,
-    n_chained=2,
-):
+    model: torch.Tensor,
+    dx: Union[float, List[float]],
+    dt: float,
+    source_amplitudes: Optional[torch.Tensor],
+    source_locations: Optional[torch.Tensor],
+    receiver_locations: Optional[torch.Tensor],
+    prop_kwargs: Optional[Dict[str, Any]] = None,
+    pml_width: Optional[Union[int, List[int]]] = None,
+    survey_pad: Optional[Union[int, List[int]]] = None,
+    origin: Optional[List[int]] = None,
+    wavefield_0: Optional[torch.Tensor] = None,
+    wavefield_m1: Optional[torch.Tensor] = None,
+    psiy_m1: Optional[torch.Tensor] = None,
+    psix_m1: Optional[torch.Tensor] = None,
+    zetay_m1: Optional[torch.Tensor] = None,
+    zetax_m1: Optional[torch.Tensor] = None,
+    nt: Optional[int] = None,
+    model_gradient_sampling_interval: int = 1,
+    functional: bool = True,
+    n_chained: int = 2,
+) -> Tuple[torch.Tensor, ...]:
     """Wraps multiple scalar propagators chained sequentially."""
     if prop_kwargs is None:
         prop_kwargs = {}
@@ -220,7 +223,7 @@ def scalarpropchained(
     return wfc, wfp, psiy, psix, zetay, zetax, receiver_amplitudes
 
 
-def test_pml_width_list():
+def test_pml_width_list() -> None:
     """Verify that PML width supplied as int and list give same result."""
     _, actual_int = run_direct_2d(propagator=scalarprop, prop_kwargs={"pml_width": 20})
     _, actual_list = run_direct_2d(
@@ -230,42 +233,42 @@ def test_pml_width_list():
     assert torch.allclose(actual_int, actual_list)
 
 
-def test_direct_2d():
+def test_direct_2d() -> None:
     """Test propagation in a constant 2D model."""
     expected, actual = run_direct_2d(propagator=scalarprop)
     diff = (expected - actual.cpu()).flatten()
     assert diff.norm().item() < 1.48
 
 
-def test_direct_2d_2nd_order():
+def test_direct_2d_2nd_order() -> None:
     """Test propagation with a 2nd order accurate propagator."""
     expected, actual = run_direct_2d(propagator=scalarprop, prop_kwargs={"accuracy": 2})
     diff = (expected - actual.cpu()).flatten()
     assert diff.norm().item() < 16
 
 
-def test_direct_2d_6th_order():
+def test_direct_2d_6th_order() -> None:
     """Test propagation with a 6th order accurate propagator."""
     expected, actual = run_direct_2d(propagator=scalarprop, prop_kwargs={"accuracy": 6})
     diff = (expected - actual.cpu()).flatten()
     assert diff.norm().item() < 0.22
 
 
-def test_direct_2d_8th_order():
+def test_direct_2d_8th_order() -> None:
     """Test propagation with a 8th order accurate propagator."""
     expected, actual = run_direct_2d(propagator=scalarprop, prop_kwargs={"accuracy": 8})
     diff = (expected - actual.cpu()).flatten()
     assert diff.norm().item() < 0.048
 
 
-def test_wavefield_decays():
+def test_wavefield_decays() -> None:
     """Test that the PML causes the wavefield amplitude to decay."""
     out = run_forward_2d(propagator=scalarprop, nt=2000)
     for outi in out[:-1]:
         assert outi.norm() < 2e-5
 
 
-def test_forward_cpu_gpu_match():
+def test_forward_cpu_gpu_match() -> None:
     """Test propagation on CPU and GPU produce the same result."""
     if torch.cuda.is_available():
         actual_cpu = run_forward_2d(propagator=scalarprop, device=torch.device("cpu"))
@@ -279,14 +282,14 @@ def test_forward_cpu_gpu_match():
         assert torch.allclose(cpui, gpui.cpu(), atol=5e-5)
 
 
-def test_direct_2d_module():
+def test_direct_2d_module() -> None:
     """Test propagation with the Module interface."""
     expected, actual = run_direct_2d(propagator=scalarprop, functional=False)
     diff = (expected - actual.cpu()).flatten()
     assert diff.norm().item() < 1.48
 
 
-def test_scatter_2d():
+def test_scatter_2d() -> None:
     """Test propagation in a 2D model with a point scatterer."""
     expected, actual = run_scatter_2d(
         propagator=scalarprop,
@@ -297,7 +300,7 @@ def test_scatter_2d():
     assert diff.norm().item() < 0.008
 
 
-def test_v_batched():
+def test_v_batched() -> None:
     """Test forward using a different velocity for each shot."""
     expected_diff = 1.3
     expected, actual = run_direct_2d(
@@ -392,7 +395,8 @@ def test_unused_source_receiver(
     assert torch.allclose(modelf.grad, modeli.grad)
 
 
-def run_scalarfunc(nt=3, gradgrad=False):
+def run_scalarfunc(nt: int = 3) -> None:
+    """Runs scalar_func for testing purposes."""
     from deepwave.scalar import scalar_func
 
     torch.manual_seed(1)
@@ -496,76 +500,72 @@ def run_scalarfunc(nt=3, gradgrad=False):
             1,
         ),
     )
-    if gradgrad:
-        torch.autograd.gradgradcheck(
-            scalar_func,
-            (
-                c,
-                source_amplitudes,
-                wfc,
-                wfp,
-                psiy,
-                psix,
-                zetay,
-                zetax,
-                ay,
-                ax,
-                by,
-                bx,
-                dbydy,
-                dbxdx,
-                sources_i,
-                receivers_i,
-                dy,
-                dx,
-                dt,
-                nt,
-                step_ratio,
-                accuracy,
-                pml_width,
-                n_batch,
-                None,
-                None,
-                1,
-            ),
-        )
+    torch.autograd.gradgradcheck(
+        scalar_func,
+        (
+            c,
+            source_amplitudes,
+            wfc,
+            wfp,
+            psiy,
+            psix,
+            zetay,
+            zetax,
+            ay,
+            ax,
+            by,
+            bx,
+            dbydy,
+            dbxdx,
+            sources_i,
+            receivers_i,
+            dy,
+            dx,
+            dt,
+            nt,
+            step_ratio,
+            accuracy,
+            pml_width,
+            n_batch,
+            None,
+            None,
+            1,
+        ),
+    )
 
 
-def test_scalarfunc():
+def test_scalarfunc() -> None:
+    """Test scalar_func with different time steps."""
     run_scalarfunc(nt=4)
     run_scalarfunc(nt=5)
 
 
-def test_scalarfunc_gradgrad():
-    run_scalarfunc(nt=4, gradgrad=True)
-
-
-def test_gradcheck_2d():
+def test_gradcheck_2d() -> None:
     """Test gradcheck in a 2D model."""
     run_gradcheck_2d(propagator=scalarprop)
 
 
-def test_gradcheck_2d_2nd_order():
+def test_gradcheck_2d_2nd_order() -> None:
     """Test gradcheck with a 2nd order accurate propagator."""
     run_gradcheck_2d(propagator=scalarprop, prop_kwargs={"accuracy": 2}, atol=1.2e-8)
 
 
-def test_gradcheck_2d_6th_order():
+def test_gradcheck_2d_6th_order() -> None:
     """Test gradcheck with a 6th order accurate propagator."""
     run_gradcheck_2d(propagator=scalarprop, prop_kwargs={"accuracy": 6})
 
 
-def test_gradcheck_2d_8th_order():
+def test_gradcheck_2d_8th_order() -> None:
     """Test gradcheck with a 8th order accurate propagator."""
     run_gradcheck_2d(propagator=scalarprop, prop_kwargs={"accuracy": 8}, atol=4e-8)
 
 
-def test_gradcheck_2d_cfl():
+def test_gradcheck_2d_cfl() -> None:
     """Test gradcheck with a timestep greater than the CFL limit."""
     run_gradcheck_2d(propagator=scalarprop, dt=0.002, atol=1.5e-6, gradgrad=False)
 
 
-def test_gradcheck_2d_cfl_gradgrad():
+def test_gradcheck_2d_cfl_gradgrad() -> None:
     """Test gradcheck with a timestep greater than the CFL limit."""
     run_gradcheck_2d(
         propagator=scalarprop,
@@ -583,27 +583,27 @@ def test_gradcheck_2d_cfl_gradgrad():
     )
 
 
-def test_gradcheck_2d_odd_timesteps():
+def test_gradcheck_2d_odd_timesteps() -> None:
     """Test gradcheck with one more timestep."""
     run_gradcheck_2d(propagator=scalarprop, nt_add=1)
 
 
-def test_gradcheck_2d_one_shot():
+def test_gradcheck_2d_one_shot() -> None:
     """Test gradcheck with one shot."""
     run_gradcheck_2d(propagator=scalarprop, num_shots=1)
 
 
-def test_gradcheck_2d_no_sources():
+def test_gradcheck_2d_no_sources() -> None:
     """Test gradcheck with no sources."""
     run_gradcheck_2d(propagator=scalarprop, num_sources_per_shot=0)
 
 
-def test_gradcheck_2d_no_receivers():
+def test_gradcheck_2d_no_receivers() -> None:
     """Test gradcheck with no receivers."""
     run_gradcheck_2d(propagator=scalarprop, num_receivers_per_shot=0)
 
 
-def test_gradcheck_2d_survey_pad():
+def test_gradcheck_2d_survey_pad() -> None:
     """Test gradcheck with survey_pad."""
     run_gradcheck_2d(
         propagator=scalarprop,
@@ -613,7 +613,7 @@ def test_gradcheck_2d_survey_pad():
     )
 
 
-def test_gradcheck_2d_partial_wavefields():
+def test_gradcheck_2d_partial_wavefields() -> None:
     """Test gradcheck with wavefields that do not cover the model."""
     run_gradcheck_2d(
         propagator=scalarprop,
@@ -623,37 +623,37 @@ def test_gradcheck_2d_partial_wavefields():
     )
 
 
-def test_gradcheck_2d_chained():
+def test_gradcheck_2d_chained() -> None:
     """Test gradcheck when two propagators are chained."""
     run_gradcheck_2d(propagator=scalarpropchained)
 
 
-def test_gradcheck_2d_negative():
+def test_gradcheck_2d_negative() -> None:
     """Test gradcheck with negative velocity."""
     run_gradcheck_2d(c=-1500, propagator=scalarprop)
 
 
-def test_gradcheck_2d_zero():
+def test_gradcheck_2d_zero() -> None:
     """Test gradcheck with zero velocity."""
     run_gradcheck_2d(c=0, dc=0, propagator=scalarprop)
 
 
-def test_gradcheck_2d_different_pml():
+def test_gradcheck_2d_different_pml() -> None:
     """Test gradcheck with different pml widths."""
     run_gradcheck_2d(propagator=scalarprop, pml_width=[0, 1, 5, 10], atol=5e-8)
 
 
-def test_gradcheck_2d_no_pml():
+def test_gradcheck_2d_no_pml() -> None:
     """Test gradcheck with no pml."""
     run_gradcheck_2d(propagator=scalarprop, pml_width=0)
 
 
-def test_gradcheck_2d_different_dx():
+def test_gradcheck_2d_different_dx() -> None:
     """Test gradcheck with different dx values."""
     run_gradcheck_2d(propagator=scalarprop, dx=(4, 5), dt=0.0005, atol=4e-8)
 
 
-def test_gradcheck_2d_single_cell():
+def test_gradcheck_2d_single_cell() -> None:
     """Test gradcheck with a single model cell."""
     run_gradcheck_2d(
         propagator=scalarprop,
@@ -664,7 +664,7 @@ def test_gradcheck_2d_single_cell():
     )
 
 
-def test_gradcheck_2d_big():
+def test_gradcheck_2d_big() -> None:
     """Test gradcheck with a big model."""
     run_gradcheck_2d(
         propagator=scalarprop,
@@ -674,7 +674,7 @@ def test_gradcheck_2d_big():
     )
 
 
-def test_gradcheck_2d_big_gradgrad():
+def test_gradcheck_2d_big_gradgrad() -> None:
     """Test gradcheck with a big model."""
     run_gradcheck_2d(
         propagator=scalarprop,
@@ -706,7 +706,7 @@ def test_negative_vel(
     device=None,
     dtype=None,
 ):
-    """Test propagation with a zero or negative velocity or dt"""
+    """Test propagation with a zero or negative velocity or dt."""
     torch.manual_seed(1)
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -773,7 +773,7 @@ def test_negative_vel(
     assert torch.allclose(out[0], torch.zeros_like(out[0]))
 
 
-def test_gradcheck_only_v_2d():
+def test_gradcheck_only_v_2d() -> None:
     """Test gradcheck with only v requiring gradient."""
     run_gradcheck_2d(
         propagator=scalarprop,
@@ -787,7 +787,7 @@ def test_gradcheck_only_v_2d():
     )
 
 
-def test_gradcheck_only_source_2d():
+def test_gradcheck_only_source_2d() -> None:
     """Test gradcheck with only source requiring gradient."""
     run_gradcheck_2d(
         propagator=scalarprop,
@@ -801,7 +801,7 @@ def test_gradcheck_only_source_2d():
     )
 
 
-def test_gradcheck_only_wavefield_0_2d():
+def test_gradcheck_only_wavefield_0_2d() -> None:
     """Test gradcheck with only wavefield_0 requiring gradient."""
     run_gradcheck_2d(
         propagator=scalarprop,
@@ -815,29 +815,27 @@ def test_gradcheck_only_wavefield_0_2d():
     )
 
 
-def test_gradcheck_v_batched():
+def test_gradcheck_v_batched() -> None:
     """Test gradcheck using a different velocity for each shot."""
     run_gradcheck_2d(propagator=scalarprop, c=torch.tensor([[[1500.0]], [[1600.0]]]))
 
 
 def run_direct(
-    c,
-    freq,
-    dx,
-    dt,
-    nx,
-    num_shots,
-    num_sources_per_shot,
-    num_receivers_per_shot,
-    propagator,
-    prop_kwargs,
-    device=None,
-    dtype=None,
-    **kwargs,
-):
-    """Create a constant model, and the expected waveform at point,
-    and the forward propagated wave.
-    """
+    c: Union[float, torch.Tensor],
+    freq: float,
+    dx: Union[float, List[float]],
+    dt: float,
+    nx: Tuple[int, ...],
+    num_shots: int,
+    num_sources_per_shot: int,
+    num_receivers_per_shot: int,
+    propagator: Any,
+    prop_kwargs: Optional[Dict[str, Any]],
+    device: Optional[torch.device] = None,
+    dtype: Optional[torch.dtype] = None,
+    **kwargs: Any,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Create the expected and actual direct waveform at a point."""
     torch.manual_seed(1)
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -924,22 +922,22 @@ def run_direct_2d(
 
 
 def run_forward(
-    c,
-    freq,
-    dx,
-    dt,
-    nx,
-    num_shots,
-    num_sources_per_shot,
-    num_receivers_per_shot,
-    propagator,
-    prop_kwargs,
-    device=None,
-    dtype=None,
-    dc=100,
-    nt=None,
-    **kwargs,
-):
+    c: Union[float, torch.Tensor],
+    freq: float,
+    dx: Union[float, List[float]],
+    dt: float,
+    nx: Tuple[int, ...],
+    num_shots: int,
+    num_sources_per_shot: int,
+    num_receivers_per_shot: int,
+    propagator: Any,
+    prop_kwargs: Optional[Dict[str, Any]],
+    device: Optional[torch.device] = None,
+    dtype: Optional[torch.dtype] = None,
+    dc: float = 100,
+    nt: Optional[int] = None,
+    **kwargs: Any,
+) -> Tuple[torch.Tensor, ...]:
     """Create a random model and forward propagate."""
     torch.manual_seed(1)
     if device is None:
@@ -1004,23 +1002,21 @@ def run_forward_2d(
 
 
 def run_scatter(
-    c,
-    dc,
-    freq,
-    dx,
-    dt,
-    nx,
-    num_shots,
-    num_sources_per_shot,
-    num_receivers_per_shot,
-    propagator,
-    prop_kwargs,
-    device=None,
-    dtype=None,
-):
-    """Create a point scatterer model, and the expected waveform at point,
-    and the forward propagated wave.
-    """
+    c: float,
+    dc: float,
+    freq: float,
+    dx: Union[float, List[float]],
+    dt: float,
+    nx: Tuple[int, ...],
+    num_shots: int,
+    num_sources_per_shot: int,
+    num_receivers_per_shot: int,
+    propagator: Any,
+    prop_kwargs: Optional[Dict[str, Any]],
+    device: Optional[torch.device] = None,
+    dtype: Optional[torch.dtype] = None,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Create the expected and actual point scattered waveform at point."""
     torch.manual_seed(1)
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -1115,37 +1111,37 @@ def run_scatter_2d(
 
 
 def run_gradcheck(
-    c,
-    dc,
-    freq,
-    dx,
-    dt,
-    nx,
-    num_shots,
-    num_sources_per_shot,
-    num_receivers_per_shot,
-    propagator,
-    prop_kwargs,
-    pml_width=3,
-    survey_pad=None,
-    origin=None,
-    wavefield_size=None,
-    device=None,
-    dtype=None,
-    v_requires_grad=True,
-    source_requires_grad=True,
-    provide_wavefields=True,
-    wavefield_0_requires_grad=True,
-    wavefield_m1_requires_grad=True,
-    psiy_m1_requires_grad=True,
-    psix_m1_requires_grad=True,
-    zetay_m1_requires_grad=True,
-    zetax_m1_requires_grad=True,
-    atol=2e-8,
-    rtol=2e-5,
-    gradgrad=True,
-    nt_add=0,
-):
+    c: Union[float, torch.Tensor],
+    dc: float,
+    freq: float,
+    dx: Union[float, List[float]],
+    dt: float,
+    nx: Tuple[int, ...],
+    num_shots: int,
+    num_sources_per_shot: int,
+    num_receivers_per_shot: int,
+    propagator: Any,
+    prop_kwargs: Optional[Dict[str, Any]],
+    pml_width: Union[int, List[int]] = 3,
+    survey_pad: Optional[Union[int, List[int]]] = None,
+    origin: Optional[List[int]] = None,
+    wavefield_size: Optional[Tuple[int, ...]] = None,
+    device: Optional[torch.device] = None,
+    dtype: Optional[torch.dtype] = None,
+    v_requires_grad: bool = True,
+    source_requires_grad: bool = True,
+    provide_wavefields: bool = True,
+    wavefield_0_requires_grad: bool = True,
+    wavefield_m1_requires_grad: bool = True,
+    psiy_m1_requires_grad: bool = True,
+    psix_m1_requires_grad: bool = True,
+    zetay_m1_requires_grad: bool = True,
+    zetax_m1_requires_grad: bool = True,
+    atol: float = 2e-8,
+    rtol: float = 2e-5,
+    gradgrad: bool = True,
+    nt_add: int = 0,
+) -> None:
     """Run PyTorch's gradcheck to test the gradient."""
     torch.manual_seed(1)
     if device is None:
@@ -1314,12 +1310,14 @@ def run_gradcheck_2d(
 
 
 # Tests for Scalar.__init__
-def test_scalar_init_v_non_tensor():
+def test_scalar_init_v_non_tensor() -> None:
+    """Test that Scalar.__init__ raises TypeError if v is not a tensor."""
     with pytest.raises(TypeError, match=re.escape("v must be a torch.Tensor.")):
         Scalar([1, 2, 3], 1.0)
 
 
-def test_scalar_init_v_requires_grad_non_bool():
+def test_scalar_init_v_requires_grad_non_bool() -> None:
+    """Test that Scalar.__init__ raises TypeError if v_requires_grad is not a bool."""
     v = torch.ones(10, 10)
     with pytest.raises(
         TypeError, match=re.escape("v_requires_grad must be bool, got int")

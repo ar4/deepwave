@@ -1,4 +1,7 @@
+"""Tests for deepwave.propagator."""
+
 import re
+from typing import Any, Tuple
 
 import pytest
 import torch
@@ -11,14 +14,14 @@ DX = 5.0
 
 
 @pytest.fixture
-def prop():
+def prop() -> deepwave.Scalar:
     """Return a propagator."""
     model = torch.ones(NZ, NY) * 1500
     dx = DX
     return deepwave.Scalar(model, dx)
 
 
-def test_passes(prop):
+def test_passes(prop: deepwave.Scalar) -> None:
     """Check that the test passes when everything is correct."""
     source_amplitudes = torch.zeros(1, 1, 2)
     source_locations = torch.zeros(1, 1, 2, dtype=torch.long)
@@ -28,7 +31,7 @@ def test_passes(prop):
 
 
 @pytest.mark.parametrize(
-    "arg_name, arg_value, expected_error_match, expected_error_type",
+    ("arg_name", "arg_value", "expected_error_match", "expected_error_type"),
     [
         ("accuracy", 3, "accuracy must be 2, 4, 6, or 8", ValueError),
         ("accuracy", 4.0, "accuracy must be an int.", TypeError),
@@ -58,12 +61,13 @@ def test_passes(prop):
     ],
 )
 def test_scalar_forward_invalid_optional_args(
-    prop,
-    arg_name,
-    arg_value,
-    expected_error_match,
-    expected_error_type,
-):
+    prop: deepwave.Scalar,
+    arg_name: str,
+    arg_value: Any,
+    expected_error_match: str,
+    expected_error_type: Any,
+) -> None:
+    """Test scalar raises for invalid optional arguments."""
     source_amplitudes = torch.zeros(1, 1, 2)
     source_locations = torch.zeros(1, 1, 2, dtype=torch.long)
     receiver_locations = torch.zeros(1, 1, 2, dtype=torch.long)
@@ -78,7 +82,12 @@ def test_scalar_forward_invalid_optional_args(
 
 
 @pytest.mark.parametrize(
-    "source_amplitudes_shape, source_locations_shape, receiver_locations_shape, expected_error_match",
+    (
+        "source_amplitudes_shape",
+        "source_locations_shape",
+        "receiver_locations_shape",
+        "expected_error_match",
+    ),
     [
         (
             (1, 1),
@@ -96,13 +105,15 @@ def test_scalar_forward_invalid_optional_args(
             (1, 1, 2),
             (1, 2, 2),
             (1, 1, 2),
-            "Expected source amplitudes and locations to be the same size in the n_sources_per_shot dimension",
+            "Expected source amplitudes and locations to be the same size in the "
+            "n_sources_per_shot dimension",
         ),  # shape mismatch 2
         (
             (1, 1, 2),
             (1, 1, 3),
             (1, 1, 2),
-            "Source locations must have 2 dimensional coordinates, but found one with 3.",
+            "Source locations must have 2 dimensional coordinates, but found one "
+            "with 3.",
         ),  # shape mismatch 3
         (
             (2, 1, 1),
@@ -113,12 +124,13 @@ def test_scalar_forward_invalid_optional_args(
     ],
 )
 def test_input_shape_mismatch(
-    prop,
-    source_amplitudes_shape,
-    source_locations_shape,
-    receiver_locations_shape,
-    expected_error_match,
-):
+    prop: deepwave.Scalar,
+    source_amplitudes_shape: Tuple[int, ...],
+    source_locations_shape: Tuple[int, ...],
+    receiver_locations_shape: Tuple[int, ...],
+    expected_error_match: str,
+) -> None:
+    """Test that scalar forward propagation raises errors for input shape mismatches."""
     source_amplitudes = torch.zeros(source_amplitudes_shape)
     source_locations = torch.zeros(source_locations_shape, dtype=torch.long)
     receiver_locations = torch.zeros(receiver_locations_shape, dtype=torch.long)
@@ -127,7 +139,7 @@ def test_input_shape_mismatch(
         prop(dt, source_amplitudes, source_locations, receiver_locations)
 
 
-def test_source_outside_model(prop):
+def test_source_outside_model(prop: deepwave.Scalar) -> None:
     """Check error when source location not inside model."""
     source_amplitudes = torch.zeros(1, 1, 2)
     source_locations = torch.zeros(1, 1, 2, dtype=torch.long)
@@ -138,7 +150,7 @@ def test_source_outside_model(prop):
         prop(dt, source_amplitudes, source_locations, receiver_locations)
 
 
-def test_receiver_outside_model(prop):
+def test_receiver_outside_model(prop: deepwave.Scalar) -> None:
     """Check error when receiver location not inside model."""
     source_amplitudes = torch.zeros(1, 1, 2)
     source_locations = torch.zeros(1, 1, 2, dtype=torch.long)
@@ -150,7 +162,7 @@ def test_receiver_outside_model(prop):
 
 
 @pytest.mark.parametrize(
-    "wavefield_shape, expected_error_match",
+    ("wavefield_shape", "expected_error_match"),
     [
         (
             (3, NZ + 2 * 20, NY + 2 * 20),
@@ -170,7 +182,10 @@ def test_receiver_outside_model(prop):
         ),  # too big in Y
     ],
 )
-def test_wavefield_shape_mismatch(prop, wavefield_shape, expected_error_match):
+def test_wavefield_shape_mismatch(
+    prop: deepwave.Scalar, wavefield_shape: Tuple[int, ...], expected_error_match: str
+) -> None:
+    """Test scalar raises for wavefield shape mismatches."""
     source_amplitudes = torch.zeros(2, 1, 2)
     source_locations = torch.zeros(2, 1, 2, dtype=torch.long)
     receiver_locations = torch.zeros(2, 1, 2, dtype=torch.long)
@@ -186,7 +201,7 @@ def test_wavefield_shape_mismatch(prop, wavefield_shape, expected_error_match):
         )
 
 
-def test_pml_width_list_too_long(prop):
+def test_pml_width_list_too_long(prop: deepwave.Scalar) -> None:
     """Check error when pml_width list is too long."""
     source_amplitudes = torch.zeros(2, 1, 2)
     source_locations = torch.zeros(2, 1, 2, dtype=torch.long)

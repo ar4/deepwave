@@ -1,7 +1,7 @@
 PyTorch
 =======
 
-Deepwave leverages PyTorch to provide wave propagation as a differentiable operation. A solid understanding of PyTorch is key to maximizing Deepwave's utility. While PyTorch offers extensive features and flexibility, and its `website <https://pytorch.org/tutorials>`_ provides comprehensive tutorials, this section offers a concise overview of its most crucial aspects.
+Deepwave leverages PyTorch to provide wave propagation as a differentiable operation. A solid understanding of PyTorch is key to maximising Deepwave's utility. While PyTorch offers extensive features and flexibility, and its `website <https://pytorch.org/tutorials>`_ provides comprehensive tutorials, this section offers a concise overview of its most crucial aspects.
 
 PyTorch, much like the popular Python package `NumPy <https://numpy.org/>`_, offers tools for numerical computation in Python. Many NumPy functions have direct PyTorch equivalents. However, two key differences set PyTorch apart: Tensors and automatic differentiation (autograd).
 
@@ -20,7 +20,7 @@ NumPy stores data in multi-dimensional arrays called ndarrays. PyTorch uses Tens
 
 **Automatic Differentiation (Autograd)**
 
-The second, and arguably more crucial, difference is PyTorch's autograd system. It allows you to automatically compute gradients through complex chains of operations, enabling inversion and optimization tasks by simply defining the forward pass of your calculations.
+The second, and arguably more crucial, difference is PyTorch's autograd system. It allows you to automatically compute gradients through complex chains of operations, enabling inversion and optimisation tasks by simply defining the forward pass of your calculations.
 
 Let's illustrate with a simple example:
 
@@ -60,11 +60,11 @@ Consider a slightly more complex chain of operations:
     # Expected output:
     # tensor([0., 1., 2.])
 
-Even with a longer and more intricate operation chain, PyTorch effortlessly calculates the gradients. Notice that `d` depends on `a` both directly (through `a * c`) and indirectly (through `b`). Also, the reported gradient for `a` is `[5., 5., 5.]`, not `[3., 3., 3.]`. This is because PyTorch accumulates gradients. If `a.grad` was not explicitly cleared from a previous computation, the new gradients are added to the existing ones. This accumulation is particularly useful when processing large datasets in smaller batches, allowing you to accumulate gradients across batches before an optimizer step.
+Even with a longer and more intricate operation chain, PyTorch effortlessly calculates the gradients. Notice that `d` depends on `a` both directly (through `a * c`) and indirectly (through `b`). Also, the reported gradient for `a` is `[5., 5., 5.]`, not `[3., 3., 3.]`. This is because PyTorch accumulates gradients. If `a.grad` was not explicitly cleared from a previous computation, the new gradients are added to the existing ones. This accumulation is particularly useful when processing large datasets in smaller batches, allowing you to accumulate gradients across batches before an optimiser step.
 
-**Optimization and Inversion**
+**Optimisation and Inversion**
 
-With the ability to compute gradients, we can perform optimization and inversion. PyTorch offers various optimizers, or you can implement your own. Here's an example using the Stochastic Gradient Descent (SGD) method:
+With the ability to compute gradients, we can perform optimisation and inversion. PyTorch offers various optimisers, or you can implement your own. Here's an example using the Stochastic Gradient Descent (SGD) method:
 
 .. code-block:: python
 
@@ -93,7 +93,7 @@ With the ability to compute gradients, we can perform optimization and inversion
     # Expected output (approximately):
     # tensor([0.1230, 0.3210], requires_grad=True)
 
-In this example, `f` represents our forward model. We define `x_true` and its corresponding `y_true`. Starting with an initial guess for `x` (zeros), we iteratively: clear previous gradients, compute the model output `y`, calculate the Mean Squared Error (MSE) loss between `y` and `y_true`, backpropagate to get the gradient of the loss with respect to `x`, and then update `x` using the optimizer. After 2000 iterations, `x` converges to the correct solution. It's crucial to call `opt.zero_grad()` at the beginning of each iteration to prevent gradient accumulation from previous steps.
+In this example, `f` represents our forward model. We define `x_true` and its corresponding `y_true`. Starting with an initial guess for `x` (zeros), we iteratively: clear previous gradients, compute the model output `y`, calculate the Mean Squared Error (MSE) loss between `y` and `y_true`, backpropagate to get the gradient of the loss with respect to `x`, and then update `x` using the optimiser. After 2000 iterations, `x` converges to the correct solution. It's crucial to call `opt.zero_grad()` at the beginning of each iteration to prevent gradient accumulation from previous steps.
 
 **Deepwave's Role**
 

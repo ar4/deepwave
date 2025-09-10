@@ -1,7 +1,9 @@
-"""This script demonstrates forward modeling using Deepwave with the Marmousi velocity model.
-It loads the Marmousi Vp model, sets up source and receiver locations,
-propagates seismic waves, and generates synthetic receiver data.
-The results are then plotted and saved to a file.
+"""Demonstrates forward modelling using Deepwave.
+
+This script demonstrates forward modelling using Deepwave with the
+Marmousi velocity model. It loads the Marmousi Vp model, sets up source
+and receiver locations, propagates seismic waves, and generates synthetic
+receiver data. Results are then plotted and saved to a file.
 """
 
 import matplotlib.pyplot as plt
@@ -14,7 +16,11 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 ny = 2301
 nx = 751
 dx = 4.0
-v = torch.from_file("marmousi_vp.bin", size=ny * nx).reshape(ny, nx).to(device)
+v = (
+    torch.from_file("marmousi_vp.bin", size=ny * nx)
+    .reshape(ny, nx)
+    .to(device)
+)
 
 n_shots = 115
 

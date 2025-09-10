@@ -3,7 +3,7 @@ Reducing memory usage by accumulating gradients over batches
 
 In the previous examples we propagated all of the shots simultaneously. This is simple, and can improve performance by running shots in parallel, but for large datasets might require more memory than is available. To reduce the amount of memory required while getting identical results, we can instead propagate batches of shots and accumulate the gradients over all of the batches before taking a step with the optimiser. To demonstrate this we will again perform imaging with the Marmousi data, but this time we will use the entire model and dataset, which we probably wouldn't have enough memory to do if we propagated all of the shots simultaneously as in the previous example.
 
-But first we will do something that is unrelated to reducing memory requirements or using batches: we will use this example to also demonstrate another method of preventing the direct arrivals from causing artefacts in the migrated image, using a mask that attempts to attenuate the direct arrivals. To avoid introducing high frequencies into the data with a sharp cut-off, we use a tapered mute for the mask::
+But first we will do something that is unrelated to reducing memory requirements or using batches: we will use this example to also demonstrate another method of preventing artefacts in the migrated image caused by direct arrivals, using a mask that attempts to attenuate them. To avoid introducing high frequencies into the data with a sharp cut-off, we use a tapered mute for the mask::
 
     mask = torch.ones_like(observed_data)
     flat_len = 100

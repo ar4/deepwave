@@ -23,15 +23,15 @@ After setting up a simple two layer model with a single shot, we can calculate t
     wrap(v).backward()
     grad = v.grad.detach()
 
-The Hessian describes the effect that changing the velocity model at a point will have on the gradient at all points.
+The Hessian describes the effect that changing the velocity model at a point will have on the gradient at all points in the model.
 
 .. image:: example_hessian.jpg
 
-Taking account of these second order effects, by multiplying the gradient by the inverse of the Hessian, we get a better estimate of where we should update the model to reduce the loss function value. The gradient has high amplitude around the source, because the source has high amplitude there, but after applying the inverse Hessian the amplitudes of the gradient around the source are downweighted in favour of amplitudes near the reflector.
+By taking these second-order effects into account, multiplying the gradient by the inverse of the Hessian gives a better estimate of how the model should be updated to reduce the loss function. The gradient has a high amplitude around the source, but after applying the inverse Hessian, the gradient amplitudes around the source are down-weighted in favour of amplitudes near the reflector.
 
 .. image:: example_hessian_vs_gradient.jpg
 
-We can use this improved update estimate to optimise our velocity model by using the Newton-Raphson method::
+We can use this improved update direction to optimise our velocity model using the Newton-Raphson method::
 
     for epoch in range(3):
         hess = torch.autograd.functional.hessian(wrap, v).detach()

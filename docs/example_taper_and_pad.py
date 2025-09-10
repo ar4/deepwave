@@ -1,5 +1,7 @@
-"""This script demonstrates the effect of frequency tapering and time padding
-in Deepwave to reduce wraparound and ringing artifacts in receiver data.
+"""Demonstrates frequency tapering and time padding to reduce artefacts.
+
+Results with and without tapering and padding are compared to show the
+reduction in wraparound and ringing artefacts in receiver data.
 """
 
 import matplotlib.pyplot as plt
@@ -24,11 +26,15 @@ receiver_locations = torch.zeros(1, nx, 2, dtype=torch.long, device=device)
 receiver_locations[:, :, 1] = torch.arange(nx)
 
 # source_locations
-source_locations = torch.tensor([0, nx // 2]).long().to(device).reshape(1, 1, 2)
+source_locations = (
+    torch.tensor([0, nx // 2]).long().to(device).reshape(1, 1, 2)
+)
 
 # source_amplitudes
 source_amplitudes = (
-    deepwave.wavelets.ricker(freq, nt, dt, peak_time).reshape(1, 1, -1).to(device)
+    deepwave.wavelets.ricker(freq, nt, dt, peak_time)
+    .reshape(1, 1, -1)
+    .to(device)
 )
 
 # Propagate

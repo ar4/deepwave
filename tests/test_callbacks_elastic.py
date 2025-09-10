@@ -1,8 +1,11 @@
+"""Tests for deepwave.callbacks_elastic."""
+
 import torch
+
 import deepwave
 
 
-def test_elastic_callback_call_count():
+def test_elastic_callback_call_count() -> None:
     """Check that the callbacks are called the correct number of times."""
     lamb = torch.ones(10, 10) * 2200
     mu = torch.ones(10, 10) * 1000
@@ -23,10 +26,13 @@ def test_elastic_callback_call_count():
     receiver_locations_y[0, 0, 1] = 5
 
     class Counter:
-        def __init__(self):
+        """A simple counter class for callbacks."""
+
+        def __init__(self) -> None:
             self.count = 0
 
-        def __call__(self, state):
+        def __call__(self, state: deepwave.common.CallbackState) -> None:
+            """Increments the counter."""
             self.count += 1
 
     # Test with a frequency that divides nt evenly
@@ -73,7 +79,7 @@ def test_elastic_callback_call_count():
     assert backward_counter.count == (nt + 2) // 3
 
 
-def test_elastic_callback_wavefield_shape():
+def test_elastic_callback_wavefield_shape() -> None:
     """Check that the wavefield has the correct shape for each view."""
     lamb = torch.ones(10, 10) * 2200
     mu = torch.ones(10, 10) * 1000
@@ -89,7 +95,10 @@ def test_elastic_callback_wavefield_shape():
     pml_width = 5
 
     class Checker:
-        def __call__(self, state):
+        """A checker class for wavefield shapes."""
+
+        def __call__(self, state: deepwave.common.CallbackState) -> None:
+            """Checks the shape of the wavefield for different views."""
             w_inner = state.get_wavefield("vy_0", "inner")
             assert w_inner.shape == (1, 10, 10)
             w_pml = state.get_wavefield("vy_0", "pml")
@@ -112,7 +121,7 @@ def test_elastic_callback_wavefield_shape():
     )
 
 
-def test_elastic_callback_wavefield_modification():
+def test_elastic_callback_wavefield_modification() -> None:
     """Check that the wavefield can be modified in the forward callback."""
     lamb = torch.ones(10, 10) * 2200
     mu = torch.ones(10, 10) * 1000
@@ -130,18 +139,21 @@ def test_elastic_callback_wavefield_modification():
     receiver_locations_p[0, 0, 1] = 5
 
     class Setter:
-        def __init__(self):
+        """A setter class for wavefield modification."""
+
+        def __init__(self) -> None:
             self.expected = torch.zeros(nt)
 
-        def __call__(self, state):
+        def __call__(self, state: deepwave.common.CallbackState) -> None:
+            """Modifies the wavefield at a specific location."""
             val = torch.randn(1)
             self.expected[state.step] = val
             wy_pml = state.get_wavefield("sigmayy_0", "pml")
             wx_pml = state.get_wavefield("sigmaxx_0", "pml")
             # The coordinates are relative to the padded model, so we need to
             # add the PML width to get the correct index.
-            wy_pml[0, 5 + state._pml_width[0], 5 + state._pml_width[2]] = -val
-            wx_pml[0, 5 + state._pml_width[0], 5 + state._pml_width[2]] = -val
+            wy_pml[0, 5 + state._pml_width[0], 5 + state._pml_width[2]] = -val  # noqa: SLF001
+            wx_pml[0, 5 + state._pml_width[0], 5 + state._pml_width[2]] = -val  # noqa: SLF001
 
     setter = Setter()
     out = deepwave.elastic(
@@ -160,7 +172,61 @@ def test_elastic_callback_wavefield_modification():
     assert torch.allclose(out[-3].flatten(), setter.expected)
 
 
-def test_elastic_callback_gradient_modification():
+def test_elastic_multishot_equivalence() -> None:
+    """Check that a do-nothing callback does not change the output.
+
+    Checks it for multiple shots.
+    """
+    lamb = torch.ones(10, 10) * 2200
+    mu = torch.ones(10, 10) * 1000
+    buoyancy = torch.ones(10, 10) * 1 / 2200
+    dx = 5.0
+    dt = 0.004
+    source_amplitudes_y = torch.zeros(2, 1, 20)
+    source_amplitudes_y[0, 0, 5] = 1
+    source_amplitudes_y[1, 0, 8] = 1
+    source_locations_y = torch.zeros(2, 1, 2, dtype=torch.long)
+    source_locations_y[0, 0, 0] = 5
+    source_locations_y[0, 0, 1] = 5
+    source_locations_y[1, 0, 0] = 3
+    source_locations_y[1, 0, 1] = 3
+    receiver_locations_y = torch.zeros(2, 1, 2, dtype=torch.long)
+    receiver_locations_y[0, 0, 0] = 5
+    receiver_locations_y[0, 0, 1] = 5
+    receiver_locations_y[1, 0, 0] = 3
+    receiver_locations_y[1, 0, 1] = 3
+
+    def do_nothing(state: deepwave.common.CallbackState) -> None:
+        """A do-nothing callback function."""
+
+    out1 = deepwave.elastic(
+        lamb,
+        mu,
+        buoyancy,
+        dx,
+        dt,
+        source_amplitudes_y=source_amplitudes_y,
+        source_locations_y=source_locations_y,
+        receiver_locations_y=receiver_locations_y,
+    )
+    out2 = deepwave.elastic(
+        lamb,
+        mu,
+        buoyancy,
+        dx,
+        dt,
+        source_amplitudes_y=source_amplitudes_y,
+        source_locations_y=source_locations_y,
+        receiver_locations_y=receiver_locations_y,
+        forward_callback=do_nothing,
+        callback_frequency=1,
+    )
+    for i in range(len(out1)):
+        assert torch.allclose(out1[i], out2[i])
+    assert torch.allclose(out1[-1], out2[-1])
+
+
+def test_elastic_callback_gradient_modification() -> None:
     """Check that the gradient can be modified in the backward callback."""
     lamb = torch.ones(10, 10) * 2200
     mu = torch.ones(10, 10) * 1000
@@ -179,7 +245,7 @@ def test_elastic_callback_gradient_modification():
     receiver_locations_y[0, 0, 0] = 5
     receiver_locations_y[0, 0, 1] = 5
 
-    def modifier(state):
+    def modifier(state: deepwave.common.CallbackState) -> None:
         grad_mu = state.get_gradient("mu", "pml")
         grad_mu *= 2
 
@@ -215,7 +281,7 @@ def test_elastic_callback_gradient_modification():
     assert torch.allclose(grad1 * 2, grad2)
 
 
-def test_elastic_callback_equivalence():
+def test_elastic_callback_equivalence() -> None:
     """Check that a do-nothing callback does not change the output."""
     lamb = torch.ones(10, 10) * 2200
     mu = torch.ones(10, 10) * 1000
@@ -234,7 +300,7 @@ def test_elastic_callback_equivalence():
     receiver_locations_y[0, 0, 0] = 5
     receiver_locations_y[0, 0, 1] = 5
 
-    def do_nothing(state):
+    def do_nothing(state: deepwave.common.CallbackState) -> None:
         pass
 
     out1 = deepwave.elastic(
@@ -304,53 +370,3 @@ def test_elastic_callback_equivalence():
     assert torch.allclose(grad1_lamb, grad3_lamb)
     assert torch.allclose(grad1_mu, grad3_mu)
     assert torch.allclose(grad1_buoyancy, grad3_buoyancy)
-
-
-def test_elastic_multishot_equivalence():
-    """Check that a do-nothing callback does not change the output with multiple shots."""
-    lamb = torch.ones(10, 10) * 2200
-    mu = torch.ones(10, 10) * 1000
-    buoyancy = torch.ones(10, 10) * 1 / 2200
-    dx = 5.0
-    dt = 0.004
-    source_amplitudes_y = torch.zeros(2, 1, 20)
-    source_amplitudes_y[0, 0, 5] = 1
-    source_amplitudes_y[1, 0, 8] = 1
-    source_locations_y = torch.zeros(2, 1, 2, dtype=torch.long)
-    source_locations_y[0, 0, 0] = 5
-    source_locations_y[0, 0, 1] = 5
-    source_locations_y[1, 0, 0] = 3
-    source_locations_y[1, 0, 1] = 3
-    receiver_locations_y = torch.zeros(2, 1, 2, dtype=torch.long)
-    receiver_locations_y[0, 0, 0] = 5
-    receiver_locations_y[0, 0, 1] = 5
-    receiver_locations_y[1, 0, 0] = 3
-    receiver_locations_y[1, 0, 1] = 3
-
-    def do_nothing(state):
-        pass
-
-    out1 = deepwave.elastic(
-        lamb,
-        mu,
-        buoyancy,
-        dx,
-        dt,
-        source_amplitudes_y=source_amplitudes_y,
-        source_locations_y=source_locations_y,
-        receiver_locations_y=receiver_locations_y,
-    )
-    out2 = deepwave.elastic(
-        lamb,
-        mu,
-        buoyancy,
-        dx,
-        dt,
-        source_amplitudes_y=source_amplitudes_y,
-        source_locations_y=source_locations_y,
-        receiver_locations_y=receiver_locations_y,
-        forward_callback=do_nothing,
-        callback_frequency=1,
-    )
-    for i in range(len(out1)):
-        assert torch.allclose(out1[i], out2[i])

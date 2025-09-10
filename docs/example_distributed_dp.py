@@ -1,5 +1,7 @@
-"""This script demonstrates distributed execution using PyTorch's DataParallel
-for multi-GPU wave propagation with Deepwave.
+"""Demonstrates distributed execution with PyTorch DataParallel.
+
+This script performs a simple Full-Waveform Inversion (FWI) using PyTorch's
+DataParallel for multi-GPU wave propagation.
 """
 
 import matplotlib.pyplot as plt
@@ -15,7 +17,9 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 ny_full = 2301
 nx_full = 751
 dx = 4.0
-v_true_full = torch.from_file("marmousi_vp.bin", size=ny_full * nx_full).reshape(
+v_true_full = torch.from_file(
+    "marmousi_vp.bin", size=ny_full * nx_full
+).reshape(
     ny_full,
     nx_full,
 )
@@ -53,6 +57,7 @@ observed_data_full = torch.from_file(
 
 # Define a function to taper the ends of traces
 def taper(x):
+    """Applies a cosine taper to the end of the input tensor."""
     return deepwave.common.cosine_taper_end(x, 100)
 
 
@@ -60,7 +65,9 @@ def taper(x):
 n_shots = 16
 n_receivers_per_shot = 100
 nt = 300
-observed_data = taper(observed_data_full[:n_shots, :n_receivers_per_shot, :nt]).to(
+observed_data = taper(
+    observed_data_full[:n_shots, :n_receivers_per_shot, :nt]
+).to(
     device,
 )
 
@@ -98,7 +105,16 @@ source_amplitudes = (
 
 # Generate a velocity model constrained to be within a desired range
 class Model(torch.nn.Module):
+    """A PyTorch module that represents the velocity model."""
+
     def __init__(self, initial, min_vel, max_vel):
+        """Initialises the Model.
+
+        Args:
+            initial (torch.Tensor): The initial velocity model.
+            min_vel (float): The minimum allowed velocity.
+            max_vel (float): The maximum allowed velocity.
+        """
         super().__init__()
         self.min_vel = min_vel
         self.max_vel = max_vel
@@ -107,23 +123,40 @@ class Model(torch.nn.Module):
         )
 
     def forward(self):
-        return torch.sigmoid(self.model) * (self.max_vel - self.min_vel) + self.min_vel
+        """Performs the forward pass of the model."""
+        return (
+            torch.sigmoid(self.model) * (self.max_vel - self.min_vel)
+            + self.min_vel
+        )
 
 
 class Prop(torch.nn.Module):
+    """A PyTorch module that wraps the Deepwave scalar propagator."""
+
     def __init__(self, model, dx, dt, freq):
+        """Initialises the Prop module.
+
+        Args:
+            model (torch.nn.Module): The velocity model.
+            dx (float): The grid spacing.
+            dt (float): The time step.
+            freq (float): The dominant frequency of the source wavelet.
+        """
         super().__init__()
         self.model = model
         self.dx = dx
         self.dt = dt
         self.freq = freq
 
-    def forward(self, source_amplitudes, source_locations, receiver_locations):
+    def forward(
+        self, source_amplitudes, source_locations, receiver_locations
+    ):
+        """Performs the forward pass of the propagator."""
         out = scalar(
-            model().to(device),
+            self.model(),
             self.dx,
             self.dt,
-            source_amplitudes=source_amplitudes.to(device),
+            source_amplitudes=source_amplitudes,
             source_locations=source_locations,
             receiver_locations=receiver_locations,
             max_vel=2500,
@@ -147,16 +180,22 @@ for cutoff_freq in [10, 15, 20, 25, 30]:
     sos = butter(6, cutoff_freq, fs=1 / dt, output="sos")
 
     def filt(x):
+        """Applies a Butterworth filter to the input tensor."""
         sosd = [torch.tensor(sosi).to(x.dtype).to(x.device) for sosi in sos]
         return biquad(biquad(biquad(x, *sosd[0]), *sosd[1]), *sosd[2])
 
     observed_data_filt = filt(observed_data)
-    optimiser = torch.optim.LBFGS(prop.parameters(), line_search_fn="strong_wolfe")
-    for epoch in range(n_epochs):
+    optimiser = torch.optim.LBFGS(
+        prop.parameters(), line_search_fn="strong_wolfe"
+    )
+    for _epoch in range(n_epochs):
 
         def closure():
+            """Closure function for the LBFGS optimiser."""
             optimiser.zero_grad()
-            out_filt = prop(source_amplitudes, source_locations, receiver_locations)
+            out_filt = prop(
+                source_amplitudes, source_locations, receiver_locations
+            )
             loss = 1e6 * loss_fn(out_filt, observed_data_filt)
             loss.backward()
             return loss
@@ -168,11 +207,17 @@ v = model()
 vmin = v_true.min()
 vmax = v_true.max()
 _, ax = plt.subplots(3, figsize=(10.5, 10.5), sharex=True, sharey=True)
-ax[0].imshow(v_init.cpu().T, aspect="auto", cmap="gray", vmin=vmin, vmax=vmax)
+ax[0].imshow(
+    v_init.cpu().T, aspect="auto", cmap="gray", vmin=vmin, vmax=vmax
+)
 ax[0].set_title("Initial")
-ax[1].imshow(v.detach().cpu().T, aspect="auto", cmap="gray", vmin=vmin, vmax=vmax)
+ax[1].imshow(
+    v.detach().cpu().T, aspect="auto", cmap="gray", vmin=vmin, vmax=vmax
+)
 ax[1].set_title("Out")
-ax[2].imshow(v_true.cpu().T, aspect="auto", cmap="gray", vmin=vmin, vmax=vmax)
+ax[2].imshow(
+    v_true.cpu().T, aspect="auto", cmap="gray", vmin=vmin, vmax=vmax
+)
 ax[2].set_title("True")
 plt.tight_layout()
 plt.savefig("example_distributed_dp.jpg")

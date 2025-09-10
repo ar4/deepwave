@@ -1,3 +1,5 @@
+"""Demonstrates the Graph Space Optimal Transport (GSOT) method."""
+
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -21,7 +23,7 @@ def gsot(y_pred: torch.Tensor, y: torch.Tensor, eta: float):
         The cost function value/loss
 
     """
-    loss = torch.tensor(0, dtype=torch.float)
+    loss = torch.tensor(0.0, device=y_pred.device)
     for s in range(y.shape[0]):
         for r in range(y.shape[1]):
             nt = y.shape[-1]
@@ -37,7 +39,9 @@ def gsot(y_pred: torch.Tensor, y: torch.Tensor, eta: float):
             loss = (
                 loss
                 + (
-                    eta * torch.tensor(row_ind - col_ind) ** 2
+                    eta
+                    * torch.tensor(row_ind - col_ind, device=y_pred.device)
+                    ** 2
                     + (y_pred[s, r] - y_sigma) ** 2
                 ).sum()
             )
@@ -57,7 +61,9 @@ gsot_losses = []
 for shift in shifts:
     gsot_losses.append(
         gsot(
-            deepwave.wavelets.ricker(freq, nt, dt, (nt // 2 + shift) * dt)[None, None],
+            deepwave.wavelets.ricker(freq, nt, dt, (nt // 2 + shift) * dt)[
+                None, None
+            ],
             source_amplitudes[None, None],
             0.003,
         ),
@@ -76,7 +82,9 @@ for shift in shifts:
 plt.figure(figsize=(10.5, 5))
 plt.plot(source_amplitudes.flatten(), c="b", lw=2, label="Target")
 plt.plot(
-    deepwave.wavelets.ricker(freq, nt, dt, (nt // 2 + shift) * dt).flatten(),
+    deepwave.wavelets.ricker(
+        freq, nt, dt, (nt // 2 + shift) * dt
+    ).flatten(),
     c="r",
     lw=2,
     label="Shifted",
@@ -108,10 +116,14 @@ dt = 0.004
 nt = 200
 v_true = 1600 * torch.ones(ny, nx)
 
-source_amplitudes = deepwave.wavelets.ricker(freq, nt, dt, 1.5 / freq).reshape(1, 1, -1)
+source_amplitudes = deepwave.wavelets.ricker(
+    freq, nt, dt, 1.5 / freq
+).reshape(1, 1, -1)
 # Filter the source amplitudes to remove low frequencies
 sos = butter(4, 15, "hp", fs=1 / dt, output="sos")
-source_amplitudes = torch.tensor(sosfilt(sos, source_amplitudes.numpy())).float()
+source_amplitudes = torch.tensor(
+    sosfilt(sos, source_amplitudes.numpy())
+).float()
 
 source_locations = torch.tensor([[[ny // 2, 20]]])
 receiver_locations = torch.tensor([[[ny // 2, nx - 1 - 20]]])
@@ -137,9 +149,10 @@ for loss_type in ["gsot", "l2"]:
     # Run optimisation/inversion
     n_epochs = 250
 
-    for epoch in range(n_epochs):
+    for _epoch in range(n_epochs):
 
         def closure():
+            """Closure function for the Adam optimiser."""
             optimiser.zero_grad()
             pred_data = deepwave.scalar(
                 v,

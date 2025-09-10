@@ -1,8 +1,11 @@
+"""Tests for deepwave.callbacks."""
+
 import torch
+
 import deepwave
 
 
-def test_scalar_callback_call_count():
+def test_scalar_callback_call_count() -> None:
     """Check that the callbacks are called the correct number of times."""
     v = torch.ones(10, 10) * 1500
     v.requires_grad_()
@@ -19,10 +22,13 @@ def test_scalar_callback_call_count():
     receiver_locations[0, 0, 1] = 5
 
     class Counter:
-        def __init__(self):
+        """A simple counter class for callbacks."""
+
+        def __init__(self) -> None:
             self.count = 0
 
-        def __call__(self, state):
+        def __call__(self, state: deepwave.common.CallbackState) -> None:
+            """Increments the counter."""
             self.count += 1
 
     # Test with a frequency that divides nt evenly
@@ -63,7 +69,7 @@ def test_scalar_callback_call_count():
     assert backward_counter.count == (nt + 2) // 3
 
 
-def test_scalar_callback_wavefield_shape():
+def test_scalar_callback_wavefield_shape() -> None:
     """Check that the wavefield has the correct shape for each view."""
     v = torch.ones(10, 10) * 1500
     dx = 5.0
@@ -77,7 +83,10 @@ def test_scalar_callback_wavefield_shape():
     pml_width = 5
 
     class Checker:
-        def __call__(self, state):
+        """A checker class for wavefield shapes."""
+
+        def __call__(self, state: deepwave.common.CallbackState) -> None:
+            """Checks the shape of the wavefield for different views."""
             w_inner = state.get_wavefield("wavefield_0", "inner")
             assert w_inner.shape == (1, 10, 10)
             w_pml = state.get_wavefield("wavefield_0", "pml")
@@ -102,7 +111,7 @@ def test_scalar_callback_wavefield_shape():
     )
 
 
-def test_scalar_callback_wavefield_modification():
+def test_scalar_callback_wavefield_modification() -> None:
     """Check that the wavefield can be modified in the forward callback."""
     v = torch.ones(10, 10) * 1500
     dx = 5.0
@@ -118,16 +127,19 @@ def test_scalar_callback_wavefield_modification():
     receiver_locations[0, 0, 1] = 5
 
     class Setter:
-        def __init__(self):
+        """A setter class for wavefield modification."""
+
+        def __init__(self) -> None:
             self.expected = torch.zeros(nt)
 
-        def __call__(self, state):
+        def __call__(self, state: deepwave.common.CallbackState) -> None:
+            """Modifies the wavefield at a specific location."""
             val = torch.randn(1)
             self.expected[state.step] = val
             w_pml = state.get_wavefield("wavefield_0", "pml")
             # The coordinates are relative to the padded model, so we need to
             # add the PML width to get the correct index.
-            w_pml[0, 5 + state._pml_width[0], 5 + state._pml_width[2]] = val
+            w_pml[0, 5 + state._pml_width[0], 5 + state._pml_width[2]] = val  # noqa: SLF001
 
     setter = Setter()
     out = deepwave.scalar(
@@ -144,7 +156,7 @@ def test_scalar_callback_wavefield_modification():
     assert torch.allclose(out[-1].flatten(), setter.expected)
 
 
-def test_scalar_callback_gradient_modification():
+def test_scalar_callback_gradient_modification() -> None:
     """Check that the gradient can be modified in the backward callback."""
     v = torch.ones(10, 10) * 1500
     v.requires_grad_()
@@ -159,7 +171,8 @@ def test_scalar_callback_gradient_modification():
     receiver_locations[0, 0, 0] = 5
     receiver_locations[0, 0, 1] = 5
 
-    def modifier(state):
+    def modifier(state: deepwave.common.CallbackState) -> None:
+        """Modifies the gradient by multiplying it by 2."""
         grad_v = state.get_gradient("v", "pml")
         grad_v *= 2
 
@@ -192,7 +205,7 @@ def test_scalar_callback_gradient_modification():
     assert torch.allclose(grad1 * 2, grad2)
 
 
-def test_scalar_callback_gradient_modification_inner():
+def test_scalar_callback_gradient_modification_inner() -> None:
     """Check that modifying an inner view of the gradient works."""
     v = torch.ones(10, 10) * 1500
     v.requires_grad_()
@@ -208,7 +221,8 @@ def test_scalar_callback_gradient_modification_inner():
     receiver_locations[0, 0, 1] = 5
     pml_width = 20
 
-    def modifier(state):
+    def modifier(state: deepwave.common.CallbackState) -> None:
+        """Modifies the inner gradient by multiplying it by 2."""
         grad_v = state.get_gradient("v", "inner")
         grad_v[:, 1:-1, 1:-1] *= 2
 
@@ -248,7 +262,7 @@ def test_scalar_callback_gradient_modification_inner():
     assert torch.allclose(grad1, grad2)
 
 
-def test_scalar_callback_equivalence():
+def test_scalar_callback_equivalence() -> None:
     """Check that a do-nothing callback does not change the output."""
     v = torch.ones(10, 10) * 1500
     v.requires_grad_()
@@ -263,8 +277,8 @@ def test_scalar_callback_equivalence():
     receiver_locations[0, 0, 0] = 5
     receiver_locations[0, 0, 1] = 5
 
-    def do_nothing(state):
-        pass
+    def do_nothing(state: deepwave.common.CallbackState) -> None:
+        """A do-nothing callback function."""
 
     out1 = deepwave.scalar(
         v,
@@ -315,7 +329,7 @@ def test_scalar_callback_equivalence():
     assert torch.allclose(grad1, grad3)
 
 
-def test_scalar_state_preservation():
+def test_scalar_state_preservation() -> None:
     """Check that the wavefield state is preserved between callbacks."""
     v = torch.ones(10, 10) * 1500
     dx = 5.0
@@ -327,10 +341,13 @@ def test_scalar_state_preservation():
     source_locations[0, 0, 1] = 5
 
     class StateChecker:
-        def __init__(self):
+        """A checker class for wavefield state preservation."""
+
+        def __init__(self) -> None:
             self.wfc = None
 
-        def __call__(self, state):
+        def __call__(self, state: deepwave.common.CallbackState) -> None:
+            """Checks if the wavefield state is preserved."""
             if self.wfc is not None:
                 assert torch.allclose(
                     self.wfc, state.get_wavefield("wavefield_m1", "full")
@@ -348,8 +365,11 @@ def test_scalar_state_preservation():
     )
 
 
-def test_scalar_multishot_equivalence():
-    """Check that a do-nothing callback does not change the output with multiple shots."""
+def test_scalar_multishot_equivalence() -> None:
+    """Check that a do-nothing callback does not change the output.
+
+    Checks it for multiple shots.
+    """
     v = torch.ones(10, 10) * 1500
     dx = 5.0
     dt = 0.004
@@ -367,8 +387,8 @@ def test_scalar_multishot_equivalence():
     receiver_locations[1, 0, 0] = 3
     receiver_locations[1, 0, 1] = 3
 
-    def do_nothing(state):
-        pass
+    def do_nothing(state: deepwave.common.CallbackState) -> None:
+        """A do-nothing callback function."""
 
     out1 = deepwave.scalar(
         v,

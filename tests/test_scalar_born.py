@@ -1,3 +1,7 @@
+"""Tests for deepwave.scalar_born."""
+
+from typing import Any, Dict, List, Optional, Tuple, Union
+
 import torch
 from test_utils import _set_coords, _set_sources, scattered_2d
 
@@ -5,7 +9,7 @@ from deepwave import IGNORE_LOCATION, ScalarBorn, scalar_born
 from deepwave.common import cfl_condition, downsample, upsample
 
 
-def test_born_scatter_2d():
+def test_born_scatter_2d() -> None:
     """Test Born propagation in a 2D model with a point scatterer."""
     expected, actual = run_born_scatter_2d(
         propagator=scalarbornprop,
@@ -16,7 +20,7 @@ def test_born_scatter_2d():
     assert diff.norm() < 0.0025
 
 
-def test_born_scatter_v_batched_2d():
+def test_born_scatter_v_batched_2d() -> None:
     """Test Born propagation in a batched 2D velocity model."""
     expected, actual = run_born_scatter_2d(
         c=torch.tensor([[[1500.0]], [[1600.0]]]),
@@ -28,7 +32,7 @@ def test_born_scatter_v_batched_2d():
     assert diff.norm() < 0.0025
 
 
-def test_born_scatter_scatter_batched_2d():
+def test_born_scatter_scatter_batched_2d() -> None:
     """Test Born propagation in a batched 2D scatter model."""
     expected, actual = run_born_scatter_2d(
         dscatter=torch.tensor([[[50.0]], [[100.0]]]),
@@ -40,7 +44,7 @@ def test_born_scatter_scatter_batched_2d():
     assert diff.norm() < 0.0025
 
 
-def test_born_scatter_2d_2nd_order():
+def test_born_scatter_2d_2nd_order() -> None:
     """Test Born propagation with a 2nd order accurate propagator."""
     expected, actual = run_born_scatter_2d(
         propagator=scalarbornprop,
@@ -51,7 +55,7 @@ def test_born_scatter_2d_2nd_order():
     assert diff.norm() < 0.14
 
 
-def test_born_scatter_2d_6th_order():
+def test_born_scatter_2d_6th_order() -> None:
     """Test Born propagation with a 6th order accurate propagator."""
     expected, actual = run_born_scatter_2d(
         propagator=scalarbornprop,
@@ -62,7 +66,7 @@ def test_born_scatter_2d_6th_order():
     assert diff.norm() < 0.003
 
 
-def test_born_scatter_2d_8th_order():
+def test_born_scatter_2d_8th_order() -> None:
     """Test Born propagation with a 8th order accurate propagator."""
     expected, actual = run_born_scatter_2d(
         propagator=scalarbornprop,
@@ -73,7 +77,7 @@ def test_born_scatter_2d_8th_order():
     assert diff.norm() < 0.00062
 
 
-def test_born_scatter_2d_module():
+def test_born_scatter_2d_module() -> None:
     """Test Born propagation using the Module interface."""
     expected, actual = run_born_scatter_2d(
         propagator=scalarbornprop,
@@ -86,34 +90,34 @@ def test_born_scatter_2d_module():
 
 
 def scalarbornprop(
-    model,
-    scatter,
-    dx,
-    dt,
-    source_amplitudes,
-    source_locations,
-    receiver_locations,
-    bg_receiver_locations=None,
-    prop_kwargs=None,
-    pml_width=None,
-    survey_pad=None,
-    origin=None,
-    wavefield_0=None,
-    wavefield_m1=None,
-    psiy_m1=None,
-    psix_m1=None,
-    zetay_m1=None,
-    zetax_m1=None,
-    wavefield_sc_0=None,
-    wavefield_sc_m1=None,
-    psiy_sc_m1=None,
-    psix_sc_m1=None,
-    zetay_sc_m1=None,
-    zetax_sc_m1=None,
-    nt=None,
-    model_gradient_sampling_interval=1,
-    functional=True,
-):
+    model: torch.Tensor,
+    scatter: torch.Tensor,
+    dx: Union[float, List[float]],
+    dt: float,
+    source_amplitudes: Optional[torch.Tensor],
+    source_locations: Optional[torch.Tensor],
+    receiver_locations: Optional[torch.Tensor],
+    bg_receiver_locations: Optional[torch.Tensor] = None,
+    prop_kwargs: Optional[Dict[str, Any]] = None,
+    pml_width: Optional[Union[int, List[int]]] = None,
+    survey_pad: Optional[Union[int, List[int]]] = None,
+    origin: Optional[List[int]] = None,
+    wavefield_0: Optional[torch.Tensor] = None,
+    wavefield_m1: Optional[torch.Tensor] = None,
+    psiy_m1: Optional[torch.Tensor] = None,
+    psix_m1: Optional[torch.Tensor] = None,
+    zetay_m1: Optional[torch.Tensor] = None,
+    zetax_m1: Optional[torch.Tensor] = None,
+    wavefield_sc_0: Optional[torch.Tensor] = None,
+    wavefield_sc_m1: Optional[torch.Tensor] = None,
+    psiy_sc_m1: Optional[torch.Tensor] = None,
+    psix_sc_m1: Optional[torch.Tensor] = None,
+    zetay_sc_m1: Optional[torch.Tensor] = None,
+    zetax_sc_m1: Optional[torch.Tensor] = None,
+    nt: Optional[int] = None,
+    model_gradient_sampling_interval: int = 1,
+    functional: bool = True,
+) -> Tuple[torch.Tensor, ...]:
     """Wraps the scalar born propagator."""
     if prop_kwargs is None:
         prop_kwargs = {}
@@ -187,35 +191,35 @@ def scalarbornprop(
 
 
 def scalarbornpropchained(
-    model,
-    scatter,
-    dx,
-    dt,
-    source_amplitudes,
-    source_locations,
-    receiver_locations,
-    bg_receiver_locations=None,
-    prop_kwargs=None,
-    pml_width=None,
-    survey_pad=None,
-    origin=None,
-    wavefield_0=None,
-    wavefield_m1=None,
-    psiy_m1=None,
-    psix_m1=None,
-    zetay_m1=None,
-    zetax_m1=None,
-    wavefield_sc_0=None,
-    wavefield_sc_m1=None,
-    psiy_sc_m1=None,
-    psix_sc_m1=None,
-    zetay_sc_m1=None,
-    zetax_sc_m1=None,
-    nt=None,
-    model_gradient_sampling_interval=1,
-    functional=True,
-    n_chained=2,
-):
+    model: torch.Tensor,
+    scatter: torch.Tensor,
+    dx: Union[float, List[float]],
+    dt: float,
+    source_amplitudes: Optional[torch.Tensor],
+    source_locations: Optional[torch.Tensor],
+    receiver_locations: Optional[torch.Tensor],
+    bg_receiver_locations: Optional[torch.Tensor] = None,
+    prop_kwargs: Optional[Dict[str, Any]] = None,
+    pml_width: Optional[Union[int, List[int]]] = None,
+    survey_pad: Optional[Union[int, List[int]]] = None,
+    origin: Optional[List[int]] = None,
+    wavefield_0: Optional[torch.Tensor] = None,
+    wavefield_m1: Optional[torch.Tensor] = None,
+    psiy_m1: Optional[torch.Tensor] = None,
+    psix_m1: Optional[torch.Tensor] = None,
+    zetay_m1: Optional[torch.Tensor] = None,
+    zetax_m1: Optional[torch.Tensor] = None,
+    wavefield_sc_0: Optional[torch.Tensor] = None,
+    wavefield_sc_m1: Optional[torch.Tensor] = None,
+    psiy_sc_m1: Optional[torch.Tensor] = None,
+    psix_sc_m1: Optional[torch.Tensor] = None,
+    zetay_sc_m1: Optional[torch.Tensor] = None,
+    zetax_sc_m1: Optional[torch.Tensor] = None,
+    nt: Optional[int] = None,
+    model_gradient_sampling_interval: int = 1,
+    functional: bool = True,
+    n_chained: int = 2,
+) -> Tuple[torch.Tensor, ...]:
     """Wraps multiple scalar born propagators chained sequentially."""
     if prop_kwargs is None:
         prop_kwargs = {}
@@ -403,25 +407,23 @@ def scalarbornpropchained(
 
 
 def run_born_scatter(
-    c,
-    dc,
-    dscatter,
-    freq,
-    dx,
-    dt,
-    nx,
-    num_shots,
-    num_sources_per_shot,
-    num_receivers_per_shot,
-    propagator,
-    prop_kwargs,
-    device=None,
-    dtype=None,
-    **kwargs,
-):
-    """Create a point scatterer model, and the expected waveform at point,
-    and the forward propagated wave.
-    """
+    c: Union[float, torch.Tensor],
+    dc: float,
+    dscatter: Union[float, torch.Tensor],
+    freq: float,
+    dx: Union[float, List[float]],
+    dt: float,
+    nx: Tuple[int, ...],
+    num_shots: int,
+    num_sources_per_shot: int,
+    num_receivers_per_shot: int,
+    propagator: Any,
+    prop_kwargs: Optional[Dict[str, Any]],
+    device: Optional[torch.device] = None,
+    dtype: Optional[torch.dtype] = None,
+    **kwargs: Any,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Create the expected and actual point scattered waveform at point."""
     torch.manual_seed(1)
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -527,21 +529,21 @@ def run_born_scatter_2d(
 
 
 def run_born_forward(
-    c,
-    freq,
-    dx,
-    dt,
-    nx,
-    num_shots,
-    num_sources_per_shot,
-    num_receivers_per_shot,
-    propagator,
-    prop_kwargs,
-    device=None,
-    dtype=None,
-    dc=100,
-    **kwargs,
-):
+    c: Union[float, torch.Tensor],
+    freq: float,
+    dx: Union[float, List[float]],
+    dt: float,
+    nx: Tuple[int, ...],
+    num_shots: int,
+    num_sources_per_shot: int,
+    num_receivers_per_shot: int,
+    propagator: Any,
+    prop_kwargs: Optional[Dict[str, Any]],
+    device: Optional[torch.device] = None,
+    dtype: Optional[torch.dtype] = None,
+    dc: float = 100,
+    **kwargs: Any,
+) -> Tuple[torch.Tensor, ...]:
     """Create a random model and forward propagate."""
     torch.manual_seed(1)
     if device is None:
@@ -575,20 +577,20 @@ def run_born_forward(
 
 
 def run_born_forward_2d(
-    c=1500,
-    freq=25,
-    dx=(5, 5),
-    dt=0.004,
-    nx=(50, 50),
-    num_shots=2,
-    num_sources_per_shot=2,
-    num_receivers_per_shot=2,
-    propagator=None,
-    prop_kwargs=None,
-    device=None,
-    dtype=None,
-    **kwargs,
-):
+    c: float = 1500,
+    freq: float = 25,
+    dx: Tuple[float, float] = (5, 5),
+    dt: float = 0.004,
+    nx: Tuple[int, int] = (50, 50),
+    num_shots: int = 2,
+    num_sources_per_shot: int = 2,
+    num_receivers_per_shot: int = 2,
+    propagator: Any = None,
+    prop_kwargs: Optional[Dict[str, Any]] = None,
+    device: Optional[torch.device] = None,
+    dtype: Optional[torch.dtype] = None,
+    **kwargs: Any,
+) -> Tuple[torch.Tensor, ...]:
     """Runs run_forward with default parameters for 2D."""
     return run_born_forward(
         c,
@@ -607,7 +609,7 @@ def run_born_forward_2d(
     )
 
 
-def test_forward_cpu_gpu_match():
+def test_forward_cpu_gpu_match() -> None:
     """Test propagation on CPU and GPU produce the same result."""
     if torch.cuda.is_available():
         actual_cpu = run_born_forward_2d(
@@ -732,7 +734,8 @@ def test_unused_source_receiver(
     assert torch.allclose(scatterf.grad, scatteri.grad)
 
 
-def run_scalarbornfunc(nt=3):
+def run_scalarbornfunc(nt: int = 3) -> None:
+    """Runs scalar_born_func for testing purposes."""
     from deepwave.scalar_born import scalar_born_func
 
     torch.manual_seed(1)
@@ -922,32 +925,33 @@ def run_scalarbornfunc(nt=3):
     )
 
 
-def test_scalarbornfunc():
+def test_scalarbornfunc() -> None:
+    """Test scalar_born_func with different time steps."""
     run_scalarbornfunc(nt=4)
     run_scalarbornfunc(nt=5)
 
 
-def test_born_gradcheck_2d():
+def test_born_gradcheck_2d() -> None:
     """Test gradcheck in a 2D model with Born propagator."""
     run_born_gradcheck_2d(propagator=scalarbornprop)
 
 
-def test_born_gradcheck_2d_2nd_order():
+def test_born_gradcheck_2d_2nd_order() -> None:
     """Test gradcheck with a 2nd order accurate propagator."""
     run_born_gradcheck_2d(propagator=scalarbornprop, prop_kwargs={"accuracy": 2})
 
 
-def test_born_gradcheck_2d_6th_order():
+def test_born_gradcheck_2d_6th_order() -> None:
     """Test gradcheck with a 6th order accurate propagator."""
     run_born_gradcheck_2d(propagator=scalarbornprop, prop_kwargs={"accuracy": 6})
 
 
-def test_born_gradcheck_2d_8th_order():
+def test_born_gradcheck_2d_8th_order() -> None:
     """Test gradcheck with a 8th order accurate propagator."""
     run_born_gradcheck_2d(propagator=scalarbornprop, prop_kwargs={"accuracy": 8})
 
 
-def test_born_gradcheck_2d_cfl():
+def test_born_gradcheck_2d_cfl() -> None:
     """Test gradcheck with a timestep greater than the CFL limit."""
     run_born_gradcheck_2d(
         propagator=scalarbornprop,
@@ -958,32 +962,32 @@ def test_born_gradcheck_2d_cfl():
     )
 
 
-def test_born_gradcheck_2d_odd_timesteps():
+def test_born_gradcheck_2d_odd_timesteps() -> None:
     """Test gradcheck with one more timestep."""
     run_born_gradcheck_2d(propagator=scalarbornprop, nt_add=1)
 
 
-def test_born_gradcheck_2d_one_shot():
+def test_born_gradcheck_2d_one_shot() -> None:
     """Test gradcheck with one shot."""
     run_born_gradcheck_2d(propagator=scalarbornprop, num_shots=1)
 
 
-def test_born_gradcheck_2d_no_sources():
+def test_born_gradcheck_2d_no_sources() -> None:
     """Test gradcheck with no sources."""
     run_born_gradcheck_2d(propagator=scalarbornprop, num_sources_per_shot=0)
 
 
-def test_born_gradcheck_2d_no_receivers():
+def test_born_gradcheck_2d_no_receivers() -> None:
     """Test gradcheck with no receivers."""
     run_born_gradcheck_2d(propagator=scalarbornprop, num_receivers_per_shot=0)
 
 
-def test_gradcheck_2d_no_scatter_receivers():
+def test_gradcheck_2d_no_scatter_receivers() -> None:
     """Test gradcheck with no scatter receivers."""
     run_born_gradcheck_2d(propagator=scalarbornprop, num_scatter_receivers_per_shot=0)
 
 
-def test_born_gradcheck_2d_survey_pad():
+def test_born_gradcheck_2d_survey_pad() -> None:
     """Test gradcheck with survey_pad."""
     run_born_gradcheck_2d(
         propagator=scalarbornprop,
@@ -992,7 +996,7 @@ def test_born_gradcheck_2d_survey_pad():
     )
 
 
-def test_born_gradcheck_2d_partial_wavefields():
+def test_born_gradcheck_2d_partial_wavefields() -> None:
     """Test gradcheck with wavefields that do not cover the model."""
     run_born_gradcheck_2d(
         propagator=scalarbornprop,
@@ -1002,37 +1006,37 @@ def test_born_gradcheck_2d_partial_wavefields():
     )
 
 
-def test_born_gradcheck_2d_chained():
+def test_born_gradcheck_2d_chained() -> None:
     """Test gradcheck when two propagators are chained."""
     run_born_gradcheck_2d(propagator=scalarbornpropchained)
 
 
-def test_born_gradcheck_2d_negative():
+def test_born_gradcheck_2d_negative() -> None:
     """Test gradcheck with negative velocity."""
     run_born_gradcheck_2d(c=-1500, propagator=scalarbornprop)
 
 
-def test_born_gradcheck_2d_zero():
+def test_born_gradcheck_2d_zero() -> None:
     """Test gradcheck with zero velocity."""
     run_born_gradcheck_2d(c=0, dc=0, propagator=scalarbornprop)
 
 
-def test_born_gradcheck_2d_different_pml():
+def test_born_gradcheck_2d_different_pml() -> None:
     """Test gradcheck with different pml widths."""
     run_born_gradcheck_2d(propagator=scalarbornprop, pml_width=[0, 1, 5, 10], atol=5e-8)
 
 
-def test_born_gradcheck_2d_no_pml():
+def test_born_gradcheck_2d_no_pml() -> None:
     """Test gradcheck with no pml."""
     run_born_gradcheck_2d(propagator=scalarbornprop, pml_width=0, atol=2e-8)
 
 
-def test_born_gradcheck_2d_different_dx():
+def test_born_gradcheck_2d_different_dx() -> None:
     """Test gradcheck with different dx values."""
     run_born_gradcheck_2d(propagator=scalarbornprop, dx=(4, 5), atol=5e-8)
 
 
-def test_born_gradcheck_2d_single_cell():
+def test_born_gradcheck_2d_single_cell() -> None:
     """Test gradcheck with a single model cell."""
     run_born_gradcheck_2d(
         propagator=scalarbornprop,
@@ -1044,7 +1048,7 @@ def test_born_gradcheck_2d_single_cell():
     )
 
 
-def test_born_gradcheck_2d_big():
+def test_born_gradcheck_2d_big() -> None:
     """Test gradcheck with a big model."""
     run_born_gradcheck_2d(
         propagator=scalarbornprop,
@@ -1067,7 +1071,7 @@ def test_negative_vel(
     device=None,
     dtype=None,
 ):
-    """Test propagation with a zero or negative velocity or dt"""
+    """Test propagation with a zero or negative velocity or dt."""
     torch.manual_seed(1)
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -1085,7 +1089,7 @@ def test_negative_vel(
         torch.ones(*nx, device=device, dtype=dtype) * c
         + torch.randn(*nx, device=device, dtype=dtype) * dc
     )
-    scatter = torch.randn(*nx, device=device, dtype=dtype)
+    scatter = torch.randn(*nx, dtype=dtype).to(device)
     out_positive = propagator(
         model,
         scatter,
@@ -1146,7 +1150,7 @@ def test_negative_vel(
     assert torch.allclose(out[6], torch.zeros_like(out[6]))
 
 
-def test_born_gradcheck_only_v_2d():
+def test_born_gradcheck_only_v_2d() -> None:
     """Test gradcheck with only v requiring gradient."""
     run_born_gradcheck_2d(
         propagator=scalarbornprop,
@@ -1167,7 +1171,7 @@ def test_born_gradcheck_only_v_2d():
     )
 
 
-def test_born_gradcheck_only_scatter_2d():
+def test_born_gradcheck_only_scatter_2d() -> None:
     """Test gradcheck with only scatter requiring gradient."""
     run_born_gradcheck_2d(
         propagator=scalarbornprop,
@@ -1188,7 +1192,7 @@ def test_born_gradcheck_only_scatter_2d():
     )
 
 
-def test_born_gradcheck_only_source_2d():
+def test_born_gradcheck_only_source_2d() -> None:
     """Test gradcheck with only source requiring gradient."""
     run_born_gradcheck_2d(
         propagator=scalarbornprop,
@@ -1210,7 +1214,7 @@ def test_born_gradcheck_only_source_2d():
     )
 
 
-def test_born_gradcheck_only_wavefield_0_2d():
+def test_born_gradcheck_only_wavefield_0_2d() -> None:
     """Test gradcheck with only wavefield_0 requiring gradient."""
     run_born_gradcheck_2d(
         propagator=scalarbornprop,
@@ -1231,7 +1235,7 @@ def test_born_gradcheck_only_wavefield_0_2d():
     )
 
 
-def test_born_gradcheck_only_wavefieldsc_0_2d():
+def test_born_gradcheck_only_wavefieldsc_0_2d() -> None:
     """Test gradcheck with only wavefieldsc_0 requiring gradient."""
     run_born_gradcheck_2d(
         propagator=scalarbornprop,
@@ -1252,7 +1256,7 @@ def test_born_gradcheck_only_wavefieldsc_0_2d():
     )
 
 
-def test_born_gradcheck_v_batched():
+def test_born_gradcheck_v_batched() -> None:
     """Test gradcheck using a different velocity for each shot."""
     run_born_gradcheck_2d(
         propagator=scalarbornprop,
@@ -1260,7 +1264,7 @@ def test_born_gradcheck_v_batched():
     )
 
 
-def test_born_gradcheck_scatter_batched():
+def test_born_gradcheck_scatter_batched() -> None:
     """Test gradcheck using a different scatter for each shot."""
     run_born_gradcheck_2d(
         propagator=scalarbornprop,
@@ -1269,45 +1273,45 @@ def test_born_gradcheck_scatter_batched():
 
 
 def run_born_gradcheck(
-    c,
-    dc,
-    dscatter,
-    freq,
-    dx,
-    dt,
-    nx,
-    num_shots,
-    num_sources_per_shot,
-    num_receivers_per_shot,
-    num_scatter_receivers_per_shot,
-    propagator,
-    prop_kwargs,
-    pml_width=3,
-    survey_pad=None,
-    origin=None,
-    wavefield_size=None,
-    device=None,
-    dtype=None,
-    v_requires_grad=True,
-    scatter_requires_grad=True,
-    source_requires_grad=True,
-    provide_wavefields=True,
-    wavefield_0_requires_grad=True,
-    wavefield_m1_requires_grad=True,
-    psiy_m1_requires_grad=True,
-    psix_m1_requires_grad=True,
-    zetay_m1_requires_grad=True,
-    zetax_m1_requires_grad=True,
-    wavefieldsc_0_requires_grad=True,
-    wavefieldsc_m1_requires_grad=True,
-    psiysc_m1_requires_grad=True,
-    psixsc_m1_requires_grad=True,
-    zetaysc_m1_requires_grad=True,
-    zetaxsc_m1_requires_grad=True,
-    atol=2e-8,
-    rtol=1e-5,
-    nt_add=0,
-):
+    c: Union[float, torch.Tensor],
+    dc: float,
+    dscatter: Union[float, torch.Tensor],
+    freq: float,
+    dx: Union[float, List[float]],
+    dt: float,
+    nx: Tuple[int, ...],
+    num_shots: int,
+    num_sources_per_shot: int,
+    num_receivers_per_shot: int,
+    num_scatter_receivers_per_shot: int,
+    propagator: Any,
+    prop_kwargs: Optional[Dict[str, Any]],
+    pml_width: Union[int, List[int]] = 3,
+    survey_pad: Optional[Union[int, List[int]]] = None,
+    origin: Optional[List[int]] = None,
+    wavefield_size: Optional[Tuple[int, ...]] = None,
+    device: Optional[torch.device] = None,
+    dtype: Optional[torch.dtype] = None,
+    v_requires_grad: bool = True,
+    scatter_requires_grad: bool = True,
+    source_requires_grad: bool = True,
+    provide_wavefields: bool = True,
+    wavefield_0_requires_grad: bool = True,
+    wavefield_m1_requires_grad: bool = True,
+    psiy_m1_requires_grad: bool = True,
+    psix_m1_requires_grad: bool = True,
+    zetay_m1_requires_grad: bool = True,
+    zetax_m1_requires_grad: bool = True,
+    wavefieldsc_0_requires_grad: bool = True,
+    wavefieldsc_m1_requires_grad: bool = True,
+    psiysc_m1_requires_grad: bool = True,
+    psixsc_m1_requires_grad: bool = True,
+    zetaysc_m1_requires_grad: bool = True,
+    zetaxsc_m1_requires_grad: bool = True,
+    atol: float = 2e-8,
+    rtol: float = 1e-5,
+    nt_add: int = 0,
+) -> None:
     """Run PyTorch's gradcheck."""
     torch.manual_seed(1)
     if device is None:
@@ -1437,25 +1441,25 @@ def run_born_gradcheck(
 
 
 def run_born_gradcheck_2d(
-    c=1500,
-    dc=100,
-    dscatter=100,
-    freq=25,
-    dx=(5, 5),
-    dt=0.001,
-    nx=(4, 3),
-    num_shots=2,
-    num_sources_per_shot=2,
-    num_receivers_per_shot=2,
-    num_scatter_receivers_per_shot=2,
-    propagator=None,
-    prop_kwargs=None,
-    pml_width=3,
-    survey_pad=None,
-    device=None,
-    dtype=torch.double,
-    **kwargs,
-):
+    c: float = 1500,
+    dc: float = 100,
+    dscatter: float = 100,
+    freq: float = 25,
+    dx: Tuple[float, float] = (5, 5),
+    dt: float = 0.001,
+    nx: Tuple[int, int] = (4, 3),
+    num_shots: int = 2,
+    num_sources_per_shot: int = 2,
+    num_receivers_per_shot: int = 2,
+    num_scatter_receivers_per_shot: int = 2,
+    propagator: Any = None,
+    prop_kwargs: Optional[Dict[str, Any]] = None,
+    pml_width: Union[int, List[int]] = 3,
+    survey_pad: Optional[Union[int, List[int]]] = None,
+    device: Optional[torch.device] = None,
+    dtype: torch.dtype = torch.double,
+    **kwargs: Any,
+) -> None:
     """Runs run_gradcheck with default parameters for 2D."""
     return run_born_gradcheck(
         c,
