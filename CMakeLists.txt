@@ -134,7 +134,7 @@ if(CUDAToolkit_FOUND)
 
         if(CMAKE_BUILD_TYPE MATCHES Release)
             target_compile_options(${TARGET_NAME} PRIVATE ${CUDA_RELEASE_OPTIONS})
-            set_target_properties(${TARGET_NAME} PROPERTIES CUDA_ARCHITECTURES all-major)
+            set_target_properties(${TARGET_NAME} PROPERTIES CUDA_ARCHITECTURES all)
         endif()
     endmacro()
 endif()
