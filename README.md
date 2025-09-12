@@ -65,8 +65,8 @@ If you would like to cite Deepwave, I suggest:
   month        = sep,
   year         = 2025,
   publisher    = {Zenodo},
-  version      = {v0.0.21},
-  doi          = {10.5281/zenodo.17069833},
-  url          = {https://doi.org/10.5281/zenodo.17069833}
+  version      = {v0.0.22},
+  doi          = {10.5281/zenodo.3829886},
+  url          = {https://doi.org/10.5281/zenodo.3829886}
 }
 ```
