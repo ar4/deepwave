@@ -2099,6 +2099,12 @@ def cfl_condition_n(
     ) * max_abs_vel
     step_ratio = math.ceil(abs(dt) / max_dt)
     inner_dt = dt / step_ratio
+    if step_ratio >= 20:
+        warnings.warn(f"With an input time step interval of {dt}, a grid spacing "
+                      f"of {grid_spacing}, and a maximum absolute velocity of "
+                      f"{max_abs_vel}, Deepwave will have to use {step_ratio} "
+                      "internal time steps per time step, with an interval of "
+                      f"{inner_dt}, to satisfy the CFL condition.")
     return inner_dt, step_ratio
 
 
