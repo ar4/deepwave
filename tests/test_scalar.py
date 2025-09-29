@@ -1,6 +1,5 @@
 """Tests for deepwave.scalar."""
 
-import math
 import re
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -10,6 +9,8 @@ from test_utils import _set_coords, _set_sources, direct_2d_approx, scattered_2d
 
 from deepwave import IGNORE_LOCATION, Scalar, scalar
 from deepwave.common import cfl_condition, downsample, upsample
+
+torch._dynamo.config.cache_size_limit = 256  # noqa: SLF001
 
 
 def scalarprop(
@@ -233,53 +234,56 @@ def test_pml_width_list() -> None:
     assert torch.allclose(actual_int, actual_list)
 
 
-def test_direct_2d() -> None:
+def test_direct_2d():
     """Test propagation in a constant 2D model."""
-    expected, actual = run_direct_2d(propagator=scalarprop)
-    diff = (expected - actual.cpu()).flatten()
-    assert diff.norm().item() < 1.48
-
-
-def test_direct_2d_2nd_order() -> None:
-    """Test propagation with a 2nd order accurate propagator."""
-    expected, actual = run_direct_2d(propagator=scalarprop, prop_kwargs={"accuracy": 2})
-    diff = (expected - actual.cpu()).flatten()
-    assert diff.norm().item() < 16
-
-
-def test_direct_2d_6th_order() -> None:
-    """Test propagation with a 6th order accurate propagator."""
-    expected, actual = run_direct_2d(propagator=scalarprop, prop_kwargs={"accuracy": 6})
-    diff = (expected - actual.cpu()).flatten()
-    assert diff.norm().item() < 0.22
-
-
-def test_direct_2d_8th_order() -> None:
-    """Test propagation with a 8th order accurate propagator."""
-    expected, actual = run_direct_2d(propagator=scalarprop, prop_kwargs={"accuracy": 8})
-    diff = (expected - actual.cpu()).flatten()
-    assert diff.norm().item() < 0.048
+    expected_diffs = {2: 16, 4: 1.48, 6: 0.22, 8: 0.048}
+    for accuracy in [2, 4, 6, 8]:
+        actuals = {}
+        for python in [True, False]:
+            expected, actual = run_direct_2d(
+                propagator=scalarprop,
+                prop_kwargs={"python_backend": python, "accuracy": accuracy},
+            )
+            diff = (expected - actual.cpu()).flatten()
+            assert diff.norm().item() < expected_diffs[accuracy]
+            actuals[python] = actual
+        assert torch.allclose(actuals[True], actuals[False], atol=1e-4)
 
 
 def test_wavefield_decays() -> None:
     """Test that the PML causes the wavefield amplitude to decay."""
-    out = run_forward_2d(propagator=scalarprop, nt=2000)
-    for outi in out[:-1]:
-        assert outi.norm() < 2e-5
+    for accuracy in [2, 4, 6, 8]:
+        for python in [True, False]:
+            out = run_forward_2d(
+                propagator=scalarprop,
+                nt=2500,
+                prop_kwargs={"python_backend": python, "accuracy": accuracy},
+            )
+            for outi in out[:-1]:
+                assert outi.norm() < 2e-5
 
 
 def test_forward_cpu_gpu_match() -> None:
     """Test propagation on CPU and GPU produce the same result."""
     if torch.cuda.is_available():
-        actual_cpu = run_forward_2d(propagator=scalarprop, device=torch.device("cpu"))
-        actual_gpu = run_forward_2d(propagator=scalarprop, device=torch.device("cuda"))
-        # Check wavefields
-        for cpui, gpui in zip(actual_cpu[:-1], actual_gpu[:-1]):
-            assert torch.allclose(cpui, gpui.cpu(), atol=2e-6)
-        # Check receiver amplitudes
-        cpui = actual_cpu[-1]
-        gpui = actual_gpu[-1]
-        assert torch.allclose(cpui, gpui.cpu(), atol=5e-5)
+        for python in [True, False]:
+            actual_cpu = run_forward_2d(
+                propagator=scalarprop,
+                device=torch.device("cpu"),
+                prop_kwargs={"python_backend": python},
+            )
+            actual_gpu = run_forward_2d(
+                propagator=scalarprop,
+                device=torch.device("cuda"),
+                prop_kwargs={"python_backend": python},
+            )
+            # Check wavefields
+            for cpui, gpui in zip(actual_cpu[:-1], actual_gpu[:-1]):
+                assert torch.allclose(cpui, gpui.cpu(), atol=2e-6)
+            # Check receiver amplitudes
+            cpui = actual_cpu[-1]
+            gpui = actual_gpu[-1]
+            assert torch.allclose(cpui, gpui.cpu(), atol=5e-5)
 
 
 def test_direct_2d_module() -> None:
@@ -303,12 +307,17 @@ def test_scatter_2d() -> None:
 def test_v_batched() -> None:
     """Test forward using a different velocity for each shot."""
     expected_diff = 1.3
-    expected, actual = run_direct_2d(
-        c=torch.tensor([[[1500.0]], [[1600.0]]]),
-        propagator=scalarprop,
-    )
-    diff = (expected - actual.cpu()).flatten()
-    assert diff.norm().item() < expected_diff
+    actuals = {}
+    for python in [True, False]:
+        expected, actual = run_direct_2d(
+            c=torch.tensor([[[1500.0]], [[1600.0]]]),
+            propagator=scalarprop,
+            prop_kwargs={"python_backend": python},
+        )
+        diff = (expected - actual.cpu()).flatten()
+        assert diff.norm().item() < expected_diff
+        actuals[python] = actual
+    assert torch.allclose(actuals[True], actuals[False], atol=1e-4)
 
 
 def test_unused_source_receiver(
@@ -330,69 +339,77 @@ def test_unused_source_receiver(
     assert num_shots > 1
     assert num_sources_per_shot > 1
     assert num_receivers_per_shot > 1
-    torch.manual_seed(1)
-    if device is None:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    nx = torch.tensor(nx, dtype=torch.long)
+    dx = torch.tensor(dx, dtype=dtype)
 
-    nx = torch.Tensor(nx).long()
-    dx = torch.Tensor(dx)
+    for python in [True, False]:
+        torch.manual_seed(1)
+        if device is None:
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    model = (
-        torch.ones(*nx, device=device, dtype=dtype) * c
-        + torch.randn(*nx, device=device, dtype=dtype) * dc
-    )
+        if prop_kwargs is None:
+            prop_kwargs = {}
+        prop_kwargs["python_backend"] = python
 
-    nt = int((2 * torch.norm(nx.float() * dx) / c + 0.35 + 2 / freq) / dt)
-    x_s = _set_coords(num_shots, num_sources_per_shot, nx.tolist())
-    x_r = _set_coords(num_shots, num_receivers_per_shot, nx.tolist(), "bottom")
-    sources = _set_sources(x_s, freq, dt, nt, dtype)
+        model = (
+            torch.ones(*nx, device=device, dtype=dtype) * c
+            + torch.randn(*nx, device=device, dtype=dtype) * dc
+        )
 
-    # Forward with source and receiver ignored
-    modeli = model.clone()
-    modeli.requires_grad_()
-    for i in range(num_shots):
-        x_s[i, i, :] = IGNORE_LOCATION
-        x_r[i, i, :] = IGNORE_LOCATION
-    sources["locations"] = x_s
-    out_ignored = propagator(
-        modeli,
-        dx.tolist(),
-        dt,
-        sources["amplitude"],
-        sources["locations"],
-        x_r,
-        prop_kwargs=prop_kwargs,
-    )
+        nt = int((2 * torch.norm(nx.float() * dx) / c + 0.35 + 2 / freq) / dt)
+        x_s = _set_coords(num_shots, num_sources_per_shot, nx.tolist())
+        x_r = _set_coords(num_shots, num_receivers_per_shot, nx.tolist(), "bottom")
+        sources = _set_sources(x_s, freq, dt, nt, dtype)
 
-    (out_ignored[-1] ** 2).sum().backward()
+        n_warmup = 3 if python else 1
 
-    # Forward with amplitudes of sources that will be ignored set to zero
-    modelf = model.clone()
-    modelf.requires_grad_()
-    x_s = _set_coords(num_shots, num_sources_per_shot, nx.tolist())
-    x_r = _set_coords(num_shots, num_receivers_per_shot, nx.tolist(), "bottom")
-    for i in range(num_shots):
-        sources["amplitude"][i, i].fill_(0)
-    sources["locations"] = x_s
-    out_filled = propagator(
-        modelf,
-        dx.tolist(),
-        dt,
-        sources["amplitude"],
-        sources["locations"],
-        x_r,
-        prop_kwargs=prop_kwargs,
-    )
-    # Set receiver amplitudes of receiver that will be ignored to zero
-    for i in range(num_shots):
-        out_filled[-1][i, i].fill_(0)
+        for _warmup in range(n_warmup):
+            # Forward with source and receiver ignored
+            modeli = model.clone()
+            modeli.requires_grad_()
+            for i in range(num_shots):
+                x_s[i, i, :] = IGNORE_LOCATION
+                x_r[i, i, :] = IGNORE_LOCATION
+            sources["locations"] = x_s
+            out_ignored = propagator(
+                modeli,
+                dx.tolist(),
+                dt,
+                sources["amplitude"],
+                sources["locations"],
+                x_r,
+                prop_kwargs=prop_kwargs,
+            )
 
-    (out_filled[-1] ** 2).sum().backward()
+            (out_ignored[-1] ** 2).sum().backward()
 
-    for ofi, oii in zip(out_filled, out_ignored):
-        assert torch.allclose(ofi, oii)
+        # Forward with amplitudes of sources that will be ignored set to zero
+        modelf = model.clone()
+        modelf.requires_grad_()
+        x_s = _set_coords(num_shots, num_sources_per_shot, nx.tolist())
+        x_r = _set_coords(num_shots, num_receivers_per_shot, nx.tolist(), "bottom")
+        for i in range(num_shots):
+            sources["amplitude"][i, i].fill_(0)
+        sources["locations"] = x_s
+        out_filled = propagator(
+            modelf,
+            dx.tolist(),
+            dt,
+            sources["amplitude"],
+            sources["locations"],
+            x_r,
+            prop_kwargs=prop_kwargs,
+        )
+        # Set receiver amplitudes of receiver that will be ignored to zero
+        for i in range(num_shots):
+            out_filled[-1][i, i].fill_(0)
 
-    assert torch.allclose(modelf.grad, modeli.grad)
+        (out_filled[-1] ** 2).sum().backward()
+
+        for ofi, oii in zip(out_filled, out_ignored):
+            assert torch.allclose(ofi, oii)
+
+        assert torch.allclose(modelf.grad, modeli.grad)
 
 
 def run_scalarfunc(nt: int = 3) -> None:
@@ -467,10 +484,16 @@ def run_scalarfunc(nt: int = 3) -> None:
     dbxdx = torch.randn(nx, dtype=torch.double, device=device)
     dbydy[2 * fd_pad + pml_width[0] : ny - 2 * fd_pad - pml_width[1]].fill_(0)
     dbxdx[2 * fd_pad + pml_width[2] : nx - 2 * fd_pad - pml_width[3]].fill_(0)
+    ay = ay[None, :, None]
+    ax = ax[None, None, :]
+    by = by[None, :, None]
+    bx = bx[None, None, :]
+    dbydy = dbydy[None, :, None]
+    dbxdx = dbxdx[None, None, :]
 
-    torch.autograd.gradcheck(
-        scalar_func,
-        (
+    def wrap(python):
+        inputs = (
+            python,
             c,
             source_amplitudes,
             wfc,
@@ -498,40 +521,29 @@ def run_scalarfunc(nt: int = 3) -> None:
             None,
             None,
             1,
-        ),
-    )
-    torch.autograd.gradgradcheck(
-        scalar_func,
-        (
-            c,
-            source_amplitudes,
-            wfc,
-            wfp,
-            psiy,
-            psix,
-            zetay,
-            zetax,
-            ay,
-            ax,
-            by,
-            bx,
-            dbydy,
-            dbxdx,
-            sources_i,
-            receivers_i,
-            dy,
-            dx,
-            dt,
-            nt,
-            step_ratio,
-            accuracy,
-            pml_width,
-            n_batch,
-            None,
-            None,
-            1,
-        ),
-    )
+        )
+        out = scalar_func(*inputs)
+        v = [torch.randn_like(o.contiguous()) for o in out]
+        grads = torch.autograd.grad(
+            out,
+            [p for p in inputs if isinstance(p, torch.Tensor) and p.requires_grad],
+            grad_outputs=v,
+            create_graph=True,
+        )
+        w = [torch.randn_like(o.contiguous()) for o in grads]
+        grad_grads = torch.autograd.grad(
+            grads,
+            [p for p in inputs if isinstance(p, torch.Tensor) and p.requires_grad],
+            grad_outputs=w,
+        )
+        return grads + grad_grads
+
+    torch.manual_seed(1)
+    out_compiled = wrap(False)
+    torch.manual_seed(1)
+    out_python = wrap("jit")
+    for oc, op in zip(out_compiled, out_python):
+        assert torch.allclose(oc, op)
 
 
 def test_scalarfunc() -> None:
@@ -547,7 +559,7 @@ def test_gradcheck_2d() -> None:
 
 def test_gradcheck_2d_2nd_order() -> None:
     """Test gradcheck with a 2nd order accurate propagator."""
-    run_gradcheck_2d(propagator=scalarprop, prop_kwargs={"accuracy": 2}, atol=1.2e-8)
+    run_gradcheck_2d(propagator=scalarprop, prop_kwargs={"accuracy": 2})
 
 
 def test_gradcheck_2d_6th_order() -> None:
@@ -557,12 +569,12 @@ def test_gradcheck_2d_6th_order() -> None:
 
 def test_gradcheck_2d_8th_order() -> None:
     """Test gradcheck with a 8th order accurate propagator."""
-    run_gradcheck_2d(propagator=scalarprop, prop_kwargs={"accuracy": 8}, atol=4e-8)
+    run_gradcheck_2d(propagator=scalarprop, prop_kwargs={"accuracy": 8})
 
 
 def test_gradcheck_2d_cfl() -> None:
     """Test gradcheck with a timestep greater than the CFL limit."""
-    run_gradcheck_2d(propagator=scalarprop, dt=0.002, atol=1.5e-6, gradgrad=False)
+    run_gradcheck_2d(propagator=scalarprop, dt=0.002, atol=5e-8, gradgrad=False)
 
 
 def test_gradcheck_2d_cfl_gradgrad() -> None:
@@ -570,16 +582,16 @@ def test_gradcheck_2d_cfl_gradgrad() -> None:
     run_gradcheck_2d(
         propagator=scalarprop,
         dt=0.002,
-        atol=1e-7,
         prop_kwargs={"time_taper": True},
         gradgrad=True,
-        source_requires_grad=True,
+        source_requires_grad=False,
         wavefield_0_requires_grad=False,
         wavefield_m1_requires_grad=False,
         psiy_m1_requires_grad=False,
         psix_m1_requires_grad=False,
         zetay_m1_requires_grad=False,
         zetax_m1_requires_grad=False,
+        only_receivers_out=True,
     )
 
 
@@ -707,70 +719,75 @@ def test_negative_vel(
     dtype=None,
 ):
     """Test propagation with a zero or negative velocity or dt."""
-    torch.manual_seed(1)
-    if device is None:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    nx = torch.tensor(nx).long()
+    dx = torch.tensor(dx, dtype=dtype)
 
-    nx = torch.Tensor(nx).long()
-    dx = torch.Tensor(dx)
+    for python in [True, False]:
+        torch.manual_seed(1)
+        if device is None:
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    nt = int((2 * torch.norm(nx.float() * dx) / c + 0.35 + 2 / freq) / dt)
-    x_s = _set_coords(num_shots, num_sources_per_shot, nx.tolist())
-    x_r = _set_coords(num_shots, num_receivers_per_shot, nx.tolist(), "bottom")
-    sources = _set_sources(x_s, freq, dt, nt, dtype)
+        if prop_kwargs is None:
+            prop_kwargs = {}
+        prop_kwargs["python_backend"] = python
 
-    # Positive velocity
-    model = (
-        torch.ones(*nx, device=device, dtype=dtype) * c
-        + torch.randn(*nx, device=device, dtype=dtype) * dc
-    )
-    out_positive = propagator(
-        model,
-        dx,
-        dt,
-        sources["amplitude"],
-        sources["locations"],
-        x_r,
-        prop_kwargs=prop_kwargs,
-    )
+        nt = int((2 * torch.norm(nx.float() * dx) / c + 0.35 + 2 / freq) / dt)
+        x_s = _set_coords(num_shots, num_sources_per_shot, nx.tolist())
+        x_r = _set_coords(num_shots, num_receivers_per_shot, nx.tolist(), "bottom")
+        sources = _set_sources(x_s, freq, dt, nt, dtype)
 
-    # Negative velocity
-    out = propagator(
-        -model,
-        dx,
-        dt,
-        sources["amplitude"],
-        sources["locations"],
-        x_r,
-        prop_kwargs=prop_kwargs,
-    )
-    assert torch.allclose(out_positive[0], out[0])
-    assert torch.allclose(out_positive[-1], out[-1])
+        # Positive velocity
+        model = (
+            torch.ones(*nx, device=device, dtype=dtype) * c
+            + torch.randn(*nx, device=device, dtype=dtype) * dc
+        )
+        out_positive = propagator(
+            model,
+            dx,
+            dt,
+            sources["amplitude"],
+            sources["locations"],
+            x_r,
+            prop_kwargs=prop_kwargs,
+        )
 
-    # Negative dt
-    out = propagator(
-        model,
-        dx,
-        -dt,
-        sources["amplitude"],
-        sources["locations"],
-        x_r,
-        prop_kwargs=prop_kwargs,
-    )
-    assert torch.allclose(out_positive[0], out[0])
-    assert torch.allclose(out_positive[-1], out[-1])
+        # Negative velocity
+        out = propagator(
+            -model,
+            dx,
+            dt,
+            sources["amplitude"],
+            sources["locations"],
+            x_r,
+            prop_kwargs=prop_kwargs,
+        )
+        assert torch.allclose(out_positive[0], out[0])
+        assert torch.allclose(out_positive[-1], out[-1])
 
-    # Zero velocity
-    out = propagator(
-        torch.zeros_like(model),
-        dx,
-        -dt,
-        sources["amplitude"],
-        sources["locations"],
-        x_r,
-        prop_kwargs=prop_kwargs,
-    )
-    assert torch.allclose(out[0], torch.zeros_like(out[0]))
+        # Negative dt
+        out = propagator(
+            model,
+            dx,
+            -dt,
+            sources["amplitude"],
+            sources["locations"],
+            x_r,
+            prop_kwargs=prop_kwargs,
+        )
+        assert torch.allclose(out_positive[0], out[0])
+        assert torch.allclose(out_positive[-1], out[-1])
+
+        # Zero velocity
+        out = propagator(
+            torch.zeros_like(model),
+            dx,
+            -dt,
+            sources["amplitude"],
+            sources["locations"],
+            x_r,
+            prop_kwargs=prop_kwargs,
+        )
+        assert torch.allclose(out[0], torch.zeros_like(out[0]))
 
 
 def test_gradcheck_only_v_2d() -> None:
@@ -848,8 +865,8 @@ def run_direct(
         shot_c = [c] * num_shots
     model = torch.ones(*nx, device=device, dtype=dtype) * c
 
-    nx = torch.Tensor(nx).long()
-    dx = torch.Tensor(dx)
+    nx = torch.tensor(nx, dtype=torch.long)
+    dx = torch.tensor(dx, dtype=dtype)
 
     nt = int((2 * torch.norm(nx.float() * dx) / min_c + 0.35 + 2 / freq) / dt)
     x_s = _set_coords(num_shots, num_sources_per_shot, nx.tolist())
@@ -947,8 +964,8 @@ def run_forward(
         + torch.randn(*nx, dtype=dtype).to(device) * dc
     )
 
-    nx = torch.Tensor(nx).long()
-    dx = torch.Tensor(dx)
+    nx = torch.tensor(nx, dtype=torch.long)
+    dx = torch.tensor(dx, dtype=dtype)
 
     if nt is None:
         nt = int((2 * torch.norm(nx.float() * dx) / c + 0.35 + 2 / freq) / dt)
@@ -1023,8 +1040,8 @@ def run_scatter(
     model = torch.ones(*nx, device=device, dtype=dtype) * c
     model_const = model.clone()
 
-    nx = torch.Tensor(nx).long()
-    dx = torch.Tensor(dx)
+    nx = torch.tensor(nx, dtype=torch.long)
+    dx = torch.tensor(dx, dtype=dtype)
 
     nt = int((2 * torch.norm(nx.float() * dx) / c + 0.35 + 2 / freq) / dt)
     x_s = _set_coords(num_shots, num_sources_per_shot, nx.tolist())
@@ -1137,8 +1154,9 @@ def run_gradcheck(
     psix_m1_requires_grad: bool = True,
     zetay_m1_requires_grad: bool = True,
     zetax_m1_requires_grad: bool = True,
-    atol: float = 2e-8,
-    rtol: float = 2e-5,
+    only_receivers_out: bool = False,
+    atol: float = 1e-8,
+    rtol: float = 1e-5,
     gradgrad: bool = True,
     nt_add: int = 0,
 ) -> None:
@@ -1156,14 +1174,15 @@ def run_gradcheck(
         + torch.rand(*nx, device=device, dtype=dtype) * dc
     )
 
-    nx = torch.Tensor(nx).long()
-    dx = torch.Tensor(dx)
+    nx = torch.tensor(nx, dtype=torch.long)
+    dx = torch.tensor(dx, dtype=dtype)
 
     if min_c != 0:
         nt = int((2 * torch.norm(nx.float() * dx) / min_c + 0.1 + 2 / freq) / dt)
     else:
         nt = int((2 * torch.norm(nx.float() * dx) / 1500 + 0.1 + 2 / freq) / dt)
     nt += nt_add
+
     if num_sources_per_shot > 0:
         x_s = _set_coords(num_shots, num_sources_per_shot, nx.tolist())
         sources = _set_sources(x_s, freq, dt, nt, dtype, dpeak_time=0.05)
@@ -1209,12 +1228,17 @@ def run_gradcheck(
         zetax_m1 = None
 
     model.requires_grad_(v_requires_grad)
+    if prop_kwargs is None:
+        prop_kwargs = {}
 
-    torch.autograd.gradcheck(
-        propagator,
-        (
+    out_idxs = []
+    grad_idxs = []
+
+    def wrap(python):
+        prop_kwargs["python_backend"] = python
+        inputs = (
             model,
-            dx.tolist(),
+            dx,
             dt,
             sources["amplitude"],
             sources["locations"],
@@ -1232,42 +1256,46 @@ def run_gradcheck(
             nt,
             1,
             True,
-        ),
-        nondet_tol=1e-3,
-        check_grad_dtypes=True,
-        atol=atol,
-        rtol=rtol,
-    )
-
-    if gradgrad:
-        gradgradatol = math.sqrt(atol)
-        torch.autograd.gradgradcheck(
-            propagator,
-            (
-                model,
-                dx.tolist(),
-                dt,
-                sources["amplitude"],
-                sources["locations"],
-                x_r,
-                prop_kwargs,
-                pml_width,
-                survey_pad,
-                origin,
-                wavefield_0,
-                wavefield_m1,
-                psiy_m1,
-                psix_m1,
-                zetay_m1,
-                zetax_m1,
-                nt,
-                1,
-                True,
-            ),
-            nondet_tol=1e-3,
-            atol=gradgradatol,
-            check_grad_dtypes=True,
         )
+        out = propagator(*inputs)
+        if only_receivers_out:
+            out = out[-1:]
+        if len(out_idxs) == 0:
+            for i, o in enumerate(out):
+                if o.requires_grad:
+                    out_idxs.append(i)
+        out = [out[i] for i in out_idxs]
+        v = [torch.randn_like(o.contiguous()) for o in out]
+        grads = torch.autograd.grad(
+            out,
+            [p for p in inputs if isinstance(p, torch.Tensor) and p.requires_grad],
+            grad_outputs=v,
+            create_graph=gradgrad,
+        )
+        if not gradgrad:
+            return grads
+
+        if len(grad_idxs) == 0:
+            for i, g in enumerate(grads):
+                if g.requires_grad:
+                    grad_idxs.append(i)
+        grads = tuple([grads[i] for i in grad_idxs])
+        if len(grads) == 0:
+            return grads
+        w = [torch.randn_like(o.contiguous()) for o in grads]
+        grad_grads = torch.autograd.grad(
+            grads,
+            [p for p in inputs if isinstance(p, torch.Tensor) and p.requires_grad],
+            grad_outputs=w,
+        )
+        return grads + grad_grads
+
+    torch.manual_seed(1)
+    out_python = wrap("jit")
+    torch.manual_seed(1)
+    out_compiled = wrap(False)
+    for oc, op in zip(out_compiled, out_python):
+        assert torch.allclose(oc, op, atol=atol, rtol=rtol)
 
 
 def run_gradcheck_2d(

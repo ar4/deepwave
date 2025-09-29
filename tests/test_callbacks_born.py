@@ -310,11 +310,42 @@ def test_scalar_born_callback_equivalence() -> None:
         assert torch.allclose(out1[i], out2[i])
     assert torch.allclose(grad1_v, grad2_v)
     assert torch.allclose(grad1_scatter, grad2_scatter)
-    v.grad.zero_()
-    scatter.grad.zero_()
 
-    # Test with a frequency that does not divide nt evenly
-    out3 = deepwave.scalar_born(
+
+def test_scalar_born_backward_callback_only_call_count() -> None:
+    """Check that the backward callback is called the correct number of times.
+
+    Check it when no forward callback is provided.
+    """
+    v = torch.ones(10, 10) * 1500
+    scatter = torch.ones(10, 10)
+    v.requires_grad_()
+    scatter.requires_grad_()
+    dx = 5.0
+    dt = 0.004
+    nt = 20
+    source_amplitudes = torch.zeros(1, 1, nt)
+    source_amplitudes[0, 0, 5] = 1
+    source_locations = torch.zeros(1, 1, 2, dtype=torch.long)
+    source_locations[0, 0, 0] = 5
+    source_locations[0, 0, 1] = 5
+    receiver_locations = torch.zeros(1, 1, 2, dtype=torch.long)
+    receiver_locations[0, 0, 0] = 5
+    receiver_locations[0, 0, 1] = 5
+
+    class Counter:
+        """A simple counter class for callbacks."""
+
+        def __init__(self) -> None:
+            self.count = 0
+
+        def __call__(self, state: deepwave.common.CallbackState) -> None:
+            """Increments the counter."""
+            self.count += 1
+
+    # Test with a frequency that divides nt evenly
+    backward_counter = Counter()
+    out = deepwave.scalar_born(
         v,
         scatter,
         dx,
@@ -322,17 +353,32 @@ def test_scalar_born_callback_equivalence() -> None:
         source_amplitudes=source_amplitudes,
         source_locations=source_locations,
         receiver_locations=receiver_locations,
-        forward_callback=do_nothing,
-        backward_callback=do_nothing,
+        backward_callback=backward_counter,
+        callback_frequency=2,
+    )
+    out[-1].sum().backward()
+    grad1_scatter = scatter.grad.detach()
+    assert backward_counter.count == nt / 2
+
+    # Test with a frequency that does not divide nt evenly
+    v.grad.zero_()
+    scatter.grad.zero_()
+    backward_counter = Counter()
+    out = deepwave.scalar_born(
+        v,
+        scatter,
+        dx,
+        dt,
+        source_amplitudes=source_amplitudes,
+        source_locations=source_locations,
+        receiver_locations=receiver_locations,
+        backward_callback=backward_counter,
         callback_frequency=3,
     )
-    out3[-1].sum().backward()
-    grad3_v = v.grad.clone()
-    grad3_scatter = scatter.grad.clone()
-    for i in range(len(out1)):
-        assert torch.allclose(out1[i], out3[i])
-    assert torch.allclose(grad1_v, grad3_v)
-    assert torch.allclose(grad1_scatter, grad3_scatter)
+    out[-1].sum().backward()
+    grad2_scatter = scatter.grad.detach()
+    assert backward_counter.count == (nt + 2) // 3
+    assert torch.allclose(grad1_scatter, grad2_scatter)
 
 
 def test_scalar_born_multishot_equivalence() -> None:

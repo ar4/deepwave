@@ -93,7 +93,7 @@ def _set_coords(
     if location == "top":
         pass
     elif location == "bottom":
-        coords[..., 0] = float(nx[0] - 1) - coords[..., 0]
+        coords[..., 0] = float(nx[0] - 2) - coords[..., 0]
     elif location == "middle":
         coords[..., 0] += int(float(nx[0]) / 2)
     else:
@@ -130,76 +130,76 @@ def test_set_sources_ricker_values() -> None:
 
 def test_set_sources_invalid_xs_type() -> None:
     """Test that _set_sources raises TypeError for invalid x_s type."""
-    with pytest.raises(TypeError, match="x_s must be a torch.Tensor."):
+    with pytest.raises(TypeError, match=r"x_s must be a torch.Tensor."):
         _set_sources([1, 2], 25, 0.004, 100)
 
 
 def test_set_sources_invalid_xs_ndim() -> None:
     """Test that _set_sources raises RuntimeError for invalid x_s dimensions."""
     x_s = torch.zeros(2, 3)  # Should be 3D
-    with pytest.raises(RuntimeError, match="x_s must have three dimensions."):
+    with pytest.raises(RuntimeError, match=r"x_s must have three dimensions."):
         _set_sources(x_s, 25, 0.004, 100)
 
 
 def test_set_sources_invalid_freq_type() -> None:
     """Test that _set_sources raises TypeError for invalid freq type."""
     x_s = torch.zeros(2, 3, 2)
-    with pytest.raises(TypeError, match="freq must be a number."):
+    with pytest.raises(TypeError, match=r"freq must be a number."):
         _set_sources(x_s, "invalid", 0.004, 100)
 
 
 def test_set_sources_non_positive_freq() -> None:
     """Test that _set_sources raises ValueError for non-positive freq."""
     x_s = torch.zeros(2, 3, 2)
-    with pytest.raises(ValueError, match="freq must be positive."):
+    with pytest.raises(ValueError, match=r"freq must be positive."):
         _set_sources(x_s, 0, 0.004, 100)
-    with pytest.raises(ValueError, match="freq must be positive."):
+    with pytest.raises(ValueError, match=r"freq must be positive."):
         _set_sources(x_s, -1, 0.004, 100)
 
 
 def test_set_sources_invalid_dt_type() -> None:
     """Test that _set_sources raises TypeError for invalid dt type."""
     x_s = torch.zeros(2, 3, 2)
-    with pytest.raises(TypeError, match="dt must be a number."):
+    with pytest.raises(TypeError, match=r"dt must be a number."):
         _set_sources(x_s, 25, "invalid", 100)
 
 
 def test_set_sources_non_positive_dt() -> None:
     """Test that _set_sources raises ValueError for non-positive dt."""
     x_s = torch.zeros(2, 3, 2)
-    with pytest.raises(ValueError, match="dt must be positive."):
+    with pytest.raises(ValueError, match=r"dt must be positive."):
         _set_sources(x_s, 25, 0, 100)
-    with pytest.raises(ValueError, match="dt must be positive."):
+    with pytest.raises(ValueError, match=r"dt must be positive."):
         _set_sources(x_s, 25, -0.004, 100)
 
 
 def test_set_sources_invalid_nt_type() -> None:
     """Test that _set_sources raises TypeError for invalid nt type."""
     x_s = torch.zeros(2, 3, 2)
-    with pytest.raises(TypeError, match="nt must be an int."):
+    with pytest.raises(TypeError, match=r"nt must be an int."):
         _set_sources(x_s, 25, 0.004, 100.0)
 
 
 def test_set_sources_non_positive_nt() -> None:
     """Test that _set_sources raises ValueError for non-positive nt."""
     x_s = torch.zeros(2, 3, 2)
-    with pytest.raises(ValueError, match="nt must be positive."):
+    with pytest.raises(ValueError, match=r"nt must be positive."):
         _set_sources(x_s, 25, 0.004, 0)
-    with pytest.raises(ValueError, match="nt must be positive."):
+    with pytest.raises(ValueError, match=r"nt must be positive."):
         _set_sources(x_s, 25, 0.004, -1)
 
 
 def test_set_sources_invalid_dtype() -> None:
     """Test that _set_sources raises TypeError for invalid dtype."""
     x_s = torch.zeros(2, 3, 2)
-    with pytest.raises(TypeError, match="dtype must be a torch.dtype."):
+    with pytest.raises(TypeError, match=r"dtype must be a torch.dtype."):
         _set_sources(x_s, 25, 0.004, 100, dtype="invalid")
 
 
 def test_set_sources_negative_dpeak_time() -> None:
     """Test that _set_sources raises ValueError for negative dpeak_time."""
     x_s = torch.zeros(2, 3, 2)
-    with pytest.raises(ValueError, match="dpeak_time must be non-negative."):
+    with pytest.raises(ValueError, match=r"dpeak_time must be non-negative."):
         _set_sources(x_s, 25, 0.004, 100, dpeak_time=-0.1)
 
 
@@ -229,7 +229,7 @@ def test_set_coords_location_bottom() -> None:
     num_per_shot = 1
     nx = (10, 10)
     coords = _set_coords(num_shots, num_per_shot, nx, location="bottom")
-    assert coords[0, 0, 0] == 9  # nx[0] - 1
+    assert coords[0, 0, 0] == 8  # nx[0] - 2
     assert coords[0, 0, 1] == 5
 
 
@@ -254,55 +254,55 @@ def test_set_coords_invalid_location() -> None:
 
 def test_set_coords_invalid_num_shots_type() -> None:
     """Test that _set_coords raises TypeError for invalid num_shots type."""
-    with pytest.raises(TypeError, match="num_shots must be an int."):
+    with pytest.raises(TypeError, match=r"num_shots must be an int."):
         _set_coords(1.0, 1, (10, 10))
 
 
 def test_set_coords_non_positive_num_shots() -> None:
     """Test that _set_coords raises ValueError for non-positive num_shots."""
-    with pytest.raises(ValueError, match="num_shots must be positive."):
+    with pytest.raises(ValueError, match=r"num_shots must be positive."):
         _set_coords(0, 1, (10, 10))
-    with pytest.raises(ValueError, match="num_shots must be positive."):
+    with pytest.raises(ValueError, match=r"num_shots must be positive."):
         _set_coords(-1, 1, (10, 10))
 
 
 def test_set_coords_invalid_num_per_shot_type() -> None:
     """Test that _set_coords raises TypeError for invalid num_per_shot type."""
-    with pytest.raises(TypeError, match="num_per_shot must be an int."):
+    with pytest.raises(TypeError, match=r"num_per_shot must be an int."):
         _set_coords(1, 1.0, (10, 10))
 
 
 def test_set_coords_non_positive_num_per_shot() -> None:
     """Test that _set_coords raises ValueError for non-positive num_per_shot."""
-    with pytest.raises(ValueError, match="num_per_shot must be positive."):
+    with pytest.raises(ValueError, match=r"num_per_shot must be positive."):
         _set_coords(1, 0, (10, 10))
-    with pytest.raises(ValueError, match="num_per_shot must be positive."):
+    with pytest.raises(ValueError, match=r"num_per_shot must be positive."):
         _set_coords(1, -1, (10, 10))
 
 
 def test_set_coords_invalid_nx_type() -> None:
     """Test that _set_coords raises TypeError for invalid nx type."""
-    with pytest.raises(TypeError, match="nx must be a list or tuple."):
+    with pytest.raises(TypeError, match=r"nx must be a list or tuple."):
         _set_coords(1, 1, "invalid")
 
 
 def test_set_coords_empty_nx() -> None:
     """Test that _set_coords raises ValueError for empty nx."""
-    with pytest.raises(ValueError, match="nx must not be empty."):
+    with pytest.raises(ValueError, match=r"nx must not be empty."):
         _set_coords(1, 1, ())
 
 
 def test_set_coords_invalid_nx_elements_type() -> None:
     """Test that _set_coords raises TypeError for invalid nx elements type."""
-    with pytest.raises(TypeError, match="nx elements must be integers."):
+    with pytest.raises(TypeError, match=r"nx elements must be integers."):
         _set_coords(1, 1, (10, 10.0))
 
 
 def test_set_coords_non_positive_nx_elements() -> None:
     """Test that _set_coords raises ValueError for non-positive nx elements."""
-    with pytest.raises(ValueError, match="nx elements must be positive."):
+    with pytest.raises(ValueError, match=r"nx elements must be positive."):
         _set_coords(1, 1, (10, 0))
-    with pytest.raises(ValueError, match="nx elements must be positive."):
+    with pytest.raises(ValueError, match=r"nx elements must be positive."):
         _set_coords(1, 1, (10, -1))
 
 
@@ -344,7 +344,7 @@ def direct_2d_approx(
     if f.ndim != 1:
         raise RuntimeError("f must be a 1D Tensor.")
 
-    r = torch.norm(x * dx - x_s * dx).item()
+    r = torch.norm(x.double() * dx - x_s.double() * dx).item()
     nt = len(f)
     w = torch.fft.rfftfreq(nt, dt)
     fw = torch.fft.rfft(f)

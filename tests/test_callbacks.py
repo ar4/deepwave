@@ -410,3 +410,64 @@ def test_scalar_multishot_equivalence() -> None:
     )
     for i in range(len(out1)):
         assert torch.allclose(out1[i], out2[i])
+
+
+def test_scalar_backward_callback_only_call_count() -> None:
+    """Check that the backward callback is called the correct number of times.
+
+    Check it when no forward callback is provided.
+    """
+    v = torch.ones(10, 10) * 1500
+    v.requires_grad_()
+    dx = 5.0
+    dt = 0.004
+    nt = 20
+    source_amplitudes = torch.zeros(1, 1, nt)
+    source_amplitudes[0, 0, 5] = 1
+    source_locations = torch.zeros(1, 1, 2, dtype=torch.long)
+    source_locations[0, 0, 0] = 5
+    source_locations[0, 0, 1] = 5
+    receiver_locations = torch.zeros(1, 1, 2, dtype=torch.long)
+    receiver_locations[0, 0, 0] = 5
+    receiver_locations[0, 0, 1] = 5
+
+    class Counter:
+        """A simple counter class for callbacks."""
+
+        def __init__(self) -> None:
+            self.count = 0
+
+        def __call__(self, state: deepwave.common.CallbackState) -> None:
+            """Increments the counter."""
+            self.count += 1
+
+    # Test with a frequency that divides nt evenly
+    backward_counter = Counter()
+    out = deepwave.scalar(
+        v,
+        dx,
+        dt,
+        source_amplitudes=source_amplitudes,
+        source_locations=source_locations,
+        receiver_locations=receiver_locations,
+        backward_callback=backward_counter,
+        callback_frequency=2,
+    )
+    out[-1].sum().backward()
+    assert backward_counter.count == nt / 2
+
+    # Test with a frequency that does not divide nt evenly
+    v.grad.zero_()
+    backward_counter = Counter()
+    out = deepwave.scalar(
+        v,
+        dx,
+        dt,
+        source_amplitudes=source_amplitudes,
+        source_locations=source_locations,
+        receiver_locations=receiver_locations,
+        backward_callback=backward_counter,
+        callback_frequency=3,
+    )
+    out[-1].sum().backward()
+    assert backward_counter.count == (nt + 2) // 3

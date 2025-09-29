@@ -1,10 +1,11 @@
-#ifndef DW_COMMON_H
-#define DW_COMMON_H
+#ifndef DW_REGULAR_GRID_H
+#define DW_REGULAR_GRID_H
 
-/* common.h
+/* regular_grid.h
  * Small collection of finite-difference helper macros used by CPU and GPU
- * implementations. DIFF* macros implement spatial FD operators; FD_PAD is
- * the stencil 'radius' (number of guard cells required to evaluate stencils).
+ * implementations of regular grid propagators. DIFF* macros implement spatial
+ * FD operators; FD_PAD is the stencil 'radius' (number of guard cells required
+ * to evaluate stencils).
  */
 
 #if DW_ACCURACY == 2
@@ -99,14 +100,4 @@
 
 #endif /* DW_ACCURACY */
 
-#ifdef DW_DEBUG
-#define CHECK_KERNEL_ERROR              \
-  {                                     \
-    gpuErrchk(cudaPeekAtLastError());   \
-    gpuErrchk(cudaDeviceSynchronize()); \
-  }
-#else
-#define CHECK_KERNEL_ERROR gpuErrchk(cudaPeekAtLastError());
-#endif /* DW_DEBUG */
-
-#endif /* DW_COMMON_H */
+#endif /* DW_REGULAR_GRID_H */

@@ -1579,6 +1579,15 @@ def get_survey_extents_from_wavefields(
                     - pml_width[dim * 2]
                     - pml_width[dim * 2 + 1]
                 )
+                if extent_size < 0:
+                    raise RuntimeError(
+                        "A calculated survey extent was negative, which probably "
+                        "means that a provided wavefield has the wrong shape. "
+                        "Did you forget to add PML padding? The wavefield has "
+                        f"length {wavefield.shape[1 + dim]}, and the "
+                        f"PML widths are {pml_width[dim * 2]}, "
+                        f"{pml_width[dim * 2 + 1]} in the dimension."
+                    )
                 extents.append((dim_origin, dim_origin + extent_size))
             if origin is None:
                 warnings.warn(
@@ -2100,11 +2109,14 @@ def cfl_condition_n(
     step_ratio = math.ceil(abs(dt) / max_dt)
     inner_dt = dt / step_ratio
     if step_ratio >= 20:
-        warnings.warn(f"With an input time step interval of {dt}, a grid spacing "
-                      f"of {grid_spacing}, and a maximum absolute velocity of "
-                      f"{max_abs_vel}, Deepwave will have to use {step_ratio} "
-                      "internal time steps per time step, with an interval of "
-                      f"{inner_dt}, to satisfy the CFL condition.")
+        warnings.warn(
+            f"With an input time step interval of {dt}, a grid spacing "
+            f"of {grid_spacing}, and a maximum absolute velocity of "
+            f"{max_abs_vel}, Deepwave will have to use {step_ratio} "
+            "internal time steps per time step, with an interval of "
+            f"{inner_dt}, to satisfy the CFL condition.",
+            stacklevel=2,
+        )
     return inner_dt, step_ratio
 
 

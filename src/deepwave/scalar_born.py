@@ -121,6 +121,7 @@ class ScalarBorn(torch.nn.Module):
         forward_callback: Optional[deepwave.common.Callback] = None,
         backward_callback: Optional[deepwave.common.Callback] = None,
         callback_frequency: int = 1,
+        python_backend: Union[bool, str] = False,
     ) -> Tuple[torch.Tensor, ...]:
         """Perform forward propagation/modelling.
 
@@ -163,6 +164,7 @@ class ScalarBorn(torch.nn.Module):
             forward_callback=forward_callback,
             backward_callback=backward_callback,
             callback_frequency=callback_frequency,
+            python_backend=python_backend,
         )
 
 
@@ -201,6 +203,7 @@ def scalar_born(
     forward_callback: Optional[deepwave.common.Callback] = None,
     backward_callback: Optional[deepwave.common.Callback] = None,
     callback_frequency: int = 1,
+    python_backend: Union[bool, str] = False,
 ) -> Tuple[torch.Tensor, ...]:
     """Scalar Born wave propagation (functional interface).
 
@@ -263,6 +266,12 @@ def scalar_born(
         forward_callback: Forward pass callback function.
         backward_callback: Backward pass callback function.
         callback_frequency: Time steps between callbacks.
+        python_backend: Use Python backend rather than compiled C/CUDA.
+            Can be a string specifying whether to use PyTorch's JIT ("jit"),
+            torch.compile ("compile"), or eager mode ("eager"). Alternatively
+            a boolean can be provided, with True using the Python backend
+            with torch.compile, while the default, False, instead uses the
+            compiled C/CUDA.
 
     Returns:
         Tuple:
@@ -421,6 +430,7 @@ def scalar_born(
         receiver_amplitudes,
         receiver_amplitudessc,
     ) = scalar_born_func(
+        python_backend,
         *models,
         *source_amplitudes_out,
         *wavefields,
@@ -708,6 +718,62 @@ class ScalarBornForwardFunc(torch.autograd.Function):
             receiver_amplitudessc.resize_(nt, n_shots, n_receiverssc_per_shot)
             receiver_amplitudessc.fill_(0)
 
+        if (
+            v.requires_grad
+            or scatter.requires_grad
+            or source_amplitudes.requires_grad
+            or source_amplitudessc.requires_grad
+            or wfc.requires_grad
+            or wfp.requires_grad
+            or psiy.requires_grad
+            or psix.requires_grad
+            or zetay.requires_grad
+            or zetax.requires_grad
+            or wfcsc.requires_grad
+            or wfpsc.requires_grad
+            or psiysc.requires_grad
+            or psixsc.requires_grad
+            or zetaysc.requires_grad
+            or zetaxsc.requires_grad
+        ):
+            ctx.save_for_backward(
+                v,
+                scatter,
+                ay,
+                ax,
+                by,
+                bx,
+                dbydy,
+                dbxdx,
+                sources_i,
+                receivers_i,
+                receiverssc_i,
+                w_store,
+                wsc_store,
+            )
+            ctx.dy = dy
+            ctx.dx = dx
+            ctx.dt = dt
+            ctx.nt = nt
+            ctx.n_shots = n_shots
+            ctx.step_ratio = step_ratio
+            ctx.accuracy = accuracy
+            ctx.pml_width = pml_width
+            ctx.source_amplitudes_requires_grad = source_amplitudes.requires_grad
+            ctx.source_amplitudessc_requires_grad = source_amplitudessc.requires_grad
+            ctx.backward_callback = backward_callback
+            ctx.callback_frequency = callback_frequency
+            ctx.non_sc = (
+                v.requires_grad
+                or source_amplitudes.requires_grad
+                or wfc.requires_grad
+                or wfp.requires_grad
+                or psiy.requires_grad
+                or psix.requires_grad
+                or zetay.requires_grad
+                or zetax.requires_grad
+            )
+
         if v.is_cuda:
             aux = v.get_device()
         elif deepwave.backend_utils.USE_OPENMP:
@@ -827,62 +893,6 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                         psiysc,
                         psixsc,
                     )
-
-        if (
-            v.requires_grad
-            or scatter.requires_grad
-            or source_amplitudes.requires_grad
-            or source_amplitudessc.requires_grad
-            or wfc.requires_grad
-            or wfp.requires_grad
-            or psiy.requires_grad
-            or psix.requires_grad
-            or zetay.requires_grad
-            or zetax.requires_grad
-            or wfcsc.requires_grad
-            or wfpsc.requires_grad
-            or psiysc.requires_grad
-            or psixsc.requires_grad
-            or zetaysc.requires_grad
-            or zetaxsc.requires_grad
-        ):
-            ctx.save_for_backward(
-                v,
-                scatter,
-                ay,
-                ax,
-                by,
-                bx,
-                dbydy,
-                dbxdx,
-                sources_i,
-                receivers_i,
-                receiverssc_i,
-                w_store,
-                wsc_store,
-            )
-            ctx.dy = dy
-            ctx.dx = dx
-            ctx.dt = dt
-            ctx.nt = nt
-            ctx.n_shots = n_shots
-            ctx.step_ratio = step_ratio
-            ctx.accuracy = accuracy
-            ctx.pml_width = pml_width
-            ctx.source_amplitudes_requires_grad = source_amplitudes.requires_grad
-            ctx.source_amplitudessc_requires_grad = source_amplitudessc.requires_grad
-            ctx.backward_callback = backward_callback
-            ctx.callback_frequency = callback_frequency
-            ctx.non_sc = (
-                v.requires_grad
-                or source_amplitudes.requires_grad
-                or wfc.requires_grad
-                or wfp.requires_grad
-                or psiy.requires_grad
-                or psix.requires_grad
-                or zetay.requires_grad
-                or zetax.requires_grad
-            )
 
         s = (slice(None), slice(fd_pad, -fd_pad), slice(fd_pad, -fd_pad))
         return (
@@ -1492,7 +1502,447 @@ class ScalarBornForwardFunc(torch.autograd.Function):
         )
 
 
+def forward_step(
+    v: torch.Tensor,
+    scatter: torch.Tensor,
+    rdy: torch.Tensor,
+    rdx: torch.Tensor,
+    rdy2: torch.Tensor,
+    rdx2: torch.Tensor,
+    dt: torch.Tensor,
+    accuracy: int,
+    ay: torch.Tensor,
+    ax: torch.Tensor,
+    by: torch.Tensor,
+    bx: torch.Tensor,
+    dbydy: torch.Tensor,
+    dbxdx: torch.Tensor,
+    wfc: torch.Tensor,
+    wfp: torch.Tensor,
+    psiy: torch.Tensor,
+    psix: torch.Tensor,
+    zetay: torch.Tensor,
+    zetax: torch.Tensor,
+    wfcsc: torch.Tensor,
+    wfpsc: torch.Tensor,
+    psiysc: torch.Tensor,
+    psixsc: torch.Tensor,
+    zetaysc: torch.Tensor,
+    zetaxsc: torch.Tensor,
+) -> Tuple[
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+]:
+    """Performs a single time step of scalar Born wave propagation."""
+    dudy = deepwave.regular_grid.diffy1(wfc, accuracy, rdy)
+    dudx = deepwave.regular_grid.diffx1(wfc, accuracy, rdx)
+    duscdy = deepwave.regular_grid.diffy1(wfcsc, accuracy, rdy)
+    duscdx = deepwave.regular_grid.diffx1(wfcsc, accuracy, rdx)
+
+    tmpy = (
+        (1 + by) * deepwave.regular_grid.diffy2(wfc, accuracy, rdy2)
+        + dbydy * dudy
+        + deepwave.regular_grid.diffy1(ay * psiy, accuracy, rdy)
+    )
+    tmpx = (
+        (1 + bx) * deepwave.regular_grid.diffx2(wfc, accuracy, rdx2)
+        + dbxdx * dudx
+        + deepwave.regular_grid.diffx1(ax * psix, accuracy, rdx)
+    )
+
+    tmpysc = (
+        (1 + by) * deepwave.regular_grid.diffy2(wfcsc, accuracy, rdy2)
+        + dbydy * duscdy
+        + deepwave.regular_grid.diffy1(ay * psiysc, accuracy, rdy)
+    )
+    tmpxsc = (
+        (1 + bx) * deepwave.regular_grid.diffx2(wfcsc, accuracy, rdx2)
+        + dbxdx * duscdx
+        + deepwave.regular_grid.diffx1(ax * psixsc, accuracy, rdx)
+    )
+
+    return (
+        v**2 * dt**2 * ((1 + by) * tmpy + ay * zetay + (1 + bx) * tmpx + ax * zetax)
+        + 2 * wfc
+        - wfp,
+        wfc,
+        by * dudy + ay * psiy,
+        bx * dudx + ax * psix,
+        by * tmpy + ay * zetay,
+        bx * tmpx + ax * zetax,
+        v**2
+        * dt**2
+        * ((1 + by) * tmpysc + ay * zetaysc + (1 + bx) * tmpxsc + ax * zetaxsc)
+        + 2 * wfcsc
+        - wfpsc
+        + 2
+        * v
+        * scatter
+        * dt**2
+        * ((1 + by) * tmpy + ay * zetay + (1 + bx) * tmpx + ax * zetax),
+        wfcsc,
+        by * duscdy + ay * psiysc,
+        bx * duscdx + ax * psixsc,
+        by * tmpysc + ay * zetaysc,
+        bx * tmpxsc + ax * zetaxsc,
+    )
+
+
+def scalar_born_python(
+    v: torch.Tensor,
+    scatter: torch.Tensor,
+    source_amplitudes: torch.Tensor,
+    source_amplitudessc: torch.Tensor,
+    wfc: torch.Tensor,
+    wfp: torch.Tensor,
+    psiy: torch.Tensor,
+    psix: torch.Tensor,
+    zetay: torch.Tensor,
+    zetax: torch.Tensor,
+    wfcsc: torch.Tensor,
+    wfpsc: torch.Tensor,
+    psiysc: torch.Tensor,
+    psixsc: torch.Tensor,
+    zetaysc: torch.Tensor,
+    zetaxsc: torch.Tensor,
+    ay: torch.Tensor,
+    ax: torch.Tensor,
+    by: torch.Tensor,
+    bx: torch.Tensor,
+    dbydy: torch.Tensor,
+    dbxdx: torch.Tensor,
+    sources_i: torch.Tensor,
+    unused_tensor: torch.Tensor,
+    receivers_i: torch.Tensor,
+    receiverssc_i: torch.Tensor,
+    dy: float,
+    dx: float,
+    dt: float,
+    nt: int,
+    step_ratio: int,
+    accuracy: int,
+    pml_width: List[int],
+    n_shots: int,
+    forward_callback: Optional[deepwave.common.Callback],
+    backward_callback: Optional[deepwave.common.Callback],
+    callback_frequency: int,
+) -> Tuple[torch.Tensor, ...]:
+    """Forward propagation of the scalar Born wave equation.
+
+    Args:
+        ctx: Context object for backpropagation.
+        v: Wavespeed model.
+        scatter: Scattering potential model.
+        source_amplitudes: Source amplitudes for the background wavefield.
+        source_amplitudessc: Source amplitudes for the scattered wavefield.
+        wfc: Current wavefield.
+        wfp: Previous wavefield.
+        psiy: PML variable for the y-direction.
+        psix: PML variable for the x-direction.
+        zetay: PML variable for the y-direction.
+        zetax: PML variable for the x-direction.
+        wfcsc: Current scattered wavefield.
+        wfpsc: Previous scattered wavefield.
+        psiysc: PML variable for the y-direction of the scattered wavefield.
+        psixsc: PML variable for the x-direction of the scattered wavefield.
+        zetaysc: PML variable for the y-direction of the scattered wavefield.
+        zetaxsc: PML variable for the x-direction of the scattered wavefield.
+        ay: PML coefficient.
+        ax: PML coefficient.
+        by: PML coefficient.
+        bx: PML coefficient.
+        dbydy: Derivative of PML coefficient.
+        dbxdx: Derivative of PML coefficient.
+        sources_i: Source locations.
+        unused_tensor: Unused tensor.
+        receivers_i: Receiver locations.
+        receiverssc_i: Scattered wavefield receiver locations.
+        dy: Grid spacing in the y-direction.
+        dx: Grid spacing in the x-direction.
+        dt: Time step size.
+        nt: Number of time steps.
+        step_ratio: Step ratio for storing wavefields.
+        accuracy: Accuracy of the finite-difference scheme.
+        pml_width: Width of the PML.
+        n_shots: Number of shots.
+        forward_callback: The forward callback.
+        backward_callback: The backward callback.
+        callback_frequency: The callback frequency.
+
+    Returns:
+        A tuple containing the final wavefields and receiver data.
+
+    """
+    if backward_callback is not None:
+        raise RuntimeError("backward_callback is not supported in the Python backend.")
+    del unused_tensor  # Unused.
+    v = v.contiguous()
+    scatter = scatter.contiguous()
+    source_amplitudes = source_amplitudes.contiguous()
+    source_amplitudessc = source_amplitudessc.contiguous()
+    ay = ay.contiguous()
+    ax = ax.contiguous()
+    by = by.contiguous()
+    bx = bx.contiguous()
+    dbydy = dbydy.contiguous()
+    dbxdx = dbxdx.contiguous()
+    sources_i = sources_i.contiguous()
+    receivers_i = receivers_i.contiguous()
+    receiverssc_i = receiverssc_i.contiguous()
+
+    fd_pad = accuracy // 2
+    size_with_batch = (n_shots, *v.shape[-2:])
+    wfc = deepwave.common.create_or_pad(
+        wfc,
+        fd_pad,
+        v.device,
+        v.dtype,
+        size_with_batch,
+    )
+    wfp = deepwave.common.create_or_pad(
+        wfp,
+        fd_pad,
+        v.device,
+        v.dtype,
+        size_with_batch,
+    )
+    psiy = deepwave.common.create_or_pad(
+        psiy,
+        fd_pad,
+        v.device,
+        v.dtype,
+        size_with_batch,
+    )
+    psix = deepwave.common.create_or_pad(
+        psix,
+        fd_pad,
+        v.device,
+        v.dtype,
+        size_with_batch,
+    )
+    zetay = deepwave.common.create_or_pad(
+        zetay,
+        fd_pad,
+        v.device,
+        v.dtype,
+        size_with_batch,
+    )
+    zetax = deepwave.common.create_or_pad(
+        zetax,
+        fd_pad,
+        v.device,
+        v.dtype,
+        size_with_batch,
+    )
+    wfcsc = deepwave.common.create_or_pad(
+        wfcsc,
+        fd_pad,
+        v.device,
+        v.dtype,
+        size_with_batch,
+    )
+    wfpsc = deepwave.common.create_or_pad(
+        wfpsc,
+        fd_pad,
+        v.device,
+        v.dtype,
+        size_with_batch,
+    )
+    psiysc = deepwave.common.create_or_pad(
+        psiysc,
+        fd_pad,
+        v.device,
+        v.dtype,
+        size_with_batch,
+    )
+    psixsc = deepwave.common.create_or_pad(
+        psixsc,
+        fd_pad,
+        v.device,
+        v.dtype,
+        size_with_batch,
+    )
+    zetaysc = deepwave.common.create_or_pad(
+        zetaysc,
+        fd_pad,
+        v.device,
+        v.dtype,
+        size_with_batch,
+    )
+    zetaxsc = deepwave.common.create_or_pad(
+        zetaxsc,
+        fd_pad,
+        v.device,
+        v.dtype,
+        size_with_batch,
+    )
+
+    device = v.device
+    dtype = v.dtype
+    ny = v.shape[-2]
+    nx = v.shape[-1]
+    n_receivers_per_shot = receivers_i.numel() // n_shots
+    n_receiverssc_per_shot = receiverssc_i.numel() // n_shots
+    receiver_amplitudes = torch.empty(0, device=device, dtype=dtype)
+    receiver_amplitudessc = torch.empty(0, device=device, dtype=dtype)
+    rdy = torch.tensor(1 / dy, dtype=dtype, device=device)
+    rdx = torch.tensor(1 / dx, dtype=dtype, device=device)
+    rdy2 = rdy**2
+    rdx2 = rdx**2
+    dt_tensor = torch.tensor(dt, dtype=dtype, device=device)
+
+    if receivers_i.numel() > 0:
+        receiver_amplitudes.resize_(nt, n_shots, n_receivers_per_shot)
+        receiver_amplitudes.fill_(0)
+    if receiverssc_i.numel() > 0:
+        receiver_amplitudessc.resize_(nt, n_shots, n_receiverssc_per_shot)
+        receiver_amplitudessc.fill_(0)
+
+    source_mask = sources_i != deepwave.common.IGNORE_LOCATION
+    sources_i_masked = torch.zeros_like(sources_i)
+    sources_i_masked[source_mask] = sources_i[source_mask]
+    source_amplitudes_masked = torch.zeros_like(source_amplitudes)
+    source_amplitudes_masked[:, source_mask] = source_amplitudes[:, source_mask]
+    source_amplitudessc_masked = torch.zeros_like(source_amplitudessc)
+    source_amplitudessc_masked[:, source_mask] = source_amplitudessc[:, source_mask]
+
+    receiver_mask = receivers_i != deepwave.common.IGNORE_LOCATION
+    receivers_i_masked = torch.zeros_like(receivers_i)
+    receivers_i_masked[receiver_mask] = receivers_i[receiver_mask]
+    receiversc_mask = receiverssc_i != deepwave.common.IGNORE_LOCATION
+    receiverssc_i_masked = torch.zeros_like(receiverssc_i)
+    receiverssc_i_masked[receiversc_mask] = receiverssc_i[receiversc_mask]
+
+    for step in range(nt // step_ratio):
+        if forward_callback is not None and step % callback_frequency == 0:
+            state = deepwave.common.CallbackState(
+                dt,
+                step,
+                {
+                    "wavefield_0": wfc,
+                    "wavefield_m1": wfp,
+                    "psiy_m1": psiy,
+                    "psix_m1": psix,
+                    "zetay_m1": zetay,
+                    "zetax_m1": zetax,
+                    "wavefield_sc_0": wfcsc,
+                    "wavefield_sc_m1": wfpsc,
+                    "psiy_sc_m1": psiysc,
+                    "psix_sc_m1": psixsc,
+                    "zetay_sc_m1": zetaysc,
+                    "zetax_sc_m1": zetaxsc,
+                },
+                {"v": v, "scatter": scatter},
+                {},
+                [fd_pad] * 4,
+                pml_width,
+            )
+            forward_callback(state)
+        for inner_step in range(step_ratio):
+            t = step * step_ratio + inner_step
+            if receiver_amplitudes.numel() > 0:
+                receiver_amplitudes[t] = wfc.view(-1, ny * nx).gather(
+                    1, receivers_i_masked
+                )
+            if receiver_amplitudessc.numel() > 0:
+                receiver_amplitudessc[t] = wfcsc.view(-1, ny * nx).gather(
+                    1, receiverssc_i_masked
+                )
+            (
+                wfc,
+                wfp,
+                psiy,
+                psix,
+                zetay,
+                zetax,
+                wfcsc,
+                wfpsc,
+                psiysc,
+                psixsc,
+                zetaysc,
+                zetaxsc,
+            ) = _forward_step_opt(
+                v,
+                scatter,
+                rdy,
+                rdx,
+                rdy2,
+                rdx2,
+                dt_tensor,
+                accuracy,
+                ay,
+                ax,
+                by,
+                bx,
+                dbydy,
+                dbxdx,
+                wfc,
+                wfp,
+                psiy,
+                psix,
+                zetay,
+                zetax,
+                wfcsc,
+                wfpsc,
+                psiysc,
+                psixsc,
+                zetaysc,
+                zetaxsc,
+            )
+            if source_amplitudes_masked.numel() > 0:
+                wfc.view(-1, ny * nx).scatter_add_(
+                    1, sources_i_masked, source_amplitudes_masked[t]
+                )
+                wfcsc.view(-1, ny * nx).scatter_add_(
+                    1, sources_i_masked, source_amplitudessc_masked[t]
+                )
+
+    receiver_amplitudes_masked = torch.zeros_like(receiver_amplitudes)
+    if receiver_amplitudes.numel() > 0:
+        receiver_amplitudes_masked[:, receiver_mask] = receiver_amplitudes[
+            :, receiver_mask
+        ]
+    receiver_amplitudessc_masked = torch.zeros_like(receiver_amplitudessc)
+    if receiver_amplitudessc.numel() > 0:
+        receiver_amplitudessc_masked[:, receiversc_mask] = receiver_amplitudessc[
+            :, receiversc_mask
+        ]
+    s = (slice(None), slice(fd_pad, -fd_pad), slice(fd_pad, -fd_pad))
+    return (
+        wfc[s],
+        wfp[s],
+        psiy[s],
+        psix[s],
+        zetay[s],
+        zetax[s],
+        wfcsc[s],
+        wfpsc[s],
+        psiysc[s],
+        psixsc[s],
+        zetaysc[s],
+        zetaxsc[s],
+        receiver_amplitudes,
+        receiver_amplitudessc,
+    )
+
+
+_forward_step_jit = None
+_forward_step_compile = None
+_forward_step_opt = forward_step
+
+
 def scalar_born_func(
+    python_backend: Union[bool, str],
     *args: Any,
 ) -> Tuple[
     torch.Tensor,
@@ -1517,6 +1967,7 @@ def scalar_born_func(
     for scalar Born wave propagation.
 
     Args:
+        python_backend: Bool or string specifying whether to use Python backend.
         *args: Variable length argument list to be passed directly to
             `ScalarBornForwardFunc.apply`.
 
@@ -1524,10 +1975,37 @@ def scalar_born_func(
         The results of the forward pass from `ScalarBornForwardFunc.apply`.
 
     """
+    global _forward_step_jit, _forward_step_compile, _forward_step_opt
+
+    if python_backend:
+        if python_backend is True:
+            mode = "compile" if deepwave.backend_utils.USE_OPENMP else "jit"
+        elif isinstance(python_backend, str):
+            mode = python_backend.lower()
+        else:
+            raise TypeError(
+                f"python_backend must be bool or str, but got {type(python_backend)}"
+            )
+
+        if mode == "jit":
+            if _forward_step_jit is None:
+                _forward_step_jit = torch.jit.script(forward_step)
+            _forward_step_opt = _forward_step_jit
+        elif mode == "compile":
+            if _forward_step_compile is None:
+                _forward_step_compile = torch.compile(forward_step, fullgraph=True)
+            _forward_step_opt = _forward_step_compile
+        elif mode == "eager":
+            _forward_step_opt = forward_step
+        else:
+            raise ValueError(f"Unknown python_backend value {mode!r}.")
+
+    func = scalar_born_python if python_backend else ScalarBornForwardFunc.apply
+
     return cast(
         "Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, "
         "torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, "
         "torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, "
         "torch.Tensor, torch.Tensor]",
-        ScalarBornForwardFunc.apply(*args),  # type: ignore[no-untyped-call]
+        func(*args),
     )

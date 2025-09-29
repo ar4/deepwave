@@ -32,7 +32,8 @@
 
 #include <cstdint>
 
-#include "common.h"
+#include "common_gpu.h"
+#include "regular_grid.h"
 
 #define CAT_I(name, accuracy, dtype, device) \
   scalar_iso_##accuracy##_##dtype##_##name##_##device
@@ -349,8 +350,7 @@ extern "C"
       forward_kernel<<<dimGrid, dimBlock>>>(
           v, wfp, wfc, psiyn, psixn, psiy, psix, zetay, zetax,
           dwdv + (t / step_ratio_h) * ny_h * nx_h * n_shots_h, ay, ax, by, bx,
-          dbydy, dbxdx,
-          v_requires_grad && ((t % step_ratio_h) == 0));
+          dbydy, dbxdx, v_requires_grad && ((t % step_ratio_h) == 0));
       CHECK_KERNEL_ERROR
       if (n_sources_per_shot_h > 0) {
         add_sources<<<dimGrid_sources, dimBlock_sources>>>(
@@ -366,8 +366,7 @@ extern "C"
       forward_kernel<<<dimGrid, dimBlock>>>(
           v, wfc, wfp, psiy, psix, psiyn, psixn, zetay, zetax,
           dwdv + (t / step_ratio_h) * ny_h * nx_h * n_shots_h, ay, ax, by, bx,
-          dbydy, dbxdx,
-          v_requires_grad && ((t % step_ratio_h) == 0));
+          dbydy, dbxdx, v_requires_grad && ((t % step_ratio_h) == 0));
       CHECK_KERNEL_ERROR
       if (n_sources_per_shot_h > 0) {
         add_sources<<<dimGrid_sources, dimBlock_sources>>>(

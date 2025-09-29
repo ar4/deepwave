@@ -1,6 +1,5 @@
 """Tests for deepwave.regular_grid."""
 
-import unittest.mock
 from unittest.mock import patch
 
 import pytest
@@ -23,9 +22,7 @@ def test_set_pml_profiles_basic_functionality() -> None:
     ny = 100
     nx = 100
 
-    with patch("deepwave.common.setup_pml") as mock_setup_pml, patch(
-        "deepwave.common.diff"
-    ) as mock_diff:
+    with patch("deepwave.common.setup_pml") as mock_setup_pml:
         # Configure mock_setup_pml to return dummy tensors
         mock_setup_pml.side_effect = [
             (
@@ -36,12 +33,6 @@ def test_set_pml_profiles_basic_functionality() -> None:
                 torch.ones(nx, dtype=dtype, device=device),
                 torch.ones(nx, dtype=dtype, device=device),
             ),  # For ax, bx
-        ]
-
-        # Configure mock_diff to return dummy tensors
-        mock_diff.side_effect = [
-            torch.ones(ny, dtype=dtype, device=device),  # For dbydy
-            torch.ones(nx, dtype=dtype, device=device),  # For dbxdx
         ]
 
         result = set_pml_profiles(
@@ -102,10 +93,6 @@ def test_set_pml_profiles_basic_functionality() -> None:
             pml_freq,
         )
 
-        # Assert that diff was called twice with correct arguments
-        mock_diff.assert_any_call(unittest.mock.ANY, accuracy, grid_spacing[0])
-        mock_diff.assert_any_call(unittest.mock.ANY, accuracy, grid_spacing[1])
-
         # Assert the return type and shape
         assert isinstance(result, list)
         assert len(result) == 6
@@ -134,9 +121,7 @@ def test_set_pml_profiles_different_pml_width() -> None:
     ny = 200
     nx = 150
 
-    with patch("deepwave.common.setup_pml") as mock_setup_pml, patch(
-        "deepwave.common.diff"
-    ) as mock_diff:
+    with patch("deepwave.common.setup_pml") as mock_setup_pml:
         # Configure mock_setup_pml to return dummy tensors
         mock_setup_pml.side_effect = [
             (
@@ -147,12 +132,6 @@ def test_set_pml_profiles_different_pml_width() -> None:
                 torch.ones(nx, dtype=dtype, device=device),
                 torch.ones(nx, dtype=dtype, device=device),
             ),
-        ]
-
-        # Configure mock_diff to return dummy tensors
-        mock_diff.side_effect = [
-            torch.ones(ny, dtype=dtype, device=device),
-            torch.ones(nx, dtype=dtype, device=device),
         ]
 
         result = set_pml_profiles(
@@ -237,9 +216,7 @@ def test_set_pml_profiles_edge_cases() -> None:
     ny = 10
     nx = 10
 
-    with patch("deepwave.common.setup_pml") as mock_setup_pml, patch(
-        "deepwave.common.diff"
-    ) as mock_diff:
+    with patch("deepwave.common.setup_pml") as mock_setup_pml:
         mock_setup_pml.side_effect = [
             (
                 torch.zeros(ny, dtype=dtype, device=device),
@@ -249,10 +226,6 @@ def test_set_pml_profiles_edge_cases() -> None:
                 torch.zeros(nx, dtype=dtype, device=device),
                 torch.zeros(nx, dtype=dtype, device=device),
             ),
-        ]
-        mock_diff.side_effect = [
-            torch.zeros(ny, dtype=dtype, device=device),
-            torch.zeros(nx, dtype=dtype, device=device),
         ]
 
         result = set_pml_profiles(
@@ -301,9 +274,7 @@ def test_set_pml_profiles_edge_cases() -> None:
     ny = 2  # Minimal size
     nx = 2
 
-    with patch("deepwave.common.setup_pml") as mock_setup_pml, patch(
-        "deepwave.common.diff"
-    ) as mock_diff:
+    with patch("deepwave.common.setup_pml") as mock_setup_pml:
         mock_setup_pml.side_effect = [
             (
                 torch.ones(ny, dtype=dtype, device=device),
@@ -313,10 +284,6 @@ def test_set_pml_profiles_edge_cases() -> None:
                 torch.ones(nx, dtype=dtype, device=device),
                 torch.ones(nx, dtype=dtype, device=device),
             ),
-        ]
-        mock_diff.side_effect = [
-            torch.ones(ny, dtype=dtype, device=device),
-            torch.ones(nx, dtype=dtype, device=device),
         ]
 
         result = set_pml_profiles(

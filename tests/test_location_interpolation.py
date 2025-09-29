@@ -10,14 +10,14 @@ from deepwave.location_interpolation import Hicks, _get_hicks_for_one_location_d
 
 def test_hicks_init_invalid_locations_type() -> None:
     """Test that Hicks.__init__ raises TypeError if locations is not a tensor."""
-    with pytest.raises(TypeError, match="locations must be a torch.Tensor."):
+    with pytest.raises(TypeError, match=r"locations must be a torch.Tensor."):
         Hicks([1, 2, 3])
 
 
 def test_hicks_init_invalid_locations_ndim() -> None:
     """Test raises if locations does not have three dimensions."""
     locations = torch.randn(10, 2)  # Should be 3D
-    with pytest.raises(RuntimeError, match="locations must have three dimensions."):
+    with pytest.raises(RuntimeError, match=r"locations must have three dimensions."):
         Hicks(locations)
 
 
@@ -38,7 +38,7 @@ def test_hicks_init_zero_sources_per_shot() -> None:
 def test_hicks_init_invalid_dtype() -> None:
     """Test that Hicks.__init__ raises TypeError if dtype is not a torch.dtype."""
     locations = torch.randn(10, 10, 2)
-    with pytest.raises(TypeError, match="dtype must be a torch.dtype."):
+    with pytest.raises(TypeError, match=r"dtype must be a torch.dtype."):
         Hicks(locations, dtype="float")
 
 
@@ -124,7 +124,7 @@ def test_hicks_source_invalid_amplitudes_type() -> None:
     """Test that Hicks.source raises TypeError if amplitudes is not a tensor."""
     locations = torch.randn(1, 1, 2)
     hicks = Hicks(locations, model_shape=[100, 100])
-    with pytest.raises(TypeError, match="amplitudes must be a torch.Tensor."):
+    with pytest.raises(TypeError, match=r"amplitudes must be a torch.Tensor."):
         hicks.source([1, 2, 3])
 
 
@@ -133,7 +133,7 @@ def test_hicks_source_invalid_amplitudes_ndim() -> None:
     locations = torch.randn(1, 1, 2)
     hicks = Hicks(locations, model_shape=[100, 100])
     amplitudes = torch.randn(10)  # Should be 3D
-    with pytest.raises(RuntimeError, match="amplitudes must have three dimensions."):
+    with pytest.raises(RuntimeError, match=r"amplitudes must have three dimensions."):
         hicks.source(amplitudes)
 
 
@@ -141,7 +141,7 @@ def test_hicks_receiver_invalid_amplitudes_type() -> None:
     """Test that Hicks.receiver raises TypeError if amplitudes is not a tensor."""
     locations = torch.randn(1, 1, 2)
     hicks = Hicks(locations, model_shape=[100, 100])
-    with pytest.raises(TypeError, match="amplitudes must be a torch.Tensor."):
+    with pytest.raises(TypeError, match=r"amplitudes must be a torch.Tensor."):
         hicks.receiver([1, 2, 3])
 
 
@@ -150,7 +150,7 @@ def test_hicks_receiver_invalid_amplitudes_ndim() -> None:
     locations = torch.randn(1, 1, 2)
     hicks = Hicks(locations, model_shape=[100, 100])
     amplitudes = torch.randn(10)  # Should be 3D
-    with pytest.raises(RuntimeError, match="amplitudes must have three dimensions."):
+    with pytest.raises(RuntimeError, match=r"amplitudes must have three dimensions."):
         hicks.receiver(amplitudes)
 
 
@@ -320,7 +320,7 @@ def test_get_hicks_for_one_location_dim_invalid_halfwidth() -> None:
 
 def test_get_hicks_for_one_location_dim_invalid_beta() -> None:
     """Test _get_hicks_for_one_location_dim with invalid beta."""
-    with pytest.raises(RuntimeError, match="beta must be non-negative."):
+    with pytest.raises(RuntimeError, match=r"beta must be non-negative."):
         _get_hicks_for_one_location_dim(
             {},
             0.5,
@@ -334,7 +334,7 @@ def test_get_hicks_for_one_location_dim_invalid_beta() -> None:
 
 def test_get_hicks_for_one_location_dim_invalid_extent() -> None:
     """Test _get_hicks_for_one_location_dim with invalid extent."""
-    with pytest.raises(RuntimeError, match="extent must be a list of two floats."):
+    with pytest.raises(RuntimeError, match=r"extent must be a list of two floats."):
         _get_hicks_for_one_location_dim(
             {},
             0.5,
@@ -344,7 +344,8 @@ def test_get_hicks_for_one_location_dim_invalid_extent() -> None:
             [-0.5],
             20,
         )
-    with pytest.raises(RuntimeError, match="extent must be a list of two floats."):
+
+    with pytest.raises(RuntimeError, match=r"extent must be a list of two floats."):
         _get_hicks_for_one_location_dim(
             {},
             0.5,
@@ -354,7 +355,7 @@ def test_get_hicks_for_one_location_dim_invalid_extent() -> None:
             [-0.5, 19.5, 20.0],
             20,
         )
-    with pytest.raises(RuntimeError, match="extent must be a list of two floats."):
+    with pytest.raises(RuntimeError, match=r"extent must be a list of two floats."):
         _get_hicks_for_one_location_dim(
             {},
             0.5,
@@ -368,23 +369,23 @@ def test_get_hicks_for_one_location_dim_invalid_extent() -> None:
 
 def test_get_hicks_for_one_location_dim_invalid_n_grid_points() -> None:
     """Test _get_hicks_for_one_location_dim with invalid n_grid_points."""
-    with pytest.raises(RuntimeError, match="n_grid_points must be positive."):
+    with pytest.raises(RuntimeError, match=r"n_grid_points must be positive."):
         _get_hicks_for_one_location_dim(
             {},
             0.5,
             4,
             torch.tensor(1.0),
-            [False, False],
+            [True, False],
             [-0.5, 19.5],
             0,
         )
-    with pytest.raises(RuntimeError, match="n_grid_points must be positive."):
+    with pytest.raises(RuntimeError, match=r"n_grid_points must be positive."):
         _get_hicks_for_one_location_dim(
             {},
             0.5,
             4,
             torch.tensor(1.0),
-            [False, False],
+            [True, False],
             [-0.5, 19.5],
             -1,
         )

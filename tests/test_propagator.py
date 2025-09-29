@@ -146,7 +146,7 @@ def test_source_outside_model(prop: deepwave.Scalar) -> None:
     source_locations[0, 0, 0] = -1.0
     receiver_locations = torch.zeros(1, 1, 2, dtype=torch.long)
     dt = 0.004
-    with pytest.raises(RuntimeError, match="Locations must be >= 0."):
+    with pytest.raises(RuntimeError, match=r"Locations must be >= 0."):
         prop(dt, source_amplitudes, source_locations, receiver_locations)
 
 
@@ -157,7 +157,7 @@ def test_receiver_outside_model(prop: deepwave.Scalar) -> None:
     receiver_locations = torch.zeros(1, 1, 2, dtype=torch.long)
     receiver_locations[0, 0, 1] = NY
     dt = 0.004
-    with pytest.raises(RuntimeError, match="Locations must be within model."):
+    with pytest.raises(RuntimeError, match=r"Locations must be within model."):
         prop(dt, source_amplitudes, source_locations, receiver_locations)
 
 
@@ -209,7 +209,7 @@ def test_pml_width_list_too_long(prop: deepwave.Scalar) -> None:
     dt = 0.004
     with pytest.raises(
         RuntimeError,
-        match="Expected pml_width to be of length 1 or 4, got 5.",
+        match=r"Expected pml_width to be of length 1 or 4, got 5.",
     ):
         prop(
             dt,

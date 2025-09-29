@@ -11,8 +11,8 @@ from deepwave.staggered_grid import set_pml_profiles
 def test_set_pml_profiles_basic_functionality() -> None:
     """Test set_pml_profiles with basic functionality."""
     pml_width = [10, 10, 10, 10]
-    accuracy = 4  # Not used in staggered_grid.set_pml_profiles
-    fd_pad = [0, 0, 0, 0]  # Not used in staggered_grid.set_pml_profiles
+    accuracy = 4
+    fd_pad = [2, 1, 2, 1]
     dt = 0.001
     grid_spacing = [10.0, 10.0]
     max_vel = 1500.0
@@ -59,8 +59,8 @@ def test_set_pml_profiles_basic_functionality() -> None:
         )
 
         # Calculate pml_start values as they are in the function
-        pml_start_y = [pml_width[0], ny - 1 - pml_width[1]]
-        pml_start_x = [pml_width[2], nx - 1 - pml_width[3]]
+        pml_start_y = [fd_pad[0] + pml_width[0], ny - 1 - fd_pad[1] - pml_width[1]]
+        pml_start_x = [fd_pad[2] + pml_width[2], nx - 1 - fd_pad[3] - pml_width[3]]
         max_pml_val = max(
             pml_width[0] * grid_spacing[0],
             pml_width[1] * grid_spacing[0],
@@ -80,7 +80,7 @@ def test_set_pml_profiles_basic_functionality() -> None:
             dtype,
             device,
             pml_freq,
-            start=-0.5,
+            start=0.0,
         )
         # Call 2: ax, bx
         mock_setup_pml.assert_any_call(
@@ -106,7 +106,7 @@ def test_set_pml_profiles_basic_functionality() -> None:
             dtype,
             device,
             pml_freq,
-            start=0.0,
+            start=0.5,
         )
         # Call 4: axh, bxh
         mock_setup_pml.assert_any_call(
@@ -128,21 +128,37 @@ def test_set_pml_profiles_basic_functionality() -> None:
         assert all(isinstance(t, torch.Tensor) for t in result)
 
         # Check shapes of the returned tensors
-        assert result[0].shape == (ny,)  # ay
-        assert result[1].shape == (ny,)  # ayh
-        assert result[2].shape == (nx,)  # ax
-        assert result[3].shape == (nx,)  # axh
-        assert result[4].shape == (ny,)  # by
-        assert result[5].shape == (ny,)  # byh
-        assert result[6].shape == (nx,)  # bx
-        assert result[7].shape == (nx,)  # bxh
+        assert result[0].shape == (1, ny, 1)  # ay
+        assert result[1].shape == (1, ny, 1)  # ayh
+        assert result[2].shape == (
+            1,
+            1,
+            nx,
+        )  # ax
+        assert result[3].shape == (
+            1,
+            1,
+            nx,
+        )  # axh
+        assert result[4].shape == (1, ny, 1)  # by
+        assert result[5].shape == (1, ny, 1)  # byh
+        assert result[6].shape == (
+            1,
+            1,
+            nx,
+        )  # bx
+        assert result[7].shape == (
+            1,
+            1,
+            nx,
+        )  # bxh
 
 
 def test_set_pml_profiles_different_pml_width() -> None:
     """Test set_pml_profiles with different PML widths."""
     pml_width = [20, 5, 15, 0]  # Different widths, one side zero
     accuracy = 2
-    fd_pad = [1, 1, 1, 1]
+    fd_pad = [1, 0, 1, 0]
     dt = 0.0005
     grid_spacing = [5.0, 5.0]
     max_vel = 2000.0
@@ -188,8 +204,14 @@ def test_set_pml_profiles_different_pml_width() -> None:
         )
 
         # Calculate pml_start values as they are in the function
-        pml_start_y = [pml_width[0], ny - 1 - pml_width[1]]
-        pml_start_x = [pml_width[2], nx - 1 - pml_width[3]]
+        pml_start_y = [
+            fd_pad[0] + pml_width[0],
+            ny - 1 - fd_pad[1] - pml_width[1],
+        ]
+        pml_start_x = [
+            fd_pad[2] + pml_width[2],
+            nx - 1 - fd_pad[3] - pml_width[3],
+        ]
         max_pml_val = max(
             pml_width[0] * grid_spacing[0],
             pml_width[1] * grid_spacing[0],
@@ -208,7 +230,7 @@ def test_set_pml_profiles_different_pml_width() -> None:
             dtype,
             device,
             pml_freq,
-            start=-0.5,
+            start=0.0,
         )
         mock_setup_pml.assert_any_call(
             pml_width[2:],
@@ -232,7 +254,7 @@ def test_set_pml_profiles_different_pml_width() -> None:
             dtype,
             device,
             pml_freq,
-            start=0.0,
+            start=0.5,
         )
         mock_setup_pml.assert_any_call(
             pml_width[2:],
@@ -252,10 +274,22 @@ def test_set_pml_profiles_different_pml_width() -> None:
         assert len(result) == 8
         assert all(isinstance(t, torch.Tensor) for t in result)
 
-        assert result[0].shape == (ny,)
-        assert result[1].shape == (ny,)
-        assert result[2].shape == (nx,)
-        assert result[3].shape == (nx,)
+        assert result[0].shape == (
+            1,
+            ny,
+            1,
+        )
+        assert result[1].shape == (1, ny, 1)
+        assert result[2].shape == (
+            1,
+            1,
+            nx,
+        )
+        assert result[3].shape == (
+            1,
+            1,
+            nx,
+        )
 
 
 def test_set_pml_profiles_edge_cases() -> None:
@@ -263,7 +297,7 @@ def test_set_pml_profiles_edge_cases() -> None:
     # Test with zero pml_width everywhere
     pml_width = [0, 0, 0, 0]
     accuracy = 4
-    fd_pad = [0, 0, 0, 0]
+    fd_pad = [2, 1, 2, 1]
     dt = 0.001
     grid_spacing = [10.0, 10.0]
     max_vel = 1500.0
@@ -308,8 +342,14 @@ def test_set_pml_profiles_edge_cases() -> None:
         )
 
         # Calculate pml_start values as they are in the function
-        pml_start_y = [pml_width[0], ny - 1 - pml_width[1]]
-        pml_start_x = [pml_width[2], nx - 1 - pml_width[3]]
+        pml_start_y = [
+            fd_pad[0] + pml_width[0],
+            ny - 1 - fd_pad[1] - pml_width[1],
+        ]
+        pml_start_x = [
+            fd_pad[2] + pml_width[2],
+            nx - 1 - fd_pad[3] - pml_width[3],
+        ]
         max_pml_val = max(
             pml_width[0] * grid_spacing[0],
             pml_width[1] * grid_spacing[0],
@@ -327,7 +367,7 @@ def test_set_pml_profiles_edge_cases() -> None:
             dtype,
             device,
             pml_freq,
-            start=-0.5,
+            start=0.0,
         )
         mock_setup_pml.assert_any_call(
             [0, 0],
@@ -351,7 +391,7 @@ def test_set_pml_profiles_edge_cases() -> None:
             dtype,
             device,
             pml_freq,
-            start=0.0,
+            start=0.5,
         )
         mock_setup_pml.assert_any_call(
             [0, 0],
@@ -409,8 +449,14 @@ def test_set_pml_profiles_edge_cases() -> None:
         )
 
         # Calculate pml_start values as they are in the function
-        pml_start_y = [pml_width[0], ny - 1 - pml_width[1]]
-        pml_start_x = [pml_width[2], nx - 1 - pml_width[3]]
+        pml_start_y = [
+            fd_pad[0] + pml_width[0],
+            ny - 1 - fd_pad[1] - pml_width[1],
+        ]
+        pml_start_x = [
+            fd_pad[2] + pml_width[2],
+            nx - 1 - fd_pad[3] - pml_width[3],
+        ]
         max_pml_val = max(
             pml_width[0] * grid_spacing[0],
             pml_width[1] * grid_spacing[0],
@@ -428,7 +474,7 @@ def test_set_pml_profiles_edge_cases() -> None:
             dtype,
             device,
             pml_freq,
-            start=-0.5,
+            start=0.0,
         )
         mock_setup_pml.assert_any_call(
             pml_width[2:],
@@ -452,7 +498,7 @@ def test_set_pml_profiles_edge_cases() -> None:
             dtype,
             device,
             pml_freq,
-            start=0.0,
+            start=0.5,
         )
         mock_setup_pml.assert_any_call(
             pml_width[2:],
@@ -467,7 +513,15 @@ def test_set_pml_profiles_edge_cases() -> None:
             start=0.5,
         )
 
-        assert result[0].shape == (ny,)
-        assert result[1].shape == (ny,)
-        assert result[2].shape == (nx,)
-        assert result[3].shape == (nx,)
+        assert result[0].shape == (1, ny, 1)
+        assert result[1].shape == (1, ny, 1)
+        assert result[2].shape == (
+            1,
+            1,
+            nx,
+        )
+        assert result[3].shape == (
+            1,
+            1,
+            nx,
+        )

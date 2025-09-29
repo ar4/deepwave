@@ -1388,7 +1388,7 @@ def test_set_freq_taper_frac_complex_value() -> None:
     """Test set_freq_taper_frac with a complex value."""
     with pytest.raises(
         TypeError,
-        match=".*real number.*",
+        match=r".*real number.*",
     ):
         set_freq_taper_frac(0.5 + 1j)
 
@@ -1398,7 +1398,7 @@ def test_set_time_pad_frac_complex_value() -> None:
     """Test set_time_pad_frac with a complex value."""
     with pytest.raises(
         TypeError,
-        match=".*real number.*",
+        match=r".*real number.*",
     ):
         set_time_pad_frac(0.5 + 1j)
 

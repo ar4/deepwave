@@ -11,12 +11,15 @@ vp = 1500 * torch.ones(ny, nx)
 vs = 1000 * torch.ones(ny, nx)
 rho = 2200 * torch.ones(ny, nx)
 
-x_r_y = torch.zeros(1, nx - 1, 2, dtype=torch.long)
-x_r_y[0, :, 1] = torch.arange(nx - 1)
-x_r_x = torch.zeros(1, nx, 2, dtype=torch.long)
-x_r_x[0, :, 1] = torch.arange(nx)
+x_r_y = torch.zeros(1, nx, 2, dtype=torch.long)
+x_r_y[0, :, 1] = torch.arange(nx)
+x_r_x = torch.zeros(1, nx - 1, 2, dtype=torch.long)
+x_r_x[0, :, 1] = torch.arange(nx - 1)
 x_r_x[0, :, 0] = 1
 
+vp[0] = 0
+vs[0] = 0
+rho[0] = 0
 out = deepwave.elastic(
     *deepwave.common.vpvsrho_to_lambmubuoyancy(vp, vs, rho),
     grid_spacing=2,

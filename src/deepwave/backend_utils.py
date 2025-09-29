@@ -55,11 +55,11 @@ scalar_born_backward_sc_template: List[type] = (
 )
 
 elastic_forward_template: List[type] = (
-    [c_void_p] * 39 + [FLOAT_TYPE] * 3 + [c_int64] * 10 + [c_bool] * 6 + [c_int64] * 6
+    [c_void_p] * 41 + [FLOAT_TYPE] * 3 + [c_int64] * 10 + [c_bool] * 6 + [c_int64] * 6
 )
 
 elastic_backward_template: List[type] = (
-    [c_void_p] * 49 + [FLOAT_TYPE] * 3 + [c_int64] * 10 + [c_bool] * 6 + [c_int64] * 10
+    [c_void_p] * 55 + [FLOAT_TYPE] * 3 + [c_int64] * 10 + [c_bool] * 6 + [c_int64] * 6
 )
 
 # A dictionary to hold all the templates
@@ -204,9 +204,5 @@ for current_accuracy in [2, 4, 6, 8]:
             "backward",
             extra="_sc",
         )
-
-# Elastic propagators currently only support 2nd and 4th order accuracy.
-for current_accuracy in [2, 4]:
-    for current_dtype in ["float", "double"]:
         _assign_argtypes("elastic", current_accuracy, current_dtype, "forward")
         _assign_argtypes("elastic", current_accuracy, current_dtype, "backward")

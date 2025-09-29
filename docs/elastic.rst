@@ -57,28 +57,28 @@ and :eq:`stress` as
 
 .. _Staggered grid:
 
-The staggered grid has :math:`v_x` positioned on :math:`(y, x)` grid cells, :math:`v_y` at :math:`(y+\frac{1}{2}, x+\frac{1}{2})`, :math:`\sigma_{xx}` and :math:`\sigma_{yy}` at :math:`(y, x+\frac{1}{2})`, and :math:`\sigma_{xy}` at :math:`(y+\frac{1}{2}, x)`. The :math:`v_x` and :math:`\sigma_{ii}` (where :math:`ii` refers to :math:`xx` or :math:`yy`) components in the first row of the model, and the :math:`v_y` and :math:`\sigma_{ii}` components in the last column, are not used. This is depicted in the diagram below, where lowercase means that the component is not used. In this diagram, equals symbols and square brackets are used to denote the edges of the computational domain (so, if the PML width is zero, this will be the surface), while pipes and hyphens correspond to grid cell boundaries. The model parameters (lambda, mu, and buoyancy) are at the same locations as :math:`v_x`::
+The staggered grid has :math:`\sigma_{yy}` and :math:`\sigma_{xx}` positioned on :math:`(y, x)` grid cells, :math:`v_y` at :math:`(y+\frac{1}{2}, x)`, :math:`v_x` at :math:`(y, x+\frac{1}{2})`, and :math:`\sigma_{xy}` at :math:`(y+\frac{1}{2}, x+\frac{1}{2})`. The :math:`v_y` and :math:`\sigma_{xy}` components in the last row of the model, and the :math:`v_x` and :math:`\sigma_{xy}` components in the last column, are not used. This is depicted in the diagram below, where lowercase means that the component is not used. In this diagram, equals symbols and square brackets are used to denote the edges of the computational domain (so, if the PML width is zero, this will be the surface), while pipes and hyphens correspond to grid cell boundaries. The model parameters (lambda, mu, and buoyancy) are at the same locations as :math:`\sigma_{yy}` and :math:`\sigma_{xx}`::
 
     o--------->x
-    | vx  sii | vx  sii | vx  sii
-    | SXY=VY==|=SXY=VY==|=SXY vy
+    | SII=VX==|=SII=VX==|=SII vx 
+    | VY  SXY | VY  SXY | VY  sxy
     v [-------------------]------
-    y VX  SII | VX  SII | VX  sii
-      SXY VY  | SXY VY  | SXY vy
+    y SII VX  | SII VX  | SII vx 
+      VY  SXY | VY  SXY | VY  sxy
       [-------------------]------
-      VX  SII | VX  SII | VX  sii
-      SXY=VY==|=SXY=VY==|=SXY vy
+      SII=VX==|=SII=VX==|=SII vx 
+      vy  sxy | vy  sxy | vy  sxy
 
 Staggering also occurs in time, with the stress (:math:`\sigma`) components defined at time steps :math:`t` while velocity components are at times :math:`t+\frac{1}{2}`. Staggering the components in time and space, we obtain
 
 .. math::
 
     \begin{align}
-    v_y^{t+\frac{1}{2}} &= v_y^{t-\frac{1}{2}} + B^{y+\frac{1}{2}, x+\frac{1}{2}}h_t\left(\partial_y\sigma_{yy} + \partial_x\sigma_{xy} + f_y^t\right) \\
-    v_x^{t+\frac{1}{2}} &= v_x^{t-\frac{1}{2}} + B^{y, x}h_t\left(\partial_x\sigma_{xx} + \partial_y\sigma_{xy} + f_x^t\right) \\
-    \sigma_{yy}^{t} &= \sigma_{yy}^{t-1} + h_t\left(\left(\lambda^{y, x+\frac{1}{2}}+2\mu^{y, x+\frac{1}{2}}\right)\partial_yv_{y} + \lambda^{y, x+\frac{1}{2}}\partial_xv_{x}\right)\\
-    \sigma_{xx}^{t} &= \sigma_{xx}^{t-1} + h_t\left(\left(\lambda^{y, x+\frac{1}{2}}+2\mu^{y, x+\frac{1}{2}}\right)\partial_xv_{x} + \lambda^{y, x+\frac{1}{2}}\partial_yv_{y}\right)\\
-    \sigma_{xy}^{t} &= \sigma_{xy}^{t-1} + h_t\left(\mu^{y+\frac{1}{2}, x}\left(\partial_xv_{y} + \partial_yv_{x}\right)\right), \\
+    v_y^{t+\frac{1}{2}} &= v_y^{t-\frac{1}{2}} + B^{y+\frac{1}{2}, x}h_t\left(\partial_y\sigma_{yy} + \partial_x\sigma_{xy} + f_y^t\right) \\
+    v_x^{t+\frac{1}{2}} &= v_x^{t-\frac{1}{2}} + B^{y, x+\frac{1}{2}}h_t\left(\partial_x\sigma_{xx} + \partial_y\sigma_{xy} + f_x^t\right) \\
+    \sigma_{yy}^{t} &= \sigma_{yy}^{t-1} + h_t\left(\left(\lambda^{y, x}+2\mu^{y, x}\right)\partial_yv_{y} + \lambda^{y, x}\partial_xv_{x}\right)\\
+    \sigma_{xx}^{t} &= \sigma_{xx}^{t-1} + h_t\left(\left(\lambda^{y, x}+2\mu^{y, x}\right)\partial_xv_{x} + \lambda^{y, x}\partial_yv_{y}\right)\\
+    \sigma_{xy}^{t} &= \sigma_{xy}^{t-1} + h_t\left(\mu^{y+\frac{1}{2}, x+\frac{1}{2}}\left(\partial_xv_{y} + \partial_yv_{x}\right)\right), \\
     \end{align}
 
 where :math:`B` is the buoyancy (reciprocal of the density), and :math:`h_t` is the finite difference time step interval.
@@ -101,13 +101,13 @@ where :math:`\partial_y\sigma_{yy,m}` is a "memory" variable, an auxiliary wavef
 
     \begin{align}
     \partial_y\sigma_{yy,m} &= a^{y+\frac{1}{2}}\partial_y\sigma_{yy,m} + b^{y+\frac{1}{2}} \partial_y\sigma_{yy} \\
-    \partial_x\sigma_{xx,m} &= a^{x}\partial_x\sigma_{xx,m} + b^{x} \partial_x\sigma_{xx} \\
+    \partial_x\sigma_{xx,m} &= a^{x+\frac{1}{2}}\partial_x\sigma_{xx,m} + b^{x+\frac{1}{2}} \partial_x\sigma_{xx} \\
     \partial_y\sigma_{xy,m} &= a^{y}\partial_y\sigma_{xy,m} + b^{y} \partial_y\sigma_{xy} \\
-    \partial_x\sigma_{xy,m} &= a^{x+\frac{1}{2}}\partial_x\sigma_{xy,m} + b^{x+\frac{1}{2}} \partial_x\sigma_{xy} \\
+    \partial_x\sigma_{xy,m} &= a^{x}\partial_x\sigma_{xy,m} + b^{x} \partial_x\sigma_{xy} \\
     \partial_yv_{y,m} &= a^{y}\partial_yv_{y,m} + b^{y} \partial_yv_{y} \\
-    \partial_xv_{y,m} &= a^{x}\partial_xv_{y,m} + b^{x} \partial_xv_{y} \\
+    \partial_xv_{y,m} &= a^{x+\frac{1}{2}}\partial_xv_{y,m} + b^{x+\frac{1}{2}} \partial_xv_{y} \\
     \partial_yv_{x,m} &= a^{y+\frac{1}{2}}\partial_yv_{x,m} + b^{y+\frac{1}{2}} \partial_yv_{x} \\
-    \partial_xv_{x,m} &= a^{x+\frac{1}{2}}\partial_xv_{x,m} + b^{x+\frac{1}{2}} \partial_xv_{x} \\
+    \partial_xv_{x,m} &= a^{x}\partial_xv_{x,m} + b^{x} \partial_xv_{x} \\
     \end{align}
 
 Combining these, we can express a time step in matrix form as
@@ -125,12 +125,12 @@ Combining these, we can express a time step in matrix form as
     r_{v_x}^{t-\frac{1}{2}} \\
     \end{pmatrix} = 
     \begin{pmatrix}
-    B^{y'x'}h_t(1+b^{y'})\partial_{y'}&0&B^{y'x'}h_t(1+b^{x'}) \partial_{x'}&1&0&B^{y'x'}h_ta^{y'}&0&0&B^{y'x'}h_ta^{x'} \\
-    0&B^{yx}h_t(1+b^x)\partial_x&B^{yx}h_t(1+b^y)\partial_y&0&1&0&B^{yx}h_ta^x&B^{yx}h_ta^y&0 \\
+    B^{y'x}h_t(1+b^{y'})\partial_{y'}&0&B^{y'x}h_t(1+b^{x}) \partial_{x}&1&0&B^{y'x}h_ta^{y'}&0&0&B^{y'x}h_ta^{x} \\
+    0&B^{yx'}h_t(1+b^{x'})\partial_{x'}&B^{yx'}h_t(1+b^y)\partial_y&0&1&0&B^{yx'}h_ta^{x'}&B^{yx'}h_ta^y&0 \\
     b^{y'}\partial_{y'}&0&0&0&0&a^{y'}&0&0&0 \\
-    0&b^x\partial_x&0&0&0&0&a^x&0&0 \\
+    0&b^{x'}\partial_{x'}&0&0&0&0&a^{x'}&0&0 \\
     0&0&b^y\partial_y&0&0&0&0&a^y&0 \\
-    0&0&b^{x'} \partial_{x'}&0&0&0&0&0&a^{x'} \\
+    0&0&b^x \partial_x&0&0&0&0&0&a^x \\
     0&0&0&\delta_{r_y}&0&0&0&0&0 \\
     0&0&0&0&\delta_{r_x}&0&0&0&0 \\
     \end{pmatrix}
@@ -162,13 +162,13 @@ and
     r_p^t \\
     \end{pmatrix} = 
     \begin{pmatrix}
-    \left(\lambda^{yx'}+2\mu^{yx'}\right)h_t(1+b^y)\partial_y&\lambda^{yx'}h_t(1+b^{x'})\partial_{x'}&1&0&0&\left(\lambda^{yx'}+2\mu^{yx'}\right)h_ta^y&0&0&\lambda^{yx'}h_ta^{x'} \\
-    \lambda^{yx'}h_t(1+b^y)\partial_y&\left(\lambda^{yx'}+2\mu^{yx'}\right)h_t(1+b^{x'})\partial_{x'}&0&1&0&\lambda^{yx'}h_ta^y&0&0&\left(\lambda^{yx'}+2\mu^{yx'}\right)h_ta^{x'} \\
-    \mu^{y'x}h_t(1+b^x)\partial_x&\mu^{y'x}h_t(1+b^{y'})\partial_{y'}&0&0&1&0&\mu^{y'x}h_ta^x&\mu^{y'x}h_ta^{y'}&0 \\
+    \left(\lambda^{yx}+2\mu^{yx}\right)h_t(1+b^y)\partial_y&\lambda^{yx}h_t(1+b^x)\partial_x&1&0&0&\left(\lambda^{yx}+2\mu^{yx}\right)h_ta^y&0&0&\lambda^{yx}h_ta^x \\
+    \lambda^{yx}h_t(1+b^y)\partial_y&\left(\lambda^{yx}+2\mu^{yx}\right)h_t(1+b^x)\partial_x&0&1&0&\lambda^{yx}h_ta^y&0&0&\left(\lambda^{yx}+2\mu^{yx}\right)h_ta^x \\
+    \mu^{y'x'}h_t(1+b^{x'})\partial_{x'}&\mu^{y'x'}h_t(1+b^{y'})\partial_{y'}&0&0&1&0&\mu^{y'x'}h_ta^{x'}&\mu^{y'x'}h_ta^{y'}&0 \\
     b^y\partial_y&0&0&0&0&a^y&0&0&0 \\
-    b^x\partial_x&0&0&0&0&0&a^x&0&0 \\
+    b^{x'}\partial_{x'}&0&0&0&0&0&a^{x'}&0&0 \\
     0&b^{y'}\partial_{y'}&0&0&0&0&0&a^{y'}&0 \\
-    0&b^{x'}\partial_{x'}&0&0&0&0&0&0&a^{x'} \\
+    0&b^x\partial_x&0&0&0&0&0&0&a^x \\
     0&0&-\delta_{r_p}&-\delta_{r_p}&0&0&0&0&0 \\
     \end{pmatrix}
     \begin{pmatrix}
@@ -186,4 +186,4 @@ and
 
 where, for conciseness, half grid cell shifts are represented by a prime, for example :math:`B^{y'x'}` is the buoyancy at locations :math:`(y+\frac{1}{2}, x+\frac{1}{2})`. :math:`\delta_{r_y}`, :math:`\delta_{r_x}`, and :math:`\delta_{r_p}`, are the locations of :math:`v_y`, :math:`v_x`, and pressure receivers, respectively. To ensure the velocity receiver data covers the same time range as the input sources, the recordings are shifted by half a time step before being returned to the user.
 
-A "free surface" refers to a surface where the traction is zero. For example, if the :math:`y` dimension is depth, then for the top surface to be a free surface we need :math:`\sigma_{yy}=0` and :math:`\sigma_{xy}=0` there. Different methods have been proposed to implement this. Deepwave currently uses the `W-AFDA <https://doi.org/10.1023/A:1019866422821>`_ approach, and applies it to all four edges so that setting the PML width to zero on any of them will result in a free surface. W-AFDA uses non-symmetric finite difference stencils near the edges, so no values beyond the free surface are needed for calculations. It also imposes the zero-traction constraint by setting the relevant stresses to zero in the calculations.
+A "free surface" refers to a surface where the traction is zero. For example, if the :math:`y` dimension is depth, then for the top surface to be a free surface we need :math:`\sigma_{yy}=0` and :math:`\sigma_{xy}=0` there. Different methods have been proposed to implement this. Deepwave uses the `improved vacuum method <https://doi.org/10.1190/geo2011-0067.1>`_ approach, so setting the property models to zero at any point will result in a free surface there.

@@ -23,7 +23,8 @@
 
 #include <cstdint>
 
-#include "common.h"
+#include "common_gpu.h"
+#include "regular_grid.h"
 
 // Macro to concatenate function names with accuracy, dtype, and device for
 // Python bindings
@@ -629,8 +630,7 @@ extern "C"
           wfcsc, psiynsc, psixnsc, psiysc, psixsc, zetaysc, zetaxsc,
           w_store + (t / step_ratio_h) * ny_h * nx_h * n_shots_h,
           wsc_store + (t / step_ratio_h) * ny_h * nx_h * n_shots_h, ay, ax, by,
-          bx, dbydy, dbxdx,
-          v_requires_grad && ((t % step_ratio_h) == 0),
+          bx, dbydy, dbxdx, v_requires_grad && ((t % step_ratio_h) == 0),
           scatter_requires_grad && ((t % step_ratio_h) == 0));
       CHECK_KERNEL_ERROR
       // Add sources to both background and scattered wavefields
@@ -661,8 +661,7 @@ extern "C"
           wfpsc, psiysc, psixsc, psiynsc, psixnsc, zetaysc, zetaxsc,
           w_store + (t / step_ratio_h) * ny_h * nx_h * n_shots_h,
           wsc_store + (t / step_ratio_h) * ny_h * nx_h * n_shots_h, ay, ax, by,
-          bx, dbydy, dbxdx,
-          v_requires_grad && ((t % step_ratio_h) == 0),
+          bx, dbydy, dbxdx, v_requires_grad && ((t % step_ratio_h) == 0),
           scatter_requires_grad && ((t % step_ratio_h) == 0));
       CHECK_KERNEL_ERROR
       // Add sources to both background and scattered wavefields

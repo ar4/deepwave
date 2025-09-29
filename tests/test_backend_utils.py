@@ -47,8 +47,8 @@ def test_get_argtypes_elastic_backward_double():
         for t in argtypes
     )
     assert argtypes.count(ctypes.c_double) == 3  # Based on elastic_backward_template
-    assert argtypes.count(ctypes.c_void_p) == 49
-    assert argtypes.count(ctypes.c_int64) == 20
+    assert argtypes.count(ctypes.c_void_p) == 55
+    assert argtypes.count(ctypes.c_int64) == 16
     assert argtypes.count(ctypes.c_bool) == 6
 
 
@@ -85,7 +85,7 @@ def test_get_backend_function_unsupported_dtype():
 def test_get_backend_function_not_found():
     """Test get_backend_function when the backend function is not found."""
     with patch("deepwave.backend_utils.dll", spec=ctypes.CDLL), pytest.raises(
-        AttributeError, match="Backend function .* not found."
+        AttributeError, match=r"Backend function .* not found."
     ):
         # Now, the mock dll should behave like a ctypes.CDLL instance.
         # Accessing a non-existent attribute on it should raise AttributeError.

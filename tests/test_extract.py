@@ -46,19 +46,19 @@ def test_set_survey_pad() -> None:
         deepwave.common.set_survey_pad([1, 2, 3, 4, 5, 6], 2)
     with pytest.raises(
         RuntimeError,
-        match="survey_pad entries must be None or non-negative ints.",
+        match=r"survey_pad entries must be None or non-negative ints.",
     ):
         deepwave.common.set_survey_pad([-1, 2, 3, 4], 2)
     with pytest.raises(
         RuntimeError,
-        match="survey_pad entries must be None or non-negative ints.",
+        match=r"survey_pad entries must be None or non-negative ints.",
     ):
         deepwave.common.set_survey_pad([1, 2, 3, -4], 2)
-    with pytest.raises(RuntimeError, match="survey_pad must be non-negative."):
+    with pytest.raises(RuntimeError, match=r"survey_pad must be non-negative."):
         deepwave.common.set_survey_pad(-1, 2)
-    with pytest.raises(RuntimeError, match="ndim must be positive."):
+    with pytest.raises(RuntimeError, match=r"ndim must be positive."):
         deepwave.common.set_survey_pad(1, 0)
-    with pytest.raises(RuntimeError, match="ndim must be positive."):
+    with pytest.raises(RuntimeError, match=r"ndim must be positive."):
         deepwave.common.set_survey_pad(1, -1)
     with pytest.raises(
         RuntimeError,
@@ -87,7 +87,7 @@ def test_check_locations_are_within_model_empty_model_shape() -> None:
     """Test check_locations_are_within_model with empty model_shape."""
     model_shape = []
     locations = [torch.zeros(1, 1, 0)]
-    with pytest.raises(RuntimeError, match="model_shape must not be empty."):
+    with pytest.raises(RuntimeError, match=r"model_shape must not be empty."):
         deepwave.common.check_locations_are_within_model(model_shape, locations)
 
 
@@ -95,7 +95,7 @@ def test_check_locations_are_within_model_non_positive_model_shape() -> None:
     """Test check_locations_are_within_model with non-positive model_shape."""
     model_shape = [2, 0]
     locations = [torch.zeros(1, 1, 2)]
-    with pytest.raises(RuntimeError, match="model_shape elements must be positive."):
+    with pytest.raises(RuntimeError, match=r"model_shape elements must be positive."):
         deepwave.common.check_locations_are_within_model(model_shape, locations)
 
 
@@ -103,7 +103,7 @@ def test_check_locations_are_within_model_negative_model_shape() -> None:
     """Test check_locations_are_within_model with negative model_shape."""
     model_shape = [2, -1]
     locations = [torch.zeros(1, 1, 2)]
-    with pytest.raises(RuntimeError, match="model_shape elements must be positive."):
+    with pytest.raises(RuntimeError, match=r"model_shape elements must be positive."):
         deepwave.common.check_locations_are_within_model(model_shape, locations)
 
 
@@ -164,7 +164,7 @@ def test_get_extents_from_locations_empty_model_shape() -> None:
     model_shape = []
     locations = [None]
     survey_pad = None
-    with pytest.raises(RuntimeError, match="model_shape must not be empty."):
+    with pytest.raises(RuntimeError, match=r"model_shape must not be empty."):
         deepwave.common.get_survey_extents_from_locations(
             model_shape,
             locations,
@@ -177,7 +177,7 @@ def test_get_extents_from_locations_non_positive_model_shape() -> None:
     model_shape = [8, 0]
     locations = [None]
     survey_pad = None
-    with pytest.raises(RuntimeError, match="model_shape elements must be positive."):
+    with pytest.raises(RuntimeError, match=r"model_shape elements must be positive."):
         deepwave.common.get_survey_extents_from_locations(
             model_shape,
             locations,
@@ -190,7 +190,7 @@ def test_get_extents_from_locations_negative_model_shape() -> None:
     model_shape = [8, -1]
     locations = [None]
     survey_pad = None
-    with pytest.raises(RuntimeError, match="model_shape elements must be positive."):
+    with pytest.raises(RuntimeError, match=r"model_shape elements must be positive."):
         deepwave.common.get_survey_extents_from_locations(
             model_shape,
             locations,
@@ -270,7 +270,7 @@ def test_get_extents_from_wavefields_empty_wavefields() -> None:
     wavefields = []
     origin = [1, 2]
     pml_width = [1, 2, 3, 4]
-    with pytest.raises(RuntimeError, match="At least one wavefield must be non-None."):
+    with pytest.raises(RuntimeError, match=r"At least one wavefield must be non-None."):
         deepwave.common.get_survey_extents_from_wavefields(
             wavefields,
             origin,
@@ -344,13 +344,15 @@ def test_extract_survey() -> None:
     # to convert to 1D will be the length of the extent in x (9) plus the
     # padding (2 + 1), so 12.
     locations_2d = (
-        source_locations[0] - torch.Tensor([1, 0]).long() + torch.Tensor([4, 2]).long()
+        source_locations[0]
+        - torch.tensor([1, 0], dtype=torch.long)
+        + torch.tensor([4, 2], dtype=torch.long)
     )
     assert torch.allclose(out[1][0], locations_2d[..., 0] * 12 + locations_2d[..., 1])
     locations_2d = (
         receiver_locations[0]
-        - torch.Tensor([1, 0]).long()
-        + torch.Tensor([4, 2]).long()
+        - torch.tensor([1, 0], dtype=torch.long)
+        + torch.tensor([4, 2], dtype=torch.long)
     )
     assert torch.allclose(out[2][0], locations_2d[..., 0] * 12 + locations_2d[..., 1])
 
@@ -412,13 +414,15 @@ def test_extract_survey() -> None:
     # The nx for the 1D index conversion should be (given x range from 3 to 8,
     # padding of 3) 9.
     locations_2d = (
-        source_locations[0] - torch.Tensor([2, 3]).long() + torch.Tensor([4, 2]).long()
+        source_locations[0]
+        - torch.tensor([2, 3], dtype=torch.long)
+        + torch.tensor([4, 2], dtype=torch.long)
     )
     assert torch.allclose(out[1][0], locations_2d[..., 0] * 9 + locations_2d[..., 1])
     locations_2d = (
         receiver_locations[0]
-        - torch.Tensor([2, 3]).long()
-        + torch.Tensor([4, 2]).long()
+        - torch.tensor([2, 3], dtype=torch.long)
+        + torch.tensor([4, 2], dtype=torch.long)
     )
     assert torch.allclose(out[2][0], locations_2d[..., 0] * 9 + locations_2d[..., 1])
 

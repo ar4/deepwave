@@ -8,6 +8,7 @@ import pytest
 import torch
 from test_utils import _set_coords, _set_sources
 
+import deepwave
 from deepwave import IGNORE_LOCATION, Elastic, elastic
 from deepwave.common import (
     cfl_condition,
@@ -17,6 +18,8 @@ from deepwave.common import (
     vpvsrho_to_lambmubuoyancy,
 )
 from deepwave.wavelets import ricker
+
+torch._dynamo.config.cache_size_limit = 256  # noqa: SLF001
 
 DEFAULT_LAMB = 550000000
 DEFAULT_MU = 2200000000
@@ -39,7 +42,6 @@ def elasticprop(
     prop_kwargs: Optional[Dict[str, Any]] = None,
     pml_width: Optional[Union[int, List[int]]] = None,
     survey_pad: Optional[Union[int, List[int]]] = None,
-    origin: Optional[List[int]] = None,
     vy0: Optional[torch.Tensor] = None,
     vx0: Optional[torch.Tensor] = None,
     sigmayy0: Optional[torch.Tensor] = None,
@@ -67,7 +69,6 @@ def elasticprop(
     if pml_width is not None:
         prop_kwargs["pml_width"] = pml_width
     prop_kwargs["survey_pad"] = survey_pad
-    prop_kwargs["origin"] = origin
 
     device = lamb.device
     if source_amplitudes_y is not None:
@@ -160,7 +161,6 @@ def elasticpropchained(
     prop_kwargs: Optional[Dict[str, Any]] = None,
     pml_width: Optional[Union[int, List[int]]] = None,
     survey_pad: Optional[Union[int, List[int]]] = None,
-    origin: Optional[List[int]] = None,
     vy0: Optional[torch.Tensor] = None,
     vx0: Optional[torch.Tensor] = None,
     sigmayy0: Optional[torch.Tensor] = None,
@@ -191,7 +191,6 @@ def elasticpropchained(
     if pml_width is not None:
         prop_kwargs["pml_width"] = pml_width
     prop_kwargs["survey_pad"] = survey_pad
-    prop_kwargs["origin"] = origin
 
     device = lamb.device
     if source_amplitudes_y is not None:
@@ -434,20 +433,30 @@ def test_forward():
     expected_scale = expected_vy.abs().max().item()
     expected_vy /= expected_scale
     expected_vx /= expected_scale
-    for accuracy, target_err in zip([2, 4], [0.75, 0.23]):
+    for accuracy, target_err in zip([2, 4, 6, 8], [0.55, 0.27, 0.34, 0.37]):
         for orientation in range(4):
-            out = run_forward_lamb(orientation, prop_kwargs={"accuracy": accuracy})
-            if orientation < 2:
-                vy = -out[-2].cpu().flatten()
-                vx = out[-1].cpu().flatten()
-            else:
-                vx = out[-2].cpu().flatten()
-                vy = -out[-1].cpu().flatten()
-            scale = vy.abs().max().item()
-            vy /= scale
-            vx /= scale
-            assert (vy[1:] - expected_vy[:-1]).norm().item() < target_err
-            assert (vx[1:] - expected_vx[:-1]).norm().item() < target_err
+            actuals_vy = {}
+            actuals_vx = {}
+            for python in [True, False]:
+                out = run_forward_lamb(
+                    orientation,
+                    prop_kwargs={"python_backend": python, "accuracy": accuracy},
+                )
+                if orientation < 2:
+                    vy = -out[-2].cpu().flatten()
+                    vx = out[-1].cpu().flatten()
+                else:
+                    vx = out[-2].cpu().flatten()
+                    vy = -out[-1].cpu().flatten()
+                scale = vy.abs().max().item()
+                vy /= scale
+                vx /= scale
+                assert (vy[1:] - expected_vy[:-1]).norm().item() < target_err
+                assert (vx[1:] - expected_vx[:-1]).norm().item() < target_err
+                actuals_vy[python] = vy
+                actuals_vx[python] = vx
+            assert torch.allclose(actuals_vy[True], actuals_vy[False], atol=5e-6)
+            assert torch.allclose(actuals_vx[True], actuals_vx[False], atol=5e-6)
 
 
 def test_wavefield_decays() -> None:
@@ -466,15 +475,24 @@ def test_model_too_small() -> None:
 def test_forward_cpu_gpu_match() -> None:
     """Test propagation on CPU and GPU produce the same result."""
     if torch.cuda.is_available():
-        actual_cpu = run_forward_2d(propagator=elasticprop, device=torch.device("cpu"))
-        actual_gpu = run_forward_2d(propagator=elasticprop, device=torch.device("cuda"))
-        # Check wavefields
-        for cpui, gpui in zip(actual_cpu[:-1], actual_gpu[:-1]):
-            assert torch.allclose(cpui, gpui.cpu(), atol=1e-6)
-        # Check receiver amplitudes
-        cpui = actual_cpu[-1]
-        gpui = actual_gpu[-1]
-        assert torch.allclose(cpui, gpui.cpu(), atol=5e-5)
+        for python in [True, False]:
+            actual_cpu = run_forward_2d(
+                propagator=elasticprop,
+                device=torch.device("cpu"),
+                prop_kwargs={"python_backend": python},
+            )
+            actual_gpu = run_forward_2d(
+                propagator=elasticprop,
+                device=torch.device("cuda"),
+                prop_kwargs={"python_backend": python},
+            )
+            # Check wavefields
+            for cpui, gpui in zip(actual_cpu[:-1], actual_gpu[:-1]):
+                assert torch.allclose(cpui, gpui.cpu(), atol=1e-6)
+            # Check receiver amplitudes
+            cpui = actual_cpu[-1]
+            gpui = actual_gpu[-1]
+            assert torch.allclose(cpui, gpui.cpu(), atol=5e-5)
 
 
 def test_unused_source_receiver(
@@ -484,7 +502,7 @@ def test_unused_source_receiver(
     freq=25,
     dx=(5, 5),
     dt=0.004,
-    nx=(50, 50),
+    nx=(25, 10),
     num_shots=2,
     num_sources_per_shot=3,
     num_receivers_per_shot=4,
@@ -502,156 +520,172 @@ def test_unused_source_receiver(
     assert num_shots > 1
     assert num_sources_per_shot > num_shots
     assert num_receivers_per_shot > num_shots + 1
+    nx = torch.tensor(nx, dtype=torch.long)
+    dx = torch.tensor(dx, dtype=dtype)
 
-    torch.manual_seed(1)
-    if device is None:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    for python in [True, False]:
+        torch.manual_seed(1)
+        if device is None:
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    nx = torch.Tensor(nx).long()
-    dx = torch.Tensor(dx)
+        if prop_kwargs is None:
+            prop_kwargs = {}
+        prop_kwargs["python_backend"] = python
 
-    lamb = (
-        torch.ones(*nx, device=device, dtype=dtype) * mlamb
-        + torch.randn(*nx, dtype=dtype).to(device) * dlamb
-    )
-    mu = (
-        torch.ones(*nx, device=device, dtype=dtype) * mmu
-        + torch.randn(*nx, dtype=dtype).to(device) * dmu
-    )
-    buoyancy = (
-        torch.ones(*nx, device=device, dtype=dtype) * mbuoyancy
-        + torch.randn(*nx, dtype=dtype).to(device) * dbuoyancy
-    )
+        lamb = (
+            torch.ones(*nx, device=device, dtype=dtype) * mlamb
+            + torch.randn(*nx, dtype=dtype).to(device) * dlamb
+        )
+        mu = (
+            torch.ones(*nx, device=device, dtype=dtype) * mmu
+            + torch.randn(*nx, dtype=dtype).to(device) * dmu
+        )
+        buoyancy = (
+            torch.ones(*nx, device=device, dtype=dtype) * mbuoyancy
+            + torch.randn(*nx, dtype=dtype).to(device) * dbuoyancy
+        )
 
-    vp, vs, rho = lambmubuoyancy_to_vpvsrho(lamb.abs(), mu.abs(), buoyancy.abs())
-    vmin = min(vp.abs().min(), vs.abs().min())
+        vp, vs, _rho = lambmubuoyancy_to_vpvsrho(lamb.abs(), mu.abs(), buoyancy.abs())
+        vmin = min(vp.abs().min(), vs.abs().min())
 
-    if nt is None:
-        nt = int((2 * torch.norm(nx.float() * dx) / vmin + 0.35 + 2 / freq) / dt)
-    x_s = _set_coords(num_shots, 2 * num_sources_per_shot, nx.tolist())
-    x_s_y = x_s[:, :num_sources_per_shot]
-    x_s_x = x_s[:, num_sources_per_shot:]
-    x_r = _set_coords(num_shots, 3 * num_receivers_per_shot, nx.tolist(), "bottom")
-    x_r_y = x_r[:, :num_receivers_per_shot]
-    x_r_x = x_r[:, num_receivers_per_shot : 2 * num_receivers_per_shot]
-    x_r_p = x_r[:, 2 * num_receivers_per_shot :]
-    sources_y = _set_sources(x_s_y, freq, dt, nt, dtype, dpeak_time=dpeak_time)
-    sources_x = _set_sources(x_s_x, freq, dt, nt, dtype, dpeak_time=dpeak_time)
+        if nt is None:
+            nt = int((2 * torch.norm(nx.float() * dx) / vmin + 0.35 + 2 / freq) / dt)
+        x_s = _set_coords(num_shots, 2 * num_sources_per_shot, nx.tolist())
+        x_s_y = x_s[:, :num_sources_per_shot]
+        x_s_x = x_s[:, num_sources_per_shot:]
+        x_r = _set_coords(num_shots, 3 * num_receivers_per_shot, nx.tolist(), "bottom")
+        x_r_y = x_r[:, :num_receivers_per_shot]
+        x_r_x = x_r[:, num_receivers_per_shot : 2 * num_receivers_per_shot]
+        x_r_p = x_r[:, 2 * num_receivers_per_shot :]
+        sources_y = _set_sources(x_s_y, freq, dt, nt, dtype, dpeak_time=dpeak_time)
+        sources_x = _set_sources(x_s_x, freq, dt, nt, dtype, dpeak_time=dpeak_time)
 
-    # Forward with source and receiver ignored
-    lambi = lamb.clone()
-    lambi.requires_grad_()
-    mui = mu.clone()
-    mui.requires_grad_()
-    buoyancyi = buoyancy.clone()
-    buoyancyi.requires_grad_()
-    for i in range(num_shots):
-        x_s_y[i, i, :] = IGNORE_LOCATION
-        x_s_x[i, i + 1, :] = IGNORE_LOCATION
-        x_r_y[i, i, :] = IGNORE_LOCATION
-        x_r_x[i, i + 1, :] = IGNORE_LOCATION
-        x_r_p[i, i + 2, :] = IGNORE_LOCATION
-    sources_y["locations"] = x_s_y
-    sources_x["locations"] = x_s_x
-    out_ignored = propagator(
-        lambi,
-        mui,
-        buoyancyi,
-        dx.tolist(),
-        dt,
-        sources_y["amplitude"],
-        sources_x["amplitude"],
-        sources_y["locations"],
-        sources_x["locations"],
-        x_r_y,
-        x_r_x,
-        x_r_p,
-        prop_kwargs=prop_kwargs,
-    )
+        # Forward with source and receiver ignored
+        lambi = lamb.clone()
+        lambi.requires_grad_()
+        mui = mu.clone()
+        mui.requires_grad_()
+        buoyancyi = buoyancy.clone()
+        buoyancyi.requires_grad_()
+        for i in range(num_shots):
+            x_s_y[i, i, :] = IGNORE_LOCATION
+            x_s_x[i, i + 1, :] = IGNORE_LOCATION
+            x_r_y[i, i, :] = IGNORE_LOCATION
+            x_r_x[i, i + 1, :] = IGNORE_LOCATION
+            x_r_p[i, i + 2, :] = IGNORE_LOCATION
+        sources_y["locations"] = x_s_y
+        sources_x["locations"] = x_s_x
+        out_ignored = propagator(
+            lambi,
+            mui,
+            buoyancyi,
+            dx.tolist(),
+            dt,
+            sources_y["amplitude"],
+            sources_x["amplitude"],
+            sources_y["locations"],
+            sources_x["locations"],
+            x_r_y,
+            x_r_x,
+            x_r_p,
+            prop_kwargs=prop_kwargs,
+        )
 
-    (
-        (out_ignored[-1] ** 2).sum()
-        + (out_ignored[-2] ** 2).sum()
-        + (out_ignored[-3] ** 2).sum()
-    ).backward()
+        (
+            (out_ignored[-1] ** 2).sum()
+            + (out_ignored[-2] ** 2).sum()
+            + (out_ignored[-3] ** 2).sum()
+        ).backward()
 
-    # Forward with amplitudes of sources that will be ignored set to zero
-    lambf = lamb.clone()
-    lambf.requires_grad_()
-    muf = mu.clone()
-    muf.requires_grad_()
-    buoyancyf = buoyancy.clone()
-    buoyancyf.requires_grad_()
-    x_s = _set_coords(num_shots, 2 * num_sources_per_shot, nx.tolist())
-    x_s_y = x_s[:, :num_sources_per_shot]
-    x_s_x = x_s[:, num_sources_per_shot:]
-    x_r = _set_coords(num_shots, 3 * num_receivers_per_shot, nx.tolist(), "bottom")
-    x_r_y = x_r[:, :num_receivers_per_shot]
-    x_r_x = x_r[:, num_receivers_per_shot : 2 * num_receivers_per_shot]
-    x_r_p = x_r[:, 2 * num_receivers_per_shot :]
-    for i in range(num_shots):
-        sources_y["amplitude"][i, i].fill_(0)
-        sources_x["amplitude"][i, i + 1].fill_(0)
-    sources_y["locations"] = x_s_y
-    sources_x["locations"] = x_s_x
-    out_filled = propagator(
-        lambf,
-        muf,
-        buoyancyf,
-        dx.tolist(),
-        dt,
-        sources_y["amplitude"],
-        sources_x["amplitude"],
-        sources_y["locations"],
-        sources_x["locations"],
-        x_r_y,
-        x_r_x,
-        x_r_p,
-        prop_kwargs=prop_kwargs,
-    )
-    # Set receiver amplitudes of receiver that will be ignored to zero
-    for i in range(num_shots):
-        out_filled[-2][i, i].fill_(0)
-        out_filled[-1][i, i + 1].fill_(0)
-        out_filled[-3][i, i + 2].fill_(0)
+        # Forward with amplitudes of sources that will be ignored set to zero
+        lambf = lamb.clone()
+        lambf.requires_grad_()
+        muf = mu.clone()
+        muf.requires_grad_()
+        buoyancyf = buoyancy.clone()
+        buoyancyf.requires_grad_()
+        x_s = _set_coords(num_shots, 2 * num_sources_per_shot, nx.tolist())
+        x_s_y = x_s[:, :num_sources_per_shot]
+        x_s_x = x_s[:, num_sources_per_shot:]
+        x_r = _set_coords(num_shots, 3 * num_receivers_per_shot, nx.tolist(), "bottom")
+        x_r_y = x_r[:, :num_receivers_per_shot]
+        x_r_x = x_r[:, num_receivers_per_shot : 2 * num_receivers_per_shot]
+        x_r_p = x_r[:, 2 * num_receivers_per_shot :]
+        for i in range(num_shots):
+            sources_y["amplitude"][i, i].fill_(0)
+            sources_x["amplitude"][i, i + 1].fill_(0)
+        sources_y["locations"] = x_s_y
+        sources_x["locations"] = x_s_x
+        out_filled = propagator(
+            lambf,
+            muf,
+            buoyancyf,
+            dx.tolist(),
+            dt,
+            sources_y["amplitude"],
+            sources_x["amplitude"],
+            sources_y["locations"],
+            sources_x["locations"],
+            x_r_y,
+            x_r_x,
+            x_r_p,
+            prop_kwargs=prop_kwargs,
+        )
+        # Set receiver amplitudes of receiver that will be ignored to zero
+        for i in range(num_shots):
+            out_filled[-2][i, i].fill_(0)
+            out_filled[-1][i, i + 1].fill_(0)
+            out_filled[-3][i, i + 2].fill_(0)
 
-    (
-        (out_filled[-1] ** 2).sum()
-        + (out_filled[-2] ** 2).sum()
-        + (out_filled[-3] ** 2).sum()
-    ).backward()
+        (
+            (out_filled[-1] ** 2).sum()
+            + (out_filled[-2] ** 2).sum()
+            + (out_filled[-3] ** 2).sum()
+        ).backward()
 
-    for ofi, oii in zip(out_filled, out_ignored):
-        assert torch.allclose(ofi, oii)
+        for ofi, oii in zip(out_filled, out_ignored):
+            assert torch.allclose(ofi, oii)
 
-    assert torch.allclose(lambf.grad, lambi.grad)
-    assert torch.allclose(muf.grad, mui.grad)
-    assert torch.allclose(buoyancyf.grad, buoyancyi.grad)
+        assert torch.allclose(lambf.grad, lambi.grad)
+        assert torch.allclose(muf.grad, mui.grad)
+        assert torch.allclose(buoyancyf.grad, buoyancyi.grad)
 
 
 def run_elasticfunc(nt: int = 3) -> None:
     """Run elastic_func for testing purposes."""
-    from deepwave.elastic import elastic_func
+    from deepwave.elastic import elastic_func, prepare_parameters
 
     torch.manual_seed(1)
-    ny = 11
-    nx = 12
+    ny = 10
+    nx = 11
     n_batch = 2
     dt = 0.0005
     dy = dx = 5
+    grid_spacing = [dy, dx]
     pml_width = [3, 3, 3, 3]
     n_sources_y_per_shot = 1
     n_sources_x_per_shot = 2
 
     step_ratio = 1
     accuracy = 4
+    fd_pad = accuracy // 2
+    fd_pad_list = [accuracy // 2, accuracy // 2 - 1, accuracy // 2, accuracy // 2 - 1]
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     dtype = torch.double
-    vp = 1500 + 100 * torch.rand(ny, nx, dtype=dtype, device=device)
-    vs = 1000 + 100 * torch.rand(ny, nx, dtype=dtype, device=device)
-    rho = 2200 + 100 * torch.rand(ny, nx, dtype=dtype, device=device)
+    vp = 1500 + 100 * torch.rand(1, ny, nx, dtype=dtype, device=device)
+    vs = 1000 + 100 * torch.rand(1, ny, nx, dtype=dtype, device=device)
+    rho = 2200 + 100 * torch.rand(1, ny, nx, dtype=dtype, device=device)
 
-    vy = torch.randn(n_batch, ny, nx, dtype=torch.double, device=device)
+    lamb, mu, buoyancy = list(vpvsrho_to_lambmubuoyancy(vp, vs, rho))
+    mu_yx, buoyancy_y, buoyancy_x = prepare_parameters(mu, buoyancy)
+
+    vy = torch.randn(
+        n_batch,
+        ny - 2 * fd_pad + 1,
+        nx - 2 * fd_pad + 1,
+        dtype=torch.double,
+        device=device,
+    )
     vx = torch.randn_like(vy)
     sigmayy = torch.randn_like(vy)
     sigmaxy = torch.randn_like(vy)
@@ -678,17 +712,17 @@ def run_elasticfunc(nt: int = 3) -> None:
         dtype=torch.double,
         device=device,
     )
-    sources_y_i = torch.tensor([[1 * nx + 1], [2 * nx + 2]]).long().to(device)
+    sources_y_i = torch.tensor([[2 * nx + 2], [3 * nx + 3]]).long().to(device)
     sources_x_i = (
-        torch.tensor([[3 * nx + 3, 4 * nx + 4], [2 * nx + 2, 4 * nx + 5]])
+        torch.tensor([[6 * nx + 6, 7 * nx + 7], [5 * nx + 5, 7 * nx + 8]])
         .long()
         .to(device)
     )
     receivers_y_i = (
         torch.tensor(
             [
-                [1 * nx + 1, 2 * nx + 2, 3 * nx + 3],
-                [4 * nx + 4, 2 * nx + 3, 2 * nx + 1],
+                [4 * nx + 4, 5 * nx + 5, 6 * nx + 6],
+                [7 * nx + 7, 5 * nx + 6, 5 * nx + 4],
             ],
         )
         .long()
@@ -697,8 +731,8 @@ def run_elasticfunc(nt: int = 3) -> None:
     receivers_x_i = (
         torch.tensor(
             [
-                [1 * nx + 1, 2 * nx + 2, 3 * nx + 3, 3 * nx + 2],
-                [4 * nx + 4, 2 * nx + 3, 2 * nx + 1, 3 * nx + 3],
+                [4 * nx + 4, 5 * nx + 5, 6 * nx + 6, 6 * nx + 7],
+                [7 * nx + 7, 5 * nx + 6, 5 * nx + 4, 6 * nx + 6],
             ],
         )
         .long()
@@ -707,16 +741,18 @@ def run_elasticfunc(nt: int = 3) -> None:
     receivers_p_i = (
         torch.tensor(
             [
-                [1 * nx + 1, 2 * nx + 2, 3 * nx + 3, 3 * nx + 2, 3 * nx + 4],
-                [4 * nx + 4, 2 * nx + 3, 2 * nx + 1, 3 * nx + 3, 2 * nx + 2],
+                [4 * nx + 4, 5 * nx + 5, 6 * nx + 6, 6 * nx + 5, 6 * nx + 7],
+                [7 * nx + 7, 5 * nx + 6, 5 * nx + 4, 6 * nx + 6, 5 * nx + 5],
             ],
         )
         .long()
         .to(device)
     )
-    vp.requires_grad_()
-    vs.requires_grad_()
-    rho.requires_grad_()
+    lamb.requires_grad_()
+    mu.requires_grad_()
+    mu_yx.requires_grad_()
+    buoyancy_y.requires_grad_()
+    buoyancy_x.requires_grad_()
     source_amplitudes_y.requires_grad_()
     source_amplitudes_x.requires_grad_()
     vy.requires_grad_()
@@ -732,39 +768,33 @@ def run_elasticfunc(nt: int = 3) -> None:
     m_sigmaxyy.requires_grad_()
     m_sigmaxyx.requires_grad_()
     m_sigmaxxx.requires_grad_()
-    ay = torch.randn(ny, dtype=torch.double, device=device)
-    ayh = torch.randn(ny, dtype=torch.double, device=device)
-    ax = torch.randn(nx, dtype=torch.double, device=device)
-    axh = torch.randn(nx, dtype=torch.double, device=device)
-    by = torch.randn(ny, dtype=torch.double, device=device)
-    byh = torch.randn(ny, dtype=torch.double, device=device)
-    bx = torch.randn(nx, dtype=torch.double, device=device)
-    bxh = torch.randn(nx, dtype=torch.double, device=device)
-    ay[1 + pml_width[0] : ny - pml_width[1]].fill_(0)
-    by[1 + pml_width[0] : ny - pml_width[1]].fill_(0)
-    ax[pml_width[2] : nx - pml_width[3]].fill_(0)
-    bx[pml_width[2] : nx - pml_width[3]].fill_(0)
-    ayh[pml_width[0] : ny - pml_width[1]].fill_(0)
-    byh[pml_width[0] : ny - pml_width[1]].fill_(0)
-    axh[pml_width[2] : nx - 1 - pml_width[3]].fill_(0)
-    bxh[pml_width[2] : nx - 1 - pml_width[3]].fill_(0)
+    max_vel = 2000
+    pml_freq = 25
+    pml_profiles = deepwave.staggered_grid.set_pml_profiles(
+        pml_width,
+        accuracy,
+        fd_pad_list,
+        dt,
+        grid_spacing,
+        max_vel,
+        dtype,
+        device,
+        pml_freq,
+        ny,
+        nx,
+    )
+    for i, profile in enumerate(pml_profiles):
+        mask = profile != 0
+        pml_profiles[i] = torch.randn_like(profile) * mask
 
-    def wrap(
-        vp: torch.Tensor, vs: torch.Tensor, rho: torch.Tensor, *args: Any
-    ) -> Tuple[torch.Tensor, ...]:
-        # Scale the outputs for the gradient check to be of a similar order of
-        # magnitude.
-        o = list(elastic_func(*vpvsrho_to_lambmubuoyancy(vp, vs, rho), *args))
-        for i in [2, 3, 4, 9, 10, 11, 12, 13]:
-            o[i] /= 1e6
-        return tuple(o)
-
-    torch.autograd.gradcheck(
-        wrap,
-        (
-            vp,
-            vs,
-            rho,
+    def wrap(python):
+        inputs = (
+            python,
+            lamb,
+            mu,
+            mu_yx,
+            buoyancy_y,
+            buoyancy_x,
             source_amplitudes_y,
             source_amplitudes_x,
             vy,
@@ -780,14 +810,7 @@ def run_elasticfunc(nt: int = 3) -> None:
             m_sigmaxyy,
             m_sigmaxyx,
             m_sigmaxxx,
-            ay,
-            ayh,
-            ax,
-            axh,
-            by,
-            byh,
-            bx,
-            bxh,
+            *pml_profiles,
             sources_y_i,
             sources_x_i,
             receivers_y_i,
@@ -804,8 +827,22 @@ def run_elasticfunc(nt: int = 3) -> None:
             None,
             None,
             1,
-        ),
-    )
+        )
+        out = elastic_func(*inputs)
+        v = [torch.randn_like(o.contiguous()) for o in out]
+        grads = torch.autograd.grad(
+            out,
+            [p for p in inputs if isinstance(p, torch.Tensor) and p.requires_grad],
+            grad_outputs=v,
+        )
+        return out + grads
+
+    torch.manual_seed(1)
+    out_compiled = wrap(False)
+    torch.manual_seed(1)
+    out_python = wrap(True)
+    for oc, op in zip(out_compiled, out_python):
+        assert torch.allclose(oc, op)
 
 
 def test_elasticfunc():
@@ -830,7 +867,8 @@ def test_gradcheck_2d_cfl():
     run_gradcheck_2d(
         propagator=elasticprop,
         dt=0.002,
-        prop_kwargs={"time_pad_frac": 0.2},
+        prop_kwargs={"time_taper": True},
+        only_receivers_out=True,
     )
 
 
@@ -846,7 +884,9 @@ def test_gradcheck_2d_one_shot():
 
 def test_gradcheck_2d_survey_pad():
     """Test gradcheck with survey_pad."""
-    run_gradcheck_2d(propagator=elasticprop, nx=(12, 12), survey_pad=4)
+    # Location range: y: [0, 7], x: [6]
+    # With survey pad: y: [0, 7+4], x: [6-4=2, 6+4=10]
+    run_gradcheck_2d(propagator=elasticprop, nx=(12, 9), survey_pad=4)
 
 
 def test_gradcheck_2d_chained():
@@ -866,7 +906,7 @@ def test_gradcheck_2d_no_pml():
 
 def test_gradcheck_2d_different_dx():
     """Test gradcheck with different dx values."""
-    run_gradcheck_2d(propagator=elasticprop, dx=(4, 5))
+    run_gradcheck_2d(propagator=elasticprop, dx=(4, 5), dt=0.0005)
 
 
 def test_gradcheck_only_lamb_2d():
@@ -948,36 +988,45 @@ def run_forward_lamb(
         sa_y = source_amplitudes
         sa_x = None
         x_r_y = torch.tensor([[[5, 15]]])
-        x_r_x = torch.tensor([[[6, 16]]])
+        x_r_x = torch.tensor([[[6, 15]]])
         pml_width = [0, pml_width, pml_width, pml_width]
     elif orientation == 1:
-        x_s_y = torch.tensor([[[ny - 1 - 15, nx - 2 - 0]]])
+        x_s_y = torch.tensor([[[ny - 1 - 15, nx - 1 - 0]]])
         x_s_x = None
         sa_y = source_amplitudes
         sa_x = None
-        x_r_y = torch.tensor([[[ny - 1 - 5, nx - 2 - 15]]])
-        x_r_x = torch.tensor([[[ny - 1 - 5, nx - 2 - 15]]])
+        x_r_y = torch.tensor([[[ny - 1 - 5, nx - 1 - 15]]])
+        x_r_x = torch.tensor([[[ny - 1 - 5, nx - 1 - 16]]])
         pml_width = [pml_width, 0, pml_width, pml_width]
     elif orientation == 2:
         x_s_y = None
-        x_s_x = torch.tensor([[[1, 15]]])
+        x_s_x = torch.tensor([[[0, 15]]])
         sa_y = None
         sa_x = source_amplitudes
-        x_r_y = torch.tensor([[[16, 5]]])
-        x_r_x = torch.tensor([[[16, 5]]])
+        x_r_y = torch.tensor([[[15, 6]]])
+        x_r_x = torch.tensor([[[15, 5]]])
         pml_width = [pml_width, pml_width, 0, pml_width]
     else:
         x_s_y = None
-        x_s_x = torch.tensor([[[ny - 1 - 1, nx - 1 - 15]]])
+        x_s_x = torch.tensor([[[ny - 1, nx - 1 - 15]]])
         sa_y = None
         sa_x = source_amplitudes
-        x_r_y = torch.tensor([[[ny - 1 - 17, nx - 1 - 6]]])
-        x_r_x = torch.tensor([[[ny - 1 - 16, nx - 1 - 5]]])
+        x_r_y = torch.tensor([[[ny - 1 - 16, nx - 1 - 5]]])
+        x_r_x = torch.tensor([[[ny - 1 - 15, nx - 1 - 5]]])
         pml_width = [pml_width, pml_width, pml_width, 0]
+    pad = (
+        int(pml_width[2] == 0),
+        int(pml_width[3] == 0),
+        int(pml_width[0] == 0),
+        int(pml_width[1] == 0),
+    )
+    lambp = torch.nn.functional.pad(lamb, pad)
+    mup = torch.nn.functional.pad(mu, pad)
+    buoyancyp = torch.nn.functional.pad(buoyancy, pad)
     return elasticprop(
-        lamb,
-        mu,
-        buoyancy,
+        lambp,
+        mup,
+        buoyancyp,
         dx,
         dt,
         sa_y,
@@ -1032,10 +1081,10 @@ def run_forward(
         + torch.randn(*nx, dtype=dtype).to(device) * dbuoyancy
     )
 
-    nx = torch.Tensor(nx).long()
-    dx = torch.Tensor(dx)
+    nx = torch.tensor(nx, dtype=torch.long)
+    dx = torch.tensor(dx, dtype=dtype)
 
-    vp, vs, rho = lambmubuoyancy_to_vpvsrho(lamb.abs(), mu.abs(), buoyancy.abs())
+    vp, vs, _rho = lambmubuoyancy_to_vpvsrho(lamb.abs(), mu.abs(), buoyancy.abs())
     vmin = min(vp.abs().min(), vs.abs().min())
 
     if nt is None:
@@ -1128,6 +1177,8 @@ def run_gradcheck(
     mu_requires_grad=True,
     buoyancy_requires_grad=True,
     source_requires_grad=True,
+    provide_wavefields: bool = True,
+    only_receivers_out: bool = False,
     nt_add=0,
     atol=1e-5,
     rtol=1e-3,
@@ -1149,10 +1200,10 @@ def run_gradcheck(
     buoyancy = torch.ones(*nx, device=device, dtype=dtype) * mbuoyancy
     buoyancy += torch.randn(*buoyancy.shape, dtype=dtype).to(device) * dbuoyancy
 
-    nx = torch.Tensor(nx).long()
-    dx = torch.Tensor(dx)
+    nx = torch.tensor(nx, dtype=torch.long)
+    dx = torch.tensor(dx, dtype=dtype)
 
-    vp, vs, rho = lambmubuoyancy_to_vpvsrho(lamb.abs(), mu.abs(), buoyancy.abs())
+    vp, vs, _rho = lambmubuoyancy_to_vpvsrho(lamb.abs(), mu.abs(), buoyancy.abs())
     vmin = min(vp.abs().min(), vs.abs().min())
 
     if vmin != 0:
@@ -1160,6 +1211,7 @@ def run_gradcheck(
     else:
         nt = int((2 * torch.norm(nx.float() * dx) / 1500 + 0.1 + 2 / freq) / dt)
     nt += nt_add
+
     if num_sources_per_shot > 0:
         x_s = _set_coords(num_shots, 2 * num_sources_per_shot, nx.tolist())
         x_s_y = x_s[:, :num_sources_per_shot]
@@ -1184,46 +1236,64 @@ def run_gradcheck(
     if isinstance(pml_width, int):
         pml_width = [pml_width for _ in range(4)]
 
-    if isinstance(mlamb, torch.Tensor):
-        mlamb = mlamb.to(device)
-        min_mlamb = mlamb.abs().min().item()
+    if provide_wavefields:
+        wavefield_size = (
+            nx[0] + pml_width[0] + pml_width[1],
+            nx[1] + pml_width[2] + pml_width[3],
+        )
+        vy0 = torch.zeros(
+            num_shots,
+            *wavefield_size,
+            dtype=dtype,
+            device=device,
+            requires_grad=True,
+        )
+        vx0 = torch.zeros_like(vy0, requires_grad=True)
+        sigmayy0 = torch.zeros_like(vy0, requires_grad=True)
+        sigmaxy0 = torch.zeros_like(vy0, requires_grad=True)
+        sigmaxx0 = torch.zeros_like(vy0, requires_grad=True)
+        m_vyy0 = torch.zeros_like(vy0, requires_grad=True)
+        m_vyx0 = torch.zeros_like(vy0, requires_grad=True)
+        m_vxy0 = torch.zeros_like(vy0, requires_grad=True)
+        m_vxx0 = torch.zeros_like(vy0, requires_grad=True)
+        m_sigmayyy0 = torch.zeros_like(vy0, requires_grad=True)
+        m_sigmaxyy0 = torch.zeros_like(vy0, requires_grad=True)
+        m_sigmaxyx0 = torch.zeros_like(vy0, requires_grad=True)
+        m_sigmaxxx0 = torch.zeros_like(vy0, requires_grad=True)
     else:
-        min_mlamb = mlamb
-    if isinstance(mmu, torch.Tensor):
-        mmu = mmu.to(device)
-        min_mmu = mmu.abs().min().item()
-    else:
-        min_mmu = mmu
-    if isinstance(mbuoyancy, torch.Tensor):
-        mbuoyancy = mbuoyancy.to(device)
-        min_mbuoyancy = mbuoyancy.abs().min().item()
-    else:
-        min_mbuoyancy = mbuoyancy
-
-    if min_mlamb != 0:
-        lamb /= mlamb
-    if min_mmu != 0:
-        mu /= mmu
-    if min_mbuoyancy != 0:
-        buoyancy /= mbuoyancy
+        vy0 = None
+        vx0 = None
+        sigmayy0 = None
+        sigmaxy0 = None
+        sigmaxx0 = None
+        m_vyy0 = None
+        m_vyx0 = None
+        m_vxy0 = None
+        m_vxx0 = None
+        m_sigmayyy0 = None
+        m_sigmaxyy0 = None
+        m_sigmaxyx0 = None
+        m_sigmaxxx0 = None
 
     lamb.requires_grad_(lamb_requires_grad)
     mu.requires_grad_(mu_requires_grad)
     buoyancy.requires_grad_(buoyancy_requires_grad)
 
-    def wrap(lamb, mu, buoyancy, sources_y_amplitude, sources_x_amplitude):
-        if sources_y_amplitude is not None and min_mbuoyancy != 0:
-            sources_y_amplitude = sources_y_amplitude / mbuoyancy / dt
-        if sources_x_amplitude is not None and min_mbuoyancy != 0:
-            sources_x_amplitude = sources_x_amplitude / mbuoyancy / dt
-        out = propagator(
-            lamb * mlamb,
-            mu * mmu,
-            buoyancy * mbuoyancy,
+    if prop_kwargs is None:
+        prop_kwargs = {}
+
+    out_idxs = []
+
+    def wrap(python):
+        prop_kwargs["python_backend"] = python
+        inputs = (
+            lamb,
+            mu,
+            buoyancy,
             dx.tolist(),
             dt,
-            sources_y_amplitude,
-            sources_x_amplitude,
+            sources_y["amplitude"],
+            sources_x["amplitude"],
             sources_y["locations"],
             sources_x["locations"],
             x_r_y,
@@ -1232,18 +1302,42 @@ def run_gradcheck(
             prop_kwargs,
             pml_width,
             survey_pad,
-            nt=nt,
+            vy0,
+            vx0,
+            sigmayy0,
+            sigmaxy0,
+            sigmaxx0,
+            m_vyy0,
+            m_vyx0,
+            m_vxy0,
+            m_vxx0,
+            m_sigmayyy0,
+            m_sigmaxyy0,
+            m_sigmaxyx0,
+            m_sigmaxxx0,
+            nt,
         )
-        return (out[-3] / 1e6, out[-2], out[-1])
+        out = propagator(*inputs)
+        if only_receivers_out:
+            out = out[-3:]
+        if len(out_idxs) == 0:
+            for i, o in enumerate(out):
+                if o.requires_grad:
+                    out_idxs.append(i)
+        out = tuple([out[i] for i in out_idxs])
+        v = [torch.randn_like(o.contiguous()) for o in out]
+        return torch.autograd.grad(
+            out,
+            [p for p in inputs if isinstance(p, torch.Tensor) and p.requires_grad],
+            grad_outputs=v,
+        )
 
-    torch.autograd.gradcheck(
-        wrap,
-        (lamb, mu, buoyancy, sources_y["amplitude"], sources_x["amplitude"]),
-        nondet_tol=1e-3,
-        check_grad_dtypes=True,
-        atol=atol,
-        rtol=rtol,
-    )
+    torch.manual_seed(1)
+    out_python = wrap(True)
+    torch.manual_seed(1)
+    out_compiled = wrap(False)
+    for oc, op in zip(out_compiled, out_python):
+        assert torch.allclose(oc, op, atol=atol, rtol=rtol)
 
 
 def run_gradcheck_2d(
@@ -1339,86 +1433,7 @@ def test_elastic_init_buoyancy_requires_grad_non_bool() -> None:
         Elastic(lamb, mu, buoyancy, 1.0, buoyancy_requires_grad="True")
 
 
-# Tests for elastic function (accuracy)
-def test_elastic_accuracy_invalid() -> None:
-    """Test that elastic function raises RuntimeError for invalid accuracy."""
-    lamb = torch.ones(10, 10)
-    mu = torch.ones(10, 10)
-    buoyancy = torch.ones(10, 10)
-    grid_spacing = 1.0
-    dt = 0.001
-    nt = 10
-    with pytest.raises(RuntimeError, match=re.escape("The accuracy must be 2 or 4.")):
-        elastic(lamb, mu, buoyancy, grid_spacing, dt, nt=nt, accuracy=3)
-    with pytest.raises(RuntimeError, match=re.escape("The accuracy must be 2 or 4.")):
-        elastic(lamb, mu, buoyancy, grid_spacing, dt, nt=nt, accuracy=6)
-
-
 # Tests for elastic function (location bounds)
-def test_elastic_source_locations_y_out_of_bounds() -> None:
-    """Test raises for source locations out of y bounds."""
-    lamb = torch.ones(10, 10)
-    mu = torch.ones(10, 10)
-    buoyancy = torch.ones(10, 10)
-    grid_spacing = 1.0
-    dt = 0.001
-    source_amplitudes_y = torch.randn(1, 1, 10)
-    source_locations_y = torch.tensor(
-        [[[1, 9]]], dtype=torch.long
-    )  # y-coord is 9, max is 8 (shape[1]-1)
-    nt = 10
-    wavefield_0 = torch.zeros(1, 10 + 2 * 20, 10 + 2 * 20)
-    with pytest.raises(
-        RuntimeError,
-        match=re.escape(
-            "With the provided model, the maximum y source location in the "
-            "second dimension must be less than 9."
-        ),
-    ):
-        elastic(
-            lamb,
-            mu,
-            buoyancy,
-            grid_spacing,
-            dt,
-            source_amplitudes_y=source_amplitudes_y,
-            source_locations_y=source_locations_y,
-            nt=nt,
-            vy_0=wavefield_0,
-        )
-
-
-def test_elastic_receiver_locations_y_out_of_bounds() -> None:
-    """Test raises for receiver locations out of y bounds."""
-    lamb = torch.ones(10, 10)
-    mu = torch.ones(10, 10)
-    buoyancy = torch.ones(10, 10)
-    grid_spacing = 1.0
-    dt = 0.001
-    receiver_locations_y = torch.tensor(
-        [[[1, 9]]], dtype=torch.long
-    )  # y-coord is 9, max is 8 (shape[1]-1)
-    nt = 10
-    wavefield_0 = torch.zeros(1, 10 + 2 * 20, 10 + 2 * 20)
-    with pytest.raises(
-        RuntimeError,
-        match=re.escape(
-            "With the provided model, the maximum y receiver location in the "
-            "second dimension must be less than 9."
-        ),
-    ):
-        elastic(
-            lamb,
-            mu,
-            buoyancy,
-            grid_spacing,
-            dt,
-            receiver_locations_y=receiver_locations_y,
-            nt=nt,
-            vy_0=wavefield_0,
-        )
-
-
 def test_elastic_source_locations_x_out_of_bounds() -> None:
     """Test raises for source locations out of x bounds."""
     lamb = torch.ones(10, 10)
@@ -1428,15 +1443,15 @@ def test_elastic_source_locations_x_out_of_bounds() -> None:
     dt = 0.001
     source_amplitudes_x = torch.randn(1, 1, 10)
     source_locations_x = torch.tensor(
-        [[[0, 1]]], dtype=torch.long
-    )  # x-coord is 0, min must be > 0
+        [[[1, 9]]], dtype=torch.long
+    )  # x-coord is 9, max is 8 (shape[1]-1)
     nt = 10
     wavefield_0 = torch.zeros(1, 10 + 2 * 20, 10 + 2 * 20)
     with pytest.raises(
         RuntimeError,
         match=re.escape(
-            "The minimum x source location in the first dimension must be "
-            "greater than 0."
+            "With the provided model, the maximum x source location in the "
+            "second dimension must be less than 9."
         ),
     ):
         elastic(
@@ -1448,7 +1463,7 @@ def test_elastic_source_locations_x_out_of_bounds() -> None:
             source_amplitudes_x=source_amplitudes_x,
             source_locations_x=source_locations_x,
             nt=nt,
-            vy_0=wavefield_0,
+            sigmayy_0=wavefield_0,
         )
 
 
@@ -1460,15 +1475,15 @@ def test_elastic_receiver_locations_x_out_of_bounds() -> None:
     grid_spacing = 1.0
     dt = 0.001
     receiver_locations_x = torch.tensor(
-        [[[0, 1]]], dtype=torch.long
-    )  # x-coord is 0, min must be > 0
+        [[[1, 9]]], dtype=torch.long
+    )  # x-coord is 9, max is 8 (shape[1]-1)
     nt = 10
     wavefield_0 = torch.zeros(1, 10 + 2 * 20, 10 + 2 * 20)
     with pytest.raises(
         RuntimeError,
         match=re.escape(
-            "The minimum x receiver location in the first dimension must be "
-            "greater than 0."
+            "With the provided model, the maximum x receiver location in the "
+            "second dimension must be less than 9."
         ),
     ):
         elastic(
@@ -1479,7 +1494,71 @@ def test_elastic_receiver_locations_x_out_of_bounds() -> None:
             dt,
             receiver_locations_x=receiver_locations_x,
             nt=nt,
-            vy_0=wavefield_0,
+            sigmayy_0=wavefield_0,
+        )
+
+
+def test_elastic_source_locations_y_out_of_bounds() -> None:
+    """Test raises for source locations out of y bounds."""
+    lamb = torch.ones(10, 10)
+    mu = torch.ones(10, 10)
+    buoyancy = torch.ones(10, 10)
+    grid_spacing = 1.0
+    dt = 0.001
+    source_amplitudes_y = torch.randn(1, 1, 10)
+    source_locations_y = torch.tensor(
+        [[[9, 1]]], dtype=torch.long
+    )  # y-coord is 9, max is 8
+    nt = 10
+    wavefield_0 = torch.zeros(1, 10 + 2 * 20, 10 + 2 * 20)
+    with pytest.raises(
+        RuntimeError,
+        match=re.escape(
+            "With the provided model, the maximum y source location in the "
+            "first dimension must be less than 9."
+        ),
+    ):
+        elastic(
+            lamb,
+            mu,
+            buoyancy,
+            grid_spacing,
+            dt,
+            source_amplitudes_y=source_amplitudes_y,
+            source_locations_y=source_locations_y,
+            nt=nt,
+            sigmayy_0=wavefield_0,
+        )
+
+
+def test_elastic_receiver_locations_y_out_of_bounds() -> None:
+    """Test raises for receiver locations out of y bounds."""
+    lamb = torch.ones(10, 10)
+    mu = torch.ones(10, 10)
+    buoyancy = torch.ones(10, 10)
+    grid_spacing = 1.0
+    dt = 0.001
+    receiver_locations_y = torch.tensor(
+        [[[9, 1]]], dtype=torch.long
+    )  # y-coord is 9, max is 8
+    nt = 10
+    wavefield_0 = torch.zeros(1, 10 + 2 * 20, 10 + 2 * 20)
+    with pytest.raises(
+        RuntimeError,
+        match=re.escape(
+            "With the provided model, the maximum y receiver location in the "
+            "first dimension must be less than 9."
+        ),
+    ):
+        elastic(
+            lamb,
+            mu,
+            buoyancy,
+            grid_spacing,
+            dt,
+            receiver_locations_y=receiver_locations_y,
+            nt=nt,
+            sigmayy_0=wavefield_0,
         )
 
 
@@ -1490,16 +1569,16 @@ def test_elastic_receiver_locations_p_out_of_bounds() -> None:
     buoyancy = torch.ones(10, 10)
     grid_spacing = 1.0
     dt = 0.001
-    # Both conditions: y-coord too large, x-coord too small
-    receiver_locations_p = torch.tensor([[[0, 9]]], dtype=torch.long)
+    # Both conditions: y-coord too large, x-coord too large
+    receiver_locations_p = torch.tensor([[[9, 9]]], dtype=torch.long)
     nt = 10
     wavefield_0 = torch.zeros(1, 10 + 2 * 20, 10 + 2 * 20)
     with pytest.raises(
         RuntimeError,
         match=re.escape(
-            "With the provided model, the pressure receiver locations in the "
-            "second dimension must be less than 9 and in the first dimension "
-            "must be greater than 0."
+            "With the provided model, the maximum p receiver location in the "
+            "first dimension must be less than 9 and in the second dimension "
+            "must be less than 9."
         ),
     ):
         elastic(
@@ -1510,5 +1589,5 @@ def test_elastic_receiver_locations_p_out_of_bounds() -> None:
             dt,
             receiver_locations_p=receiver_locations_p,
             nt=nt,
-            vy_0=wavefield_0,
+            sigmayy_0=wavefield_0,
         )

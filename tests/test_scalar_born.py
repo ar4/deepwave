@@ -8,73 +8,72 @@ from test_utils import _set_coords, _set_sources, scattered_2d
 from deepwave import IGNORE_LOCATION, ScalarBorn, scalar_born
 from deepwave.common import cfl_condition, downsample, upsample
 
+torch._dynamo.config.cache_size_limit = 256  # noqa: SLF001
+
 
 def test_born_scatter_2d() -> None:
     """Test Born propagation in a 2D model with a point scatterer."""
-    expected, actual = run_born_scatter_2d(
-        propagator=scalarbornprop,
-        dt=0.001,
-        prop_kwargs={"pml_width": 30},
-    )
-    diff = (expected - actual.cpu()).flatten()
-    assert diff.norm() < 0.0025
+    expected_diffs = {2: 0.14, 4: 0.0025, 6: 0.003, 8: 0.00062}
+    for accuracy in [2, 4, 6, 8]:
+        actuals = {}
+        for python in [True, False]:
+            expected, actual = run_born_scatter_2d(
+                propagator=scalarbornprop,
+                dt=0.001 if accuracy == 4 else 0.0001,
+                prop_kwargs={
+                    "pml_width": 30,
+                    "python_backend": python,
+                    "accuracy": accuracy,
+                },
+            )
+            diff = (expected - actual.cpu()).flatten()
+            assert diff.norm().item() < expected_diffs[accuracy]
+            actuals[python] = actual
+        assert torch.allclose(actuals[True], actuals[False], atol=2e-6)
 
 
 def test_born_scatter_v_batched_2d() -> None:
     """Test Born propagation in a batched 2D velocity model."""
-    expected, actual = run_born_scatter_2d(
-        c=torch.tensor([[[1500.0]], [[1600.0]]]),
-        propagator=scalarbornprop,
-        dt=0.001,
-        prop_kwargs={"pml_width": 30},
-    )
-    diff = (expected - actual.cpu()).flatten()
-    assert diff.norm() < 0.0025
+    expected_diffs = {2: 0.14, 4: 0.0025, 6: 0.003, 8: 0.00062}
+    for accuracy in [2, 4, 6, 8]:
+        actuals = {}
+        for python in [True, False]:
+            expected, actual = run_born_scatter_2d(
+                c=torch.tensor([[[1500.0]], [[1600.0]]]),
+                propagator=scalarbornprop,
+                dt=0.001 if accuracy == 4 else 0.0001,
+                prop_kwargs={
+                    "pml_width": 30,
+                    "python_backend": python,
+                    "accuracy": accuracy,
+                },
+            )
+            diff = (expected - actual.cpu()).flatten()
+            assert diff.norm().item() < expected_diffs[accuracy]
+            actuals[python] = actual
+        assert torch.allclose(actuals[True], actuals[False], atol=1e-4)
 
 
 def test_born_scatter_scatter_batched_2d() -> None:
     """Test Born propagation in a batched 2D scatter model."""
-    expected, actual = run_born_scatter_2d(
-        dscatter=torch.tensor([[[50.0]], [[100.0]]]),
-        propagator=scalarbornprop,
-        dt=0.001,
-        prop_kwargs={"pml_width": 30},
-    )
-    diff = (expected - actual.cpu()).flatten()
-    assert diff.norm() < 0.0025
-
-
-def test_born_scatter_2d_2nd_order() -> None:
-    """Test Born propagation with a 2nd order accurate propagator."""
-    expected, actual = run_born_scatter_2d(
-        propagator=scalarbornprop,
-        dt=0.0001,
-        prop_kwargs={"pml_width": 30, "accuracy": 2},
-    )
-    diff = (expected - actual.cpu()).flatten()
-    assert diff.norm() < 0.14
-
-
-def test_born_scatter_2d_6th_order() -> None:
-    """Test Born propagation with a 6th order accurate propagator."""
-    expected, actual = run_born_scatter_2d(
-        propagator=scalarbornprop,
-        dt=0.0001,
-        prop_kwargs={"pml_width": 30, "accuracy": 6},
-    )
-    diff = (expected - actual.cpu()).flatten()
-    assert diff.norm() < 0.003
-
-
-def test_born_scatter_2d_8th_order() -> None:
-    """Test Born propagation with a 8th order accurate propagator."""
-    expected, actual = run_born_scatter_2d(
-        propagator=scalarbornprop,
-        dt=0.0001,
-        prop_kwargs={"pml_width": 30, "accuracy": 8},
-    )
-    diff = (expected - actual.cpu()).flatten()
-    assert diff.norm() < 0.00062
+    expected_diffs = {2: 0.14, 4: 0.0025, 6: 0.003, 8: 0.00062}
+    for accuracy in [2, 4, 6, 8]:
+        actuals = {}
+        for python in [True, False]:
+            expected, actual = run_born_scatter_2d(
+                dscatter=torch.tensor([[[50.0]], [[100.0]]]),
+                propagator=scalarbornprop,
+                dt=0.001 if accuracy == 4 else 0.0001,
+                prop_kwargs={
+                    "pml_width": 30,
+                    "python_backend": python,
+                    "accuracy": accuracy,
+                },
+            )
+            diff = (expected - actual.cpu()).flatten()
+            assert diff.norm().item() < expected_diffs[accuracy]
+            actuals[python] = actual
+        assert torch.allclose(actuals[True], actuals[False], atol=1e-4)
 
 
 def test_born_scatter_2d_module() -> None:
@@ -356,12 +355,12 @@ def scalarbornpropchained(
             psix_m1=psix,
             zetay_m1=zetay,
             zetax_m1=zetax,
-            wavefield_sc_0=wfc,
-            wavefield_sc_m1=wfp,
-            psiy_sc_m1=psiy,
-            psix_sc_m1=psix,
-            zetay_sc_m1=zetay,
-            zetax_sc_m1=zetax,
+            wavefield_sc_0=wfcsc,
+            wavefield_sc_m1=wfpsc,
+            psiy_sc_m1=psiysc,
+            psix_sc_m1=psixsc,
+            zetay_sc_m1=zetaysc,
+            zetax_sc_m1=zetaxsc,
             nt=segment_nt,
             model_gradient_sampling_interval=step_ratio,
             **prop_kwargs,
@@ -441,8 +440,8 @@ def run_born_scatter(
         shot_dscatter = [dscatter] * num_shots
     model = torch.ones(*nx, device=device, dtype=dtype) * c
 
-    nx = torch.Tensor(nx).long()
-    dx = torch.Tensor(dx)
+    nx = torch.tensor(nx, dtype=torch.long)
+    dx = torch.tensor(dx, dtype=dtype)
 
     nt = int((2 * torch.norm(nx.float() * dx) / min_c + 0.35 + 2 / freq) / dt)
     x_s = _set_coords(num_shots, num_sources_per_shot, nx.tolist())
@@ -554,8 +553,8 @@ def run_born_forward(
     )
     scatter = torch.randn(*nx, dtype=dtype).to(device) * dc
 
-    nx = torch.Tensor(nx).long()
-    dx = torch.Tensor(dx)
+    nx = torch.tensor(nx, dtype=torch.long)
+    dx = torch.tensor(dx, dtype=dtype)
 
     nt = int((2 * torch.norm(nx.float() * dx) / c + 0.35 + 2 / freq) / dt)
     x_s = _set_coords(num_shots, num_sources_per_shot, nx.tolist())
@@ -612,16 +611,19 @@ def run_born_forward_2d(
 def test_forward_cpu_gpu_match() -> None:
     """Test propagation on CPU and GPU produce the same result."""
     if torch.cuda.is_available():
-        actual_cpu = run_born_forward_2d(
-            propagator=scalarbornprop,
-            device=torch.device("cpu"),
-        )
-        actual_gpu = run_born_forward_2d(
-            propagator=scalarbornprop,
-            device=torch.device("cuda"),
-        )
-        for cpui, gpui in zip(actual_cpu, actual_gpu):
-            assert torch.allclose(cpui, gpui.cpu(), atol=1e-5)
+        for python in [True, False]:
+            actual_cpu = run_born_forward_2d(
+                propagator=scalarbornprop,
+                device=torch.device("cpu"),
+                prop_kwargs={"python_backend": python},
+            )
+            actual_gpu = run_born_forward_2d(
+                propagator=scalarbornprop,
+                device=torch.device("cuda"),
+                prop_kwargs={"python_backend": python},
+            )
+            for cpui, gpui in zip(actual_cpu, actual_gpu):
+                assert torch.allclose(cpui, gpui.cpu(), atol=5e-5)
 
 
 def test_unused_source_receiver(
@@ -645,93 +647,98 @@ def test_unused_source_receiver(
     assert num_sources_per_shot > 1
     assert num_receivers_per_shot > 1
     assert num_scatter_receivers_per_shot > num_shots
-    torch.manual_seed(1)
-    if device is None:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    nx = torch.tensor(nx, dtype=torch.long)
+    dx = torch.tensor(dx, dtype=dtype)
 
-    nx = torch.Tensor(nx).long()
-    dx = torch.Tensor(dx)
+    for python in [True, False]:
+        torch.manual_seed(1)
+        if device is None:
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    model = (
-        torch.ones(*nx, device=device, dtype=dtype) * c
-        + torch.randn(*nx, device=device, dtype=dtype) * dc
-    )
-    scatter = torch.randn(*nx, dtype=dtype).to(device) * dc
+        if prop_kwargs is None:
+            prop_kwargs = {}
+        prop_kwargs["python_backend"] = python
 
-    nt = int((2 * torch.norm(nx.float() * dx) / c + 0.35 + 2 / freq) / dt)
-    x_s = _set_coords(num_shots, num_sources_per_shot, nx.tolist())
-    x_r = _set_coords(num_shots, num_receivers_per_shot, nx.tolist(), "bottom")
-    x_rsc = _set_coords(
-        num_shots,
-        num_scatter_receivers_per_shot,
-        nx.tolist(),
-        "bottom",
-    )
-    sources = _set_sources(x_s, freq, dt, nt, dtype)
+        model = (
+            torch.ones(*nx, device=device, dtype=dtype) * c
+            + torch.randn(*nx, device=device, dtype=dtype) * dc
+        )
+        scatter = torch.randn(*nx, dtype=dtype).to(device) * dc
 
-    # Forward with source and receiver ignored
-    modeli = model.clone()
-    modeli.requires_grad_()
-    scatteri = scatter.clone()
-    scatteri.requires_grad_()
-    for i in range(num_shots):
-        x_s[i, i, :] = IGNORE_LOCATION
-        x_r[i, i, :] = IGNORE_LOCATION
-        x_rsc[i, i + 1, :] = IGNORE_LOCATION
-    sources["locations"] = x_s
-    out_ignored = propagator(
-        modeli,
-        scatteri,
-        dx.tolist(),
-        dt,
-        sources["amplitude"],
-        sources["locations"],
-        x_rsc,
-        x_r,
-        prop_kwargs=prop_kwargs,
-    )
+        nt = int((2 * torch.norm(nx.float() * dx) / c + 0.35 + 2 / freq) / dt)
+        x_s = _set_coords(num_shots, num_sources_per_shot, nx.tolist())
+        x_r = _set_coords(num_shots, num_receivers_per_shot, nx.tolist(), "bottom")
+        x_rsc = _set_coords(
+            num_shots,
+            num_scatter_receivers_per_shot,
+            nx.tolist(),
+            "bottom",
+        )
+        sources = _set_sources(x_s, freq, dt, nt, dtype)
 
-    ((out_ignored[-1] ** 2).sum() + (out_ignored[-2] ** 2).sum()).backward()
+        # Forward with source and receiver ignored
+        modeli = model.clone()
+        modeli.requires_grad_()
+        scatteri = scatter.clone()
+        scatteri.requires_grad_()
+        for i in range(num_shots):
+            x_s[i, i, :] = IGNORE_LOCATION
+            x_r[i, i, :] = IGNORE_LOCATION
+            x_rsc[i, i + 1, :] = IGNORE_LOCATION
+        sources["locations"] = x_s
+        out_ignored = propagator(
+            modeli,
+            scatteri,
+            dx.tolist(),
+            dt,
+            sources["amplitude"],
+            sources["locations"],
+            x_rsc,
+            x_r,
+            prop_kwargs=prop_kwargs,
+        )
 
-    # Forward with amplitudes of sources that will be ignored set to zero
-    modelf = model.clone()
-    modelf.requires_grad_()
-    scatterf = scatter.clone()
-    scatterf.requires_grad_()
-    x_s = _set_coords(num_shots, num_sources_per_shot, nx.tolist())
-    x_r = _set_coords(num_shots, num_receivers_per_shot, nx.tolist(), "bottom")
-    x_rsc = _set_coords(
-        num_shots,
-        num_scatter_receivers_per_shot,
-        nx.tolist(),
-        "bottom",
-    )
-    for i in range(num_shots):
-        sources["amplitude"][i, i].fill_(0)
-    sources["locations"] = x_s
-    out_filled = propagator(
-        modelf,
-        scatterf,
-        dx.tolist(),
-        dt,
-        sources["amplitude"],
-        sources["locations"],
-        x_rsc,
-        x_r,
-        prop_kwargs=prop_kwargs,
-    )
-    # Set receiver amplitudes of receiver that will be ignored to zero
-    for i in range(num_shots):
-        out_filled[-1][i, i + 1].fill_(0)
-        out_filled[-2][i, i].fill_(0)
+        ((out_ignored[-1] ** 2).sum() + (out_ignored[-2] ** 2).sum()).backward()
 
-    ((out_filled[-1] ** 2).sum() + (out_filled[-2] ** 2).sum()).backward()
+        # Forward with amplitudes of sources that will be ignored set to zero
+        modelf = model.clone()
+        modelf.requires_grad_()
+        scatterf = scatter.clone()
+        scatterf.requires_grad_()
+        x_s = _set_coords(num_shots, num_sources_per_shot, nx.tolist())
+        x_r = _set_coords(num_shots, num_receivers_per_shot, nx.tolist(), "bottom")
+        x_rsc = _set_coords(
+            num_shots,
+            num_scatter_receivers_per_shot,
+            nx.tolist(),
+            "bottom",
+        )
+        for i in range(num_shots):
+            sources["amplitude"][i, i].fill_(0)
+        sources["locations"] = x_s
+        out_filled = propagator(
+            modelf,
+            scatterf,
+            dx.tolist(),
+            dt,
+            sources["amplitude"],
+            sources["locations"],
+            x_rsc,
+            x_r,
+            prop_kwargs=prop_kwargs,
+        )
+        # Set receiver amplitudes of receiver that will be ignored to zero
+        for i in range(num_shots):
+            out_filled[-1][i, i + 1].fill_(0)
+            out_filled[-2][i, i].fill_(0)
 
-    for ofi, oii in zip(out_filled, out_ignored):
-        assert torch.allclose(ofi, oii)
+        ((out_filled[-1] ** 2).sum() + (out_filled[-2] ** 2).sum()).backward()
 
-    assert torch.allclose(modelf.grad, modeli.grad)
-    assert torch.allclose(scatterf.grad, scatteri.grad)
+        for ofi, oii in zip(out_filled, out_ignored):
+            assert torch.allclose(ofi, oii)
+
+        assert torch.allclose(modelf.grad, modeli.grad)
+        assert torch.allclose(scatterf.grad, scatteri.grad)
 
 
 def run_scalarbornfunc(nt: int = 3) -> None:
@@ -838,91 +845,70 @@ def run_scalarbornfunc(nt: int = 3) -> None:
     dbxdx = torch.randn(nx, dtype=torch.double, device=device)
     dbydy[2 * fd_pad + pml_width[0] : ny - 2 * fd_pad - pml_width[1]].fill_(0)
     dbxdx[2 * fd_pad + pml_width[2] : nx - 2 * fd_pad - pml_width[3]].fill_(0)
+    ay = ay[None, :, None]
+    ax = ax[None, None, :]
+    by = by[None, :, None]
+    bx = bx[None, None, :]
+    dbydy = dbydy[None, :, None]
+    dbxdx = dbxdx[None, None, :]
 
-    torch.autograd.gradcheck(
-        scalar_born_func,
-        (
-            c,
-            scatter,
-            source_amplitudes,
-            source_amplitudessc,
-            wfc,
-            wfp,
-            psiy,
-            psix,
-            zetay,
-            zetax,
-            wfcsc,
-            wfpsc,
-            psiysc,
-            psixsc,
-            zetaysc,
-            zetaxsc,
-            ay,
-            ax,
-            by,
-            bx,
-            dbydy,
-            dbxdx,
-            sources_i,
-            None,
-            receivers_i,
-            receiverssc_i,
-            dy,
-            dx,
-            dt,
-            nt,
-            step_ratio,
-            accuracy,
-            pml_width,
-            n_batch,
-            None,
-            None,
-            1,
-        ),
-    )
-    torch.autograd.gradcheck(
-        scalar_born_func,
-        (
-            c.detach(),
-            scatter,
-            source_amplitudes.detach(),
-            source_amplitudessc,
-            wfc.detach(),
-            wfp.detach(),
-            psiy.detach(),
-            psix.detach(),
-            zetay.detach(),
-            zetax.detach(),
-            wfcsc,
-            wfpsc,
-            psiysc,
-            psixsc,
-            zetaysc,
-            zetaxsc,
-            ay,
-            ax,
-            by,
-            bx,
-            dbydy,
-            dbxdx,
-            sources_i,
-            None,
-            receivers_i,
-            receiverssc_i,
-            dy,
-            dx,
-            dt,
-            nt,
-            step_ratio,
-            accuracy,
-            pml_width,
-            n_batch,
-            None,
-            None,
-            1,
-        ),
-    )
+    for sa in [source_amplitudes, source_amplitudes.detach()]:
+
+        def wrap(python):
+            inputs = (
+                python,
+                c,
+                scatter,
+                sa,
+                source_amplitudessc,
+                wfc,
+                wfp,
+                psiy,
+                psix,
+                zetay,
+                zetax,
+                wfcsc,
+                wfpsc,
+                psiysc,
+                psixsc,
+                zetaysc,
+                zetaxsc,
+                ay,
+                ax,
+                by,
+                bx,
+                dbydy,
+                dbxdx,
+                sources_i,
+                None,
+                receivers_i,
+                receiverssc_i,
+                dy,
+                dx,
+                dt,
+                nt,
+                step_ratio,
+                accuracy,
+                pml_width,
+                n_batch,
+                None,
+                None,
+                1,
+            )
+            out = scalar_born_func(*inputs)
+            v = [torch.randn_like(o.contiguous()) for o in out]
+            return torch.autograd.grad(
+                out,
+                [p for p in inputs if isinstance(p, torch.Tensor) and p.requires_grad],
+                grad_outputs=v,
+            )
+
+        torch.manual_seed(1)
+        out_compiled = wrap(False)
+        torch.manual_seed(1)
+        out_python = wrap(True)
+        for oc, op in zip(out_compiled, out_python):
+            assert torch.allclose(oc, op)
 
 
 def test_scalarbornfunc() -> None:
@@ -1072,82 +1058,87 @@ def test_negative_vel(
     dtype=None,
 ):
     """Test propagation with a zero or negative velocity or dt."""
-    torch.manual_seed(1)
-    if device is None:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    nx = torch.tensor(nx, dtype=torch.long)
+    dx = torch.tensor(dx, dtype=dtype)
 
-    nx = torch.Tensor(nx).long()
-    dx = torch.Tensor(dx)
+    for python in [True, False]:
+        torch.manual_seed(1)
+        if device is None:
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    nt = int((2 * torch.norm(nx.float() * dx) / c + 0.35 + 2 / freq) / dt)
-    x_s = _set_coords(num_shots, num_sources_per_shot, nx.tolist())
-    x_r = _set_coords(num_shots, num_receivers_per_shot, nx.tolist(), "bottom")
-    sources = _set_sources(x_s, freq, dt, nt, dtype)
+        if prop_kwargs is None:
+            prop_kwargs = {}
+        prop_kwargs["python_backend"] = python
 
-    # Positive velocity
-    model = (
-        torch.ones(*nx, device=device, dtype=dtype) * c
-        + torch.randn(*nx, device=device, dtype=dtype) * dc
-    )
-    scatter = torch.randn(*nx, dtype=dtype).to(device)
-    out_positive = propagator(
-        model,
-        scatter,
-        dx.tolist(),
-        dt,
-        sources["amplitude"],
-        sources["locations"],
-        x_r,
-        x_r,
-        prop_kwargs=prop_kwargs,
-    )
+        nt = int((2 * torch.norm(nx.float() * dx) / c + 0.35 + 2 / freq) / dt)
+        x_s = _set_coords(num_shots, num_sources_per_shot, nx.tolist())
+        x_r = _set_coords(num_shots, num_receivers_per_shot, nx.tolist(), "bottom")
+        sources = _set_sources(x_s, freq, dt, nt, dtype)
 
-    # Negative velocity
-    out = propagator(
-        -model,
-        scatter,
-        dx.tolist(),
-        dt,
-        sources["amplitude"],
-        sources["locations"],
-        x_r,
-        x_r,
-        prop_kwargs=prop_kwargs,
-    )
-    assert torch.allclose(out_positive[0], out[0])
-    assert torch.allclose(out_positive[6], -out[6])
-    assert torch.allclose(out_positive[-1], -out[-1])
+        # Positive velocity
+        model = (
+            torch.ones(*nx, device=device, dtype=dtype) * c
+            + torch.randn(*nx, device=device, dtype=dtype) * dc
+        )
+        scatter = torch.randn(*nx, dtype=dtype).to(device)
+        out_positive = propagator(
+            model,
+            scatter,
+            dx.tolist(),
+            dt,
+            sources["amplitude"],
+            sources["locations"],
+            x_r,
+            x_r,
+            prop_kwargs=prop_kwargs,
+        )
 
-    # Negative dt
-    out = propagator(
-        model,
-        scatter,
-        dx.tolist(),
-        -dt,
-        sources["amplitude"],
-        sources["locations"],
-        x_r,
-        x_r,
-        prop_kwargs=prop_kwargs,
-    )
-    assert torch.allclose(out_positive[0], out[0])
-    assert torch.allclose(out_positive[6], out[6])
-    assert torch.allclose(out_positive[-1], out[-1])
+        # Negative velocity
+        out = propagator(
+            -model,
+            scatter,
+            dx.tolist(),
+            dt,
+            sources["amplitude"],
+            sources["locations"],
+            x_r,
+            x_r,
+            prop_kwargs=prop_kwargs,
+        )
+        assert torch.allclose(out_positive[0], out[0])
+        assert torch.allclose(out_positive[6], -out[6])
+        assert torch.allclose(out_positive[-1], -out[-1])
 
-    # Zero velocity
-    out = propagator(
-        torch.zeros_like(model),
-        scatter,
-        dx.tolist(),
-        -dt,
-        sources["amplitude"],
-        sources["locations"],
-        x_r,
-        x_r,
-        prop_kwargs=prop_kwargs,
-    )
-    assert torch.allclose(out[0], torch.zeros_like(out[0]))
-    assert torch.allclose(out[6], torch.zeros_like(out[6]))
+        # Negative dt
+        out = propagator(
+            model,
+            scatter,
+            dx.tolist(),
+            -dt,
+            sources["amplitude"],
+            sources["locations"],
+            x_r,
+            x_r,
+            prop_kwargs=prop_kwargs,
+        )
+        assert torch.allclose(out_positive[0], out[0])
+        assert torch.allclose(out_positive[6], out[6])
+        assert torch.allclose(out_positive[-1], out[-1])
+
+        # Zero velocity
+        out = propagator(
+            torch.zeros_like(model),
+            scatter,
+            dx.tolist(),
+            -dt,
+            sources["amplitude"],
+            sources["locations"],
+            x_r,
+            x_r,
+            prop_kwargs=prop_kwargs,
+        )
+        assert torch.allclose(out[0], torch.zeros_like(out[0]))
+        assert torch.allclose(out[6], torch.zeros_like(out[6]))
 
 
 def test_born_gradcheck_only_v_2d() -> None:
@@ -1325,14 +1316,15 @@ def run_born_gradcheck(
     scatter = torch.rand(*nx, device=device, dtype=dtype) * dscatter
     min_c = model.abs().min().item()
 
-    nx = torch.Tensor(nx).long()
-    dx = torch.Tensor(dx)
+    nx = torch.tensor(nx, dtype=torch.long)
+    dx = torch.tensor(dx, dtype=dtype)
 
     if min_c != 0:
         nt = int((2 * torch.norm(nx.float() * dx) / min_c + 0.1 + 2 / freq) / dt)
     else:
         nt = int((2 * torch.norm(nx.float() * dx) / 1500 + 0.1 + 2 / freq) / dt)
     nt += nt_add
+
     if num_sources_per_shot > 0:
         x_s = _set_coords(num_shots, num_sources_per_shot, nx.tolist())
         sources = _set_sources(x_s, freq, dt, nt, dtype, dpeak_time=0.05)
@@ -1401,10 +1393,14 @@ def run_born_gradcheck(
 
     model.requires_grad_(v_requires_grad)
     scatter.requires_grad_(scatter_requires_grad)
+    if prop_kwargs is None:
+        prop_kwargs = {}
 
-    torch.autograd.gradcheck(
-        propagator,
-        (
+    out_idxs = []
+
+    def wrap(python):
+        prop_kwargs["python_backend"] = python
+        inputs = (
             model,
             scatter,
             dx.tolist(),
@@ -1432,12 +1428,26 @@ def run_born_gradcheck(
             nt,
             1,
             True,
-        ),
-        nondet_tol=1e-3,
-        check_grad_dtypes=True,
-        atol=atol,
-        rtol=rtol,
-    )
+        )
+        out = propagator(*inputs)
+        if len(out_idxs) == 0:
+            for i, o in enumerate(out):
+                if o.requires_grad:
+                    out_idxs.append(i)
+        out = [out[i] for i in out_idxs]
+        v = [torch.randn_like(o.contiguous()) for o in out]
+        return torch.autograd.grad(
+            out,
+            [p for p in inputs if isinstance(p, torch.Tensor) and p.requires_grad],
+            grad_outputs=v,
+        )
+
+    torch.manual_seed(1)
+    out_python = wrap(True)
+    torch.manual_seed(1)
+    out_compiled = wrap(False)
+    for oc, op in zip(out_compiled, out_python):
+        assert torch.allclose(oc, op, atol=atol, rtol=rtol)
 
 
 def run_born_gradcheck_2d(

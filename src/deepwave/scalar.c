@@ -68,8 +68,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "common.h"
 #include "common_cpu.h"
+#include "regular_grid.h"
 
 #define CAT_I(name, accuracy, dtype, device) \
   scalar_iso_##accuracy##_##dtype##_##name##_##device
@@ -221,7 +221,7 @@
     }                                                                    \
   }
 
-static void forward_kernel(
+static inline void forward_kernel(
     DW_DTYPE const *__restrict const v, DW_DTYPE const *__restrict const wfc,
     DW_DTYPE *__restrict const wfp, DW_DTYPE const *__restrict const psiy,
     DW_DTYPE const *__restrict const psix, DW_DTYPE *__restrict const psiyn,
@@ -265,7 +265,7 @@ static void forward_kernel(
   }
 }
 
-static void backward_kernel(
+static inline void backward_kernel(
     DW_DTYPE const *__restrict const v2dt2,
     DW_DTYPE const *__restrict const wfc, DW_DTYPE *__restrict const wfp,
     DW_DTYPE const *__restrict const psiy,
@@ -354,8 +354,8 @@ __declspec(dllexport)
             zetay + i, zetax + i,
             dwdv + (t / step_ratio) * n_shots * ny * nx + shot * ny * nx, ay,
             ax, by, bx, dbydy, dbxdx, rdy, rdx, rdy2, rdx2, dt2, ny, nx,
-            v_requires_grad && ((t % step_ratio) == 0), pml_y0,
-            pml_y1, pml_x0, pml_x1);
+            v_requires_grad && ((t % step_ratio) == 0), pml_y0, pml_y1, pml_x0,
+            pml_x1);
         add_to_wavefield(wfc + i, sources_i + si,
                          f + t * n_shots * n_sources_per_shot + si,
                          n_sources_per_shot);
@@ -368,8 +368,8 @@ __declspec(dllexport)
             zetay + i, zetax + i,
             dwdv + (t / step_ratio) * n_shots * ny * nx + shot * ny * nx, ay,
             ax, by, bx, dbydy, dbxdx, rdy, rdx, rdy2, rdx2, dt2, ny, nx,
-            v_requires_grad && ((t % step_ratio) == 0), pml_y0,
-            pml_y1, pml_x0, pml_x1);
+            v_requires_grad && ((t % step_ratio) == 0), pml_y0, pml_y1, pml_x0,
+            pml_x1);
         add_to_wavefield(wfp + i, sources_i + si,
                          f + t * n_shots * n_sources_per_shot + si,
                          n_sources_per_shot);
@@ -437,8 +437,8 @@ __declspec(dllexport)
             dwdv + (t / step_ratio) * n_shots * ny * nx + shot * ny * nx,
             grad_v_thread + grad_v_i, ay, ax, by, bx, dbydy, dbxdx, rdy, rdx,
             rdy2, rdx2, ny, nx, step_ratio,
-            v_requires_grad && ((t % step_ratio) == 0), pml_y0,
-            pml_y1, pml_x0, pml_x1);
+            v_requires_grad && ((t % step_ratio) == 0), pml_y0, pml_y1, pml_x0,
+            pml_x1);
         add_to_wavefield(wfc + i, receivers_i + ri,
                          grad_r + t * n_shots * n_receivers_per_shot + ri,
                          n_receivers_per_shot);
@@ -452,8 +452,8 @@ __declspec(dllexport)
             dwdv + (t / step_ratio) * n_shots * ny * nx + shot * ny * nx,
             grad_v_thread + grad_v_i, ay, ax, by, bx, dbydy, dbxdx, rdy, rdx,
             rdy2, rdx2, ny, nx, step_ratio,
-            v_requires_grad && ((t % step_ratio) == 0), pml_y0,
-            pml_y1, pml_x0, pml_x1);
+            v_requires_grad && ((t % step_ratio) == 0), pml_y0, pml_y1, pml_x0,
+            pml_x1);
         add_to_wavefield(wfp + i, receivers_i + ri,
                          grad_r + t * n_shots * n_receivers_per_shot + ri,
                          n_receivers_per_shot);

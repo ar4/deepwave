@@ -6,7 +6,8 @@ build-backend = "scikit_build_core.build"
 name = "deepwave"
 version = "0.0.22"
 dependencies = [
-    "torch"
+    "torch",
+    "setuptools"
 ]
 authors = [{name = "Alan Richardson", email = "alan@ausargeo.com"}]
 description = "Wave propagation modules for PyTorch"
@@ -35,12 +36,12 @@ skip = ["*musllinux*"]
 manylinux-x86_64-image = "manylinux2014"
 manylinux-aarch64-image = "manylinux2014"
 
-build-verbosity = 3
+build-verbosity = 1
 
 archs = ["auto64"]
 
 # Test configuration
-test-requires = "pytest scipy torch"
+test-requires = "pytest scipy torch ninja"
 test-sources = "tests"
 
 [tool.cibuildwheel.linux]

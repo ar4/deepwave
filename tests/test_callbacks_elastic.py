@@ -104,7 +104,7 @@ def test_elastic_callback_wavefield_shape() -> None:
             w_pml = state.get_wavefield("vy_0", "pml")
             assert w_pml.shape == (1, 10 + 2 * pml_width, 10 + 2 * pml_width)
             w_full = state.get_wavefield("vy_0", "full")
-            assert w_full.shape == (1, 10 + 2 * pml_width, 10 + 2 * pml_width)
+            assert w_full.shape == (1, 10 + 2 * pml_width + 3, 10 + 2 * pml_width + 3)
 
     deepwave.elastic(
         lamb,
@@ -370,3 +370,74 @@ def test_elastic_callback_equivalence() -> None:
     assert torch.allclose(grad1_lamb, grad3_lamb)
     assert torch.allclose(grad1_mu, grad3_mu)
     assert torch.allclose(grad1_buoyancy, grad3_buoyancy)
+
+
+def test_elastic_backward_callback_only_call_count() -> None:
+    """Check that the backward callback is called the correct number of times.
+
+    Check it when no forward callback is provided.
+    """
+    lamb = torch.ones(10, 10) * 2200
+    mu = torch.ones(10, 10) * 1000
+    buoyancy = torch.ones(10, 10) * 1 / 2200
+    lamb.requires_grad_()
+    mu.requires_grad_()
+    buoyancy.requires_grad_()
+    dx = 5.0
+    dt = 0.004
+    nt = 20
+    source_amplitudes_y = torch.zeros(1, 1, nt)
+    source_amplitudes_y[0, 0, 5] = 1
+    source_locations_y = torch.zeros(1, 1, 2, dtype=torch.long)
+    source_locations_y[0, 0, 0] = 5
+    source_locations_y[0, 0, 1] = 5
+    receiver_locations_y = torch.zeros(1, 1, 2, dtype=torch.long)
+    receiver_locations_y[0, 0, 0] = 5
+    receiver_locations_y[0, 0, 1] = 5
+
+    class Counter:
+        """A simple counter class for callbacks."""
+
+        def __init__(self) -> None:
+            self.count = 0
+
+        def __call__(self, state: deepwave.common.CallbackState) -> None:
+            """Increments the counter."""
+            self.count += 1
+
+    # Test with a frequency that divides nt evenly
+    backward_counter = Counter()
+    out = deepwave.elastic(
+        lamb,
+        mu,
+        buoyancy,
+        dx,
+        dt,
+        source_amplitudes_y=source_amplitudes_y,
+        source_locations_y=source_locations_y,
+        receiver_locations_y=receiver_locations_y,
+        backward_callback=backward_counter,
+        callback_frequency=2,
+    )
+    out[-1].sum().backward()
+    assert backward_counter.count == nt / 2
+
+    # Test with a frequency that does not divide nt evenly
+    lamb.grad.zero_()
+    mu.grad.zero_()
+    buoyancy.grad.zero_()
+    backward_counter = Counter()
+    out = deepwave.elastic(
+        lamb,
+        mu,
+        buoyancy,
+        dx,
+        dt,
+        source_amplitudes_y=source_amplitudes_y,
+        source_locations_y=source_locations_y,
+        receiver_locations_y=receiver_locations_y,
+        backward_callback=backward_counter,
+        callback_frequency=3,
+    )
+    out[-1].sum().backward()
+    assert backward_counter.count == (nt + 2) // 3

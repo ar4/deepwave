@@ -12,13 +12,13 @@ from deepwave.common import downsample, upsample
 
 def test_upsample_invalid_signal_type() -> None:
     """Test that upsample raises TypeError if signal is not a torch.Tensor."""
-    with pytest.raises(TypeError, match="signal must be a torch.Tensor."):
+    with pytest.raises(TypeError, match=r"signal must be a torch.Tensor."):
         upsample([1, 2, 3], 2)
 
 
 def test_downsample_invalid_signal_type() -> None:
     """Test that downsample raises TypeError if signal is not a torch.Tensor."""
-    with pytest.raises(TypeError, match="signal must be a torch.Tensor."):
+    with pytest.raises(TypeError, match=r"signal must be a torch.Tensor."):
         downsample([1, 2, 3], 2)
 
 

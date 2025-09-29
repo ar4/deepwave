@@ -64,7 +64,7 @@ We begin by setting up the model (both background and true, the latter of which 
         .repeat(n_shots, n_sources_per_shot, 1).to(device)
     )
 
-This created a model where each of the three parameters is constant except for a box, which is in a different location for each parameter. We will use eight shots, with sources spread over the top surface, and receivers covering the top surface. Deepwave treats both spatial dimensions equally, so we could have transposed our model and defined our source and receiver locations with dimension 1 corresponding to depth instead of dimension 0 (although, because of the :ref:`staggered grid <Staggered grid>`, you might need to shift locations by one cell). As a demonstration of this, this example uses the opposite convention of the earlier Marmousi examples. We are now ready to generate data using the true model::
+This created a model where each of the three parameters is constant except for a box, which is in a different location for each parameter. We will use eight shots, with sources spread over the top surface, and receivers covering the top surface. Deepwave treats both spatial dimensions equally, so we could have transposed our model and defined our source and receiver locations with dimension 1 corresponding to depth instead of dimension 0. As a demonstration of this, this example uses the opposite convention of the earlier Marmousi examples. We are now ready to generate data using the true model::
 
     observed_data = elastic(
         *deepwave.common.vpvsrho_to_lambmubuoyancy(vp_true, vs_true,
@@ -116,8 +116,11 @@ This just used a standard inversion with the LBFGS optimiser, but the result loo
 
 The gradients flowed end-to-end, back into the `vp`, `vs`, and `rho` parameters. You can see that there is a little bit of crosstalk between the parameters, though. Maybe you can come-up with a way of parameterising the model, or a different loss function, that does better?
 
-Another interesting aspect of the elastic wave equation is that it can produce the phenomenon known as ground-roll. We can cause it by having a free surface on our model (setting the PML width to zero there, so the edge is not absorbing)::
+Another interesting aspect of the elastic wave equation is that it can produce the phenomenon known as ground-roll. We can cause it by having a free surface on our model. Since Deepwave's elastic propagator uses the `improved vacuum method <https://doi.org/10.1190/geo2011-0067.1>`_, we achieve this by setting the property models above the surface to zero (and we will also set the PML width to zero on that edge to avoid unnecessary computation, as no waves will reach the edge and so we do not need it to be absorbing)::
 
+    vp[0] = 0
+    vs[0] = 0
+    rho[0] = 0
     out = deepwave.elastic(
         *deepwave.common.vpvsrho_to_lambmubuoyancy(vp, vs,
                                                    rho),
@@ -133,6 +136,10 @@ Another interesting aspect of the elastic wave equation is that it can produce t
     )
 
 .. image:: example_elastic_groundroll.jpg
+
+The same principle can be used to create a free surface of any shape. The following example demonstrates this by creating a model with a complex free surface (including voids) and recording the wavefield over time. The resulting animation shows the wave interacting with the complex free surface.
+
+.. image:: example_elastic_complex_freesurface.gif
 
 As discussed in the section on :doc:`elastic propagator implementation <elastic>`, an explosive source can be simulated in Deepwave's elastic propagator with multiple sources oriented away from the explosive source location. Using one source before and after it in both dimensions, we will thus have four sources per shot: two in the x dimension and two in the y dimension. For example, for one shot with an explosive source located at `(35, 35.5)` (the half cell shift in the x dimension is due to the staggered grid) we would use::
 
@@ -151,5 +158,7 @@ where `source_amplitudes` are the amplitudes of the explosive source (of dimensi
 `Full example inversion code <https://github.com/ar4/deepwave/blob/master/docs/example_elastic.py>`_
 
 `Full example ground-roll code <https://github.com/ar4/deepwave/blob/master/docs/example_elastic_groundroll.py>`_
+
+`Full example complex free surface code <https://github.com/ar4/deepwave/blob/master/docs/example_elastic_complex_freesurface.py>`_
 
 `Full example source code <https://github.com/ar4/deepwave/blob/master/docs/example_elastic_source.py>`_

@@ -9,4 +9,4 @@ ignore = ["ANN401", "C901"]
 convention = "google"
 
 [lint.per-file-ignores]
-"tests/**.py" = ["ANN", "S101", "PT028", "INP001"]
+"tests/**.py" = ["ANN", "S101", "PT028", "INP001", "B023"]

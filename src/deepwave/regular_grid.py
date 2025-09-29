@@ -83,8 +83,12 @@ def set_pml_profiles(
         device,
         pml_freq,
     )
-    dbydy = deepwave.common.diff(by, accuracy, grid_spacing[0])
-    dbxdx = deepwave.common.diff(bx, accuracy, grid_spacing[1])
+    dbydy = diffx1(
+        by, accuracy, torch.tensor(1 / grid_spacing[0], dtype=dtype, device=device)
+    )
+    dbxdx = diffx1(
+        bx, accuracy, torch.tensor(1 / grid_spacing[1], dtype=dtype, device=device)
+    )
     ay = ay[None, :, None]
     ax = ax[None, None, :]
     by = by[None, :, None]
@@ -92,3 +96,158 @@ def set_pml_profiles(
     dbydy = dbydy[None, :, None]
     dbxdx = dbxdx[None, None, :]
     return [ay, ax, by, bx, dbydy, dbxdx]
+
+
+def diffy1(a: torch.Tensor, accuracy: int, rdy: torch.Tensor) -> torch.Tensor:
+    """Calculates the first derivative in the y-direction."""
+    if accuracy == 2:
+        return torch.nn.functional.pad(
+            (1 / 2 * (a[..., 2:, :] - a[..., :-2, :])) * rdy, (0, 0, 1, 1)
+        )
+    if accuracy == 4:
+        return torch.nn.functional.pad(
+            (
+                8 / 12 * (a[..., 3:-1, :] - a[..., 1:-3, :])
+                + -1 / 12 * (a[..., 4:, :] - a[..., :-4, :])
+            )
+            * rdy,
+            (0, 0, 2, 2),
+        )
+    if accuracy == 6:
+        return torch.nn.functional.pad(
+            (
+                3 / 4 * (a[..., 4:-2, :] - a[..., 2:-4, :])
+                + -3 / 20 * (a[..., 5:-1, :] - a[..., 1:-5, :])
+                + 1 / 60 * (a[..., 6:, :] - a[..., :-6, :])
+            )
+            * rdy,
+            (0, 0, 3, 3),
+        )
+    return torch.nn.functional.pad(
+        (
+            4 / 5 * (a[..., 5:-3, :] - a[..., 3:-5, :])
+            + -1 / 5 * (a[..., 6:-2, :] - a[..., 2:-6, :])
+            + 4 / 105 * (a[..., 7:-1, :] - a[..., 1:-7, :])
+            + -1 / 280 * (a[..., 8:, :] - a[..., :-8, :])
+        )
+        * rdy,
+        (0, 0, 4, 4),
+    )
+
+
+def diffx1(a: torch.Tensor, accuracy: int, rdx: torch.Tensor) -> torch.Tensor:
+    """Calculates the first derivative in the x-direction."""
+    if accuracy == 2:
+        return torch.nn.functional.pad(
+            (1 / 2 * (a[..., 2:] - a[..., :-2])) * rdx, (1, 1)
+        )
+    if accuracy == 4:
+        return torch.nn.functional.pad(
+            (
+                8 / 12 * (a[..., 3:-1] - a[..., 1:-3])
+                + -1 / 12 * (a[..., 4:] - a[..., :-4])
+            )
+            * rdx,
+            (2, 2),
+        )
+    if accuracy == 6:
+        return torch.nn.functional.pad(
+            (
+                3 / 4 * (a[..., 4:-2] - a[..., 2:-4])
+                + -3 / 20 * (a[..., 5:-1] - a[..., 1:-5])
+                + 1 / 60 * (a[..., 6:] - a[..., :-6])
+            )
+            * rdx,
+            (3, 3),
+        )
+    return torch.nn.functional.pad(
+        (
+            4 / 5 * (a[..., 5:-3] - a[..., 3:-5])
+            + -1 / 5 * (a[..., 6:-2] - a[..., 2:-6])
+            + 4 / 105 * (a[..., 7:-1] - a[..., 1:-7])
+            + -1 / 280 * (a[..., 8:] - a[..., :-8])
+        )
+        * rdx,
+        (4, 4),
+    )
+
+
+def diffy2(a: torch.Tensor, accuracy: int, rdy2: torch.Tensor) -> torch.Tensor:
+    """Calculates the second derivative in the y-direction."""
+    if accuracy == 2:
+        return torch.nn.functional.pad(
+            (-2 * a[..., 1:-1, :] + 1 * (a[..., 2:, :] + a[..., :-2, :])) * rdy2,
+            (0, 0, 1, 1),
+        )
+    if accuracy == 4:
+        return torch.nn.functional.pad(
+            (
+                -5 / 2 * a[..., 2:-2, :]
+                + 4 / 3 * (a[..., 3:-1, :] + a[..., 1:-3, :])
+                + -1 / 12 * (a[..., 4:, :] + a[..., :-4, :])
+            )
+            * rdy2,
+            (0, 0, 2, 2),
+        )
+    if accuracy == 6:
+        return torch.nn.functional.pad(
+            (
+                -49 / 18 * a[..., 3:-3, :]
+                + 3 / 2 * (a[..., 4:-2, :] + a[..., 2:-4, :])
+                + -3 / 20 * (a[..., 5:-1, :] + a[..., 1:-5, :])
+                + 1 / 90 * (a[..., 6:, :] + a[..., :-6, :])
+            )
+            * rdy2,
+            (0, 0, 3, 3),
+        )
+    return torch.nn.functional.pad(
+        (
+            -205 / 72 * a[..., 4:-4, :]
+            + 8 / 5 * (a[..., 5:-3, :] + a[..., 3:-5, :])
+            + -1 / 5 * (a[..., 6:-2, :] + a[..., 2:-6, :])
+            + 8 / 315 * (a[..., 7:-1, :] + a[..., 1:-7, :])
+            + -1 / 560 * (a[..., 8:, :] + a[..., :-8, :])
+        )
+        * rdy2,
+        (0, 0, 4, 4),
+    )
+
+
+def diffx2(a: torch.Tensor, accuracy: int, rdx2: torch.Tensor) -> torch.Tensor:
+    """Calculates the second derivative in the x-direction."""
+    if accuracy == 2:
+        return torch.nn.functional.pad(
+            (-2 * a[..., 1:-1] + 1 * (a[..., 2:] + a[..., :-2])) * rdx2, (1, 1)
+        )
+    if accuracy == 4:
+        return torch.nn.functional.pad(
+            (
+                -5 / 2 * a[..., 2:-2]
+                + 4 / 3 * (a[..., 3:-1] + a[..., 1:-3])
+                + -1 / 12 * (a[..., 4:] + a[..., :-4])
+            )
+            * rdx2,
+            (2, 2),
+        )
+    if accuracy == 6:
+        return torch.nn.functional.pad(
+            (
+                -49 / 18 * a[..., 3:-3]
+                + 3 / 2 * (a[..., 4:-2] + a[..., 2:-4])
+                + -3 / 20 * (a[..., 5:-1] + a[..., 1:-5])
+                + 1 / 90 * (a[..., 6:] + a[..., :-6])
+            )
+            * rdx2,
+            (3, 3),
+        )
+    return torch.nn.functional.pad(
+        (
+            -205 / 72 * a[..., 4:-4]
+            + 8 / 5 * (a[..., 5:-3] + a[..., 3:-5])
+            + -1 / 5 * (a[..., 6:-2] + a[..., 2:-6])
+            + 8 / 315 * (a[..., 7:-1] + a[..., 1:-7])
+            + -1 / 560 * (a[..., 8:] + a[..., :-8])
+        )
+        * rdx2,
+        (4, 4),
+    )

@@ -6,4 +6,4 @@ src = ["../src"]
 line-length = 76
 
 [lint]
-extend-ignore = ["ANN", "INP001", "ERA001"]
+extend-ignore = ["ANN", "INP001", "ERA001", "B023"]

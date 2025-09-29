@@ -23,34 +23,82 @@
 
 #include <cstdint>
 
-#include "common.h"
+#include "common_gpu.h"
+#include "staggered_grid.h"
 
 #define CAT_I(name, accuracy, dtype, device) \
   elastic_iso_##accuracy##_##dtype##_##name##_##device
 #define CAT(name, accuracy, dtype, device) CAT_I(name, accuracy, dtype, device)
 #define FUNC(name) CAT(name, DW_ACCURACY, DW_DTYPE, DW_DEVICE)
 
-#if DW_ACCURACY == 2
-#elif DW_ACCURACY == 4
-#else
-#error DW_ACCURACY must be specified and either 2 or 4
-#endif /* DW_ACCURACY */
-
-#define A DW_ACCURACY  // Macro for finite difference accuracy order
-
 #define gpuErrchk(ans) \
   { gpuAssert((ans), __FILE__, __LINE__); }
 
+#define VY(dy, dx) vy[i + dy * nx + dx]
+#define VX(dy, dx) vx[i + dy * nx + dx]
+#define SIGMAYY(dy, dx) sigmayy[i + dy * nx + dx]
+#define SIGMAXX(dy, dx) sigmaxx[i + dy * nx + dx]
+#define SIGMAXY(dy, dx) sigmaxy[i + dy * nx + dx]
+#define LAMB(dy, dx) lamb_shot[j + dy * nx + dx]
+#define MU(dy, dx) mu_shot[j + dy * nx + dx]
+#define MU_YX(dy, dx) mu_yx_shot[j + dy * nx + dx]
+#define BUOYANCY_Y(dy, dx) buoyancy_y_shot[j + dy * nx + dx]
+#define BUOYANCY_X(dy, dx) buoyancy_x_shot[j + dy * nx + dx]
+#define M_VYY(dy, dx) m_vyy[i + dy * nx + dx]
+#define M_VYX(dy, dx) m_vyx[i + dy * nx + dx]
+#define M_VXY(dy, dx) m_vxy[i + dy * nx + dx]
+#define M_VXX(dy, dx) m_vxx[i + dy * nx + dx]
+#define M_SIGMAYYY(dy, dx) m_sigmayyy[i + dy * nx + dx]
+#define M_SIGMAXYY(dy, dx) m_sigmaxyy[i + dy * nx + dx]
+#define M_SIGMAXYX(dy, dx) m_sigmaxyx[i + dy * nx + dx]
+#define M_SIGMAXXX(dy, dx) m_sigmaxxx[i + dy * nx + dx]
+
+// Access terms used in the backward pass
+#define LAMB_2MU(dy, dx) (LAMB(dy, dx) + 2 * MU(dy, dx))
+#define VY_Y(dy, dx) \
+  (dt * (LAMB_2MU(dy, dx) * SIGMAYY(dy, dx) + LAMB(dy, dx) * SIGMAXX(dy, dx)))
+#define VY_X(dy, dx) (dt * MU_YX(dy, dx) * SIGMAXY(dy, dx))
+#define VY_Y_PML(dy, dx)                                                       \
+  (dt * (1 + by[y + dy]) *                                                     \
+       (LAMB_2MU(dy, dx) * SIGMAYY(dy, dx) + LAMB(dy, dx) * SIGMAXX(dy, dx)) + \
+   by[y + dy] * M_VYY(dy, dx))
+#define VY_X_PML(dy, dx)                                      \
+  (dt * (1 + bxh[x + dx]) * MU_YX(dy, dx) * SIGMAXY(dy, dx) + \
+   bxh[x + dx] * M_VYX(dy, dx))
+
+#define VX_Y(dy, dx) (dt * MU_YX(dy, dx) * SIGMAXY(dy, dx))
+#define VX_X(dy, dx) \
+  (dt * (LAMB(dy, dx) * SIGMAYY(dy, dx) + LAMB_2MU(dy, dx) * SIGMAXX(dy, dx)))
+#define VX_Y_PML(dy, dx)                                      \
+  (dt * (1 + byh[y + dy]) * MU_YX(dy, dx) * SIGMAXY(dy, dx) + \
+   byh[y + dy] * M_VXY(dy, dx))
+#define VX_X_PML(dy, dx)                                                       \
+  (dt * (1 + bx[x + dx]) *                                                     \
+       (LAMB(dy, dx) * SIGMAYY(dy, dx) + LAMB_2MU(dy, dx) * SIGMAXX(dy, dx)) + \
+   bx[x + dx] * M_VXX(dy, dx))
+#define SIGMAYY_Y_PML(dy, dx)                                 \
+  ((1 + byh[y + dy]) * dt * BUOYANCY_Y(dy, dx) * VY(dy, dx) + \
+   byh[y + dy] * M_SIGMAYYY(dy, dx))
+#define SIGMAYY_Y(dy, dx) (dt * BUOYANCY_Y(dy, dx) * VY(dy, dx))
+#define SIGMAXX_X_PML(dy, dx)                                 \
+  ((1 + bxh[x + dx]) * dt * BUOYANCY_X(dy, dx) * VX(dy, dx) + \
+   bxh[x + dx] * M_SIGMAXXX(dy, dx))
+#define SIGMAXX_X(dy, dx) (dt * BUOYANCY_X(dy, dx) * VX(dy, dx))
+#define SIGMAXY_Y_PML(dy, dx)                                \
+  ((1 + by[y + dy]) * dt * BUOYANCY_X(dy, dx) * VX(dy, dx) + \
+   by[y + dy] * M_SIGMAXYY(dy, dx))
+#define SIGMAXY_Y(dy, dx) (dt * BUOYANCY_X(dy, dx) * VX(dy, dx))
+#define SIGMAXY_X_PML(dy, dx)                                \
+  ((1 + bx[x + dx]) * dt * BUOYANCY_Y(dy, dx) * VY(dy, dx) + \
+   bx[x + dx] * M_SIGMAXYX(dy, dx))
+#define SIGMAXY_X(dy, dx) (dt * BUOYANCY_Y(dy, dx) * VY(dy, dx))
+
+#define MAX(a, b) (a > b ? a : b)
+
 namespace {
 __constant__ DW_DTYPE dt;
-__constant__ DW_DTYPE fd_coeffsy[2];
-__constant__ DW_DTYPE fd_coeffsx[2];
-__constant__ DW_DTYPE fd_coeffs1y[2][5];
-__constant__ DW_DTYPE fd_coeffs1x[2][5];
-__constant__ DW_DTYPE fd_coeffs2y[5];
-__constant__ DW_DTYPE fd_coeffs2x[5];
-__constant__ DW_DTYPE fd_coeffs3y[6];
-__constant__ DW_DTYPE fd_coeffs3x[6];
+__constant__ DW_DTYPE rdy;
+__constant__ DW_DTYPE rdx;
 __constant__ int64_t n_shots;
 __constant__ int64_t ny;
 __constant__ int64_t nx;
@@ -65,14 +113,6 @@ __constant__ int64_t pml_y0;
 __constant__ int64_t pml_y1;
 __constant__ int64_t pml_x0;
 __constant__ int64_t pml_x1;
-__constant__ int64_t spml_y0;
-__constant__ int64_t spml_y1;
-__constant__ int64_t spml_x0;
-__constant__ int64_t spml_x1;
-__constant__ int64_t vpml_y0;
-__constant__ int64_t vpml_y1;
-__constant__ int64_t vpml_x0;
-__constant__ int64_t vpml_x1;
 __constant__ bool lamb_batched;
 __constant__ bool mu_batched;
 __constant__ bool buoyancy_batched;
@@ -195,162 +235,6 @@ __global__ void record_adjoint_receivers_x(
   }
 }
 
-__global__ void add_to_grad_lamb(DW_DTYPE *__restrict const grad_lamb,
-                                 DW_DTYPE const *__restrict const sigmayy,
-                                 DW_DTYPE const *__restrict const sigmaxx,
-                                 DW_DTYPE const *__restrict const dvydy_store,
-                                 DW_DTYPE const *__restrict const dvxdx_store) {
-  int64_t x = blockIdx.x * blockDim.x + threadIdx.x;
-  int64_t y = blockIdx.y * blockDim.y + threadIdx.y + 1;
-  int64_t batch = blockIdx.z * blockDim.z + threadIdx.z;
-  int64_t i = batch * nynx + y * nx + x;
-  if (y < ny) {
-    if (x == 0) {
-      grad_lamb[i] +=
-          ((sigmayy[i] + sigmaxx[i]) * (dvydy_store[i] + dvxdx_store[i]) / 2) *
-          (DW_DTYPE)step_ratio;
-    } else if (x < nx - 1) {
-      grad_lamb[i] +=
-          ((sigmayy[i] + sigmaxx[i]) * (dvydy_store[i] + dvxdx_store[i]) / 2 +
-           (sigmayy[i - 1] + sigmaxx[i - 1]) *
-               (dvydy_store[i - 1] + dvxdx_store[i - 1]) / 2) *
-          (DW_DTYPE)step_ratio;
-    } else if (x == nx - 1) {
-      grad_lamb[i] += ((sigmayy[i - 1] + sigmaxx[i - 1]) *
-                       (dvydy_store[i - 1] + dvxdx_store[i - 1]) / 2) *
-                      (DW_DTYPE)step_ratio;
-    }
-  }
-}
-
-__global__ void add_to_grad_mu(
-    DW_DTYPE *__restrict const grad_mu,
-    DW_DTYPE const *__restrict const sigmayy,
-    DW_DTYPE const *__restrict const sigmaxy,
-    DW_DTYPE const *__restrict const sigmaxx,
-    DW_DTYPE const *__restrict const dvydy_store,
-    DW_DTYPE const *__restrict const dvxdx_store,
-    DW_DTYPE const *__restrict const dvydxdvxdy_store) {
-  int64_t x = blockIdx.x * blockDim.x + threadIdx.x;
-  int64_t y = blockIdx.y * blockDim.y + threadIdx.y + 1;
-  int64_t batch = blockIdx.z * blockDim.z + threadIdx.z;
-  int64_t i = batch * nynx + y * nx + x;
-  if (y == 1) {
-    if (x == 0) {
-      grad_mu[i] +=
-          ((sigmayy[i] * dvydy_store[i] + sigmaxx[i] * dvxdx_store[i])) *
-          (DW_DTYPE)step_ratio;
-    } else if (x < nx - 1) {
-      grad_mu[i] +=
-          ((sigmayy[i] * dvydy_store[i] + sigmaxx[i] * dvxdx_store[i]) +
-           (sigmayy[i - 1] * dvydy_store[i - 1] +
-            sigmaxx[i - 1] * dvxdx_store[i - 1]) +
-           sigmaxy[i] * dvydxdvxdy_store[i] / 2) *
-          (DW_DTYPE)step_ratio;
-    } else if (x == nx - 1) {
-      grad_mu[i] += ((sigmayy[i - 1] * dvydy_store[i - 1] +
-                      sigmaxx[i - 1] * dvxdx_store[i - 1])) *
-                    (DW_DTYPE)step_ratio;
-    }
-  } else if (y < ny - 1) {
-    if (x == 0) {
-      grad_mu[i] +=
-          ((sigmayy[i] * dvydy_store[i] + sigmaxx[i] * dvxdx_store[i])) *
-          (DW_DTYPE)step_ratio;
-    } else if (x < nx - 1) {
-      grad_mu[i] +=
-          ((sigmayy[i] * dvydy_store[i] + sigmaxx[i] * dvxdx_store[i]) +
-           (sigmayy[i - 1] * dvydy_store[i - 1] +
-            sigmaxx[i - 1] * dvxdx_store[i - 1]) +
-           sigmaxy[i] * dvydxdvxdy_store[i] / 2 +
-           sigmaxy[i - nx] * dvydxdvxdy_store[i - nx] / 2) *
-          (DW_DTYPE)step_ratio;
-    } else if (x == nx - 1) {
-      grad_mu[i] += ((sigmayy[i - 1] * dvydy_store[i - 1] +
-                      sigmaxx[i - 1] * dvxdx_store[i - 1])) *
-                    (DW_DTYPE)step_ratio;
-    }
-  } else if (y == ny - 1) {
-    if (x == 0) {
-      grad_mu[i] +=
-          ((sigmayy[i] * dvydy_store[i] + sigmaxx[i] * dvxdx_store[i])) *
-          (DW_DTYPE)step_ratio;
-    } else if (x < nx - 1) {
-      grad_mu[i] +=
-          ((sigmayy[i] * dvydy_store[i] + sigmaxx[i] * dvxdx_store[i]) +
-           (sigmayy[i - 1] * dvydy_store[i - 1] +
-            sigmaxx[i - 1] * dvxdx_store[i - 1]) +
-           sigmaxy[i - nx] * dvydxdvxdy_store[i - nx] / 2) *
-          (DW_DTYPE)step_ratio;
-    } else if (x == nx - 1) {
-      grad_mu[i] += ((sigmayy[i - 1] * dvydy_store[i - 1] +
-                      sigmaxx[i - 1] * dvxdx_store[i - 1])) *
-                    (DW_DTYPE)step_ratio;
-    }
-  }
-}
-
-__global__ void add_to_grad_buoyancy(
-    DW_DTYPE *__restrict const grad_buoyancy,
-    DW_DTYPE const *__restrict const vy, DW_DTYPE const *__restrict const vx,
-    DW_DTYPE const *__restrict const dvydbuoyancy,
-    DW_DTYPE const *__restrict const dvxdbuoyancy) {
-  int64_t x = blockIdx.x * blockDim.x + threadIdx.x;
-  int64_t y = blockIdx.y * blockDim.y + threadIdx.y;
-  int64_t batch = blockIdx.z * blockDim.z + threadIdx.z;
-  int64_t i = batch * nynx + y * nx + x;
-  if (y == 0) {
-    if (x == 0) {
-      grad_buoyancy[i] += (vy[i] * dvydbuoyancy[i] / 4) * (DW_DTYPE)step_ratio;
-    } else if (x < nx - 1) {
-      grad_buoyancy[i] +=
-          (vy[i] * dvydbuoyancy[i] / 4 + vy[i - 1] * dvydbuoyancy[i - 1] / 4) *
-          (DW_DTYPE)step_ratio;
-    } else if (x == nx - 1) {
-      grad_buoyancy[i] +=
-          (vy[i - 1] * dvydbuoyancy[i - 1] / 4) * (DW_DTYPE)step_ratio;
-    }
-  } else if (y < ny - 1) {
-    if (x == 0) {
-      grad_buoyancy[i] +=
-          (vy[i] * dvydbuoyancy[i] / 4 + vy[i - nx] * dvydbuoyancy[i - nx] / 4 +
-           vx[i] * dvxdbuoyancy[i]) *
-          (DW_DTYPE)step_ratio;
-    } else if (x < nx - 1) {
-      grad_buoyancy[i] +=
-          (vy[i] * dvydbuoyancy[i] / 4 + vy[i - 1] * dvydbuoyancy[i - 1] / 4 +
-           vy[i - nx] * dvydbuoyancy[i - nx] / 4 +
-           vy[i - nx - 1] * dvydbuoyancy[i - nx - 1] / 4 +
-           vx[i] * dvxdbuoyancy[i]) *
-          (DW_DTYPE)step_ratio;
-    } else if (x == nx - 1) {
-      grad_buoyancy[i] += (vy[i - 1] * dvydbuoyancy[i - 1] / 4 +
-                           vy[i - nx - 1] * dvydbuoyancy[i - nx - 1] / 4 +
-                           vx[i] * dvxdbuoyancy[i]) *
-                          (DW_DTYPE)step_ratio;
-    }
-  } else if (y == ny - 1) {
-    if (x == 0) {
-      grad_buoyancy[i] +=
-          (vy[i] * dvydbuoyancy[i] / 2 + vy[i - nx] * dvydbuoyancy[i - nx] / 4 +
-           vx[i] * dvxdbuoyancy[i]) *
-          (DW_DTYPE)step_ratio;
-    } else if (x < nx - 1) {
-      grad_buoyancy[i] +=
-          (vy[i - nx] * dvydbuoyancy[i - nx] / 4 +
-           vy[i - nx - 1] * dvydbuoyancy[i - nx - 1] / 4 +
-           vy[i] * dvydbuoyancy[i] / 2 + vy[i - 1] * dvydbuoyancy[i - 1] / 2 +
-           vx[i] * dvxdbuoyancy[i]) *
-          (DW_DTYPE)step_ratio;
-    } else if (x == nx - 1) {
-      grad_buoyancy[i] += (vy[i - 1] * dvydbuoyancy[i - 1] / 2 +
-                           vy[i - nx - 1] * dvydbuoyancy[i - nx - 1] / 4 +
-                           vx[i] * dvxdbuoyancy[i]) *
-                          (DW_DTYPE)step_ratio;
-    }
-  }
-}
-
 __global__ void combine_grad(DW_DTYPE *__restrict const grad,
                              DW_DTYPE const *__restrict const grad_shot) {
   int64_t x = blockIdx.x * blockDim.x + threadIdx.x;
@@ -365,7 +249,8 @@ __global__ void combine_grad(DW_DTYPE *__restrict const grad,
 }
 
 __global__ void forward_kernel_v(
-    DW_DTYPE const *__restrict const buoyancy, DW_DTYPE *__restrict const vy,
+    DW_DTYPE const *__restrict const buoyancy_y,
+    DW_DTYPE const *__restrict const buoyancy_x, DW_DTYPE *__restrict const vy,
     DW_DTYPE *__restrict const vx, DW_DTYPE const *__restrict const sigmayy,
     DW_DTYPE const *__restrict const sigmaxy,
     DW_DTYPE const *__restrict const sigmaxx,
@@ -380,136 +265,49 @@ __global__ void forward_kernel_v(
     DW_DTYPE const *__restrict const by, DW_DTYPE const *__restrict const byh,
     DW_DTYPE const *__restrict const bx, DW_DTYPE const *__restrict const bxh,
     bool const buoyancy_requires_grad) {
-  int64_t x = blockIdx.x * blockDim.x + threadIdx.x;
-  int64_t y = blockIdx.y * blockDim.y + threadIdx.y;
-  int64_t batch = blockIdx.z * blockDim.z + threadIdx.z;
-  int64_t i_noshot = y * nx + x;
-  int64_t i = batch * nynx + i_noshot;
-  int64_t j, k;
-  DW_DTYPE const *__restrict const buoyancy_shot =
-      buoyancy_batched ? buoyancy + batch * nynx : buoyancy;
-
-  if (y < ny && x < nx - 1) {
-    bool pml_y = y < pml_y0 || y >= pml_y1;
-    bool pml_x = x < pml_x0 || x >= pml_x1 - 1;
-    DW_DTYPE dsigmayydy = 0;
-    DW_DTYPE dsigmaxydx = 0;
-
-    // dsigmaxydx
-    for (j = 0; j < A / 2 - 1; ++j) {
-      if (x == j) {
-        for (k = 0; k < A; ++k) {
-          dsigmaxydx += fd_coeffs2x[1 + k] * sigmaxy[i - j + 1 + k];
-        }
-      } else if (x == nx - 2 - j) {
-        for (k = 0; k < A; ++k) {
-          dsigmaxydx -= fd_coeffs2x[1 + k] * sigmaxy[i + j - k];
-        }
-      }
-    }
-    if (x > A / 2 - 2 && x < nx - 2 - A / 2 + 2) {
-      for (k = 0; k < A / 2; ++k) {
-        dsigmaxydx += fd_coeffsx[k] * (sigmaxy[i + 1 + k] - sigmaxy[i - k]);
-      }
-    }
-
-    // dsigmayydy
-    for (j = 0; j < A / 2; ++j) {
-      if (y == j) {
-        for (k = 0; k < A; ++k) {
-          dsigmayydy += fd_coeffs1y[j][1 + k] * sigmayy[i + (1 - j + k) * nx];
-        }
-      } else if (y == ny - 1 - j) {
-        for (k = 0; k < A; ++k) {
-          dsigmayydy -= fd_coeffs1y[j][1 + k] * sigmayy[i + (j - k) * nx];
-        }
-      }
-    }
-    if (y > A / 2 - 1 && y < ny - 1 - A / 2 + 1) {
-      for (k = 0; k < A / 2; ++k) {
-        dsigmayydy +=
-            fd_coeffsy[k] * (sigmayy[i + (1 + k) * nx] - sigmayy[i - k * nx]);
-      }
-    }
-
+  int64_t x = blockIdx.x * blockDim.x + threadIdx.x + FD_PAD;
+  int64_t y = blockIdx.y * blockDim.y + threadIdx.y + FD_PAD;
+  int64_t shot_idx = blockIdx.z * blockDim.z + threadIdx.z;
+  if (y < ny - FD_PAD && x < nx - FD_PAD + 1) {
+    int64_t j = y * nx + x;
+    int64_t i = shot_idx * nynx + j;
+    DW_DTYPE const buoyancy_y_shot =
+        buoyancy_batched ? buoyancy_y[i] : buoyancy_y[j];
+    bool pml_y = y < pml_y0 || y >= MAX(pml_y0, pml_y1 - 1);
+    bool pml_x = x < pml_x0 || x >= pml_x1;
+    DW_DTYPE dsigmayydy = DIFFYH1(SIGMAYY);
+    DW_DTYPE dsigmaxydx = DIFFX1(SIGMAXY);
     if (pml_y) {
       m_sigmayyy[i] = ayh[y] * m_sigmayyy[i] + byh[y] * dsigmayydy;
       dsigmayydy += m_sigmayyy[i];
     }
     if (pml_x) {
-      m_sigmaxyx[i] = axh[x] * m_sigmaxyx[i] + bxh[x] * dsigmaxydx;
+      m_sigmaxyx[i] = ax[x] * m_sigmaxyx[i] + bx[x] * dsigmaxydx;
       dsigmaxydx += m_sigmaxyx[i];
     }
-    {
-      DW_DTYPE buoyancyyhxh;
-      if (y == ny - 1) {
-        buoyancyyhxh =
-            (buoyancy_shot[i_noshot] + buoyancy_shot[i_noshot + 1]) / 2;
-      } else {
-        buoyancyyhxh =
-            (buoyancy_shot[i_noshot] + buoyancy_shot[i_noshot + 1] +
-             buoyancy_shot[i_noshot + nx] + buoyancy_shot[i_noshot + nx + 1]) /
-            4;
-      }
-      vy[i] += buoyancyyhxh * dt * (dsigmayydy + dsigmaxydx);
-      if (buoyancy_requires_grad) {
-        dvydbuoyancy[i] = dt * (dsigmayydy + dsigmaxydx);
-      }
+    vy[i] += buoyancy_y_shot * dt * (dsigmayydy + dsigmaxydx);
+    if (buoyancy_requires_grad) {
+      dvydbuoyancy[i] = dt * (dsigmayydy + dsigmaxydx);
     }
   }
-
-  if (y >= 1 && y < ny && x < nx) {
-    bool pml_y = y < pml_y0 + 1 || y >= pml_y1;
-    bool pml_x = x < pml_x0 || x >= pml_x1;
-    DW_DTYPE dsigmaxydy = 0;
-    DW_DTYPE dsigmaxxdx = 0;
-
-    // dsigmaxydy
-    for (j = 0; j < A / 2 - 1; ++j) {
-      if (y == 1 + j) {
-        for (k = 0; k < A; ++k) {
-          dsigmaxydy += fd_coeffs2y[1 + k] * sigmaxy[i + (-j + k) * nx];
-        }
-      } else if (y == ny - 1 - j) {
-        for (k = 0; k < A; ++k) {
-          dsigmaxydy -= fd_coeffs2y[1 + k] * sigmaxy[i + (j - k - 1) * nx];
-        }
-      }
-    }
-    if (y > 1 + A / 2 - 2 && y < ny - 1 - A / 2 + 2) {
-      for (k = 0; k < A / 2; ++k) {
-        dsigmaxydy +=
-            fd_coeffsy[k] * (sigmaxy[i + k * nx] - sigmaxy[i - (k + 1) * nx]);
-      }
-    }
-
-    // dsigmaxxdx
-    for (j = 0; j < A / 2; ++j) {
-      if (x == j) {
-        for (k = 0; k < A; ++k) {
-          dsigmaxxdx += fd_coeffs1x[j][1 + k] * sigmaxx[i - j + k];
-        }
-      } else if (x == nx - 1 - j) {
-        for (k = 0; k < A; ++k) {
-          dsigmaxxdx -= fd_coeffs1x[j][1 + k] * sigmaxx[i + (j - k - 1)];
-        }
-      }
-    }
-    if (x > A / 2 - 1 && x < nx - 1 - A / 2 + 1) {
-      for (k = 0; k < A / 2; ++k) {
-        dsigmaxxdx += fd_coeffsx[k] * (sigmaxx[i + k] - sigmaxx[i - (1 + k)]);
-      }
-    }
-
+  if (y < ny - FD_PAD + 1 && x < nx - FD_PAD) {
+    int64_t j = y * nx + x;
+    int64_t i = shot_idx * nynx + j;
+    DW_DTYPE const buoyancy_x_shot =
+        buoyancy_batched ? buoyancy_x[i] : buoyancy_x[j];
+    bool pml_y = y < pml_y0 || y >= pml_y1;
+    bool pml_x = x < pml_x0 || x >= MAX(pml_x0, pml_x1 - 1);
+    DW_DTYPE dsigmaxydy = DIFFY1(SIGMAXY);
+    DW_DTYPE dsigmaxxdx = DIFFXH1(SIGMAXX);
     if (pml_y) {
       m_sigmaxyy[i] = ay[y] * m_sigmaxyy[i] + by[y] * dsigmaxydy;
       dsigmaxydy += m_sigmaxyy[i];
     }
     if (pml_x) {
-      m_sigmaxxx[i] = ax[x] * m_sigmaxxx[i] + bx[x] * dsigmaxxdx;
+      m_sigmaxxx[i] = axh[x] * m_sigmaxxx[i] + bxh[x] * dsigmaxxdx;
       dsigmaxxdx += m_sigmaxxx[i];
     }
-    vx[i] += buoyancy_shot[i_noshot] * dt * (dsigmaxxdx + dsigmaxydy);
+    vx[i] += buoyancy_x_shot * dt * (dsigmaxxdx + dsigmaxydy);
     if (buoyancy_requires_grad) {
       dvxdbuoyancy[i] = dt * (dsigmaxxdx + dsigmaxydy);
     }
@@ -518,11 +316,12 @@ __global__ void forward_kernel_v(
 
 __global__ void forward_kernel_sigma(
     DW_DTYPE const *__restrict const lamb, DW_DTYPE const *__restrict const mu,
-    DW_DTYPE const *__restrict const vy, DW_DTYPE const *__restrict const vx,
-    DW_DTYPE *__restrict const sigmayy, DW_DTYPE *__restrict const sigmaxy,
-    DW_DTYPE *__restrict const sigmaxx, DW_DTYPE *__restrict const m_vyy,
-    DW_DTYPE *__restrict const m_vyx, DW_DTYPE *__restrict const m_vxy,
-    DW_DTYPE *__restrict const m_vxx, DW_DTYPE *__restrict const dvydy_store,
+    DW_DTYPE const *__restrict const mu_yx, DW_DTYPE const *__restrict const vy,
+    DW_DTYPE const *__restrict const vx, DW_DTYPE *__restrict const sigmayy,
+    DW_DTYPE *__restrict const sigmaxy, DW_DTYPE *__restrict const sigmaxx,
+    DW_DTYPE *__restrict const m_vyy, DW_DTYPE *__restrict const m_vyx,
+    DW_DTYPE *__restrict const m_vxy, DW_DTYPE *__restrict const m_vxx,
+    DW_DTYPE *__restrict const dvydy_store,
     DW_DTYPE *__restrict const dvxdx_store,
     DW_DTYPE *__restrict const dvydxdvxdy_store,
     DW_DTYPE const *__restrict const ay, DW_DTYPE const *__restrict const ayh,
@@ -530,218 +329,61 @@ __global__ void forward_kernel_sigma(
     DW_DTYPE const *__restrict const by, DW_DTYPE const *__restrict const byh,
     DW_DTYPE const *__restrict const bx, DW_DTYPE const *__restrict const bxh,
     bool const lamb_requires_grad, bool const mu_requires_grad) {
-  int64_t x = blockIdx.x * blockDim.x + threadIdx.x;
-  int64_t y = blockIdx.y * blockDim.y + threadIdx.y + 1;
-  int64_t batch = blockIdx.z * blockDim.z + threadIdx.z;
-  int64_t i_noshot = y * nx + x;
-  int64_t i = batch * nynx + i_noshot;
-  int64_t j, jp, k;
-  DW_DTYPE const *__restrict const lamb_shot =
-      lamb_batched ? lamb + batch * nynx : lamb;
-  DW_DTYPE const *__restrict const mu_shot =
-      mu_batched ? mu + batch * nynx : mu;
-
-  if (y < ny && x < nx - 1) {
-    bool pml_y = y < pml_y0 + 1 || y >= pml_y1;
-    bool pml_x = x < pml_x0 || x >= pml_x1 - 1;
-    DW_DTYPE dvydy = 0;
-    DW_DTYPE dvxdx = 0;
-
-    // dvydy
-    for (j = 0; j < A / 2 - 1; ++j) {
-      if (y == 1 + j) {
-        for (k = 0; k <= A; ++k) {
-          dvydy += fd_coeffs2y[k] * vy[i + (-j + k - 1) * nx];
-        }
-      } else if (y == ny - 1 - j) {
-        for (k = 0; k <= A; ++k) {
-          dvydy -= fd_coeffs2y[k] * vy[i + (j - k) * nx];
-        }
-      }
-    }
-    if (y > 1 + A / 2 - 2 && y < ny - 1 - A / 2 + 2) {
-      for (k = 0; k < A / 2; ++k) {
-        dvydy += fd_coeffsy[k] * (vy[i + k * nx] - vy[i - (k + 1) * nx]);
-      }
-    }
-
-    // dvxdx
-    for (j = 0; j < A / 2 - 1; ++j) {
-      if (x == j) {
-        for (k = 0; k <= A; ++k) {
-          dvxdx += fd_coeffs2x[k] * vx[i - j + k];
-        }
-      } else if (x == nx - 2 - j) {
-        for (k = 0; k <= A; ++k) {
-          dvxdx -= fd_coeffs2x[k] * vx[i + j - k + 1];
-        }
-      }
-    }
-    if (x > A / 2 - 2 && x < nx - 2 - A / 2 + 2) {
-      for (k = 0; k < A / 2; ++k) {
-        dvxdx += fd_coeffsx[k] * (vx[i + 1 + k] - vx[i - k]);
-      }
-    }
-
+  int64_t x = blockIdx.x * blockDim.x + threadIdx.x + FD_PAD;
+  int64_t y = blockIdx.y * blockDim.y + threadIdx.y + FD_PAD;
+  int64_t shot_idx = blockIdx.z * blockDim.z + threadIdx.z;
+  if (y < ny - FD_PAD + 1 && x < nx - FD_PAD + 1) {
+    int64_t j = y * nx + x;
+    int64_t i = shot_idx * nynx + j;
+    DW_DTYPE const lamb_shot = lamb_batched ? lamb[i] : lamb[j];
+    DW_DTYPE const mu_shot = mu_batched ? mu[i] : mu[j];
+    bool pml_y = y < pml_y0 || y >= pml_y1;
+    bool pml_x = x < pml_x0 || x >= pml_x1;
+    DW_DTYPE dvydy = DIFFY1(VY);
+    DW_DTYPE dvxdx = DIFFX1(VX);
     if (pml_y) {
       m_vyy[i] = ay[y] * m_vyy[i] + by[y] * dvydy;
       dvydy += m_vyy[i];
     }
     if (pml_x) {
-      m_vxx[i] = axh[x] * m_vxx[i] + bxh[x] * dvxdx;
+      m_vxx[i] = ax[x] * m_vxx[i] + bx[x] * dvxdx;
       dvxdx += m_vxx[i];
     }
-    {
-      DW_DTYPE lambyxh = (lamb_shot[i_noshot] + lamb_shot[i_noshot + 1]) / 2;
-      DW_DTYPE muyxh = (mu_shot[i_noshot] + mu_shot[i_noshot + 1]) / 2;
-      sigmayy[i] += dt * ((lambyxh + 2 * muyxh) * dvydy + lambyxh * dvxdx);
-      sigmaxx[i] += dt * ((lambyxh + 2 * muyxh) * dvxdx + lambyxh * dvydy);
-      if (lamb_requires_grad || mu_requires_grad) {
-        dvydy_store[i] = dt * dvydy;
-        dvxdx_store[i] = dt * dvxdx;
-      }
+    sigmayy[i] += dt * ((lamb_shot + 2 * mu_shot) * dvydy + lamb_shot * dvxdx);
+    sigmaxx[i] += dt * ((lamb_shot + 2 * mu_shot) * dvxdx + lamb_shot * dvydy);
+    if (lamb_requires_grad || mu_requires_grad) {
+      dvydy_store[i] = dt * dvydy;
+      dvxdx_store[i] = dt * dvxdx;
     }
   }
-
-  if (y < ny - 1 && x >= 1 && x < nx - 1) {
-    bool pml_y = y < pml_y0 + 1 || y >= pml_y1 - 1;
-    bool pml_x = x < pml_x0 + 1 || x >= pml_x1 - 1;
-    DW_DTYPE dvydx = 0;
-    DW_DTYPE dvxdy = 0;
-
-    // dvxdy
-    for (j = 0; j < A / 2 - 1; ++j) {
-      if (y == 1 + j) {
-        DW_DTYPE dvydxp = 0;
-        for (jp = 0; jp < A / 2 - 1; ++jp) {
-          if (x == 1 + jp) {
-            for (k = 0; k <= A; ++k) {
-              dvydxp += fd_coeffs2x[k] * vy[i - (j + 1) * nx - (jp + 1) + k];
-            }
-          } else if (x == nx - 2 - jp) {
-            for (k = 0; k <= A; ++k) {
-              dvydxp -= fd_coeffs2x[k] * vy[i - (j + 1) * nx + jp - k];
-            }
-          }
-        }
-        if (x > 1 + A / 2 - 2 && x < nx - 2 - A / 2 + 2) {
-          for (k = 0; k < A / 2; ++k) {
-            dvydxp += fd_coeffsx[k] *
-                      (vy[i - (j + 1) * nx + k] - vy[i - (j + 1) * nx - k - 1]);
-          }
-        }
-        dvxdy = -fd_coeffs3y[0] * dvydxp;
-        for (k = 1; k <= A + 1; ++k) {
-          dvxdy += fd_coeffs3y[k] * vx[i + (-j + k - 1) * nx];
-        }
-      } else if (y == ny - 2 - j) {
-        DW_DTYPE dvydxp = 0;
-        for (jp = 0; jp < A / 2 - 1; ++jp) {
-          if (x == 1 + jp) {
-            for (k = 0; k <= A; ++k) {
-              dvydxp += fd_coeffs2x[k] * vy[i + (j + 1) * nx - (jp + 1) + k];
-            }
-          } else if (x == nx - 2 - jp) {
-            for (k = 0; k <= A; ++k) {
-              dvydxp -= fd_coeffs2x[k] * vy[i + (j + 1) * nx + jp - k];
-            }
-          }
-        }
-        if (x > 1 + A / 2 - 2 && x < nx - 2 - A / 2 + 2) {
-          for (k = 0; k < A / 2; ++k) {
-            dvydxp += fd_coeffsx[k] *
-                      (vy[i + (j + 1) * nx + k] - vy[i + (j + 1) * nx - k - 1]);
-          }
-        }
-        dvxdy = fd_coeffs3y[0] * dvydxp;
-        for (k = 1; k <= A + 1; ++k) {
-          dvxdy -= fd_coeffs3y[k] * vx[i + (j - k + 2) * nx];
-        }
-      }
-    }
-    if (y > 1 + A / 2 - 2 && y < ny - 2 - A / 2 + 2) {
-      for (k = 0; k < A / 2; ++k) {
-        dvxdy += fd_coeffsy[k] * (vx[i + (k + 1) * nx] - vx[i - k * nx]);
-      }
-    }
-
-    // dvydx
-    for (j = 0; j < A / 2 - 1; ++j) {
-      if (x == 1 + j) {
-        DW_DTYPE dvxdyp = 0;
-        for (jp = 0; jp < A / 2 - 1; ++jp) {
-          if (y == 1 + jp) {
-            for (k = 0; k <= A; ++k) {
-              dvxdyp += fd_coeffs2y[k] * vx[i - (j + 1) + (-jp + k) * nx];
-            }
-          } else if (y == ny - 2 - jp) {
-            for (k = 0; k <= A; ++k) {
-              dvxdyp -= fd_coeffs2y[k] * vx[i - (j + 1) + ((jp + 1) - k) * nx];
-            }
-          }
-        }
-        if (y > 1 + A / 2 - 2 && y < ny - 2 - A / 2 + 2) {
-          for (k = 0; k < A / 2; ++k) {
-            dvxdyp += fd_coeffsy[k] * (vx[i - (j + 1) + (k + 1) * nx] -
-                                       vx[i - (j + 1) - k * nx]);
-          }
-        }
-        dvydx = -fd_coeffs3x[0] * dvxdyp;
-        for (k = 1; k <= A + 1; ++k) {
-          dvydx += fd_coeffs3x[k] * vy[i + (-j + k - 2)];
-        }
-      } else if (x == nx - 2 - j) {
-        DW_DTYPE dvxdyp = 0;
-        for (jp = 0; jp < A / 2 - 1; ++jp) {
-          if (y == 1 + jp) {
-            for (k = 0; k <= A; ++k) {
-              dvxdyp += fd_coeffs2y[k] * vx[i + (j + 1) + (-jp + k) * nx];
-            }
-          } else if (y == ny - 2 - jp) {
-            for (k = 0; k <= A; ++k) {
-              dvxdyp -= fd_coeffs2y[k] * vx[i + (j + 1) + (jp - k + 1) * nx];
-            }
-          }
-        }
-        if (y > 1 + A / 2 - 2 && y < ny - 2 - A / 2 + 2) {
-          for (k = 0; k < A / 2; ++k) {
-            dvxdyp += fd_coeffsy[k] * (vx[i + (j + 1) + (k + 1) * nx] -
-                                       vx[i + (j + 1) + (-k) * nx]);
-          }
-        }
-        dvydx = fd_coeffs3x[0] * dvxdyp;
-        for (k = 1; k <= A + 1; ++k) {
-          dvydx -= fd_coeffs3x[k] * vy[i + (j - k + 1)];
-        }
-      }
-    }
-    if (x > 1 + A / 2 - 2 && x < nx - 2 - A / 2 + 2) {
-      for (k = 0; k < A / 2; ++k) {
-        dvydx += fd_coeffsx[k] * (vy[i + k] - vy[i - k - 1]);
-      }
-    }
-
+  if (y < ny - FD_PAD && x < nx - FD_PAD) {
+    int64_t j = y * nx + x;
+    int64_t i = shot_idx * nynx + j;
+    DW_DTYPE const mu_yx_shot = mu_batched ? mu_yx[i] : mu_yx[j];
+    bool pml_y = y < pml_y0 || y >= MAX(pml_y0, pml_y1 - 1);
+    bool pml_x = x < pml_x0 || x >= MAX(pml_x0, pml_x1 - 1);
+    DW_DTYPE dvydx = DIFFXH1(VY);
+    DW_DTYPE dvxdy = DIFFYH1(VX);
     if (pml_y) {
       m_vxy[i] = ayh[y] * m_vxy[i] + byh[y] * dvxdy;
       dvxdy += m_vxy[i];
     }
     if (pml_x) {
-      m_vyx[i] = ax[x] * m_vyx[i] + bx[x] * dvydx;
+      m_vyx[i] = axh[x] * m_vyx[i] + bxh[x] * dvydx;
       dvydx += m_vyx[i];
     }
-    {
-      DW_DTYPE muyhx = (mu_shot[i_noshot] + mu_shot[i_noshot + nx]) / 2;
-      sigmaxy[i] += dt * muyhx * (dvydx + dvxdy);
-      if (mu_requires_grad) {
-        dvydxdvxdy_store[i] = dt * (dvydx + dvxdy);
-      }
+    sigmaxy[i] += dt * mu_yx_shot * (dvydx + dvxdy);
+    if (mu_requires_grad) {
+      dvydxdvxdy_store[i] = dt * (dvydx + dvxdy);
     }
   }
 }
 
 __global__ void backward_kernel_sigma(
     DW_DTYPE const *__restrict const lamb, DW_DTYPE const *__restrict const mu,
-    DW_DTYPE const *__restrict const buoyancy, DW_DTYPE *__restrict const vy,
+    DW_DTYPE const *__restrict const mu_yx,
+    DW_DTYPE const *__restrict const buoyancy_y,
+    DW_DTYPE const *__restrict const buoyancy_x, DW_DTYPE *__restrict const vy,
     DW_DTYPE *__restrict const vx, DW_DTYPE const *__restrict const sigmayy,
     DW_DTYPE const *__restrict const sigmaxy,
     DW_DTYPE const *__restrict const sigmaxx,
@@ -756,446 +398,74 @@ __global__ void backward_kernel_sigma(
     DW_DTYPE *__restrict const m_sigmayyyn,
     DW_DTYPE *__restrict const m_sigmaxyyn,
     DW_DTYPE *__restrict const m_sigmaxyxn,
-    DW_DTYPE *__restrict const m_sigmaxxxn, DW_DTYPE const *__restrict const ay,
-    DW_DTYPE const *__restrict const ayh, DW_DTYPE const *__restrict const ax,
-    DW_DTYPE const *__restrict const axh, DW_DTYPE const *__restrict const by,
-    DW_DTYPE const *__restrict const byh, DW_DTYPE const *__restrict const bx,
-    DW_DTYPE const *__restrict const bxh) {
-  int64_t x = blockIdx.x * blockDim.x + threadIdx.x;
-  int64_t y = blockIdx.y * blockDim.y + threadIdx.y;
-  int64_t batch = blockIdx.z * blockDim.z + threadIdx.z;
-  int64_t i_noshot = y * nx + x;
-  int64_t i = batch * nynx + i_noshot;
-  int64_t j, jp, k;
+    DW_DTYPE *__restrict const m_sigmaxxxn,
+    DW_DTYPE const *__restrict const dvydbuoyancy,
+    DW_DTYPE const *__restrict const dvxdbuoyancy,
+    DW_DTYPE *__restrict const grad_buoyancy_y,
+    DW_DTYPE *__restrict const grad_buoyancy_x,
+    DW_DTYPE const *__restrict const ay, DW_DTYPE const *__restrict const ayh,
+    DW_DTYPE const *__restrict const ax, DW_DTYPE const *__restrict const axh,
+    DW_DTYPE const *__restrict const by, DW_DTYPE const *__restrict const byh,
+    DW_DTYPE const *__restrict const bx, DW_DTYPE const *__restrict const bxh,
+    bool const buoyancy_requires_grad) {
+  int64_t x = blockIdx.x * blockDim.x + threadIdx.x + FD_PAD;
+  int64_t y = blockIdx.y * blockDim.y + threadIdx.y + FD_PAD;
+  int64_t shot_idx = blockIdx.z * blockDim.z + threadIdx.z;
   DW_DTYPE const *__restrict const lamb_shot =
-      lamb_batched ? lamb + batch * nynx : lamb;
+      lamb_batched ? lamb + shot_idx * nynx : lamb;
   DW_DTYPE const *__restrict const mu_shot =
-      mu_batched ? mu + batch * nynx : mu;
-  DW_DTYPE const *__restrict const buoyancy_shot =
-      buoyancy_batched ? buoyancy + batch * nynx : buoyancy;
-  if (y < ny && x < nx - 1) {
-    bool pml_y = y < spml_y0 || y >= spml_y1;
-    bool pml_x = x < spml_x0 || x >= spml_x1 - 1;
-    // from sigmayy/sigmaxx edges
-    for (k = 0; k <= A; ++k) {
-      for (j = 0; j < A / 2 - 1; ++j) {
-        if (y == 1 + j + (-j + k - 1)) {
-          DW_DTYPE lambyxh = (lamb_shot[i_noshot - (-j + k - 1) * nx] +
-                              lamb_shot[i_noshot + 1 - (-j + k - 1) * nx]) /
-                             2;
-          DW_DTYPE muyxh = (mu_shot[i_noshot - (-j + k - 1) * nx] +
-                            mu_shot[i_noshot + 1 - (-j + k - 1) * nx]) /
-                           2;
-          vy[i] +=
-              fd_coeffs2y[k] *
-              (dt * (1 + by[y - (-j + k - 1)]) *
-                   ((lambyxh + 2 * muyxh) * sigmayy[i - (-j + k - 1) * nx] +
-                    lambyxh * sigmaxx[i - (-j + k - 1) * nx]) +
-               by[y - (-j + k - 1)] * m_vyy[i - (-j + k - 1) * nx]);
-        } else if (y == ny - 1 - j + (j - k)) {
-          DW_DTYPE lambyxh = (lamb_shot[i_noshot - (j - k) * nx] +
-                              lamb_shot[i_noshot + 1 - (j - k) * nx]) /
-                             2;
-          DW_DTYPE muyxh = (mu_shot[i_noshot - (j - k) * nx] +
-                            mu_shot[i_noshot + 1 - (j - k) * nx]) /
-                           2;
-          vy[i] -= fd_coeffs2y[k] *
-                   (dt * (1 + by[y - (j - k)]) *
-                        ((lambyxh + 2 * muyxh) * sigmayy[i - (j - k) * nx] +
-                         lambyxh * sigmaxx[i - (j - k) * nx]) +
-                    by[y - (j - k)] * m_vyy[i - (j - k) * nx]);
-        }
-      }
+      mu_batched ? mu + shot_idx * nynx : mu;
+  DW_DTYPE const *__restrict const mu_yx_shot =
+      mu_batched ? mu_yx + shot_idx * nynx : mu_yx;
+  DW_DTYPE const *__restrict const buoyancy_y_shot =
+      buoyancy_batched ? buoyancy_y + shot_idx * nynx : buoyancy_y;
+  DW_DTYPE const *__restrict const buoyancy_x_shot =
+      buoyancy_batched ? buoyancy_x + shot_idx * nynx : buoyancy_x;
+  if (y < ny - FD_PAD && x < nx - FD_PAD + 1) {
+    int64_t j = y * nx + x;
+    int64_t i = shot_idx * nynx + j;
+    bool pml_y = y < pml_y0 || y >= MAX(pml_y0, pml_y1 - 1);
+    bool pml_x = x < pml_x0 || x >= pml_x1;
+    vy[i] += ((pml_y ? -DIFFYH1(VY_Y_PML) : -DIFFYH1(VY_Y)) +
+              (pml_x ? -DIFFX1(VY_X_PML) : -DIFFX1(VY_X)));
+    if (pml_y) {
+      m_sigmayyyn[i] =
+          buoyancy_y_shot[j] * dt * ayh[y] * vy[i] + ayh[y] * m_sigmayyy[i];
     }
-
-    // from sigmayy/sigmaxx centre
-    for (k = 0; k < A / 2; ++k) {
-      if (y > 1 + A / 2 - 2 + k && y < ny - 1 - A / 2 + 2 + k) {
-        DW_DTYPE lambyxh =
-            (lamb_shot[i_noshot - k * nx] + lamb_shot[i_noshot + 1 - k * nx]) /
-            2;
-        DW_DTYPE muyxh =
-            (mu_shot[i_noshot - k * nx] + mu_shot[i_noshot + 1 - k * nx]) / 2;
-        vy[i] +=
-            fd_coeffsy[k] * (dt * (1 + by[y - k]) *
-                                 ((lambyxh + 2 * muyxh) * sigmayy[i - k * nx] +
-                                  lambyxh * sigmaxx[i - k * nx]) +
-                             by[y - k] * m_vyy[i - k * nx]);
-      }
-      if (y > 1 + A / 2 - 2 - (k + 1) && y < ny - 1 - A / 2 + 2 - (k + 1)) {
-        DW_DTYPE lambyxh = (lamb_shot[i_noshot + (k + 1) * nx] +
-                            lamb_shot[i_noshot + 1 + (k + 1) * nx]) /
-                           2;
-        DW_DTYPE muyxh = (mu_shot[i_noshot + (k + 1) * nx] +
-                          mu_shot[i_noshot + 1 + (k + 1) * nx]) /
-                         2;
-        vy[i] -= fd_coeffsy[k] *
-                 (dt * (1 + by[y + k + 1]) *
-                      ((lambyxh + 2 * muyxh) * sigmayy[i + (k + 1) * nx] +
-                       lambyxh * sigmaxx[i + (k + 1) * nx]) +
-                  by[y + k + 1] * m_vyy[i + (k + 1) * nx]);
-      }
+    if (pml_x) {
+      m_sigmaxyxn[i] =
+          buoyancy_y_shot[j] * dt * ax[x] * vy[i] + ax[x] * m_sigmaxyx[i];
     }
-
-    // from sigmaxy dvxdy
-    for (j = 0; j < A / 2 - 1; ++j) {
-      if (y == 1 + j - (j + 1)) {
-        int64_t y2 = y + (j + 1);
-        for (k = 0; k <= A; ++k) {
-          for (jp = 0; jp < A / 2 - 1; ++jp) {
-            if (x == 1 + jp - (jp + 1) + k) {
-              int64_t i2 = i - (-(j + 1) * nx - (jp + 1) + k);
-              int64_t i2_noshot = i_noshot - (-(j + 1) * nx - (jp + 1) + k);
-              DW_DTYPE muyhx =
-                  (mu_shot[i2_noshot] + mu_shot[i2_noshot + nx]) / 2;
-              vy[i] += fd_coeffs2x[k] * (-fd_coeffs3y[0]) *
-                       (muyhx * dt * (1 + byh[y2]) * sigmaxy[i2] +
-                        byh[y2] * m_vxy[i2]);
-            } else if (x == nx - 2 - jp + jp - k) {
-              int64_t i2 = i - (-(j + 1) * nx + jp - k);
-              int64_t i2_noshot = i_noshot - (-(j + 1) * nx + jp - k);
-              DW_DTYPE muyhx =
-                  (mu_shot[i2_noshot] + mu_shot[i2_noshot + nx]) / 2;
-              vy[i] -= fd_coeffs2x[k] * (-fd_coeffs3y[0]) *
-                       (muyhx * dt * (1 + byh[y2]) * sigmaxy[i2] +
-                        byh[y2] * m_vxy[i2]);
-            }
-          }
-        }
-        for (k = 0; k < A / 2; ++k) {
-          if (x > 1 + A / 2 - 2 + k && x < nx - 2 - A / 2 + 2 + k) {
-            int64_t i2 = i - (-(j + 1) * nx + k);
-            int64_t i2_noshot = i_noshot - (-(j + 1) * nx + k);
-            DW_DTYPE muyhx = (mu_shot[i2_noshot] + mu_shot[i2_noshot + nx]) / 2;
-            vy[i] += fd_coeffsx[k] * (-fd_coeffs3y[0]) *
-                     (muyhx * dt * (1 + byh[y2]) * sigmaxy[i2] +
-                      byh[y2] * m_vxy[i2]);
-          }
-          if (x > 1 + A / 2 - 2 - k - 1 && x < nx - 2 - A / 2 + 2 - k - 1) {
-            int64_t i2 = i - (-(j + 1) * nx - k - 1);
-            int64_t i2_noshot = i_noshot - (-(j + 1) * nx - k - 1);
-            DW_DTYPE muyhx = (mu_shot[i2_noshot] + mu_shot[i2_noshot + nx]) / 2;
-            vy[i] -= fd_coeffsx[k] * (-fd_coeffs3y[0]) *
-                     (muyhx * dt * (1 + byh[y2]) * sigmaxy[i2] +
-                      byh[y2] * m_vxy[i2]);
-          }
-        }
-
-      } else if (y == ny - 2 - j + (j + 1)) {
-        int64_t y2 = y - (j + 1);
-        for (k = 0; k <= A; ++k) {
-          for (jp = 0; jp < A / 2 - 1; ++jp) {
-            if (x == 1 + jp - (jp + 1) + k) {
-              int64_t i2 = i - ((j + 1) * nx - (jp + 1) + k);
-              int64_t i2_noshot = i_noshot - ((j + 1) * nx - (jp + 1) + k);
-              DW_DTYPE muyhx =
-                  (mu_shot[i2_noshot] + mu_shot[i2_noshot + nx]) / 2;
-              vy[i] += fd_coeffs2x[k] * (fd_coeffs3y[0]) *
-                       (muyhx * dt * (1 + byh[y2]) * sigmaxy[i2] +
-                        byh[y2] * m_vxy[i2]);
-            } else if (x == nx - 2 - jp + jp - k) {
-              int64_t i2 = i - ((j + 1) * nx + jp - k);
-              int64_t i2_noshot = i_noshot - ((j + 1) * nx + jp - k);
-              DW_DTYPE muyhx =
-                  (mu_shot[i2_noshot] + mu_shot[i2_noshot + nx]) / 2;
-              vy[i] -= fd_coeffs2x[k] * (fd_coeffs3y[0]) *
-                       (muyhx * dt * (1 + byh[y2]) * sigmaxy[i2] +
-                        byh[y2] * m_vxy[i2]);
-            }
-          }
-        }
-        for (k = 0; k < A / 2; ++k) {
-          if (x > 1 + A / 2 - 2 + k && x < nx - 2 - A / 2 + 2 + k) {
-            int64_t i2 = i - ((j + 1) * nx + k);
-            int64_t i2_noshot = i_noshot - ((j + 1) * nx + k);
-            DW_DTYPE muyhx = (mu_shot[i2_noshot] + mu_shot[i2_noshot + nx]) / 2;
-            vy[i] += fd_coeffsx[k] * (fd_coeffs3y[0]) *
-                     (muyhx * dt * (1 + byh[y2]) * sigmaxy[i2] +
-                      byh[y2] * m_vxy[i2]);
-          }
-          if (x > 1 + A / 2 - 2 - k - 1 && x < nx - 2 - A / 2 + 2 - k - 1) {
-            int64_t i2 = i - ((j + 1) * nx - k - 1);
-            int64_t i2_noshot = i_noshot - ((j + 1) * nx - k - 1);
-            DW_DTYPE muyhx = (mu_shot[i2_noshot] + mu_shot[i2_noshot + nx]) / 2;
-            vy[i] -= fd_coeffsx[k] * (fd_coeffs3y[0]) *
-                     (muyhx * dt * (1 + byh[y2]) * sigmaxy[i2] +
-                      byh[y2] * m_vxy[i2]);
-          }
-        }
-      }
-    }
-
-    // from sigmaxy dvydx
-    if (y > 0 && y < ny - 1) {
-      for (k = 1; k <= A + 1; ++k) {
-        for (j = 0; j < A / 2 - 1; ++j) {
-          if (x == 1 + j + (-j + k - 2)) {
-            int64_t x2 = x - (-j + k - 2);
-            int64_t i2 = i - (-j + k - 2);
-            int64_t i2_noshot = i_noshot - (-j + k - 2);
-            DW_DTYPE muyhx = (mu_shot[i2_noshot] + mu_shot[i2_noshot + nx]) / 2;
-            vy[i] += fd_coeffs3x[k] * (muyhx * dt * (1 + bx[x2]) * sigmaxy[i2] +
-                                       bx[x2] * m_vyx[i2]);
-          } else if (x == nx - 2 - j + (j - k + 1)) {
-            int64_t x2 = x - (j - k + 1);
-            int64_t i2 = i - (j - k + 1);
-            int64_t i2_noshot = i_noshot - (j - k + 1);
-            DW_DTYPE muyhx = (mu_shot[i2_noshot] + mu_shot[i2_noshot + nx]) / 2;
-            vy[i] -= fd_coeffs3x[k] * (muyhx * dt * (1 + bx[x2]) * sigmaxy[i2] +
-                                       bx[x2] * m_vyx[i2]);
-          }
-        }
-      }
-      for (k = 0; k < A / 2; ++k) {
-        if (x > 1 + A / 2 - 2 + k && x < nx - 2 - A / 2 + 2 + k) {
-          int64_t x2 = x - k;
-          int64_t i2 = i - k;
-          int64_t i2_noshot = i_noshot - k;
-          DW_DTYPE muyhx = (mu_shot[i2_noshot] + mu_shot[i2_noshot + nx]) / 2;
-          vy[i] += fd_coeffsx[k] * (muyhx * dt * (1 + bx[x2]) * sigmaxy[i2] +
-                                    bx[x2] * m_vyx[i2]);
-        }
-        if (x > 1 + A / 2 - 2 - k - 1 && x < nx - 2 - A / 2 + 2 - k - 1) {
-          int64_t x2 = x + k + 1;
-          int64_t i2 = i + k + 1;
-          int64_t i2_noshot = i_noshot + k + 1;
-          DW_DTYPE muyhx = (mu_shot[i2_noshot] + mu_shot[i2_noshot + nx]) / 2;
-          vy[i] -= fd_coeffsx[k] * (muyhx * dt * (1 + bx[x2]) * sigmaxy[i2] +
-                                    bx[x2] * m_vyx[i2]);
-        }
-      }
-    }
-
-    {
-      DW_DTYPE buoyancyyhxh;
-      if (y == ny - 1) {
-        buoyancyyhxh =
-            (buoyancy_shot[i_noshot] + buoyancy_shot[i_noshot + 1]) / 2;
-      } else {
-        buoyancyyhxh =
-            (buoyancy_shot[i_noshot] + buoyancy_shot[i_noshot + 1] +
-             buoyancy_shot[i_noshot + nx] + buoyancy_shot[i_noshot + nx + 1]) /
-            4;
-      }
-
-      if (pml_y) {
-        m_sigmayyyn[i] =
-            buoyancyyhxh * dt * ayh[y] * vy[i] + ayh[y] * m_sigmayyy[i];
-      }
-      if (pml_x) {
-        m_sigmaxyxn[i] =
-            buoyancyyhxh * dt * axh[x] * vy[i] + axh[x] * m_sigmaxyx[i];
-      }
+    if (buoyancy_requires_grad) {
+      grad_buoyancy_y[i] += vy[i] * dvydbuoyancy[i] * (DW_DTYPE)step_ratio;
     }
   }
-
-  if (y >= 1 && y < ny && x < nx) {
-    bool pml_y = y < spml_y0 + 1 || y >= spml_y1;
-    bool pml_x = x < spml_x0 || x >= spml_x1;
-    // from sigmayy/sigmaxx edges
-    for (k = 0; k <= A; ++k) {
-      for (j = 0; j < A / 2 - 1; ++j) {
-        if (x == j + (-j + k)) {
-          int64_t i2 = i - (-j + k);
-          int64_t i2_noshot = i_noshot - (-j + k);
-          int64_t x2 = x - (-j + k);
-          DW_DTYPE lambyxh =
-              (lamb_shot[i2_noshot] + lamb_shot[i2_noshot + 1]) / 2;
-          DW_DTYPE muyxh = (mu_shot[i2_noshot] + mu_shot[i2_noshot + 1]) / 2;
-          vx[i] += fd_coeffs2x[k] * (dt * (1 + bxh[x2]) *
-                                         ((lambyxh + 2 * muyxh) * sigmaxx[i2] +
-                                          lambyxh * sigmayy[i2]) +
-                                     bxh[x2] * m_vxx[i2]);
-        } else if (x == nx - 2 - j + (j - k + 1)) {
-          int64_t i2 = i - (j - k + 1);
-          int64_t i2_noshot = i_noshot - (j - k + 1);
-          int64_t x2 = x - (j - k + 1);
-          DW_DTYPE lambyxh =
-              (lamb_shot[i2_noshot] + lamb_shot[i2_noshot + 1]) / 2;
-          DW_DTYPE muyxh = (mu_shot[i2_noshot] + mu_shot[i2_noshot + 1]) / 2;
-          vx[i] -= fd_coeffs2x[k] * (dt * (1 + bxh[x2]) *
-                                         ((lambyxh + 2 * muyxh) * sigmaxx[i2] +
-                                          lambyxh * sigmayy[i2]) +
-                                     bxh[x2] * m_vxx[i2]);
-        }
-      }
-    }
-
-    // from sigmayy/sigmaxx centre
-    for (k = 0; k < A / 2; ++k) {
-      if (x > A / 2 - 2 + 1 + k && x < nx - 2 - A / 2 + 2 + 1 + k) {
-        int64_t i2 = i - (1 + k);
-        int64_t i2_noshot = i_noshot - (1 + k);
-        int64_t x2 = x - (1 + k);
-        DW_DTYPE lambyxh =
-            (lamb_shot[i2_noshot] + lamb_shot[i2_noshot + 1]) / 2;
-        DW_DTYPE muyxh = (mu_shot[i2_noshot] + mu_shot[i2_noshot + 1]) / 2;
-        vx[i] +=
-            fd_coeffsx[k] *
-            (dt * (1 + bxh[x2]) *
-                 ((lambyxh + 2 * muyxh) * sigmaxx[i2] + lambyxh * sigmayy[i2]) +
-             bxh[x2] * m_vxx[i2]);
-      }
-      if (x > A / 2 - 2 - k && x < nx - 2 - A / 2 + 2 - k) {
-        int64_t i2 = i + k;
-        int64_t i2_noshot = i_noshot + k;
-        int64_t x2 = x + k;
-        DW_DTYPE lambyxh =
-            (lamb_shot[i2_noshot] + lamb_shot[i2_noshot + 1]) / 2;
-        DW_DTYPE muyxh = (mu_shot[i2_noshot] + mu_shot[i2_noshot + 1]) / 2;
-        vx[i] -=
-            fd_coeffsx[k] *
-            (dt * (1 + bxh[x2]) *
-                 ((lambyxh + 2 * muyxh) * sigmaxx[i2] + lambyxh * sigmayy[i2]) +
-             bxh[x2] * m_vxx[i2]);
-      }
-    }
-
-    // from sigmaxy dvydx
-    for (j = 0; j < A / 2 - 1; ++j) {
-      if (x == 1 + j - (j + 1)) {
-        int64_t x2 = x + (j + 1);
-        for (k = 0; k <= A; ++k) {
-          for (jp = 0; jp < A / 2 - 1; ++jp) {
-            if (y == 1 + jp - jp + k) {
-              int64_t i2 = i - (-(j + 1) + (-jp + k) * nx);
-              int64_t i2_noshot = i_noshot - (-(j + 1) + (-jp + k) * nx);
-              DW_DTYPE muyhx =
-                  (mu_shot[i2_noshot] + mu_shot[i2_noshot + nx]) / 2;
-              vx[i] += fd_coeffs2y[k] * (-fd_coeffs3x[0]) *
-                       (muyhx * dt * (1 + bx[x2]) * sigmaxy[i2] +
-                        bx[x2] * m_vyx[i2]);
-            } else if (y == ny - 2 - jp + (jp + 1) - k) {
-              int64_t i2 = i - (-(j + 1) + ((jp + 1) - k) * nx);
-              int64_t i2_noshot = i_noshot - (-(j + 1) + ((jp + 1) - k) * nx);
-              DW_DTYPE muyhx =
-                  (mu_shot[i2_noshot] + mu_shot[i2_noshot + nx]) / 2;
-              vx[i] -= fd_coeffs2y[k] * (-fd_coeffs3x[0]) *
-                       (muyhx * dt * (1 + bx[x2]) * sigmaxy[i2] +
-                        bx[x2] * m_vyx[i2]);
-            }
-          }
-        }
-        for (k = 0; k < A / 2; ++k) {
-          if (y > 1 + A / 2 - 2 + k + 1 && y < ny - 2 - A / 2 + 2 + k + 1) {
-            int64_t i2 = i - (-(j + 1) + (k + 1) * nx);
-            int64_t i2_noshot = i_noshot - (-(j + 1) + (k + 1) * nx);
-            DW_DTYPE muyhx = (mu_shot[i2_noshot] + mu_shot[i2_noshot + nx]) / 2;
-            vx[i] +=
-                fd_coeffsy[k] * (-fd_coeffs3x[0]) *
-                (muyhx * dt * (1 + bx[x2]) * sigmaxy[i2] + bx[x2] * m_vyx[i2]);
-          }
-          if (y > 1 + A / 2 - 2 - k && y < ny - 2 - A / 2 + 2 - k) {
-            int64_t i2 = i - (-(j + 1) - k * nx);
-            int64_t i2_noshot = i_noshot - (-(j + 1) - k * nx);
-            DW_DTYPE muyhx = (mu_shot[i2_noshot] + mu_shot[i2_noshot + nx]) / 2;
-            vx[i] -=
-                fd_coeffsy[k] * (-fd_coeffs3x[0]) *
-                (muyhx * dt * (1 + bx[x2]) * sigmaxy[i2] + bx[x2] * m_vyx[i2]);
-          }
-        }
-
-      } else if (x == nx - 2 - j + (j + 1)) {
-        int64_t x2 = x - (j + 1);
-        for (k = 0; k <= A; ++k) {
-          for (jp = 0; jp < A / 2 - 1; ++jp) {
-            if (y == 1 + jp - jp + k) {
-              int64_t i2 = i - ((j + 1) + (-jp + k) * nx);
-              int64_t i2_noshot = i_noshot - ((j + 1) + (-jp + k) * nx);
-              DW_DTYPE muyhx =
-                  (mu_shot[i2_noshot] + mu_shot[i2_noshot + nx]) / 2;
-              vx[i] += fd_coeffs2y[k] * (fd_coeffs3x[0]) *
-                       (muyhx * dt * (1 + bx[x2]) * sigmaxy[i2] +
-                        bx[x2] * m_vyx[i2]);
-            } else if (y == ny - 2 - jp + jp - k + 1) {
-              int64_t i2 = i - ((j + 1) + (jp - k + 1) * nx);
-              int64_t i2_noshot = i_noshot - ((j + 1) + (jp - k + 1) * nx);
-              DW_DTYPE muyhx =
-                  (mu_shot[i2_noshot] + mu_shot[i2_noshot + nx]) / 2;
-              vx[i] -= fd_coeffs2y[k] * (fd_coeffs3x[0]) *
-                       (muyhx * dt * (1 + bx[x2]) * sigmaxy[i2] +
-                        bx[x2] * m_vyx[i2]);
-            }
-          }
-        }
-        for (k = 0; k < A / 2; ++k) {
-          if (y > 1 + A / 2 - 2 + k + 1 && y < ny - 2 - A / 2 + 2 + k + 1) {
-            int64_t i2 = i - ((j + 1) + (k + 1) * nx);
-            int64_t i2_noshot = i_noshot - ((j + 1) + (k + 1) * nx);
-            DW_DTYPE muyhx = (mu_shot[i2_noshot] + mu_shot[i2_noshot + nx]) / 2;
-            vx[i] +=
-                fd_coeffsy[k] * (fd_coeffs3x[0]) *
-                (muyhx * dt * (1 + bx[x2]) * sigmaxy[i2] + bx[x2] * m_vyx[i2]);
-          }
-          if (y > 1 + A / 2 - 2 - k && y < ny - 2 - A / 2 + 2 - k) {
-            int64_t i2 = i - ((j + 1) + (-k) * nx);
-            int64_t i2_noshot = i_noshot - ((j + 1) + (-k) * nx);
-            DW_DTYPE muyhx = (mu_shot[i2_noshot] + mu_shot[i2_noshot + nx]) / 2;
-            vx[i] -=
-                fd_coeffsy[k] * (fd_coeffs3x[0]) *
-                (muyhx * dt * (1 + bx[x2]) * sigmaxy[i2] + bx[x2] * m_vyx[i2]);
-          }
-        }
-      }
-    }
-
-    // from sigmaxy dvxdy
-    if (x > 0 && x < nx - 1) {
-      for (k = 1; k <= A + 1; ++k) {
-        for (j = 0; j < A / 2 - 1; ++j) {
-          if (y == 1 + j + (-j + k - 1)) {
-            int64_t y2 = y - (-j + k - 1);
-            int64_t i2 = i - (-j + k - 1) * nx;
-            int64_t i2_noshot = i_noshot - (-j + k - 1) * nx;
-            DW_DTYPE muyhx = (mu_shot[i2_noshot] + mu_shot[i2_noshot + nx]) / 2;
-            vx[i] +=
-                fd_coeffs3y[k] * (muyhx * dt * (1 + byh[y2]) * sigmaxy[i2] +
-                                  byh[y2] * m_vxy[i2]);
-          } else if (y == ny - 2 - j + (j - k + 2)) {
-            int64_t y2 = y - (j - k + 2);
-            int64_t i2 = i - (j - k + 2) * nx;
-            int64_t i2_noshot = i_noshot - (j - k + 2) * nx;
-            DW_DTYPE muyhx = (mu_shot[i2_noshot] + mu_shot[i2_noshot + nx]) / 2;
-            vx[i] -=
-                fd_coeffs3y[k] * (muyhx * dt * (1 + byh[y2]) * sigmaxy[i2] +
-                                  byh[y2] * m_vxy[i2]);
-          }
-        }
-      }
-      for (k = 0; k < A / 2; ++k) {
-        if (y > 1 + A / 2 - 2 + k + 1 && y < ny - 2 - A / 2 + 2 + k + 1) {
-          int64_t y2 = y - (k + 1);
-          int64_t i2 = i - (k + 1) * nx;
-          int64_t i2_noshot = i_noshot - (k + 1) * nx;
-          DW_DTYPE muyhx = (mu_shot[i2_noshot] + mu_shot[i2_noshot + nx]) / 2;
-          vx[i] += fd_coeffsy[k] * (muyhx * dt * (1 + byh[y2]) * sigmaxy[i2] +
-                                    byh[y2] * m_vxy[i2]);
-        }
-        if (y > 1 + A / 2 - 2 - k && y < ny - 2 - A / 2 + 2 - k) {
-          int64_t y2 = y + k;
-          int64_t i2 = i + k * nx;
-          int64_t i2_noshot = i_noshot + k * nx;
-          DW_DTYPE muyhx = (mu_shot[i2_noshot] + mu_shot[i2_noshot + nx]) / 2;
-          vx[i] -= fd_coeffsy[k] * (muyhx * dt * (1 + byh[y2]) * sigmaxy[i2] +
-                                    byh[y2] * m_vxy[i2]);
-        }
-      }
-    }
-
+  if (y < ny - FD_PAD + 1 && x < nx - FD_PAD) {
+    int64_t j = y * nx + x;
+    int64_t i = shot_idx * nynx + j;
+    bool pml_y = y < pml_y0 || y >= pml_y1;
+    bool pml_x = x < pml_x0 || x >= MAX(pml_x0, pml_x1 - 1);
+    vx[i] += ((pml_y ? -DIFFY1(VX_Y_PML) : -DIFFY1(VX_Y)) +
+              (pml_x ? -DIFFXH1(VX_X_PML) : -DIFFXH1(VX_X)));
     if (pml_y) {
       m_sigmaxyyn[i] =
-          buoyancy_shot[i_noshot] * dt * ay[y] * vx[i] + ay[y] * m_sigmaxyy[i];
+          buoyancy_x_shot[j] * dt * ay[y] * vx[i] + ay[y] * m_sigmaxyy[i];
     }
     if (pml_x) {
       m_sigmaxxxn[i] =
-          buoyancy_shot[i_noshot] * dt * ax[x] * vx[i] + ax[x] * m_sigmaxxx[i];
+          buoyancy_x_shot[j] * dt * axh[x] * vx[i] + axh[x] * m_sigmaxxx[i];
+    }
+    if (buoyancy_requires_grad) {
+      grad_buoyancy_x[i] += vx[i] * dvxdbuoyancy[i] * (DW_DTYPE)step_ratio;
     }
   }
 }
 
 __global__ void backward_kernel_v(
     DW_DTYPE const *__restrict const lamb, DW_DTYPE const *__restrict const mu,
-    DW_DTYPE const *__restrict const buoyancy,
+    DW_DTYPE const *__restrict const mu_yx,
+    DW_DTYPE const *__restrict const buoyancy_y,
+    DW_DTYPE const *__restrict const buoyancy_x,
     DW_DTYPE const *__restrict const vy, DW_DTYPE const *__restrict const vx,
     DW_DTYPE *__restrict const sigmayy, DW_DTYPE *__restrict const sigmaxy,
     DW_DTYPE *__restrict const sigmaxx, DW_DTYPE *__restrict const m_vyy,
@@ -1205,294 +475,70 @@ __global__ void backward_kernel_v(
     DW_DTYPE const *__restrict const m_sigmaxyy,
     DW_DTYPE const *__restrict const m_sigmaxyx,
     DW_DTYPE const *__restrict const m_sigmaxxx,
-    DW_DTYPE const *__restrict const ay, DW_DTYPE const *__restrict const ayh,
-    DW_DTYPE const *__restrict const ax, DW_DTYPE const *__restrict const axh,
-    DW_DTYPE const *__restrict const by, DW_DTYPE const *__restrict const byh,
-    DW_DTYPE const *__restrict const bx, DW_DTYPE const *__restrict const bxh) {
-  int64_t x = blockIdx.x * blockDim.x + threadIdx.x;
-  int64_t y = blockIdx.y * blockDim.y + threadIdx.y + 1;
-  int64_t batch = blockIdx.z * blockDim.z + threadIdx.z;
-  int64_t i_noshot = y * nx + x;
-  int64_t i = batch * nynx + i_noshot;
-  int64_t j, k;
+    DW_DTYPE const *__restrict const dvydy_store,
+    DW_DTYPE const *__restrict const dvxdx_store,
+    DW_DTYPE const *__restrict const dvydxdvxdy_store,
+    DW_DTYPE *__restrict const grad_lamb, DW_DTYPE *__restrict const grad_mu,
+    DW_DTYPE *__restrict const grad_mu_yx, DW_DTYPE const *__restrict const ay,
+    DW_DTYPE const *__restrict const ayh, DW_DTYPE const *__restrict const ax,
+    DW_DTYPE const *__restrict const axh, DW_DTYPE const *__restrict const by,
+    DW_DTYPE const *__restrict const byh, DW_DTYPE const *__restrict const bx,
+    DW_DTYPE const *__restrict const bxh, bool const lamb_requires_grad,
+    bool const mu_requires_grad) {
+  int64_t x = blockIdx.x * blockDim.x + threadIdx.x + FD_PAD;
+  int64_t y = blockIdx.y * blockDim.y + threadIdx.y + FD_PAD;
+  int64_t shot_idx = blockIdx.z * blockDim.z + threadIdx.z;
   DW_DTYPE const *__restrict const lamb_shot =
-      lamb_batched ? lamb + batch * nynx : lamb;
+      lamb_batched ? lamb + shot_idx * nynx : lamb;
   DW_DTYPE const *__restrict const mu_shot =
-      mu_batched ? mu + batch * nynx : mu;
-  DW_DTYPE const *__restrict const buoyancy_shot =
-      buoyancy_batched ? buoyancy + batch * nynx : buoyancy;
-  if (y < ny && x < nx - 1) {
-    bool pml_y = y < vpml_y0 + 1 || y >= vpml_y1;
-    bool pml_x = x < vpml_x0 || x >= vpml_x1 - 1;
-    DW_DTYPE lambyxh = (lamb_shot[i_noshot] + lamb_shot[i_noshot + 1]) / 2;
-    DW_DTYPE muyxh = (mu_shot[i_noshot] + mu_shot[i_noshot + 1]) / 2;
-
+      mu_batched ? mu + shot_idx * nynx : mu;
+  DW_DTYPE const *__restrict const mu_yx_shot =
+      mu_batched ? mu_yx + shot_idx * nynx : mu_yx;
+  DW_DTYPE const *__restrict const buoyancy_y_shot =
+      buoyancy_batched ? buoyancy_y + shot_idx * nynx : buoyancy_y;
+  DW_DTYPE const *__restrict const buoyancy_x_shot =
+      buoyancy_batched ? buoyancy_x + shot_idx * nynx : buoyancy_x;
+  if (y < ny - FD_PAD + 1 && x < nx - FD_PAD + 1) {
+    int64_t j = y * nx + x;
+    int64_t i = shot_idx * nynx + j;
+    bool pml_y = y < pml_y0 || y >= pml_y1;
+    bool pml_x = x < pml_x0 || x >= pml_x1;
+    if (lamb_requires_grad) {
+      grad_lamb[i] += (sigmayy[i] + sigmaxx[i]) *
+                      (dvydy_store[i] + dvxdx_store[i]) * (DW_DTYPE)step_ratio;
+    }
+    if (mu_requires_grad) {
+      grad_mu[i] +=
+          2 * (sigmayy[i] * dvydy_store[i] + sigmaxx[i] * dvxdx_store[i]) *
+          (DW_DTYPE)step_ratio;
+    }
     if (pml_y) {
-      m_vyy[i] = (lambyxh + 2 * muyxh) * dt * ay[y] * sigmayy[i] +
-                 lambyxh * dt * ay[y] * sigmaxx[i] + ay[y] * m_vyy[i];
+      m_vyy[i] = (lamb_shot[j] + 2 * mu_shot[j]) * dt * ay[y] * sigmayy[i] +
+                 lamb_shot[j] * dt * ay[y] * sigmaxx[i] + ay[y] * m_vyy[i];
     }
     if (pml_x) {
-      m_vxx[i] = (lambyxh + 2 * muyxh) * dt * axh[x] * sigmaxx[i] +
-                 lambyxh * dt * axh[x] * sigmayy[i] + axh[x] * m_vxx[i];
+      m_vxx[i] = (lamb_shot[j] + 2 * mu_shot[j]) * dt * ax[x] * sigmaxx[i] +
+                 lamb_shot[j] * dt * ax[x] * sigmayy[i] + ax[x] * m_vxx[i];
     }
-
-    // dsigmayydy
-    for (k = 0; k < A; ++k) {
-      for (j = 0; j < A / 2; ++j) {
-        if (y == j + (1 - j + k)) {
-          int64_t i2 = i - (1 - j + k) * nx;
-          int64_t i2_noshot = i_noshot - (1 - j + k) * nx;
-          int64_t y2 = y - (1 - j + k);
-          DW_DTYPE buoyancyyhxh;
-          if (y2 == ny - 1) {
-            buoyancyyhxh =
-                (buoyancy_shot[i2_noshot] + buoyancy_shot[i2_noshot + 1]) / 2;
-          } else {
-            buoyancyyhxh =
-                (buoyancy_shot[i2_noshot] + buoyancy_shot[i2_noshot + 1] +
-                 buoyancy_shot[i2_noshot + nx] +
-                 buoyancy_shot[i2_noshot + nx + 1]) /
-                4;
-          }
-          sigmayy[i] += fd_coeffs1y[j][1 + k] *
-                        (buoyancyyhxh * dt * (1 + byh[y2]) * vy[i2] +
-                         byh[y2] * m_sigmayyy[i2]);
-        } else if (y == ny - 1 - j + (j - k)) {
-          int64_t i2 = i - (j - k) * nx;
-          int64_t i2_noshot = i_noshot - (j - k) * nx;
-          int64_t y2 = y - (j - k);
-          DW_DTYPE buoyancyyhxh;
-          if (y2 == ny - 1) {
-            buoyancyyhxh =
-                (buoyancy_shot[i2_noshot] + buoyancy_shot[i2_noshot + 1]) / 2;
-          } else {
-            buoyancyyhxh =
-                (buoyancy_shot[i2_noshot] + buoyancy_shot[i2_noshot + 1] +
-                 buoyancy_shot[i2_noshot + nx] +
-                 buoyancy_shot[i2_noshot + nx + 1]) /
-                4;
-          }
-          sigmayy[i] -= fd_coeffs1y[j][1 + k] *
-                        (buoyancyyhxh * dt * (1 + byh[y2]) * vy[i2] +
-                         byh[y2] * m_sigmayyy[i2]);
-        }
-      }
-    }
-    for (k = 0; k < A / 2; ++k) {
-      if (y > A / 2 - 1 + (1 + k) && y < ny - 1 - A / 2 + 1 + (1 + k)) {
-        int64_t i2 = i - (1 + k) * nx;
-        int64_t i2_noshot = i_noshot - (1 + k) * nx;
-        int64_t y2 = y - (1 + k);
-        DW_DTYPE buoyancyyhxh;
-        if (y2 == ny - 1) {
-          buoyancyyhxh =
-              (buoyancy_shot[i2_noshot] + buoyancy_shot[i2_noshot + 1]) / 2;
-        } else {
-          buoyancyyhxh =
-              (buoyancy_shot[i2_noshot] + buoyancy_shot[i2_noshot + 1] +
-               buoyancy_shot[i2_noshot + nx] +
-               buoyancy_shot[i2_noshot + nx + 1]) /
-              4;
-        }
-        sigmayy[i] +=
-            fd_coeffsy[k] * (buoyancyyhxh * dt * (1 + byh[y2]) * vy[i2] +
-                             byh[y2] * m_sigmayyy[i2]);
-      }
-      if (y > A / 2 - 1 - k && y < ny - 1 - A / 2 + 1 - k) {
-        int64_t i2 = i - (-k) * nx;
-        int64_t i2_noshot = i_noshot - (-k) * nx;
-        int64_t y2 = y - (-k);
-        DW_DTYPE buoyancyyhxh;
-        if (y2 == ny - 1) {
-          buoyancyyhxh =
-              (buoyancy_shot[i2_noshot] + buoyancy_shot[i2_noshot + 1]) / 2;
-        } else {
-          buoyancyyhxh =
-              (buoyancy_shot[i2_noshot] + buoyancy_shot[i2_noshot + 1] +
-               buoyancy_shot[i2_noshot + nx] +
-               buoyancy_shot[i2_noshot + nx + 1]) /
-              4;
-        }
-        sigmayy[i] -=
-            fd_coeffsy[k] * (buoyancyyhxh * dt * (1 + byh[y2]) * vy[i2] +
-                             byh[y2] * m_sigmayyy[i2]);
-      }
-    }
-
-    // dsigmaxxdx
-    for (k = 0; k < A; ++k) {
-      for (j = 0; j < A / 2; ++j) {
-        if (x == j + (-j + k)) {
-          int64_t i2 = i - (-j + k);
-          int64_t i2_noshot = i_noshot - (-j + k);
-          int64_t x2 = x - (-j + k);
-          sigmaxx[i] += fd_coeffs1x[j][1 + k] *
-                        (buoyancy_shot[i2_noshot] * dt * (1 + bx[x2]) * vx[i2] +
-                         bx[x2] * m_sigmaxxx[i2]);
-        } else if (x == nx - 1 - j + (j - k - 1)) {
-          int64_t i2 = i - (j - k - 1);
-          int64_t i2_noshot = i_noshot - (j - k - 1);
-          int64_t x2 = x - (j - k - 1);
-          sigmaxx[i] -= fd_coeffs1x[j][1 + k] *
-                        (buoyancy_shot[i2_noshot] * dt * (1 + bx[x2]) * vx[i2] +
-                         bx[x2] * m_sigmaxxx[i2]);
-        }
-      }
-    }
-    for (k = 0; k < A / 2; ++k) {
-      if (x > A / 2 - 1 + (k) && x < nx - 1 - A / 2 + 1 + (k)) {
-        int64_t i2 = i - (k);
-        int64_t i2_noshot = i_noshot - (k);
-        int64_t x2 = x - (k);
-        sigmaxx[i] += fd_coeffsx[k] *
-                      (buoyancy_shot[i2_noshot] * dt * (1 + bx[x2]) * vx[i2] +
-                       bx[x2] * m_sigmaxxx[i2]);
-      }
-      if (x > A / 2 - 1 - (1 + k) && x < nx - 1 - A / 2 + 1 - (1 + k)) {
-        int64_t i2 = i + (1 + k);
-        int64_t i2_noshot = i_noshot + (1 + k);
-        int64_t x2 = x + (1 + k);
-        sigmaxx[i] -= fd_coeffsx[k] *
-                      (buoyancy_shot[i2_noshot] * dt * (1 + bx[x2]) * vx[i2] +
-                       bx[x2] * m_sigmaxxx[i2]);
-      }
-    }
+    sigmayy[i] += (pml_y ? -DIFFY1(SIGMAYY_Y_PML) : -DIFFY1(SIGMAYY_Y));
+    sigmaxx[i] += (pml_x ? -DIFFX1(SIGMAXX_X_PML) : -DIFFX1(SIGMAXX_X));
   }
-
-  if (y < ny - 1 && x >= 1 && x < nx - 1) {
-    bool pml_y = y < vpml_y0 + 1 || y >= vpml_y1 - 1;
-    bool pml_x = x < vpml_x0 + 1 || x >= vpml_x1 - 1;
-
-    DW_DTYPE muyhx = (mu_shot[i_noshot] + mu_shot[i_noshot + nx]) / 2;
-
+  if (y < ny - FD_PAD && x < nx - FD_PAD) {
+    int64_t j = y * nx + x;
+    int64_t i = shot_idx * nynx + j;
+    bool pml_y = y < pml_y0 || y >= MAX(pml_y0, pml_y1 - 1);
+    bool pml_x = x < pml_x0 || x >= MAX(pml_x0, pml_x1 - 1);
+    if (mu_requires_grad) {
+      grad_mu_yx[i] += sigmaxy[i] * dvydxdvxdy_store[i] * (DW_DTYPE)step_ratio;
+    }
     if (pml_y) {
-      m_vxy[i] = muyhx * dt * ayh[y] * sigmaxy[i] + ayh[y] * m_vxy[i];
+      m_vxy[i] = mu_yx_shot[j] * dt * ayh[y] * sigmaxy[i] + ayh[y] * m_vxy[i];
     }
     if (pml_x) {
-      m_vyx[i] = muyhx * dt * ax[x] * sigmaxy[i] + ax[x] * m_vyx[i];
+      m_vyx[i] = mu_yx_shot[j] * dt * axh[x] * sigmaxy[i] + axh[x] * m_vyx[i];
     }
-
-    // dsigmaxydx
-    for (k = 0; k < A; ++k) {
-      for (j = 0; j < A / 2 - 1; ++j) {
-        if (x == j - j + 1 + k) {
-          int64_t i2 = i - (-j + 1 + k);
-          int64_t i2_noshot = i_noshot - (-j + 1 + k);
-          int64_t x2 = x - (-j + 1 + k);
-          DW_DTYPE buoyancyyhxh;
-          if (y == ny - 1) {
-            buoyancyyhxh =
-                (buoyancy_shot[i2_noshot] + buoyancy_shot[i2_noshot + 1]) / 2;
-          } else {
-            buoyancyyhxh =
-                (buoyancy_shot[i2_noshot] + buoyancy_shot[i2_noshot + 1] +
-                 buoyancy_shot[i2_noshot + nx] +
-                 buoyancy_shot[i2_noshot + nx + 1]) /
-                4;
-          }
-          sigmaxy[i] +=
-              fd_coeffs2x[1 + k] * (buoyancyyhxh * dt * (1 + bxh[x2]) * vy[i2] +
-                                    bxh[x2] * m_sigmaxyx[i2]);
-        } else if (x == nx - 2 - j + j - k) {
-          int64_t i2 = i - (j - k);
-          int64_t i2_noshot = i_noshot - (j - k);
-          int64_t x2 = x - (j - k);
-          DW_DTYPE buoyancyyhxh;
-          if (y == ny - 1) {
-            buoyancyyhxh =
-                (buoyancy_shot[i2_noshot] + buoyancy_shot[i2_noshot + 1]) / 2;
-          } else {
-            buoyancyyhxh =
-                (buoyancy_shot[i2_noshot] + buoyancy_shot[i2_noshot + 1] +
-                 buoyancy_shot[i2_noshot + nx] +
-                 buoyancy_shot[i2_noshot + nx + 1]) /
-                4;
-          }
-          sigmaxy[i] -=
-              fd_coeffs2x[1 + k] * (buoyancyyhxh * dt * (1 + bxh[x2]) * vy[i2] +
-                                    bxh[x2] * m_sigmaxyx[i2]);
-        }
-      }
-    }
-    for (k = 0; k < A / 2; ++k) {
-      if (x > A / 2 - 2 + 1 + k && x < nx - 2 - A / 2 + 2 + 1 + k) {
-        int64_t i2 = i - (1 + k);
-        int64_t i2_noshot = i_noshot - (1 + k);
-        int64_t x2 = x - (1 + k);
-        DW_DTYPE buoyancyyhxh;
-        if (y == ny - 1) {
-          buoyancyyhxh =
-              (buoyancy_shot[i2_noshot] + buoyancy_shot[i2_noshot + 1]) / 2;
-        } else {
-          buoyancyyhxh =
-              (buoyancy_shot[i2_noshot] + buoyancy_shot[i2_noshot + 1] +
-               buoyancy_shot[i2_noshot + nx] +
-               buoyancy_shot[i2_noshot + nx + 1]) /
-              4;
-        }
-        sigmaxy[i] +=
-            fd_coeffsx[k] * (buoyancyyhxh * dt * (1 + bxh[x2]) * vy[i2] +
-                             bxh[x2] * m_sigmaxyx[i2]);
-      }
-      if (x > A / 2 - 2 - k && x < nx - 2 - A / 2 + 2 - k) {
-        int64_t i2 = i - (-k);
-        int64_t i2_noshot = i_noshot - (-k);
-        int64_t x2 = x - (-k);
-        DW_DTYPE buoyancyyhxh;
-        if (y == ny - 1) {
-          buoyancyyhxh =
-              (buoyancy_shot[i2_noshot] + buoyancy_shot[i2_noshot + 1]) / 2;
-        } else {
-          buoyancyyhxh =
-              (buoyancy_shot[i2_noshot] + buoyancy_shot[i2_noshot + 1] +
-               buoyancy_shot[i2_noshot + nx] +
-               buoyancy_shot[i2_noshot + nx + 1]) /
-              4;
-        }
-        sigmaxy[i] -=
-            fd_coeffsx[k] * (buoyancyyhxh * dt * (1 + bxh[x2]) * vy[i2] +
-                             bxh[x2] * m_sigmaxyx[i2]);
-      }
-    }
-
-    // dsigmaxydy
-    for (k = 0; k < A; ++k) {
-      for (j = 0; j < A / 2 - 1; ++j) {
-        if (y == 1 + j - j + k) {
-          int64_t i2 = i - (-j + k) * nx;
-          int64_t i2_noshot = i_noshot - (-j + k) * nx;
-          int64_t y2 = y - (-j + k);
-          sigmaxy[i] += fd_coeffs2y[1 + k] *
-                        (buoyancy_shot[i2_noshot] * dt * (1 + by[y2]) * vx[i2] +
-                         by[y2] * m_sigmaxyy[i2]);
-        } else if (y == ny - 1 - j + j - k - 1) {
-          int64_t i2 = i - (j - k - 1) * nx;
-          int64_t i2_noshot = i_noshot - (j - k - 1) * nx;
-          int64_t y2 = y - (j - k - 1);
-          sigmaxy[i] -= fd_coeffs2y[1 + k] *
-                        (buoyancy_shot[i2_noshot] * dt * (1 + by[y2]) * vx[i2] +
-                         by[y2] * m_sigmaxyy[i2]);
-        }
-      }
-    }
-    for (k = 0; k < A / 2; ++k) {
-      if (y > 1 + A / 2 - 2 + k && y < ny - 1 - A / 2 + 2 + k) {
-        int64_t i2 = i - (k)*nx;
-        int64_t i2_noshot = i_noshot - (k)*nx;
-        int64_t y2 = y - (k);
-        sigmaxy[i] += fd_coeffsy[k] *
-                      (buoyancy_shot[i2_noshot] * dt * (1 + by[y2]) * vx[i2] +
-                       by[y2] * m_sigmaxyy[i2]);
-      }
-      if (y > 1 + A / 2 - 2 - (k + 1) && y < ny - 1 - A / 2 + 2 - (k + 1)) {
-        int64_t i2 = i - (-(k + 1)) * nx;
-        int64_t i2_noshot = i_noshot - (-(k + 1)) * nx;
-        int64_t y2 = y - (-(k + 1));
-        sigmaxy[i] -= fd_coeffsy[k] *
-                      (buoyancy_shot[i2_noshot] * dt * (1 + by[y2]) * vx[i2] +
-                       by[y2] * m_sigmaxyy[i2]);
-      }
-    }
+    sigmaxy[i] += ((pml_y ? -DIFFYH1(SIGMAXY_Y_PML) : -DIFFYH1(SIGMAXY_Y)) +
+                   (pml_x ? -DIFFXH1(SIGMAXY_X_PML) : -DIFFXH1(SIGMAXY_X)));
   }
 }
 
@@ -1509,42 +555,7 @@ inline unsigned int ceil_div(unsigned int numerator, unsigned int denominator) {
   return (numerator + denominator - 1) / denominator;
 }
 
-static void set_fd_coeffs(DW_DTYPE fd_coeffs_h[2], DW_DTYPE fd_coeffs1_h[2][5],
-                          DW_DTYPE fd_coeffs2_h[5], DW_DTYPE fd_coeffs3_h[6],
-                          DW_DTYPE const dx) {
-  if (DW_ACCURACY == 2) {
-    fd_coeffs_h[0] = (DW_DTYPE)(1.0 / 1.0) / dx;
-    fd_coeffs1_h[0][0] = (DW_DTYPE)(-8.0 / 3.0) / dx;
-    fd_coeffs1_h[0][1] = (DW_DTYPE)(3.0 / 1.0) / dx;
-    fd_coeffs1_h[0][2] = (DW_DTYPE)(-1.0 / 3.0) / dx;
-  } else {
-    fd_coeffs_h[0] = (DW_DTYPE)(9.0 / 8.0) / dx;
-    fd_coeffs_h[1] = (DW_DTYPE)(-1.0 / 24.0) / dx;
-    fd_coeffs1_h[0][0] = (DW_DTYPE)(-352.0 / 105.0) / dx;
-    fd_coeffs1_h[0][1] = (DW_DTYPE)(35.0 / 8.0) / dx;
-    fd_coeffs1_h[0][2] = (DW_DTYPE)(-35.0 / 24.0) / dx;
-    fd_coeffs1_h[0][3] = (DW_DTYPE)(21.0 / 40.0) / dx;
-    fd_coeffs1_h[0][4] = (DW_DTYPE)(-5.0 / 56.0) / dx;
-    fd_coeffs1_h[1][0] = (DW_DTYPE)(16.0 / 105.0) / dx;
-    fd_coeffs1_h[1][1] = (DW_DTYPE)(-31.0 / 24.0) / dx;
-    fd_coeffs1_h[1][2] = (DW_DTYPE)(29.0 / 24.0) / dx;
-    fd_coeffs1_h[1][3] = (DW_DTYPE)(-3.0 / 40.0) / dx;
-    fd_coeffs1_h[1][4] = (DW_DTYPE)(1.0 / 168.0) / dx;
-    fd_coeffs2_h[0] = (DW_DTYPE)(-11.0 / 12.0) / dx;
-    fd_coeffs2_h[1] = (DW_DTYPE)(17.0 / 24.0) / dx;
-    fd_coeffs2_h[2] = (DW_DTYPE)(3.0 / 8.0) / dx;
-    fd_coeffs2_h[3] = (DW_DTYPE)(-5.0 / 24.0) / dx;
-    fd_coeffs2_h[4] = (DW_DTYPE)(1.0 / 24.0) / dx;
-    fd_coeffs3_h[0] = (DW_DTYPE)(-71.0 / 1689.0);
-    fd_coeffs3_h[1] = (DW_DTYPE)(-14587.0 / 13512.0) / dx;
-    fd_coeffs3_h[2] = (DW_DTYPE)(11243.0 / 10134.0) / dx;
-    fd_coeffs3_h[3] = (DW_DTYPE)(-43.0 / 2252.0) / dx;
-    fd_coeffs3_h[4] = (DW_DTYPE)(-47.0 / 3378.0) / dx;
-    fd_coeffs3_h[5] = (DW_DTYPE)(127.0 / 40536.0) / dx;
-  }
-}
-
-void set_config(DW_DTYPE const dt_h, DW_DTYPE const dy, DW_DTYPE const dx,
+void set_config(DW_DTYPE const dt_h, DW_DTYPE const rdy_h, DW_DTYPE const rdx_h,
                 int64_t const n_shots_h, int64_t const ny_h, int64_t const nx_h,
                 int64_t const n_sources_y_per_shot_h,
                 int64_t const n_sources_x_per_shot_h,
@@ -1553,39 +564,13 @@ void set_config(DW_DTYPE const dt_h, DW_DTYPE const dy, DW_DTYPE const dx,
                 int64_t const n_receivers_p_per_shot_h,
                 int64_t const step_ratio_h, int64_t const pml_y0_h,
                 int64_t const pml_y1_h, int64_t const pml_x0_h,
-                int64_t const pml_x1_h, int64_t const spml_y0_h,
-                int64_t const spml_y1_h, int64_t const spml_x0_h,
-                int64_t const spml_x1_h, int64_t const vpml_y0_h,
-                int64_t const vpml_y1_h, int64_t const vpml_x0_h,
-                int64_t const vpml_x1_h, bool const lamb_batched_h,
+                int64_t const pml_x1_h, bool const lamb_batched_h,
                 bool const mu_batched_h, bool const buoyancy_batched_h) {
   int64_t const nynx_h = ny_h * nx_h;
-  DW_DTYPE fd_coeffsy_h[2], fd_coeffsx_h[2], fd_coeffs1y_h[2][5],
-      fd_coeffs1x_h[2][5], fd_coeffs2y_h[5], fd_coeffs2x_h[5], fd_coeffs3y_h[6],
-      fd_coeffs3x_h[6];
-
-  set_fd_coeffs(fd_coeffsy_h, fd_coeffs1y_h, fd_coeffs2y_h, fd_coeffs3y_h, dy);
-  gpuErrchk(cudaMemcpyToSymbol(fd_coeffsy, fd_coeffsy_h, sizeof(DW_DTYPE) * 2));
-  gpuErrchk(
-      cudaMemcpyToSymbol(fd_coeffs1y, fd_coeffs1y_h[0], sizeof(DW_DTYPE) * 5));
-  gpuErrchk(cudaMemcpyToSymbol(fd_coeffs1y, fd_coeffs1y_h[1],
-                               sizeof(DW_DTYPE) * 5, sizeof(DW_DTYPE) * 5));
-  gpuErrchk(
-      cudaMemcpyToSymbol(fd_coeffs2y, fd_coeffs2y_h, sizeof(DW_DTYPE) * 5));
-  gpuErrchk(
-      cudaMemcpyToSymbol(fd_coeffs3y, fd_coeffs3y_h, sizeof(DW_DTYPE) * 6));
-  set_fd_coeffs(fd_coeffsx_h, fd_coeffs1x_h, fd_coeffs2x_h, fd_coeffs3x_h, dx);
-  gpuErrchk(cudaMemcpyToSymbol(fd_coeffsx, fd_coeffsx_h, sizeof(DW_DTYPE) * 2));
-  gpuErrchk(
-      cudaMemcpyToSymbol(fd_coeffs1x, fd_coeffs1x_h[0], sizeof(DW_DTYPE) * 5));
-  gpuErrchk(cudaMemcpyToSymbol(fd_coeffs1x, fd_coeffs1x_h[1],
-                               sizeof(DW_DTYPE) * 5, sizeof(DW_DTYPE) * 5));
-  gpuErrchk(
-      cudaMemcpyToSymbol(fd_coeffs2x, fd_coeffs2x_h, sizeof(DW_DTYPE) * 5));
-  gpuErrchk(
-      cudaMemcpyToSymbol(fd_coeffs3x, fd_coeffs3x_h, sizeof(DW_DTYPE) * 6));
 
   gpuErrchk(cudaMemcpyToSymbol(dt, &dt_h, sizeof(DW_DTYPE)));
+  gpuErrchk(cudaMemcpyToSymbol(rdy, &rdy_h, sizeof(DW_DTYPE)));
+  gpuErrchk(cudaMemcpyToSymbol(rdx, &rdx_h, sizeof(DW_DTYPE)));
   gpuErrchk(cudaMemcpyToSymbol(n_shots, &n_shots_h, sizeof(int64_t)));
   gpuErrchk(cudaMemcpyToSymbol(ny, &ny_h, sizeof(int64_t)));
   gpuErrchk(cudaMemcpyToSymbol(nx, &nx_h, sizeof(int64_t)));
@@ -1605,14 +590,6 @@ void set_config(DW_DTYPE const dt_h, DW_DTYPE const dy, DW_DTYPE const dx,
   gpuErrchk(cudaMemcpyToSymbol(pml_y1, &pml_y1_h, sizeof(int64_t)));
   gpuErrchk(cudaMemcpyToSymbol(pml_x0, &pml_x0_h, sizeof(int64_t)));
   gpuErrchk(cudaMemcpyToSymbol(pml_x1, &pml_x1_h, sizeof(int64_t)));
-  gpuErrchk(cudaMemcpyToSymbol(spml_y0, &spml_y0_h, sizeof(int64_t)));
-  gpuErrchk(cudaMemcpyToSymbol(spml_y1, &spml_y1_h, sizeof(int64_t)));
-  gpuErrchk(cudaMemcpyToSymbol(spml_x0, &spml_x0_h, sizeof(int64_t)));
-  gpuErrchk(cudaMemcpyToSymbol(spml_x1, &spml_x1_h, sizeof(int64_t)));
-  gpuErrchk(cudaMemcpyToSymbol(vpml_y0, &vpml_y0_h, sizeof(int64_t)));
-  gpuErrchk(cudaMemcpyToSymbol(vpml_y1, &vpml_y1_h, sizeof(int64_t)));
-  gpuErrchk(cudaMemcpyToSymbol(vpml_x0, &vpml_x0_h, sizeof(int64_t)));
-  gpuErrchk(cudaMemcpyToSymbol(vpml_x1, &vpml_x1_h, sizeof(int64_t)));
   gpuErrchk(cudaMemcpyToSymbol(lamb_batched, &lamb_batched_h, sizeof(bool)));
   gpuErrchk(cudaMemcpyToSymbol(mu_batched, &mu_batched_h, sizeof(bool)));
   gpuErrchk(
@@ -1621,7 +598,9 @@ void set_config(DW_DTYPE const dt_h, DW_DTYPE const dy, DW_DTYPE const dx,
 
 void backward_batch(
     DW_DTYPE const *__restrict const lamb, DW_DTYPE const *__restrict const mu,
-    DW_DTYPE const *__restrict const buoyancy,
+    DW_DTYPE const *__restrict const mu_yx,
+    DW_DTYPE const *__restrict const buoyancy_y,
+    DW_DTYPE const *__restrict const buoyancy_x,
     DW_DTYPE const *__restrict const grad_r_y,
     DW_DTYPE const *__restrict const grad_r_x,
     DW_DTYPE const *__restrict const grad_r_p, DW_DTYPE *__restrict const vy,
@@ -1644,7 +623,9 @@ void backward_batch(
     DW_DTYPE const *__restrict const dvydxdvxdy_store,
     DW_DTYPE *__restrict const grad_f_y, DW_DTYPE *__restrict const grad_f_x,
     DW_DTYPE *__restrict const grad_lamb, DW_DTYPE *__restrict const grad_mu,
-    DW_DTYPE *__restrict const grad_buoyancy,
+    DW_DTYPE *__restrict const grad_mu_yx,
+    DW_DTYPE *__restrict const grad_buoyancy_y,
+    DW_DTYPE *__restrict const grad_buoyancy_x,
     DW_DTYPE const *__restrict const ay, DW_DTYPE const *__restrict const ayh,
     DW_DTYPE const *__restrict const ax, DW_DTYPE const *__restrict const axh,
     DW_DTYPE const *__restrict const by, DW_DTYPE const *__restrict const byh,
@@ -1685,22 +666,12 @@ void backward_batch(
   dim3 dimGrid_receivers_y(gridx_receivers_y, gridy_receivers, gridz_receivers);
   dim3 dimGrid_receivers_x(gridx_receivers_x, gridy_receivers, gridz_receivers);
   dim3 dimGrid_receivers_p(gridx_receivers_p, gridy_receivers, gridz_receivers);
-  if (lamb_requires_grad) {
-    add_to_grad_lamb<<<dimGrid, dimBlock>>>(grad_lamb, sigmayy, sigmaxx,
-                                            dvydy_store, dvxdx_store);
-    CHECK_KERNEL_ERROR
-  }
-  if (mu_requires_grad) {
-    add_to_grad_mu<<<dimGrid, dimBlock>>>(grad_mu, sigmayy, sigmaxy, sigmaxx,
-                                          dvydy_store, dvxdx_store,
-                                          dvydxdvxdy_store);
-    CHECK_KERNEL_ERROR
-  }
   backward_kernel_sigma<<<dimGrid, dimBlock>>>(
-      lamb, mu, buoyancy, vy, vx, sigmayy, sigmaxy, sigmaxx, m_vyy, m_vyx,
-      m_vxy, m_vxx, m_sigmayyy, m_sigmaxyy, m_sigmaxyx, m_sigmaxxx, m_sigmayyyn,
-      m_sigmaxyyn, m_sigmaxyxn, m_sigmaxxxn, ay, ayh, ax, axh, by, byh, bx,
-      bxh);
+      lamb, mu, mu_yx, buoyancy_y, buoyancy_x, vy, vx, sigmayy, sigmaxy,
+      sigmaxx, m_vyy, m_vyx, m_vxy, m_vxx, m_sigmayyy, m_sigmaxyy, m_sigmaxyx,
+      m_sigmaxxx, m_sigmayyyn, m_sigmaxyyn, m_sigmaxyxn, m_sigmaxxxn,
+      dvydbuoyancy, dvxdbuoyancy, grad_buoyancy_y, grad_buoyancy_x, ay, ayh, ax,
+      axh, by, byh, bx, bxh, buoyancy_requires_grad);
   CHECK_KERNEL_ERROR
   if (n_sources_y_per_shot_h > 0) {
     record_adjoint_receivers_y<<<dimGrid_sources_y, dimBlock_sources>>>(
@@ -1712,15 +683,12 @@ void backward_batch(
         grad_f_x, vx, sources_x_i);
     CHECK_KERNEL_ERROR
   }
-  if (buoyancy_requires_grad) {
-    add_to_grad_buoyancy<<<dimGrid, dimBlock>>>(grad_buoyancy, vy, vx,
-                                                dvydbuoyancy, dvxdbuoyancy);
-    CHECK_KERNEL_ERROR
-  }
   backward_kernel_v<<<dimGrid, dimBlock>>>(
-      lamb, mu, buoyancy, vy, vx, sigmayy, sigmaxy, sigmaxx, m_vyy, m_vyx,
-      m_vxy, m_vxx, m_sigmayyy, m_sigmaxyy, m_sigmaxyx, m_sigmaxxx, ay, ayh, ax,
-      axh, by, byh, bx, bxh);
+      lamb, mu, mu_yx, buoyancy_y, buoyancy_x, vy, vx, sigmayy, sigmaxy,
+      sigmaxx, m_vyy, m_vyx, m_vxy, m_vxx, m_sigmayyy, m_sigmaxyy, m_sigmaxyx,
+      m_sigmaxxx, dvydy_store, dvxdx_store, dvydxdvxdy_store, grad_lamb,
+      grad_mu, grad_mu_yx, ay, ayh, ax, axh, by, byh, bx, bxh,
+      lamb_requires_grad, mu_requires_grad);
   CHECK_KERNEL_ERROR
   if (n_receivers_y_per_shot_h > 0) {
     add_adjoint_sources_y<<<dimGrid_receivers_y, dimBlock_receivers>>>(
@@ -1748,7 +716,9 @@ extern "C"
         void FUNC(forward)(
             DW_DTYPE const *__restrict const lamb,
             DW_DTYPE const *__restrict const mu,
-            DW_DTYPE const *__restrict const buoyancy,
+            DW_DTYPE const *__restrict const mu_yx,
+            DW_DTYPE const *__restrict const buoyancy_y,
+            DW_DTYPE const *__restrict const buoyancy_x,
             DW_DTYPE const *__restrict const f_y,
             DW_DTYPE const *__restrict const f_x, DW_DTYPE *__restrict const vy,
             DW_DTYPE *__restrict const vx, DW_DTYPE *__restrict const sigmayy,
@@ -1778,8 +748,8 @@ extern "C"
             int64_t const *__restrict const sources_x_i,
             int64_t const *__restrict const receivers_y_i,
             int64_t const *__restrict const receivers_x_i,
-            int64_t const *__restrict const receivers_p_i, DW_DTYPE const dy,
-            DW_DTYPE const dx, DW_DTYPE const dt_h, int64_t const nt,
+            int64_t const *__restrict const receivers_p_i, DW_DTYPE const rdy,
+            DW_DTYPE const rdx, DW_DTYPE const dt_h, int64_t const nt,
             int64_t const n_shots_h, int64_t const ny_h, int64_t const nx_h,
             int64_t const n_sources_y_per_shot_h,
             int64_t const n_sources_x_per_shot_h,
@@ -1822,11 +792,11 @@ extern "C"
 
   int64_t t;
   gpuErrchk(cudaSetDevice(device));
-  set_config(dt_h, dy, dx, n_shots_h, ny_h, nx_h, n_sources_y_per_shot_h,
+  set_config(dt_h, rdy, rdx, n_shots_h, ny_h, nx_h, n_sources_y_per_shot_h,
              n_sources_x_per_shot_h, n_receivers_y_per_shot_h,
              n_receivers_x_per_shot_h, n_receivers_p_per_shot_h, step_ratio_h,
-             pml_y0_h, pml_y1_h, pml_x0_h, pml_x1_h, 0, 0, 0, 0, 0, 0, 0, 0,
-             lamb_batched_h, mu_batched_h, buoyancy_batched_h);
+             pml_y0_h, pml_y1_h, pml_x0_h, pml_x1_h, lamb_batched_h,
+             mu_batched_h, buoyancy_batched_h);
 
   for (t = start_t; t < start_t + nt; ++t) {
     if (n_receivers_y_per_shot_h > 0) {
@@ -1846,8 +816,8 @@ extern "C"
       CHECK_KERNEL_ERROR
     }
     forward_kernel_v<<<dimGrid, dimBlock>>>(
-        buoyancy, vy, vx, sigmayy, sigmaxy, sigmaxx, m_sigmayyy, m_sigmaxyy,
-        m_sigmaxyx, m_sigmaxxx,
+        buoyancy_y, buoyancy_x, vy, vx, sigmayy, sigmaxy, sigmaxx, m_sigmayyy,
+        m_sigmaxyy, m_sigmaxyx, m_sigmaxxx,
         dvydbuoyancy + (t / step_ratio_h) * ny_h * nx_h * n_shots_h,
         dvxdbuoyancy + (t / step_ratio_h) * ny_h * nx_h * n_shots_h, ay, ayh,
         ax, axh, by, byh, bx, bxh,
@@ -1864,8 +834,8 @@ extern "C"
       CHECK_KERNEL_ERROR
     }
     forward_kernel_sigma<<<dimGrid, dimBlock>>>(
-        lamb, mu, vy, vx, sigmayy, sigmaxy, sigmaxx, m_vyy, m_vyx, m_vxy, m_vxx,
-        dvydy_store + (t / step_ratio_h) * ny_h * nx_h * n_shots_h,
+        lamb, mu, mu_yx, vy, vx, sigmayy, sigmaxy, sigmaxx, m_vyy, m_vyx, m_vxy,
+        m_vxx, dvydy_store + (t / step_ratio_h) * ny_h * nx_h * n_shots_h,
         dvxdx_store + (t / step_ratio_h) * ny_h * nx_h * n_shots_h,
         dvydxdvxdy_store + (t / step_ratio_h) * ny_h * nx_h * n_shots_h, ay,
         ayh, ax, axh, by, byh, bx, bxh,
@@ -1892,7 +862,9 @@ extern "C"
         void FUNC(backward)(
             DW_DTYPE const *__restrict const lamb,
             DW_DTYPE const *__restrict const mu,
-            DW_DTYPE const *__restrict const buoyancy,
+            DW_DTYPE const *__restrict const mu_yx,
+            DW_DTYPE const *__restrict const buoyancy_y,
+            DW_DTYPE const *__restrict const buoyancy_x,
             DW_DTYPE const *__restrict const grad_r_y,
             DW_DTYPE const *__restrict const grad_r_x,
             DW_DTYPE const *__restrict const grad_r_p,
@@ -1921,8 +893,12 @@ extern "C"
             DW_DTYPE *__restrict const grad_lamb_shot,
             DW_DTYPE *__restrict const grad_mu,
             DW_DTYPE *__restrict const grad_mu_shot,
-            DW_DTYPE *__restrict const grad_buoyancy,
-            DW_DTYPE *__restrict const grad_buoyancy_shot,
+            DW_DTYPE *__restrict const grad_mu_yx,
+            DW_DTYPE *__restrict const grad_mu_yx_shot,
+            DW_DTYPE *__restrict const grad_buoyancy_y,
+            DW_DTYPE *__restrict const grad_buoyancy_y_shot,
+            DW_DTYPE *__restrict const grad_buoyancy_x,
+            DW_DTYPE *__restrict const grad_buoyancy_x_shot,
             DW_DTYPE const *__restrict const ay,
             DW_DTYPE const *__restrict const ayh,
             DW_DTYPE const *__restrict const ax,
@@ -1935,8 +911,8 @@ extern "C"
             int64_t const *__restrict const sources_x_i,
             int64_t const *__restrict const receivers_y_i,
             int64_t const *__restrict const receivers_x_i,
-            int64_t const *__restrict const receivers_p_i, DW_DTYPE const dy,
-            DW_DTYPE const dx, DW_DTYPE const dt_h, int64_t const nt,
+            int64_t const *__restrict const receivers_p_i, DW_DTYPE const rdy,
+            DW_DTYPE const rdx, DW_DTYPE const dt_h, int64_t const nt,
             int64_t const n_shots_h, int64_t const ny_h, int64_t const nx_h,
             int64_t const n_sources_y_per_shot_h,
             int64_t const n_sources_x_per_shot_h,
@@ -1946,11 +922,9 @@ extern "C"
             bool const lamb_requires_grad, bool const mu_requires_grad,
             bool const buoyancy_requires_grad, bool const lamb_batched_h,
             bool const mu_batched_h, bool const buoyancy_batched_h,
-            int64_t const start_t, int64_t const spml_y0_h,
-            int64_t const spml_y1_h, int64_t const spml_x0_h,
-            int64_t const spml_x1_h, int64_t const vpml_y0_h,
-            int64_t const vpml_y1_h, int64_t const vpml_x0_h,
-            int64_t const vpml_x1_h, int64_t const device) {
+            int64_t const start_t, int64_t const pml_y0_h,
+            int64_t const pml_y1_h, int64_t const pml_x0_h,
+            int64_t const pml_x1_h, int64_t const device) {
   dim3 dimBlock_combine(32, 32, 1);
   unsigned int gridx_combine = ceil_div(nx_h, dimBlock_combine.x);
   unsigned int gridy_combine = ceil_div(ny_h, dimBlock_combine.y);
@@ -1967,12 +941,11 @@ extern "C"
   dim3 dimGrid_receivers_x(gridx_receivers_x, gridy_receivers, gridz_receivers);
   int64_t t;
   gpuErrchk(cudaSetDevice(device));
-  set_config(dt_h, dy, dx, n_shots_h, ny_h, nx_h, n_sources_y_per_shot_h,
+  set_config(dt_h, rdy, rdx, n_shots_h, ny_h, nx_h, n_sources_y_per_shot_h,
              n_sources_x_per_shot_h, n_receivers_y_per_shot_h,
              n_receivers_x_per_shot_h, n_receivers_p_per_shot_h, step_ratio_h,
-             0, 0, 0, 0, spml_y0_h, spml_y1_h, spml_x0_h, spml_x1_h, vpml_y0_h,
-             vpml_y1_h, vpml_x0_h, vpml_x1_h, lamb_batched_h, mu_batched_h,
-             buoyancy_batched_h);
+             pml_y0_h, pml_y1_h, pml_x0_h, pml_x1_h, lamb_batched_h,
+             mu_batched_h, buoyancy_batched_h);
   if (n_receivers_y_per_shot_h > 0) {
     add_adjoint_sources_y<<<dimGrid_receivers_y, dimBlock_receivers>>>(
         vy, grad_r_y + nt * n_shots_h * n_receivers_y_per_shot_h,
@@ -1989,7 +962,7 @@ extern "C"
     int64_t store_i = (t / step_ratio_h) * n_shots_h * ny_h * nx_h;
     if ((start_t - 1 - t) & 1) {
       backward_batch(
-          lamb, mu, buoyancy,
+          lamb, mu, mu_yx, buoyancy_y, buoyancy_x,
           grad_r_y + t * n_shots_h * n_receivers_y_per_shot_h,
           grad_r_x + t * n_shots_h * n_receivers_x_per_shot_h,
           grad_r_p + t * n_shots_h * n_receivers_p_per_shot_h, vy, vx, sigmayy,
@@ -2000,9 +973,10 @@ extern "C"
           dvydxdvxdy_store + store_i,
           grad_f_y + t * n_shots_h * n_sources_y_per_shot_h,
           grad_f_x + t * n_shots_h * n_sources_x_per_shot_h, grad_lamb_shot,
-          grad_mu_shot, grad_buoyancy_shot, ay, ayh, ax, axh, by, byh, bx, bxh,
-          sources_y_i, sources_x_i, receivers_y_i, receivers_x_i, receivers_p_i,
-          n_shots_h, ny_h, nx_h, n_sources_y_per_shot_h, n_sources_x_per_shot_h,
+          grad_mu_shot, grad_mu_yx_shot, grad_buoyancy_y_shot,
+          grad_buoyancy_x_shot, ay, ayh, ax, axh, by, byh, bx, bxh, sources_y_i,
+          sources_x_i, receivers_y_i, receivers_x_i, receivers_p_i, n_shots_h,
+          ny_h, nx_h, n_sources_y_per_shot_h, n_sources_x_per_shot_h,
           n_receivers_y_per_shot_h, n_receivers_x_per_shot_h,
           n_receivers_p_per_shot_h,
           lamb_requires_grad && ((t % step_ratio_h) == 0),
@@ -2010,7 +984,7 @@ extern "C"
           buoyancy_requires_grad && ((t % step_ratio_h) == 0));
     } else {
       backward_batch(
-          lamb, mu, buoyancy,
+          lamb, mu, mu_yx, buoyancy_y, buoyancy_x,
           grad_r_y + t * n_shots_h * n_receivers_y_per_shot_h,
           grad_r_x + t * n_shots_h * n_receivers_x_per_shot_h,
           grad_r_p + t * n_shots_h * n_receivers_p_per_shot_h, vy, vx, sigmayy,
@@ -2021,9 +995,10 @@ extern "C"
           dvydxdvxdy_store + store_i,
           grad_f_y + t * n_shots_h * n_sources_y_per_shot_h,
           grad_f_x + t * n_shots_h * n_sources_x_per_shot_h, grad_lamb_shot,
-          grad_mu_shot, grad_buoyancy_shot, ay, ayh, ax, axh, by, byh, bx, bxh,
-          sources_y_i, sources_x_i, receivers_y_i, receivers_x_i, receivers_p_i,
-          n_shots_h, ny_h, nx_h, n_sources_y_per_shot_h, n_sources_x_per_shot_h,
+          grad_mu_shot, grad_mu_yx_shot, grad_buoyancy_y_shot,
+          grad_buoyancy_x_shot, ay, ayh, ax, axh, by, byh, bx, bxh, sources_y_i,
+          sources_x_i, receivers_y_i, receivers_x_i, receivers_p_i, n_shots_h,
+          ny_h, nx_h, n_sources_y_per_shot_h, n_sources_x_per_shot_h,
           n_receivers_y_per_shot_h, n_receivers_x_per_shot_h,
           n_receivers_p_per_shot_h,
           lamb_requires_grad && ((t % step_ratio_h) == 0),
@@ -2038,11 +1013,15 @@ extern "C"
   }
   if (mu_requires_grad && !mu_batched_h && n_shots_h > 1) {
     combine_grad<<<dimGrid_combine, dimBlock_combine>>>(grad_mu, grad_mu_shot);
+    combine_grad<<<dimGrid_combine, dimBlock_combine>>>(grad_mu_yx,
+                                                        grad_mu_yx_shot);
     CHECK_KERNEL_ERROR
   }
   if (buoyancy_requires_grad && !buoyancy_batched_h && n_shots_h > 1) {
-    combine_grad<<<dimGrid_combine, dimBlock_combine>>>(grad_buoyancy,
-                                                        grad_buoyancy_shot);
+    combine_grad<<<dimGrid_combine, dimBlock_combine>>>(grad_buoyancy_y,
+                                                        grad_buoyancy_y_shot);
+    combine_grad<<<dimGrid_combine, dimBlock_combine>>>(grad_buoyancy_x,
+                                                        grad_buoyancy_x_shot);
     CHECK_KERNEL_ERROR
   }
 }
