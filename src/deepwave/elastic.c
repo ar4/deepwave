@@ -388,16 +388,16 @@
   }
 
 static inline void add_pressure(DW_DTYPE *__restrict const sigmayy,
-                         DW_DTYPE *__restrict const sigmaxx,
-                         int64_t const *__restrict const sources_i,
-                         DW_DTYPE const *__restrict const f,
-                         int64_t const n_sources_per_shot) {
+                                DW_DTYPE *__restrict const sigmaxx,
+                                int64_t const *__restrict const sources_i,
+                                DW_DTYPE const *__restrict const f,
+                                int64_t const n_sources_per_shot) {
   int64_t source_idx;
 #pragma omp simd
   for (source_idx = 0; source_idx < n_sources_per_shot; ++source_idx) {
     if (sources_i[source_idx] < 0) continue;
-    sigmayy[sources_i[source_idx]] -= f[source_idx] / (DW_DTYPE)2;
-    sigmaxx[sources_i[source_idx]] -= f[source_idx] / (DW_DTYPE)2;
+    sigmayy[sources_i[source_idx]] += f[source_idx];
+    sigmaxx[sources_i[source_idx]] += f[source_idx];
   }
 }
 
@@ -409,15 +409,14 @@ static inline void record_pressure(DW_DTYPE const *__restrict sigmayy,
 #pragma omp simd
   for (i = 0; i < n; ++i) {
     if (0 <= locations[i])
-      amplitudes[i] =
-          -(sigmayy[locations[i]] + sigmaxx[locations[i]]) / (DW_DTYPE)2;
+      amplitudes[i] = (sigmayy[locations[i]] + sigmaxx[locations[i]]);
   }
 }
 
-static inline void combine_grad_elastic(DW_DTYPE *__restrict const grad,
-                                 DW_DTYPE const *__restrict const grad_thread,
-                                 int64_t const n_threads, int64_t const ny,
-                                 int64_t const nx) {
+static inline void combine_grad_elastic(
+    DW_DTYPE *__restrict const grad,
+    DW_DTYPE const *__restrict const grad_thread, int64_t const n_threads,
+    int64_t const ny, int64_t const nx) {
   int64_t y, x, threadidx;
 #pragma omp simd collapse(2)
   for (y = FD_PAD; y < ny - FD_PAD + 1; ++y) {
@@ -430,33 +429,25 @@ static inline void combine_grad_elastic(DW_DTYPE *__restrict const grad,
   }
 }
 
-    static inline void forward_shot_v(DW_DTYPE const *__restrict const buoyancy_y,
-                               DW_DTYPE const *__restrict const buoyancy_x,
-                               DW_DTYPE *__restrict const vy,
-                               DW_DTYPE *__restrict const vx,
-                               DW_DTYPE const *__restrict const sigmayy,
-                               DW_DTYPE const *__restrict const sigmaxy,
-                               DW_DTYPE const *__restrict const sigmaxx,
-                               DW_DTYPE *__restrict const m_sigmayyy,
-                               DW_DTYPE *__restrict const m_sigmaxyy,
-                               DW_DTYPE *__restrict const m_sigmaxyx,
-                               DW_DTYPE *__restrict const m_sigmaxxx,
-                               DW_DTYPE *__restrict const dvydbuoyancy,
-                               DW_DTYPE *__restrict const dvxdbuoyancy,
-                               DW_DTYPE const *__restrict const ay,
-                               DW_DTYPE const *__restrict const ayh,
-                               DW_DTYPE const *__restrict const ax,
-                               DW_DTYPE const *__restrict const axh,
-                               DW_DTYPE const *__restrict const by,
-                               DW_DTYPE const *__restrict const byh,
-                               DW_DTYPE const *__restrict const bx,
-                               DW_DTYPE const *__restrict const bxh,
-                               DW_DTYPE const rdy, DW_DTYPE const rdx,
-                               DW_DTYPE const dt, int64_t const ny,
-                               int64_t const nx,
-                               bool const buoyancy_requires_grad,
-                               int64_t const pml_y0, int64_t const pml_y1,
-                               int64_t const pml_x0, int64_t const pml_x1) {
+static inline void forward_shot_v(
+    DW_DTYPE const *__restrict const buoyancy_y,
+    DW_DTYPE const *__restrict const buoyancy_x, DW_DTYPE *__restrict const vy,
+    DW_DTYPE *__restrict const vx, DW_DTYPE const *__restrict const sigmayy,
+    DW_DTYPE const *__restrict const sigmaxy,
+    DW_DTYPE const *__restrict const sigmaxx,
+    DW_DTYPE *__restrict const m_sigmayyy,
+    DW_DTYPE *__restrict const m_sigmaxyy,
+    DW_DTYPE *__restrict const m_sigmaxyx,
+    DW_DTYPE *__restrict const m_sigmaxxx,
+    DW_DTYPE *__restrict const dvydbuoyancy,
+    DW_DTYPE *__restrict const dvxdbuoyancy,
+    DW_DTYPE const *__restrict const ay, DW_DTYPE const *__restrict const ayh,
+    DW_DTYPE const *__restrict const ax, DW_DTYPE const *__restrict const axh,
+    DW_DTYPE const *__restrict const by, DW_DTYPE const *__restrict const byh,
+    DW_DTYPE const *__restrict const bx, DW_DTYPE const *__restrict const bxh,
+    DW_DTYPE const rdy, DW_DTYPE const rdx, DW_DTYPE const dt, int64_t const ny,
+    int64_t const nx, bool const buoyancy_requires_grad, int64_t const pml_y0,
+    int64_t const pml_y1, int64_t const pml_x0, int64_t const pml_x1) {
   int64_t y, x, y_begin_y, y_end_y, x_begin_y, x_end_y, y_begin_x, y_end_x,
       x_begin_x, x_end_x;
   // Check if gradients are required for buoyancy (density)
@@ -485,30 +476,24 @@ static inline void combine_grad_elastic(DW_DTYPE *__restrict const grad,
   }
 }
 
-    static inline void forward_shot_sigma(
-        DW_DTYPE const *__restrict const lamb,
-        DW_DTYPE const *__restrict const mu,
-        DW_DTYPE const *__restrict const mu_yx,
-        DW_DTYPE const *__restrict const vy,
-        DW_DTYPE const *__restrict const vx, DW_DTYPE *__restrict const sigmayy,
-        DW_DTYPE *__restrict const sigmaxy, DW_DTYPE *__restrict const sigmaxx,
-        DW_DTYPE *__restrict const m_vyy, DW_DTYPE *__restrict const m_vyx,
-        DW_DTYPE *__restrict const m_vxy, DW_DTYPE *__restrict const m_vxx,
-        DW_DTYPE *__restrict const dvydy_store,
-        DW_DTYPE *__restrict const dvxdx_store,
-        DW_DTYPE *__restrict const dvydxdvxdy_store,
-        DW_DTYPE const *__restrict const ay,
-        DW_DTYPE const *__restrict const ayh,
-        DW_DTYPE const *__restrict const ax,
-        DW_DTYPE const *__restrict const axh,
-        DW_DTYPE const *__restrict const by,
-        DW_DTYPE const *__restrict const byh,
-        DW_DTYPE const *__restrict const bx,
-        DW_DTYPE const *__restrict const bxh, DW_DTYPE const rdy,
-        DW_DTYPE const rdx, DW_DTYPE const dt, int64_t const ny,
-        int64_t const nx, bool const lamb_requires_grad,
-        bool const mu_requires_grad, int64_t const pml_y0, int64_t const pml_y1,
-        int64_t const pml_x0, int64_t const pml_x1) {
+static inline void forward_shot_sigma(
+    DW_DTYPE const *__restrict const lamb, DW_DTYPE const *__restrict const mu,
+    DW_DTYPE const *__restrict const mu_yx, DW_DTYPE const *__restrict const vy,
+    DW_DTYPE const *__restrict const vx, DW_DTYPE *__restrict const sigmayy,
+    DW_DTYPE *__restrict const sigmaxy, DW_DTYPE *__restrict const sigmaxx,
+    DW_DTYPE *__restrict const m_vyy, DW_DTYPE *__restrict const m_vyx,
+    DW_DTYPE *__restrict const m_vxy, DW_DTYPE *__restrict const m_vxx,
+    DW_DTYPE *__restrict const dvydy_store,
+    DW_DTYPE *__restrict const dvxdx_store,
+    DW_DTYPE *__restrict const dvydxdvxdy_store,
+    DW_DTYPE const *__restrict const ay, DW_DTYPE const *__restrict const ayh,
+    DW_DTYPE const *__restrict const ax, DW_DTYPE const *__restrict const axh,
+    DW_DTYPE const *__restrict const by, DW_DTYPE const *__restrict const byh,
+    DW_DTYPE const *__restrict const bx, DW_DTYPE const *__restrict const bxh,
+    DW_DTYPE const rdy, DW_DTYPE const rdx, DW_DTYPE const dt, int64_t const ny,
+    int64_t const nx, bool const lamb_requires_grad,
+    bool const mu_requires_grad, int64_t const pml_y0, int64_t const pml_y1,
+    int64_t const pml_x0, int64_t const pml_x1) {
   int64_t y, x, y_begin_ii, y_end_ii, x_begin_ii, x_end_ii, y_begin_xy,
       y_end_xy, x_begin_xy, x_end_xy;
   if (lamb_requires_grad && mu_requires_grad) {
@@ -580,8 +565,8 @@ static inline void backward_shot(
     DW_DTYPE const *__restrict const dvxdx_store,
     DW_DTYPE const *__restrict const dvydxdvxdy_store,
     DW_DTYPE *__restrict const grad_f_y, DW_DTYPE *__restrict const grad_f_x,
-    DW_DTYPE *__restrict const grad_lamb, DW_DTYPE *__restrict const grad_mu,
-    DW_DTYPE *__restrict const grad_mu_yx,
+    DW_DTYPE *__restrict const grad_f_p, DW_DTYPE *__restrict const grad_lamb,
+    DW_DTYPE *__restrict const grad_mu, DW_DTYPE *__restrict const grad_mu_yx,
     DW_DTYPE *__restrict const grad_buoyancy_y,
     DW_DTYPE *__restrict const grad_buoyancy_x,
     DW_DTYPE const *__restrict const ay, DW_DTYPE const *__restrict const ayh,
@@ -590,19 +575,25 @@ static inline void backward_shot(
     DW_DTYPE const *__restrict const bx, DW_DTYPE const *__restrict const bxh,
     int64_t const *__restrict const sources_y_i,
     int64_t const *__restrict const sources_x_i,
+    int64_t const *__restrict const sources_p_i,
     int64_t const *__restrict const receivers_y_i,
     int64_t const *__restrict const receivers_x_i,
     int64_t const *__restrict const receivers_p_i, DW_DTYPE const rdy,
     DW_DTYPE const rdx, DW_DTYPE const dt, int64_t const ny, int64_t const nx,
     int64_t const n_sources_y_per_shot, int64_t const n_sources_x_per_shot,
-    int64_t const n_receivers_y_per_shot, int64_t n_receivers_x_per_shot,
-    int64_t const n_receivers_p_per_shot, int64_t const step_ratio,
-    bool const lamb_requires_grad, bool const mu_requires_grad,
-    bool const buoyancy_requires_grad, int64_t const pml_y0,
-    int64_t const pml_y1, int64_t const pml_x0, int64_t const pml_x1) {
+    int64_t const n_sources_p_per_shot, int64_t const n_receivers_y_per_shot,
+    int64_t n_receivers_x_per_shot, int64_t const n_receivers_p_per_shot,
+    int64_t const step_ratio, bool const lamb_requires_grad,
+    bool const mu_requires_grad, bool const buoyancy_requires_grad,
+    int64_t const pml_y0, int64_t const pml_y1, int64_t const pml_x0,
+    int64_t const pml_x1) {
   int64_t y, x, y_begin_y, y_end_y, x_begin_y, x_end_y, y_begin_x, y_end_x,
       x_begin_x, x_end_x, y_begin_ii, y_end_ii, x_begin_ii, x_end_ii,
       y_begin_xy, y_end_xy, x_begin_xy, x_end_xy;
+  if (n_sources_p_per_shot > 0) {
+    record_pressure(sigmayy, sigmaxx, sources_p_i, grad_f_p,
+                    n_sources_p_per_shot);
+  }
   if (buoyancy_requires_grad) {
     BACKWARD_KERNEL_SIGMA(0, 0, 1)
     BACKWARD_KERNEL_SIGMA(0, 1, 1)
@@ -693,7 +684,8 @@ __declspec(dllexport)
         DW_DTYPE const *__restrict const buoyancy_y,
         DW_DTYPE const *__restrict const buoyancy_x,
         DW_DTYPE const *__restrict const f_y,
-        DW_DTYPE const *__restrict const f_x, DW_DTYPE *__restrict const vy,
+        DW_DTYPE const *__restrict const f_x,
+        DW_DTYPE const *__restrict const f_p, DW_DTYPE *__restrict const vy,
         DW_DTYPE *__restrict const vx, DW_DTYPE *__restrict const sigmayy,
         DW_DTYPE *__restrict const sigmaxy, DW_DTYPE *__restrict const sigmaxx,
         DW_DTYPE *__restrict const m_vyy, DW_DTYPE *__restrict const m_vyx,
@@ -718,12 +710,14 @@ __declspec(dllexport)
         DW_DTYPE const *__restrict const bxh,
         int64_t const *__restrict const sources_y_i,
         int64_t const *__restrict const sources_x_i,
+        int64_t const *__restrict const sources_p_i,
         int64_t const *__restrict const receivers_y_i,
         int64_t const *__restrict const receivers_x_i,
         int64_t const *__restrict const receivers_p_i, DW_DTYPE const rdy,
         DW_DTYPE const rdx, DW_DTYPE const dt, int64_t const nt,
         int64_t const n_shots, int64_t const ny, int64_t const nx,
         int64_t const n_sources_y_per_shot, int64_t const n_sources_x_per_shot,
+        int64_t const n_sources_p_per_shot,
         int64_t const n_receivers_y_per_shot, int64_t n_receivers_x_per_shot,
         int64_t const n_receivers_p_per_shot, int64_t const step_ratio,
         bool const lamb_requires_grad, bool const mu_requires_grad,
@@ -739,6 +733,7 @@ __declspec(dllexport)
     int64_t const si = shot * ny * nx;
     int64_t const siy = shot * n_sources_y_per_shot;
     int64_t const six = shot * n_sources_x_per_shot;
+    int64_t const sip = shot * n_sources_p_per_shot;
     int64_t const riy = shot * n_receivers_y_per_shot;
     int64_t const rix = shot * n_receivers_x_per_shot;
     int64_t const rip = shot * n_receivers_p_per_shot;
@@ -796,16 +791,11 @@ __declspec(dllexport)
           rdx, dt, ny, nx, lamb_requires_grad && ((t % step_ratio) == 0),
           mu_requires_grad && ((t % step_ratio) == 0), pml_y0, pml_y1, pml_x0,
           pml_x1);
-    }
-    if (n_receivers_y_per_shot > 0) {
-      record_from_wavefield(vy + si, receivers_y_i + riy,
-                            r_y + t * n_shots * n_receivers_y_per_shot + riy,
-                            n_receivers_y_per_shot);
-    }
-    if (n_receivers_x_per_shot > 0) {
-      record_from_wavefield(vx + si, receivers_x_i + rix,
-                            r_x + t * n_shots * n_receivers_x_per_shot + rix,
-                            n_receivers_x_per_shot);
+      if (n_sources_p_per_shot > 0) {
+        add_pressure(sigmayy + si, sigmaxx + si, sources_p_i + sip,
+                     f_p + t * n_shots * n_sources_p_per_shot + sip,
+                     n_sources_p_per_shot);
+      }
     }
   }
 }
@@ -841,6 +831,7 @@ __declspec(dllexport)
         DW_DTYPE const *__restrict const dvydxdvxdy_store,
         DW_DTYPE *__restrict const grad_f_y,
         DW_DTYPE *__restrict const grad_f_x,
+        DW_DTYPE *__restrict const grad_f_p,
         DW_DTYPE *__restrict const grad_lamb,
         DW_DTYPE *__restrict const grad_lamb_thread,
         DW_DTYPE *__restrict const grad_mu,
@@ -861,12 +852,14 @@ __declspec(dllexport)
         DW_DTYPE const *__restrict const bxh,
         int64_t const *__restrict const sources_y_i,
         int64_t const *__restrict const sources_x_i,
+        int64_t const *__restrict const sources_p_i,
         int64_t const *__restrict const receivers_y_i,
         int64_t const *__restrict const receivers_x_i,
         int64_t const *__restrict const receivers_p_i, DW_DTYPE const rdy,
         DW_DTYPE const rdx, DW_DTYPE const dt, int64_t const nt,
         int64_t const n_shots, int64_t const ny, int64_t const nx,
         int64_t const n_sources_y_per_shot, int64_t const n_sources_x_per_shot,
+        int64_t const n_sources_p_per_shot,
         int64_t const n_receivers_y_per_shot, int64_t n_receivers_x_per_shot,
         int64_t const n_receivers_p_per_shot, int64_t const step_ratio,
         bool const lamb_requires_grad, bool const mu_requires_grad,
@@ -882,6 +875,7 @@ __declspec(dllexport)
     int64_t const si = shot * ny * nx;
     int64_t const siy = shot * n_sources_y_per_shot;
     int64_t const six = shot * n_sources_x_per_shot;
+    int64_t const sip = shot * n_sources_p_per_shot;
     int64_t const riy = shot * n_receivers_y_per_shot;
     int64_t const rix = shot * n_receivers_x_per_shot;
     int64_t const rip = shot * n_receivers_p_per_shot;
@@ -904,16 +898,6 @@ __declspec(dllexport)
         buoyancy_batched ? buoyancy_x + si : buoyancy_x;
     int64_t t = nt;
 
-    if (n_receivers_y_per_shot > 0 && nt > 0) {
-      add_to_wavefield(vy + si, receivers_y_i + riy,
-                       grad_r_y + t * n_shots * n_receivers_y_per_shot + riy,
-                       n_receivers_y_per_shot);
-    }
-    if (n_receivers_x_per_shot > 0 && nt > 0) {
-      add_to_wavefield(vx + si, receivers_x_i + rix,
-                       grad_r_x + t * n_shots * n_receivers_x_per_shot + rix,
-                       n_receivers_x_per_shot);
-    }
     for (t = start_t - 1; t >= start_t - nt; --t) {
       int64_t store_i = (t / step_ratio) * n_shots * ny * nx + shot * ny * nx;
       if ((start_t - 1 - t) & 1) {
@@ -931,13 +915,15 @@ __declspec(dllexport)
             dvydxdvxdy_store + store_i,
             grad_f_y + t * n_shots * n_sources_y_per_shot + siy,
             grad_f_x + t * n_shots * n_sources_x_per_shot + six,
+            grad_f_p + t * n_shots * n_sources_p_per_shot + sip,
             grad_lamb_thread + grad_lamb_i, grad_mu_thread + grad_mu_i,
             grad_mu_yx_thread + grad_mu_i,
             grad_buoyancy_y_thread + grad_buoyancy_i,
             grad_buoyancy_x_thread + grad_buoyancy_i, ay, ayh, ax, axh, by, byh,
-            bx, bxh, sources_y_i + siy, sources_x_i + six, receivers_y_i + riy,
-            receivers_x_i + rix, receivers_p_i + rip, rdy, rdx, dt, ny, nx,
-            n_sources_y_per_shot, n_sources_x_per_shot, n_receivers_y_per_shot,
+            bx, bxh, sources_y_i + siy, sources_x_i + six, sources_p_i + sip,
+            receivers_y_i + riy, receivers_x_i + rix, receivers_p_i + rip, rdy,
+            rdx, dt, ny, nx, n_sources_y_per_shot, n_sources_x_per_shot,
+            n_sources_p_per_shot, n_receivers_y_per_shot,
             n_receivers_x_per_shot, n_receivers_p_per_shot, step_ratio,
             lamb_requires_grad && ((t % step_ratio) == 0),
             mu_requires_grad && ((t % step_ratio) == 0),
@@ -958,13 +944,15 @@ __declspec(dllexport)
             dvydxdvxdy_store + store_i,
             grad_f_y + t * n_shots * n_sources_y_per_shot + siy,
             grad_f_x + t * n_shots * n_sources_x_per_shot + six,
+            grad_f_p + t * n_shots * n_sources_p_per_shot + sip,
             grad_lamb_thread + grad_lamb_i, grad_mu_thread + grad_mu_i,
             grad_mu_yx_thread + grad_mu_i,
             grad_buoyancy_y_thread + grad_buoyancy_i,
             grad_buoyancy_x_thread + grad_buoyancy_i, ay, ayh, ax, axh, by, byh,
-            bx, bxh, sources_y_i + siy, sources_x_i + six, receivers_y_i + riy,
-            receivers_x_i + rix, receivers_p_i + rip, rdy, rdx, dt, ny, nx,
-            n_sources_y_per_shot, n_sources_x_per_shot, n_receivers_y_per_shot,
+            bx, bxh, sources_y_i + siy, sources_x_i + six, sources_p_i + sip,
+            receivers_y_i + riy, receivers_x_i + rix, receivers_p_i + rip, rdy,
+            rdx, dt, ny, nx, n_sources_y_per_shot, n_sources_x_per_shot,
+            n_sources_p_per_shot, n_receivers_y_per_shot,
             n_receivers_x_per_shot, n_receivers_p_per_shot, step_ratio,
             lamb_requires_grad && ((t % step_ratio) == 0),
             mu_requires_grad && ((t % step_ratio) == 0),

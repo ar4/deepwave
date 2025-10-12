@@ -47,8 +47,8 @@ def test_get_argtypes_elastic_backward_double():
         for t in argtypes
     )
     assert argtypes.count(ctypes.c_double) == 3  # Based on elastic_backward_template
-    assert argtypes.count(ctypes.c_void_p) == 55
-    assert argtypes.count(ctypes.c_int64) == 16
+    assert argtypes.count(ctypes.c_void_p) == 57
+    assert argtypes.count(ctypes.c_int64) == 17
     assert argtypes.count(ctypes.c_bool) == 6
 
 

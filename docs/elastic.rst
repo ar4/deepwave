@@ -184,6 +184,6 @@ and
     \end{pmatrix}
     \label{elastic_matrix_sigma}
 
-where, for conciseness, half grid cell shifts are represented by a prime, for example :math:`B^{y'x'}` is the buoyancy at locations :math:`(y+\frac{1}{2}, x+\frac{1}{2})`. :math:`\delta_{r_y}`, :math:`\delta_{r_x}`, and :math:`\delta_{r_p}`, are the locations of :math:`v_y`, :math:`v_x`, and pressure receivers, respectively. To ensure the velocity receiver data covers the same time range as the input sources, the recordings are shifted by half a time step before being returned to the user.
+where, for conciseness, half grid cell shifts are represented by a prime, for example :math:`B^{y'x'}` is the buoyancy at locations :math:`(y+\frac{1}{2}, x+\frac{1}{2})`. :math:`\delta_{r_y}`, :math:`\delta_{r_x}`, and :math:`\delta_{r_p}`, are the locations of :math:`v_y`, :math:`v_x`, and pressure receivers, respectively. The receiver data cover the same time range as the corresponding input sources, so the velocity receiver recordings are from -half a time step earlier than the pressure recordings.
 
 A "free surface" refers to a surface where the traction is zero. For example, if the :math:`y` dimension is depth, then for the top surface to be a free surface we need :math:`\sigma_{yy}=0` and :math:`\sigma_{xy}=0` there. Different methods have been proposed to implement this. Deepwave uses the `improved vacuum method <https://doi.org/10.1190/geo2011-0067.1>`_ approach, so setting the property models to zero at any point will result in a free surface there.

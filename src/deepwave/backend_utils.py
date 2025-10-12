@@ -55,11 +55,11 @@ scalar_born_backward_sc_template: List[type] = (
 )
 
 elastic_forward_template: List[type] = (
-    [c_void_p] * 41 + [FLOAT_TYPE] * 3 + [c_int64] * 10 + [c_bool] * 6 + [c_int64] * 6
+    [c_void_p] * 43 + [FLOAT_TYPE] * 3 + [c_int64] * 11 + [c_bool] * 6 + [c_int64] * 6
 )
 
 elastic_backward_template: List[type] = (
-    [c_void_p] * 55 + [FLOAT_TYPE] * 3 + [c_int64] * 10 + [c_bool] * 6 + [c_int64] * 6
+    [c_void_p] * 57 + [FLOAT_TYPE] * 3 + [c_int64] * 11 + [c_bool] * 6 + [c_int64] * 6
 )
 
 # A dictionary to hold all the templates

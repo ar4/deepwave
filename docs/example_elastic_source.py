@@ -30,7 +30,7 @@ source_amplitudes = (
 
 # single body forces in y and x dimensions
 source_locations = torch.tensor([[[35, 35]]]).to(device)
-# body force in y located at (35.5, 35.5)
+# body force in y located at (35.5, 35.0)
 out = elastic(
     lamb,
     mu,
@@ -44,7 +44,7 @@ out = elastic(
 sy_y = out[0][0]
 sy_x = out[1][0]
 sy_p = -(out[2][0] + out[4][0])
-# body force in x located at (35, 35)
+# body force in x located at (35.5, 35)
 out = elastic(
     lamb,
     mu,
@@ -59,23 +59,17 @@ sx_y = out[0][0]
 sx_x = out[1][0]
 sx_p = -(out[2][0] + out[4][0])
 
-# explosive source located at (35, 35.5)
-source_locations_y = torch.tensor([[[34, 35], [35, 35]]]).to(device)
-source_locations_x = torch.tensor([[[35, 35], [35, 36]]]).to(device)
-source_amplitudes_y = source_amplitudes.repeat(1, 2, 1)
-source_amplitudes_y[:, 0] *= -1
-source_amplitudes_x = source_amplitudes.repeat(1, 2, 1)
-source_amplitudes_x[:, 0] *= -1
+# explosive source located at (35, 35)
+source_locations_p = torch.tensor([[[35, 35]]]).to(device)
+source_amplitudes_p = source_amplitudes.repeat(1, 1, 1)
 out = elastic(
     lamb,
     mu,
     buoyancy,
     dx,
     dt,
-    source_amplitudes_y=source_amplitudes_y,
-    source_locations_y=source_locations_y,
-    source_amplitudes_x=source_amplitudes_x,
-    source_locations_x=source_locations_x,
+    source_amplitudes_p=source_amplitudes_p,
+    source_locations_p=source_locations_p,
     pml_freq=freq,
 )
 sp_y = out[0][0]

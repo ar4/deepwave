@@ -141,17 +141,7 @@ The same principle can be used to create a free surface of any shape. The follow
 
 .. image:: example_elastic_complex_freesurface.gif
 
-As discussed in the section on :doc:`elastic propagator implementation <elastic>`, an explosive source can be simulated in Deepwave's elastic propagator with multiple sources oriented away from the explosive source location. Using one source before and after it in both dimensions, we will thus have four sources per shot: two in the x dimension and two in the y dimension. For example, for one shot with an explosive source located at `(35, 35.5)` (the half cell shift in the x dimension is due to the staggered grid) we would use::
-
-
-    source_locations_y = torch.tensor([[[34, 35], [35, 35]]]).to(device)
-    source_locations_x = torch.tensor([[[35, 35], [35, 36]]]).to(device)
-    source_amplitudes_y = source_amplitudes.repeat(1, 2, 1)
-    source_amplitudes_y[:, 0] *= -1
-    source_amplitudes_x = source_amplitudes.repeat(1, 2, 1)
-    source_amplitudes_x[:, 0] *= -1
-
-where `source_amplitudes` are the amplitudes of the explosive source (of dimensions `[shot, source_per_shot, time]`). We can also create body force sources in the y and x dimensions (:math:`f_y` and :math:`f_x`) and compare them with the explosive source (:math:`f_p`) by looking at the resulting particle velocity in the y and x dimensions (:math:`v_y` and :math:`v_x`) and the pressure field (:math:`-\sigma_{yy}-\sigma_{xx}`, denoted :math:`p`).
+The elastic propagator supports three types of sources: body forces in the y and x dimensions (:math:`f_y` and :math:`f_x`), and pressure sources (:math:`f_p`). We can compare these by looking at the resulting particle velocity in the y and x dimensions (:math:`v_y` and :math:`v_x`) and the pressure field (:math:`-\sigma_{yy}-\sigma_{xx}`, denoted :math:`p`).
 
 .. image:: example_elastic_source.jpg
 

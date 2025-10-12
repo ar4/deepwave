@@ -34,8 +34,10 @@ def elasticprop(
     dt: float,
     source_amplitudes_y: Optional[torch.Tensor],
     source_amplitudes_x: Optional[torch.Tensor],
+    source_amplitudes_p: Optional[torch.Tensor],
     source_locations_y: Optional[torch.Tensor],
     source_locations_x: Optional[torch.Tensor],
+    source_locations_p: Optional[torch.Tensor],
     receiver_locations_y: Optional[torch.Tensor],
     receiver_locations_x: Optional[torch.Tensor],
     receiver_locations_p: Optional[torch.Tensor],
@@ -77,6 +79,9 @@ def elasticprop(
     if source_amplitudes_x is not None:
         source_amplitudes_x = source_amplitudes_x.to(device)
         source_locations_x = source_locations_x.to(device)
+    if source_amplitudes_p is not None:
+        source_amplitudes_p = source_amplitudes_p.to(device)
+        source_locations_p = source_locations_p.to(device)
     if receiver_locations_y is not None:
         receiver_locations_y = receiver_locations_y.to(device)
     if receiver_locations_x is not None:
@@ -93,8 +98,10 @@ def elasticprop(
             dt,
             source_amplitudes_y=source_amplitudes_y,
             source_amplitudes_x=source_amplitudes_x,
+            source_amplitudes_p=source_amplitudes_p,
             source_locations_y=source_locations_y,
             source_locations_x=source_locations_x,
+            source_locations_p=source_locations_p,
             receiver_locations_y=receiver_locations_y,
             receiver_locations_x=receiver_locations_x,
             receiver_locations_p=receiver_locations_p,
@@ -121,8 +128,10 @@ def elasticprop(
         dt,
         source_amplitudes_y=source_amplitudes_y,
         source_amplitudes_x=source_amplitudes_x,
+        source_amplitudes_p=source_amplitudes_p,
         source_locations_y=source_locations_y,
         source_locations_x=source_locations_x,
+        source_locations_p=source_locations_p,
         receiver_locations_y=receiver_locations_y,
         receiver_locations_x=receiver_locations_x,
         receiver_locations_p=receiver_locations_p,
@@ -153,8 +162,10 @@ def elasticpropchained(
     dt: float,
     source_amplitudes_y: Optional[torch.Tensor],
     source_amplitudes_x: Optional[torch.Tensor],
+    source_amplitudes_p: Optional[torch.Tensor],
     source_locations_y: Optional[torch.Tensor],
     source_locations_x: Optional[torch.Tensor],
+    source_locations_p: Optional[torch.Tensor],
     receiver_locations_y: Optional[torch.Tensor],
     receiver_locations_x: Optional[torch.Tensor],
     receiver_locations_p: Optional[torch.Tensor],
@@ -199,6 +210,9 @@ def elasticpropchained(
     if source_amplitudes_x is not None:
         source_amplitudes_x = source_amplitudes_x.to(device)
         source_locations_x = source_locations_x.to(device)
+    if source_amplitudes_p is not None:
+        source_amplitudes_p = source_amplitudes_p.to(device)
+        source_locations_p = source_locations_p.to(device)
     if receiver_locations_y is not None:
         receiver_locations_y = receiver_locations_y.to(device)
     if receiver_locations_x is not None:
@@ -209,7 +223,11 @@ def elasticpropchained(
     max_vel = 2000
     dt, step_ratio = cfl_condition(dx[0], dx[1], dt, max_vel)
     source_nt = None
-    if source_amplitudes_y is not None or source_amplitudes_x is not None:
+    if (
+        source_amplitudes_y is not None
+        or source_amplitudes_x is not None
+        or source_amplitudes_p is not None
+    ):
         if source_amplitudes_y is not None:
             source_amplitudes_y = upsample(source_amplitudes_y, step_ratio)
             source_nt = source_amplitudes_y.shape[-1]
@@ -220,6 +238,13 @@ def elasticpropchained(
         if source_amplitudes_x is not None:
             source_amplitudes_x = upsample(source_amplitudes_x, step_ratio)
             source_nt = source_amplitudes_x.shape[-1]
+            nt_per_segment = (
+                ((source_nt + n_chained - 1) // n_chained + step_ratio - 1)
+                // step_ratio
+            ) * step_ratio
+        if source_amplitudes_p is not None:
+            source_amplitudes_p = upsample(source_amplitudes_p, step_ratio)
+            source_nt = source_amplitudes_p.shape[-1]
             nt_per_segment = (
                 ((source_nt + n_chained - 1) // n_chained + step_ratio - 1)
                 // step_ratio
@@ -299,7 +324,11 @@ def elasticpropchained(
             )
 
     for segment_idx in range(n_chained):
-        if source_amplitudes_y is not None or source_amplitudes_x is not None:
+        if (
+            source_amplitudes_y is not None
+            or source_amplitudes_x is not None
+            or source_amplitudes_p is not None
+        ):
             if source_amplitudes_y is not None:
                 segment_source_amplitudes_y = source_amplitudes_y[
                     ...,
@@ -316,10 +345,19 @@ def elasticpropchained(
                         source_nt,
                     ),
                 ]
+            if source_amplitudes_p is not None:
+                segment_source_amplitudes_p = source_amplitudes_p[
+                    ...,
+                    nt_per_segment * segment_idx : min(
+                        nt_per_segment * (segment_idx + 1),
+                        source_nt,
+                    ),
+                ]
             segment_nt = None
         else:
             segment_source_amplitudes_y = None
             segment_source_amplitudes_x = None
+            segment_source_amplitudes_p = None
             segment_nt = (
                 nt_per_segment * (segment_idx + 1) - nt_per_segment * segment_idx
             )
@@ -348,8 +386,10 @@ def elasticpropchained(
             dt,
             source_amplitudes_y=segment_source_amplitudes_y,
             source_amplitudes_x=segment_source_amplitudes_x,
+            source_amplitudes_p=segment_source_amplitudes_p,
             source_locations_y=source_locations_y,
             source_locations_x=source_locations_x,
+            source_locations_p=source_locations_p,
             receiver_locations_y=receiver_locations_y,
             receiver_locations_x=receiver_locations_x,
             receiver_locations_p=receiver_locations_p,
@@ -550,15 +590,17 @@ def test_unused_source_receiver(
 
         if nt is None:
             nt = int((2 * torch.norm(nx.float() * dx) / vmin + 0.35 + 2 / freq) / dt)
-        x_s = _set_coords(num_shots, 2 * num_sources_per_shot, nx.tolist())
+        x_s = _set_coords(num_shots, 3 * num_sources_per_shot, nx.tolist())
         x_s_y = x_s[:, :num_sources_per_shot]
-        x_s_x = x_s[:, num_sources_per_shot:]
+        x_s_x = x_s[:, num_sources_per_shot : 2 * num_sources_per_shot]
+        x_s_p = x_s[:, 2 * num_sources_per_shot :]
         x_r = _set_coords(num_shots, 3 * num_receivers_per_shot, nx.tolist(), "bottom")
         x_r_y = x_r[:, :num_receivers_per_shot]
         x_r_x = x_r[:, num_receivers_per_shot : 2 * num_receivers_per_shot]
         x_r_p = x_r[:, 2 * num_receivers_per_shot :]
         sources_y = _set_sources(x_s_y, freq, dt, nt, dtype, dpeak_time=dpeak_time)
         sources_x = _set_sources(x_s_x, freq, dt, nt, dtype, dpeak_time=dpeak_time)
+        sources_p = _set_sources(x_s_p, freq, dt, nt, dtype, dpeak_time=dpeak_time)
 
         # Forward with source and receiver ignored
         lambi = lamb.clone()
@@ -570,11 +612,13 @@ def test_unused_source_receiver(
         for i in range(num_shots):
             x_s_y[i, i, :] = IGNORE_LOCATION
             x_s_x[i, i + 1, :] = IGNORE_LOCATION
+            x_s_p[i, i + 1, :] = IGNORE_LOCATION
             x_r_y[i, i, :] = IGNORE_LOCATION
             x_r_x[i, i + 1, :] = IGNORE_LOCATION
             x_r_p[i, i + 2, :] = IGNORE_LOCATION
         sources_y["locations"] = x_s_y
         sources_x["locations"] = x_s_x
+        sources_p["locations"] = x_s_p
         out_ignored = propagator(
             lambi,
             mui,
@@ -583,8 +627,10 @@ def test_unused_source_receiver(
             dt,
             sources_y["amplitude"],
             sources_x["amplitude"],
+            sources_p["amplitude"],
             sources_y["locations"],
             sources_x["locations"],
+            sources_p["locations"],
             x_r_y,
             x_r_x,
             x_r_p,
@@ -604,9 +650,10 @@ def test_unused_source_receiver(
         muf.requires_grad_()
         buoyancyf = buoyancy.clone()
         buoyancyf.requires_grad_()
-        x_s = _set_coords(num_shots, 2 * num_sources_per_shot, nx.tolist())
+        x_s = _set_coords(num_shots, 3 * num_sources_per_shot, nx.tolist())
         x_s_y = x_s[:, :num_sources_per_shot]
-        x_s_x = x_s[:, num_sources_per_shot:]
+        x_s_x = x_s[:, num_sources_per_shot : 2 * num_sources_per_shot]
+        x_s_p = x_s[:, 2 * num_sources_per_shot :]
         x_r = _set_coords(num_shots, 3 * num_receivers_per_shot, nx.tolist(), "bottom")
         x_r_y = x_r[:, :num_receivers_per_shot]
         x_r_x = x_r[:, num_receivers_per_shot : 2 * num_receivers_per_shot]
@@ -614,8 +661,10 @@ def test_unused_source_receiver(
         for i in range(num_shots):
             sources_y["amplitude"][i, i].fill_(0)
             sources_x["amplitude"][i, i + 1].fill_(0)
+            sources_p["amplitude"][i, i + 1].fill_(0)
         sources_y["locations"] = x_s_y
         sources_x["locations"] = x_s_x
+        sources_p["locations"] = x_s_p
         out_filled = propagator(
             lambf,
             muf,
@@ -624,8 +673,10 @@ def test_unused_source_receiver(
             dt,
             sources_y["amplitude"],
             sources_x["amplitude"],
+            sources_p["amplitude"],
             sources_y["locations"],
             sources_x["locations"],
+            sources_p["locations"],
             x_r_y,
             x_r_x,
             x_r_p,
@@ -665,6 +716,7 @@ def run_elasticfunc(nt: int = 3) -> None:
     pml_width = [3, 3, 3, 3]
     n_sources_y_per_shot = 1
     n_sources_x_per_shot = 2
+    n_sources_p_per_shot = 2
 
     step_ratio = 1
     accuracy = 4
@@ -712,8 +764,20 @@ def run_elasticfunc(nt: int = 3) -> None:
         dtype=torch.double,
         device=device,
     )
+    source_amplitudes_p = torch.randn(
+        nt,
+        n_batch,
+        n_sources_p_per_shot,
+        dtype=torch.double,
+        device=device,
+    )
     sources_y_i = torch.tensor([[2 * nx + 2], [3 * nx + 3]]).long().to(device)
     sources_x_i = (
+        torch.tensor([[6 * nx + 6, 7 * nx + 7], [5 * nx + 5, 7 * nx + 8]])
+        .long()
+        .to(device)
+    )
+    sources_p_i = (
         torch.tensor([[6 * nx + 6, 7 * nx + 7], [5 * nx + 5, 7 * nx + 8]])
         .long()
         .to(device)
@@ -797,6 +861,7 @@ def run_elasticfunc(nt: int = 3) -> None:
             buoyancy_x,
             source_amplitudes_y,
             source_amplitudes_x,
+            source_amplitudes_p,
             vy,
             vx,
             sigmayy,
@@ -813,6 +878,7 @@ def run_elasticfunc(nt: int = 3) -> None:
             *pml_profiles,
             sources_y_i,
             sources_x_i,
+            sources_p_i,
             receivers_y_i,
             receivers_x_i,
             receivers_p_i,
@@ -1031,8 +1097,10 @@ def run_forward_lamb(
         dt,
         sa_y,
         sa_x,
+        None,
         x_s_y,
         x_s_x,
+        None,
         x_r_y,
         x_r_x,
         x_r_x,
@@ -1106,7 +1174,9 @@ def run_forward(
         dt,
         sources_y["amplitude"],
         sources_x["amplitude"],
+        sources_x["amplitude"],
         sources_y["locations"],
+        sources_x["locations"],
         sources_x["locations"],
         x_r_y,
         x_r_x,
@@ -1216,16 +1286,21 @@ def run_gradcheck(
         x_s = _set_coords(num_shots, 2 * num_sources_per_shot, nx.tolist())
         x_s_y = x_s[:, :num_sources_per_shot]
         x_s_x = x_s[:, num_sources_per_shot:]
+        x_s_p = x_s[:, num_sources_per_shot:]
         sources_y = _set_sources(x_s_y, freq, dt, nt, dtype, dpeak_time=0.05)
         sources_x = _set_sources(x_s_x, freq, dt, nt, dtype, dpeak_time=0.05)
+        sources_p = _set_sources(x_s_p, freq, dt, nt, dtype, dpeak_time=0.05)
         sources_y["amplitude"] = sources_y["amplitude"].to(device)
         sources_x["amplitude"] = sources_x["amplitude"].to(device)
+        sources_p["amplitude"] = sources_p["amplitude"].to(device)
         sources_y["amplitude"].requires_grad_(source_requires_grad)
         sources_x["amplitude"].requires_grad_(source_requires_grad)
+        sources_p["amplitude"].requires_grad_(source_requires_grad)
         nt = None
     else:
         sources_y = {"amplitude": None, "locations": None}
         sources_x = {"amplitude": None, "locations": None}
+        sources_p = {"amplitude": None, "locations": None}
     if num_receivers_per_shot > 0:
         x_r = _set_coords(num_shots, 2 * num_receivers_per_shot, nx.tolist())
         x_r_y = x_r[:, :num_receivers_per_shot]
@@ -1294,8 +1369,10 @@ def run_gradcheck(
             dt,
             sources_y["amplitude"],
             sources_x["amplitude"],
+            sources_p["amplitude"],
             sources_y["locations"],
             sources_x["locations"],
+            sources_p["locations"],
             x_r_y,
             x_r_x,
             x_r_x,
@@ -1557,37 +1634,6 @@ def test_elastic_receiver_locations_y_out_of_bounds() -> None:
             grid_spacing,
             dt,
             receiver_locations_y=receiver_locations_y,
-            nt=nt,
-            sigmayy_0=wavefield_0,
-        )
-
-
-def test_elastic_receiver_locations_p_out_of_bounds() -> None:
-    """Test raises for pressure receiver locations out of bounds."""
-    lamb = torch.ones(10, 10)
-    mu = torch.ones(10, 10)
-    buoyancy = torch.ones(10, 10)
-    grid_spacing = 1.0
-    dt = 0.001
-    # Both conditions: y-coord too large, x-coord too large
-    receiver_locations_p = torch.tensor([[[9, 9]]], dtype=torch.long)
-    nt = 10
-    wavefield_0 = torch.zeros(1, 10 + 2 * 20, 10 + 2 * 20)
-    with pytest.raises(
-        RuntimeError,
-        match=re.escape(
-            "With the provided model, the maximum p receiver location in the "
-            "first dimension must be less than 9 and in the second dimension "
-            "must be less than 9."
-        ),
-    ):
-        elastic(
-            lamb,
-            mu,
-            buoyancy,
-            grid_spacing,
-            dt,
-            receiver_locations_p=receiver_locations_p,
             nt=nt,
             sigmayy_0=wavefield_0,
         )

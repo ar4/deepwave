@@ -140,8 +140,10 @@ class Elastic(torch.nn.Module):
         dt: float,
         source_amplitudes_y: Optional[torch.Tensor] = None,
         source_amplitudes_x: Optional[torch.Tensor] = None,
+        source_amplitudes_p: Optional[torch.Tensor] = None,
         source_locations_y: Optional[torch.Tensor] = None,
         source_locations_x: Optional[torch.Tensor] = None,
+        source_locations_p: Optional[torch.Tensor] = None,
         receiver_locations_y: Optional[torch.Tensor] = None,
         receiver_locations_x: Optional[torch.Tensor] = None,
         receiver_locations_p: Optional[torch.Tensor] = None,
@@ -205,8 +207,10 @@ class Elastic(torch.nn.Module):
             dt,
             source_amplitudes_y=source_amplitudes_y,
             source_amplitudes_x=source_amplitudes_x,
+            source_amplitudes_p=source_amplitudes_p,
             source_locations_y=source_locations_y,
             source_locations_x=source_locations_x,
+            source_locations_p=source_locations_p,
             receiver_locations_y=receiver_locations_y,
             receiver_locations_x=receiver_locations_x,
             receiver_locations_p=receiver_locations_p,
@@ -241,24 +245,6 @@ class Elastic(torch.nn.Module):
         )
 
 
-def _average_adjacent(receiver_amplitudes: torch.Tensor) -> torch.Tensor:
-    """Averages adjacent elements in a tensor.
-
-    This is used to average velocity receiver samples at t-1/2 and t+1/2
-    to approximately get samples at t.
-
-    Args:
-        receiver_amplitudes: A torch.Tensor.
-
-    Returns:
-        A torch.Tensor with the averaged values.
-
-    """
-    if receiver_amplitudes.numel() == 0:
-        return receiver_amplitudes
-    return (receiver_amplitudes[1:] + receiver_amplitudes[:-1]) / 2
-
-
 def elastic(
     lamb: torch.Tensor,
     mu: torch.Tensor,
@@ -267,8 +253,10 @@ def elastic(
     dt: float,
     source_amplitudes_y: Optional[torch.Tensor] = None,
     source_amplitudes_x: Optional[torch.Tensor] = None,
+    source_amplitudes_p: Optional[torch.Tensor] = None,
     source_locations_y: Optional[torch.Tensor] = None,
     source_locations_x: Optional[torch.Tensor] = None,
+    source_locations_p: Optional[torch.Tensor] = None,
     receiver_locations_y: Optional[torch.Tensor] = None,
     receiver_locations_x: Optional[torch.Tensor] = None,
     receiver_locations_p: Optional[torch.Tensor] = None,
@@ -345,6 +333,8 @@ def elastic(
             oriented in the first spatial dimension.
         source_amplitudes_x: A Tensor containing source wavelet time samples
             for sources oriented in the second spatial dimension.
+        source_amplitudes_p: A Tensor containing source wavelet time samples
+            for pressure sources.
         source_locations_y: A Tensor with dimensions [shot, source, 2],
             containing the index in the two spatial dimensions of the cell
             that each source oriented in the first spatial dimension is
@@ -353,6 +343,8 @@ def elastic(
             source being ignored.
         source_locations_x: A Tensor containing the locations of sources
             oriented in the second spatial dimension.
+        source_locations_p: A Tensor containing the locations of pressure
+            sources.
         receiver_locations_y: A Tensor with dimensions [shot, receiver, 2],
             containing the coordinates of the cell containing each receiver
             oriented in the first spatial dimension. Setting both
@@ -503,17 +495,6 @@ def elastic(
             "receiver location in the second dimension "
             f"must be less than {lamb.shape[-1] - 1}.",
         )
-    if receiver_locations_p is not None and (
-        receiver_locations_p[..., 0].max() >= lamb.shape[-2] - 1
-        or receiver_locations_p[..., 1].max() >= lamb.shape[-1] - 1
-    ):
-        raise RuntimeError(
-            "With the provided model, the maximum p "
-            "receiver location in the first dimension "
-            f"must be less than {lamb.shape[-2] - 1} and in "
-            "the second dimension must be less than "
-            f"{lamb.shape[-1] - 1}.",
-        )
     vp, vs, _ = deepwave.common.lambmubuoyancy_to_vpvsrho(
         lamb,
         mu,
@@ -560,8 +541,8 @@ def elastic(
         ["replicate"] * 3,
         grid_spacing,
         dt,
-        [source_amplitudes_y, source_amplitudes_x],
-        [source_locations_y, source_locations_x],
+        [source_amplitudes_y, source_amplitudes_x, source_amplitudes_p],
+        [source_locations_y, source_locations_x, source_locations_p],
         [receiver_locations_y, receiver_locations_x, receiver_locations_p],
         accuracy,
         fd_pad,
@@ -629,6 +610,9 @@ def elastic(
             )
             * dt
         )
+    # source_amplitudes_p
+    if source_amplitudes[2].numel() > 0:
+        source_amplitudes[2] = -source_amplitudes[2] * dt / 2
 
     pml_profiles = deepwave.staggered_grid.set_pml_profiles(
         pml_width,
@@ -687,8 +671,6 @@ def elastic(
         callback_frequency,
     )
 
-    receiver_amplitudes_y = _average_adjacent(receiver_amplitudes_y)
-    receiver_amplitudes_x = _average_adjacent(receiver_amplitudes_x)
     receiver_amplitudes_y = deepwave.common.downsample_and_movedim(
         receiver_amplitudes_y,
         step_ratio,
@@ -703,12 +685,15 @@ def elastic(
         time_pad_frac,
         time_taper,
     )
-    receiver_amplitudes_p = deepwave.common.downsample_and_movedim(
-        receiver_amplitudes_p,
-        step_ratio,
-        freq_taper_frac,
-        time_pad_frac,
-        time_taper,
+    receiver_amplitudes_p = (
+        -deepwave.common.downsample_and_movedim(
+            receiver_amplitudes_p,
+            step_ratio,
+            freq_taper_frac,
+            time_pad_frac,
+            time_taper,
+        )
+        / 2
     )
 
     return (
@@ -791,6 +776,7 @@ class ElasticForwardFunc(torch.autograd.Function):
         buoyancy_x: torch.Tensor,
         source_amplitudes_y: torch.Tensor,
         source_amplitudes_x: torch.Tensor,
+        source_amplitudes_p: torch.Tensor,
         vy: torch.Tensor,
         vx: torch.Tensor,
         sigmayy: torch.Tensor,
@@ -814,6 +800,7 @@ class ElasticForwardFunc(torch.autograd.Function):
         bxh: torch.Tensor,
         sources_y_i: torch.Tensor,
         sources_x_i: torch.Tensor,
+        sources_p_i: torch.Tensor,
         receivers_y_i: torch.Tensor,
         receivers_x_i: torch.Tensor,
         receivers_p_i: torch.Tensor,
@@ -861,6 +848,7 @@ class ElasticForwardFunc(torch.autograd.Function):
             buoyancy_x: The buoyancy (1/density) model tensor at x+1/2.
             source_amplitudes_y: Source amplitudes for y-component sources.
             source_amplitudes_x: Source amplitudes for x-component sources.
+            source_amplitudes_p: Source amplitudes for pressure sources.
             vy: Initial velocity wavefield in y-direction.
             vx: Initial velocity wavefield in x-direction.
             sigmayy: Initial stress wavefield (sigma_yy).
@@ -884,6 +872,7 @@ class ElasticForwardFunc(torch.autograd.Function):
             bxh: PML absorption profile for x-dimension (b-coefficient, half-step).
             sources_y_i: 1D indices of y-component source locations.
             sources_x_i: 1D indices of x-component source locations.
+            sources_p_i: 1D indices of pressure source locations.
             receivers_y_i: 1D indices of y-component receiver locations.
             receivers_x_i: 1D indices of x-component receiver locations.
             receivers_p_i: 1D indices of pressure receiver locations.
@@ -911,6 +900,7 @@ class ElasticForwardFunc(torch.autograd.Function):
         buoyancy_x = buoyancy_x.contiguous()
         source_amplitudes_y = source_amplitudes_y.contiguous()
         source_amplitudes_x = source_amplitudes_x.contiguous()
+        source_amplitudes_p = source_amplitudes_p.contiguous()
         ay = ay.contiguous()
         ayh = ayh.contiguous()
         ax = ax.contiguous()
@@ -921,6 +911,7 @@ class ElasticForwardFunc(torch.autograd.Function):
         bxh = bxh.contiguous()
         sources_y_i = sources_y_i.contiguous()
         sources_x_i = sources_x_i.contiguous()
+        sources_p_i = sources_p_i.contiguous()
         receivers_y_i = receivers_y_i.contiguous()
         receivers_x_i = receivers_x_i.contiguous()
         receivers_p_i = receivers_p_i.contiguous()
@@ -931,6 +922,7 @@ class ElasticForwardFunc(torch.autograd.Function):
         nx = lamb.shape[-1]
         n_sources_y_per_shot = sources_y_i.numel() // n_shots
         n_sources_x_per_shot = sources_x_i.numel() // n_shots
+        n_sources_p_per_shot = sources_p_i.numel() // n_shots
         n_receivers_y_per_shot = receivers_y_i.numel() // n_shots
         n_receivers_x_per_shot = receivers_x_i.numel() // n_shots
         n_receivers_p_per_shot = receivers_p_i.numel() // n_shots
@@ -1078,10 +1070,10 @@ class ElasticForwardFunc(torch.autograd.Function):
             dvxdbuoyancy.resize_(nt // step_ratio, n_shots, ny, nx)
 
         if receivers_y_i.numel() > 0:
-            receiver_amplitudes_y.resize_(nt + 1, n_shots, n_receivers_y_per_shot)
+            receiver_amplitudes_y.resize_(nt, n_shots, n_receivers_y_per_shot)
             receiver_amplitudes_y.fill_(0)
         if receivers_x_i.numel() > 0:
-            receiver_amplitudes_x.resize_(nt + 1, n_shots, n_receivers_x_per_shot)
+            receiver_amplitudes_x.resize_(nt, n_shots, n_receivers_x_per_shot)
             receiver_amplitudes_x.fill_(0)
         if receivers_p_i.numel() > 0:
             receiver_amplitudes_p.resize_(nt, n_shots, n_receivers_p_per_shot)
@@ -1093,6 +1085,7 @@ class ElasticForwardFunc(torch.autograd.Function):
             or buoyancy_y.requires_grad
             or source_amplitudes_y.requires_grad
             or source_amplitudes_x.requires_grad
+            or source_amplitudes_p.requires_grad
             or vy.requires_grad
             or vx.requires_grad
             or sigmayy.requires_grad
@@ -1123,6 +1116,7 @@ class ElasticForwardFunc(torch.autograd.Function):
                 bxh,
                 sources_y_i,
                 sources_x_i,
+                sources_p_i,
                 receivers_y_i,
                 receivers_x_i,
                 receivers_p_i,
@@ -1142,6 +1136,7 @@ class ElasticForwardFunc(torch.autograd.Function):
             ctx.pml_width = pml_width
             ctx.source_amplitudes_y_requires_grad = source_amplitudes_y.requires_grad
             ctx.source_amplitudes_x_requires_grad = source_amplitudes_x.requires_grad
+            ctx.source_amplitudes_p_requires_grad = source_amplitudes_p.requires_grad
             ctx.backward_callback = backward_callback
             ctx.callback_frequency = callback_frequency
 
@@ -1204,6 +1199,7 @@ class ElasticForwardFunc(torch.autograd.Function):
                     buoyancy_x.data_ptr(),
                     source_amplitudes_y.data_ptr(),
                     source_amplitudes_x.data_ptr(),
+                    source_amplitudes_p.data_ptr(),
                     vy.data_ptr(),
                     vx.data_ptr(),
                     sigmayy.data_ptr(),
@@ -1235,6 +1231,7 @@ class ElasticForwardFunc(torch.autograd.Function):
                     bxh.data_ptr(),
                     sources_y_i.data_ptr(),
                     sources_x_i.data_ptr(),
+                    sources_p_i.data_ptr(),
                     receivers_y_i.data_ptr(),
                     receivers_x_i.data_ptr(),
                     receivers_p_i.data_ptr(),
@@ -1247,6 +1244,7 @@ class ElasticForwardFunc(torch.autograd.Function):
                     nx,
                     n_sources_y_per_shot,
                     n_sources_x_per_shot,
+                    n_sources_p_per_shot,
                     n_receivers_y_per_shot,
                     n_receivers_x_per_shot,
                     n_receivers_p_per_shot,
@@ -1355,6 +1353,7 @@ class ElasticForwardFunc(torch.autograd.Function):
             bxh,
             sources_y_i,
             sources_x_i,
+            sources_p_i,
             receivers_y_i,
             receivers_x_i,
             receivers_p_i,
@@ -1383,6 +1382,7 @@ class ElasticForwardFunc(torch.autograd.Function):
         bxh = bxh.contiguous()
         sources_y_i = sources_y_i.contiguous()
         sources_x_i = sources_x_i.contiguous()
+        sources_p_i = sources_p_i.contiguous()
         receivers_y_i = receivers_y_i.contiguous()
         receivers_x_i = receivers_x_i.contiguous()
         receivers_p_i = receivers_p_i.contiguous()
@@ -1397,6 +1397,7 @@ class ElasticForwardFunc(torch.autograd.Function):
         pml_width = ctx.pml_width
         source_amplitudes_y_requires_grad = ctx.source_amplitudes_y_requires_grad
         source_amplitudes_x_requires_grad = ctx.source_amplitudes_x_requires_grad
+        source_amplitudes_p_requires_grad = ctx.source_amplitudes_p_requires_grad
         backward_callback = ctx.backward_callback
         callback_frequency = ctx.callback_frequency
         device = lamb.device
@@ -1405,6 +1406,7 @@ class ElasticForwardFunc(torch.autograd.Function):
         nx = lamb.shape[-1]
         n_sources_y_per_shot = sources_y_i.numel() // n_shots
         n_sources_x_per_shot = sources_x_i.numel() // n_shots
+        n_sources_p_per_shot = sources_p_i.numel() // n_shots
         n_receivers_y_per_shot = receivers_y_i.numel() // n_shots
         n_receivers_x_per_shot = receivers_x_i.numel() // n_shots
         n_receivers_p_per_shot = receivers_p_i.numel() // n_shots
@@ -1445,6 +1447,7 @@ class ElasticForwardFunc(torch.autograd.Function):
             grad_buoyancy_x_tmp_ptr = grad_buoyancy_x.data_ptr()
         grad_f_y = torch.empty(0, device=device, dtype=dtype)
         grad_f_x = torch.empty(0, device=device, dtype=dtype)
+        grad_f_p = torch.empty(0, device=device, dtype=dtype)
 
         lamb_batched = lamb.ndim == 3 and lamb.shape[0] > 1
         mu_batched = mu.ndim == 3 and mu.shape[0] > 1
@@ -1583,6 +1586,9 @@ class ElasticForwardFunc(torch.autograd.Function):
         if source_amplitudes_x_requires_grad:
             grad_f_x.resize_(nt, n_shots, n_sources_x_per_shot)
             grad_f_x.fill_(0)
+        if source_amplitudes_p_requires_grad:
+            grad_f_p.resize_(nt, n_shots, n_sources_p_per_shot)
+            grad_f_p.fill_(0)
 
         if lamb.is_cuda:
             aux = lamb.get_device()
@@ -1703,6 +1709,7 @@ class ElasticForwardFunc(torch.autograd.Function):
                     dvydxdvxdy_store.data_ptr(),
                     grad_f_y.data_ptr(),
                     grad_f_x.data_ptr(),
+                    grad_f_p.data_ptr(),
                     grad_lamb.data_ptr(),
                     grad_lamb_tmp_ptr,
                     grad_mu.data_ptr(),
@@ -1723,6 +1730,7 @@ class ElasticForwardFunc(torch.autograd.Function):
                     bxh.data_ptr(),
                     sources_y_i.data_ptr(),
                     sources_x_i.data_ptr(),
+                    sources_p_i.data_ptr(),
                     receivers_y_i.data_ptr(),
                     receivers_x_i.data_ptr(),
                     receivers_p_i.data_ptr(),
@@ -1735,6 +1743,7 @@ class ElasticForwardFunc(torch.autograd.Function):
                     nx,
                     n_sources_y_per_shot * source_amplitudes_y_requires_grad,
                     n_sources_x_per_shot * source_amplitudes_x_requires_grad,
+                    n_sources_p_per_shot * source_amplitudes_p_requires_grad,
                     n_receivers_y_per_shot,
                     n_receivers_x_per_shot,
                     n_receivers_p_per_shot,
@@ -1810,6 +1819,7 @@ class ElasticForwardFunc(torch.autograd.Function):
             grad_buoyancy_x,
             grad_f_y,
             grad_f_x,
+            grad_f_p,
             vy[s],
             vx[s],
             sigmayy[s],
@@ -1823,6 +1833,7 @@ class ElasticForwardFunc(torch.autograd.Function):
             m_sigmaxyy[s],
             m_sigmaxyx[s],
             m_sigmaxxx[s],
+            None,
             None,
             None,
             None,
@@ -2029,6 +2040,7 @@ def elastic_python(
     buoyancy_x: torch.Tensor,
     source_amplitudes_y: torch.Tensor,
     source_amplitudes_x: torch.Tensor,
+    source_amplitudes_p: torch.Tensor,
     vy: torch.Tensor,
     vx: torch.Tensor,
     sigmayy: torch.Tensor,
@@ -2052,6 +2064,7 @@ def elastic_python(
     bxh: torch.Tensor,
     sources_y_i: torch.Tensor,
     sources_x_i: torch.Tensor,
+    sources_p_i: torch.Tensor,
     receivers_y_i: torch.Tensor,
     receivers_x_i: torch.Tensor,
     receivers_p_i: torch.Tensor,
@@ -2099,6 +2112,7 @@ def elastic_python(
         buoyancy_x: The buoyancy (1/density) model tensor at x+1/2.
         source_amplitudes_y: Source amplitudes for y-component sources.
         source_amplitudes_x: Source amplitudes for x-component sources.
+        source_amplitudes_p: Source amplitudes for pressure sources.
         vy: Initial velocity wavefield in y-direction.
         vx: Initial velocity wavefield in x-direction.
         sigmayy: Initial stress wavefield (sigma_yy).
@@ -2122,6 +2136,7 @@ def elastic_python(
         bxh: PML absorption profile for x-dimension (b-coefficient, half-step).
         sources_y_i: 1D indices of y-component source locations.
         sources_x_i: 1D indices of x-component source locations.
+        sources_p_i: 1D indices of pressure source locations.
         receivers_y_i: 1D indices of y-component receiver locations.
         receivers_x_i: 1D indices of x-component receiver locations.
         receivers_p_i: 1D indices of pressure receiver locations.
@@ -2151,6 +2166,7 @@ def elastic_python(
     buoyancy_x = buoyancy_x.contiguous()
     source_amplitudes_y = source_amplitudes_y.contiguous()
     source_amplitudes_x = source_amplitudes_x.contiguous()
+    source_amplitudes_p = source_amplitudes_p.contiguous()
     ay = ay.contiguous()
     ayh = ayh.contiguous()
     ax = ax.contiguous()
@@ -2161,6 +2177,7 @@ def elastic_python(
     bxh = bxh.contiguous()
     sources_y_i = sources_y_i.contiguous()
     sources_x_i = sources_x_i.contiguous()
+    sources_p_i = sources_p_i.contiguous()
     receivers_y_i = receivers_y_i.contiguous()
     receivers_x_i = receivers_x_i.contiguous()
     receivers_p_i = receivers_p_i.contiguous()
@@ -2284,10 +2301,10 @@ def elastic_python(
     zero_right(m_sigmaxxx, fd_pad)
 
     if receivers_y_i.numel() > 0:
-        receiver_amplitudes_y.resize_(nt + 1, n_shots, n_receivers_y_per_shot)
+        receiver_amplitudes_y.resize_(nt, n_shots, n_receivers_y_per_shot)
         receiver_amplitudes_y.fill_(0)
     if receivers_x_i.numel() > 0:
-        receiver_amplitudes_x.resize_(nt + 1, n_shots, n_receivers_x_per_shot)
+        receiver_amplitudes_x.resize_(nt, n_shots, n_receivers_x_per_shot)
         receiver_amplitudes_x.fill_(0)
     if receivers_p_i.numel() > 0:
         receiver_amplitudes_p.resize_(nt, n_shots, n_receivers_p_per_shot)
@@ -2304,6 +2321,12 @@ def elastic_python(
     sources_x_i_masked[source_x_mask] = sources_x_i[source_x_mask]
     source_amplitudes_x_masked = torch.zeros_like(source_amplitudes_x)
     source_amplitudes_x_masked[:, source_x_mask] = source_amplitudes_x[:, source_x_mask]
+
+    source_p_mask = sources_p_i != deepwave.common.IGNORE_LOCATION
+    sources_p_i_masked = torch.zeros_like(sources_p_i)
+    sources_p_i_masked[source_p_mask] = sources_p_i[source_p_mask]
+    source_amplitudes_p_masked = torch.zeros_like(source_amplitudes_p)
+    source_amplitudes_p_masked[:, source_p_mask] = source_amplitudes_p[:, source_p_mask]
 
     receiver_y_mask = receivers_y_i != deepwave.common.IGNORE_LOCATION
     receivers_y_i_masked = torch.zeros_like(receivers_y_i)
@@ -2365,13 +2388,9 @@ def elastic_python(
                     1, receivers_x_i_masked
                 )
             if receiver_amplitudes_p.numel() > 0:
-                receiver_amplitudes_p[t] = (
-                    -(
-                        sigmayy.view(-1, ny * nx).gather(1, receivers_p_i_masked)
-                        + sigmaxx.view(-1, ny * nx).gather(1, receivers_p_i_masked)
-                    )
-                    / 2
-                )
+                receiver_amplitudes_p[t] = sigmayy.view(-1, ny * nx).gather(
+                    1, receivers_p_i_masked
+                ) + sigmaxx.view(-1, ny * nx).gather(1, receivers_p_i_masked)
 
             vy, vx, m_sigmayyy, m_sigmaxyy, m_sigmaxyx, m_sigmaxxx = (
                 _update_velocities_opt(
@@ -2439,18 +2458,13 @@ def elastic_python(
                 )
             )
 
-            # if source_amplitudes_p is not None:
-            #    sigmayy.view(-1, ny * nx).scatter_add_(
-            #        1, sources_p_i, source_amplitudes_p[t]
-            #    )
-            #    sigmaxx.view(-1, ny * nx).scatter_add_(
-            #        1, sources_p_i, source_amplitudes_p[t]
-            #    )
-
-    if receiver_amplitudes_y.numel() > 0:
-        receiver_amplitudes_y[-1] = vy.view(-1, ny * nx).gather(1, receivers_y_i_masked)
-    if receiver_amplitudes_x.numel() > 0:
-        receiver_amplitudes_x[-1] = vx.view(-1, ny * nx).gather(1, receivers_x_i_masked)
+            if source_amplitudes_p_masked is not None:
+                sigmayy.view(-1, ny * nx).scatter_add_(
+                    1, sources_p_i_masked, source_amplitudes_p_masked[t]
+                )
+                sigmaxx.view(-1, ny * nx).scatter_add_(
+                    1, sources_p_i_masked, source_amplitudes_p_masked[t]
+                )
 
     receiver_amplitudes_y_masked = torch.zeros_like(receiver_amplitudes_y)
     if receiver_amplitudes_y.numel() > 0:

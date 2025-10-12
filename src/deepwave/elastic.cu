@@ -105,6 +105,7 @@ __constant__ int64_t nx;
 __constant__ int64_t nynx;
 __constant__ int64_t n_sources_y_per_shot;
 __constant__ int64_t n_sources_x_per_shot;
+__constant__ int64_t n_sources_p_per_shot;
 __constant__ int64_t n_receivers_y_per_shot;
 __constant__ int64_t n_receivers_x_per_shot;
 __constant__ int64_t n_receivers_p_per_shot;
@@ -139,6 +140,21 @@ __global__ void add_sources_x(DW_DTYPE *__restrict const wf,
   }
 }
 
+__global__ void add_sources_p(DW_DTYPE *__restrict const sigmayy,
+                              DW_DTYPE *__restrict const sigmaxx,
+                              DW_DTYPE const *__restrict const f,
+                              int64_t const *__restrict const sources_i) {
+  int64_t source_idx = blockIdx.x * blockDim.x + threadIdx.x;
+  int64_t shot_idx = blockIdx.y * blockDim.y + threadIdx.y;
+  if (source_idx < n_sources_p_per_shot && shot_idx < n_shots) {
+    int64_t k = shot_idx * n_sources_p_per_shot + source_idx;
+    if (0 <= sources_i[k]) {
+      sigmayy[shot_idx * nynx + sources_i[k]] += f[k];
+      sigmaxx[shot_idx * nynx + sources_i[k]] += f[k];
+    }
+  }
+}
+
 __global__ void add_adjoint_sources_y(
     DW_DTYPE *__restrict const wf, DW_DTYPE const *__restrict const f,
     int64_t const *__restrict const sources_i) {
@@ -170,8 +186,8 @@ __global__ void add_adjoint_pressure_sources(
   if (source_idx < n_receivers_p_per_shot && shot_idx < n_shots) {
     int64_t k = shot_idx * n_receivers_p_per_shot + source_idx;
     if (0 <= sources_i[k]) {
-      sigmayy[shot_idx * nynx + sources_i[k]] -= f[k] / (DW_DTYPE)2;
-      sigmaxx[shot_idx * nynx + sources_i[k]] -= f[k] / (DW_DTYPE)2;
+      sigmayy[shot_idx * nynx + sources_i[k]] += f[k];
+      sigmaxx[shot_idx * nynx + sources_i[k]] += f[k];
     }
   }
 }
@@ -207,9 +223,8 @@ __global__ void record_pressure_receivers(
   if (receiver_idx < n_receivers_p_per_shot && shot_idx < n_shots) {
     int64_t k = shot_idx * n_receivers_p_per_shot + receiver_idx;
     if (0 <= receivers_i[k])
-      r[k] = -(sigmayy[shot_idx * nynx + receivers_i[k]] +
-               sigmaxx[shot_idx * nynx + receivers_i[k]]) /
-             (DW_DTYPE)2;
+      r[k] = (sigmayy[shot_idx * nynx + receivers_i[k]] +
+              sigmaxx[shot_idx * nynx + receivers_i[k]]);
   }
 }
 
@@ -559,6 +574,7 @@ void set_config(DW_DTYPE const dt_h, DW_DTYPE const rdy_h, DW_DTYPE const rdx_h,
                 int64_t const n_shots_h, int64_t const ny_h, int64_t const nx_h,
                 int64_t const n_sources_y_per_shot_h,
                 int64_t const n_sources_x_per_shot_h,
+                int64_t const n_sources_p_per_shot_h,
                 int64_t const n_receivers_y_per_shot_h,
                 int64_t const n_receivers_x_per_shot_h,
                 int64_t const n_receivers_p_per_shot_h,
@@ -578,6 +594,8 @@ void set_config(DW_DTYPE const dt_h, DW_DTYPE const rdy_h, DW_DTYPE const rdx_h,
   gpuErrchk(cudaMemcpyToSymbol(n_sources_y_per_shot, &n_sources_y_per_shot_h,
                                sizeof(int64_t)));
   gpuErrchk(cudaMemcpyToSymbol(n_sources_x_per_shot, &n_sources_x_per_shot_h,
+                               sizeof(int64_t)));
+  gpuErrchk(cudaMemcpyToSymbol(n_sources_p_per_shot, &n_sources_p_per_shot_h,
                                sizeof(int64_t)));
   gpuErrchk(cudaMemcpyToSymbol(n_receivers_y_per_shot,
                                &n_receivers_y_per_shot_h, sizeof(int64_t)));
@@ -622,8 +640,8 @@ void backward_batch(
     DW_DTYPE const *__restrict const dvxdx_store,
     DW_DTYPE const *__restrict const dvydxdvxdy_store,
     DW_DTYPE *__restrict const grad_f_y, DW_DTYPE *__restrict const grad_f_x,
-    DW_DTYPE *__restrict const grad_lamb, DW_DTYPE *__restrict const grad_mu,
-    DW_DTYPE *__restrict const grad_mu_yx,
+    DW_DTYPE *__restrict const grad_f_p, DW_DTYPE *__restrict const grad_lamb,
+    DW_DTYPE *__restrict const grad_mu, DW_DTYPE *__restrict const grad_mu_yx,
     DW_DTYPE *__restrict const grad_buoyancy_y,
     DW_DTYPE *__restrict const grad_buoyancy_x,
     DW_DTYPE const *__restrict const ay, DW_DTYPE const *__restrict const ayh,
@@ -632,11 +650,13 @@ void backward_batch(
     DW_DTYPE const *__restrict const bx, DW_DTYPE const *__restrict const bxh,
     int64_t const *__restrict const sources_y_i,
     int64_t const *__restrict const sources_x_i,
+    int64_t const *__restrict const sources_p_i,
     int64_t const *__restrict const receivers_y_i,
     int64_t const *__restrict const receivers_x_i,
     int64_t const *__restrict const receivers_p_i, int64_t const n_shots_h,
     int64_t const ny_h, int64_t const nx_h,
     int64_t const n_sources_y_per_shot_h, int64_t const n_sources_x_per_shot_h,
+    int64_t const n_sources_p_per_shot_h,
     int64_t const n_receivers_y_per_shot_h, int64_t n_receivers_x_per_shot_h,
     int64_t const n_receivers_p_per_shot_h, bool const lamb_requires_grad,
     bool const mu_requires_grad, bool const buoyancy_requires_grad) {
@@ -650,10 +670,13 @@ void backward_batch(
       ceil_div(n_sources_y_per_shot_h, dimBlock_sources.x);
   unsigned int gridx_sources_x =
       ceil_div(n_sources_x_per_shot_h, dimBlock_sources.x);
+  unsigned int gridx_sources_p =
+      ceil_div(n_sources_p_per_shot_h, dimBlock_sources.x);
   unsigned int gridy_sources = ceil_div(n_shots_h, dimBlock_sources.y);
   unsigned int gridz_sources = 1;
   dim3 dimGrid_sources_y(gridx_sources_y, gridy_sources, gridz_sources);
   dim3 dimGrid_sources_x(gridx_sources_x, gridy_sources, gridz_sources);
+  dim3 dimGrid_sources_p(gridx_sources_p, gridy_sources, gridz_sources);
   dim3 dimBlock_receivers(32, 1, 1);
   unsigned int gridx_receivers_y =
       ceil_div(n_receivers_y_per_shot_h, dimBlock_receivers.x);
@@ -666,6 +689,11 @@ void backward_batch(
   dim3 dimGrid_receivers_y(gridx_receivers_y, gridy_receivers, gridz_receivers);
   dim3 dimGrid_receivers_x(gridx_receivers_x, gridy_receivers, gridz_receivers);
   dim3 dimGrid_receivers_p(gridx_receivers_p, gridy_receivers, gridz_receivers);
+  if (n_sources_p_per_shot_h > 0) {
+    record_pressure_receivers<<<dimGrid_sources_p, dimBlock_sources>>>(
+        grad_f_p, sigmayy, sigmaxx, sources_p_i);
+    CHECK_KERNEL_ERROR
+  }
   backward_kernel_sigma<<<dimGrid, dimBlock>>>(
       lamb, mu, mu_yx, buoyancy_y, buoyancy_x, vy, vx, sigmayy, sigmaxy,
       sigmaxx, m_vyy, m_vyx, m_vxy, m_vxx, m_sigmayyy, m_sigmaxyy, m_sigmaxyx,
@@ -720,7 +748,8 @@ extern "C"
             DW_DTYPE const *__restrict const buoyancy_y,
             DW_DTYPE const *__restrict const buoyancy_x,
             DW_DTYPE const *__restrict const f_y,
-            DW_DTYPE const *__restrict const f_x, DW_DTYPE *__restrict const vy,
+            DW_DTYPE const *__restrict const f_x,
+            DW_DTYPE const *__restrict const f_p, DW_DTYPE *__restrict const vy,
             DW_DTYPE *__restrict const vx, DW_DTYPE *__restrict const sigmayy,
             DW_DTYPE *__restrict const sigmaxy,
             DW_DTYPE *__restrict const sigmaxx,
@@ -746,6 +775,7 @@ extern "C"
             DW_DTYPE const *__restrict const bxh,
             int64_t const *__restrict const sources_y_i,
             int64_t const *__restrict const sources_x_i,
+            int64_t const *__restrict const sources_p_i,
             int64_t const *__restrict const receivers_y_i,
             int64_t const *__restrict const receivers_x_i,
             int64_t const *__restrict const receivers_p_i, DW_DTYPE const rdy,
@@ -753,6 +783,7 @@ extern "C"
             int64_t const n_shots_h, int64_t const ny_h, int64_t const nx_h,
             int64_t const n_sources_y_per_shot_h,
             int64_t const n_sources_x_per_shot_h,
+            int64_t const n_sources_p_per_shot_h,
             int64_t const n_receivers_y_per_shot_h,
             int64_t n_receivers_x_per_shot_h,
             int64_t const n_receivers_p_per_shot_h, int64_t const step_ratio_h,
@@ -773,10 +804,13 @@ extern "C"
       ceil_div(n_sources_y_per_shot_h, dimBlock_sources.x);
   unsigned int gridx_sources_x =
       ceil_div(n_sources_x_per_shot_h, dimBlock_sources.x);
+  unsigned int gridx_sources_p =
+      ceil_div(n_sources_p_per_shot_h, dimBlock_sources.x);
   unsigned int gridy_sources = ceil_div(n_shots_h, dimBlock_sources.y);
   unsigned int gridz_sources = 1;
   dim3 dimGrid_sources_y(gridx_sources_y, gridy_sources, gridz_sources);
   dim3 dimGrid_sources_x(gridx_sources_x, gridy_sources, gridz_sources);
+  dim3 dimGrid_sources_p(gridx_sources_p, gridy_sources, gridz_sources);
   dim3 dimBlock_receivers(32, 1, 1);
   unsigned int gridx_receivers_y =
       ceil_div(n_receivers_y_per_shot_h, dimBlock_receivers.x);
@@ -793,10 +827,11 @@ extern "C"
   int64_t t;
   gpuErrchk(cudaSetDevice(device));
   set_config(dt_h, rdy, rdx, n_shots_h, ny_h, nx_h, n_sources_y_per_shot_h,
-             n_sources_x_per_shot_h, n_receivers_y_per_shot_h,
-             n_receivers_x_per_shot_h, n_receivers_p_per_shot_h, step_ratio_h,
-             pml_y0_h, pml_y1_h, pml_x0_h, pml_x1_h, lamb_batched_h,
-             mu_batched_h, buoyancy_batched_h);
+             n_sources_x_per_shot_h, n_sources_p_per_shot_h,
+             n_receivers_y_per_shot_h, n_receivers_x_per_shot_h,
+             n_receivers_p_per_shot_h, step_ratio_h, pml_y0_h, pml_y1_h,
+             pml_x0_h, pml_x1_h, lamb_batched_h, mu_batched_h,
+             buoyancy_batched_h);
 
   for (t = start_t; t < start_t + nt; ++t) {
     if (n_receivers_y_per_shot_h > 0) {
@@ -842,16 +877,12 @@ extern "C"
         lamb_requires_grad && ((t % step_ratio_h) == 0),
         mu_requires_grad && ((t % step_ratio_h) == 0));
     CHECK_KERNEL_ERROR
-  }
-  if (n_receivers_y_per_shot_h > 0) {
-    record_receivers_y<<<dimGrid_receivers_y, dimBlock_receivers>>>(
-        r_y + t * n_shots_h * n_receivers_y_per_shot_h, vy, receivers_y_i);
-    CHECK_KERNEL_ERROR
-  }
-  if (n_receivers_x_per_shot_h > 0) {
-    record_receivers_x<<<dimGrid_receivers_x, dimBlock_receivers>>>(
-        r_x + t * n_shots_h * n_receivers_x_per_shot_h, vx, receivers_x_i);
-    CHECK_KERNEL_ERROR
+    if (n_sources_p_per_shot_h > 0) {
+      add_sources_p<<<dimGrid_sources_p, dimBlock_sources>>>(
+          sigmayy, sigmaxx, f_p + t * n_shots_h * n_sources_p_per_shot_h,
+          sources_p_i);
+      CHECK_KERNEL_ERROR
+    }
   }
 }
 
@@ -889,6 +920,7 @@ extern "C"
             DW_DTYPE const *__restrict const dvydxdvxdy_store,
             DW_DTYPE *__restrict const grad_f_y,
             DW_DTYPE *__restrict const grad_f_x,
+            DW_DTYPE *__restrict const grad_f_p,
             DW_DTYPE *__restrict const grad_lamb,
             DW_DTYPE *__restrict const grad_lamb_shot,
             DW_DTYPE *__restrict const grad_mu,
@@ -909,6 +941,7 @@ extern "C"
             DW_DTYPE const *__restrict const bxh,
             int64_t const *__restrict const sources_y_i,
             int64_t const *__restrict const sources_x_i,
+            int64_t const *__restrict const sources_p_i,
             int64_t const *__restrict const receivers_y_i,
             int64_t const *__restrict const receivers_x_i,
             int64_t const *__restrict const receivers_p_i, DW_DTYPE const rdy,
@@ -916,6 +949,7 @@ extern "C"
             int64_t const n_shots_h, int64_t const ny_h, int64_t const nx_h,
             int64_t const n_sources_y_per_shot_h,
             int64_t const n_sources_x_per_shot_h,
+            int64_t const n_sources_p_per_shot_h,
             int64_t const n_receivers_y_per_shot_h,
             int64_t n_receivers_x_per_shot_h,
             int64_t const n_receivers_p_per_shot_h, int64_t const step_ratio_h,
@@ -942,22 +976,11 @@ extern "C"
   int64_t t;
   gpuErrchk(cudaSetDevice(device));
   set_config(dt_h, rdy, rdx, n_shots_h, ny_h, nx_h, n_sources_y_per_shot_h,
-             n_sources_x_per_shot_h, n_receivers_y_per_shot_h,
-             n_receivers_x_per_shot_h, n_receivers_p_per_shot_h, step_ratio_h,
-             pml_y0_h, pml_y1_h, pml_x0_h, pml_x1_h, lamb_batched_h,
-             mu_batched_h, buoyancy_batched_h);
-  if (n_receivers_y_per_shot_h > 0) {
-    add_adjoint_sources_y<<<dimGrid_receivers_y, dimBlock_receivers>>>(
-        vy, grad_r_y + nt * n_shots_h * n_receivers_y_per_shot_h,
-        receivers_y_i);
-    CHECK_KERNEL_ERROR
-  }
-  if (n_receivers_x_per_shot_h > 0) {
-    add_adjoint_sources_x<<<dimGrid_receivers_x, dimBlock_receivers>>>(
-        vx, grad_r_x + nt * n_shots_h * n_receivers_x_per_shot_h,
-        receivers_x_i);
-    CHECK_KERNEL_ERROR
-  }
+             n_sources_x_per_shot_h, n_sources_p_per_shot_h,
+             n_receivers_y_per_shot_h, n_receivers_x_per_shot_h,
+             n_receivers_p_per_shot_h, step_ratio_h, pml_y0_h, pml_y1_h,
+             pml_x0_h, pml_x1_h, lamb_batched_h, mu_batched_h,
+             buoyancy_batched_h);
   for (t = start_t - 1; t >= start_t - nt; --t) {
     int64_t store_i = (t / step_ratio_h) * n_shots_h * ny_h * nx_h;
     if ((start_t - 1 - t) & 1) {
@@ -972,13 +995,14 @@ extern "C"
           dvxdbuoyancy + store_i, dvydy_store + store_i, dvxdx_store + store_i,
           dvydxdvxdy_store + store_i,
           grad_f_y + t * n_shots_h * n_sources_y_per_shot_h,
-          grad_f_x + t * n_shots_h * n_sources_x_per_shot_h, grad_lamb_shot,
+          grad_f_x + t * n_shots_h * n_sources_x_per_shot_h,
+          grad_f_p + t * n_shots_h * n_sources_p_per_shot_h, grad_lamb_shot,
           grad_mu_shot, grad_mu_yx_shot, grad_buoyancy_y_shot,
           grad_buoyancy_x_shot, ay, ayh, ax, axh, by, byh, bx, bxh, sources_y_i,
-          sources_x_i, receivers_y_i, receivers_x_i, receivers_p_i, n_shots_h,
-          ny_h, nx_h, n_sources_y_per_shot_h, n_sources_x_per_shot_h,
-          n_receivers_y_per_shot_h, n_receivers_x_per_shot_h,
-          n_receivers_p_per_shot_h,
+          sources_x_i, sources_p_i, receivers_y_i, receivers_x_i, receivers_p_i,
+          n_shots_h, ny_h, nx_h, n_sources_y_per_shot_h, n_sources_x_per_shot_h,
+          n_sources_p_per_shot_h, n_receivers_y_per_shot_h,
+          n_receivers_x_per_shot_h, n_receivers_p_per_shot_h,
           lamb_requires_grad && ((t % step_ratio_h) == 0),
           mu_requires_grad && ((t % step_ratio_h) == 0),
           buoyancy_requires_grad && ((t % step_ratio_h) == 0));
@@ -994,13 +1018,14 @@ extern "C"
           dvydy_store + store_i, dvxdx_store + store_i,
           dvydxdvxdy_store + store_i,
           grad_f_y + t * n_shots_h * n_sources_y_per_shot_h,
-          grad_f_x + t * n_shots_h * n_sources_x_per_shot_h, grad_lamb_shot,
+          grad_f_x + t * n_shots_h * n_sources_x_per_shot_h,
+          grad_f_p + t * n_shots_h * n_sources_p_per_shot_h, grad_lamb_shot,
           grad_mu_shot, grad_mu_yx_shot, grad_buoyancy_y_shot,
           grad_buoyancy_x_shot, ay, ayh, ax, axh, by, byh, bx, bxh, sources_y_i,
-          sources_x_i, receivers_y_i, receivers_x_i, receivers_p_i, n_shots_h,
-          ny_h, nx_h, n_sources_y_per_shot_h, n_sources_x_per_shot_h,
-          n_receivers_y_per_shot_h, n_receivers_x_per_shot_h,
-          n_receivers_p_per_shot_h,
+          sources_x_i, sources_p_i, receivers_y_i, receivers_x_i, receivers_p_i,
+          n_shots_h, ny_h, nx_h, n_sources_y_per_shot_h, n_sources_x_per_shot_h,
+          n_sources_p_per_shot_h, n_receivers_y_per_shot_h,
+          n_receivers_x_per_shot_h, n_receivers_p_per_shot_h,
           lamb_requires_grad && ((t % step_ratio_h) == 0),
           mu_requires_grad && ((t % step_ratio_h) == 0),
           buoyancy_requires_grad && ((t % step_ratio_h) == 0));
