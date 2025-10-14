@@ -31,13 +31,13 @@ def test_set_pml_profiles_basic_functionality() -> None:
                 torch.ones(ny, dtype=dtype, device=device),
             ),  # ay, by
             (
-                torch.ones(nx, dtype=dtype, device=device),
-                torch.ones(nx, dtype=dtype, device=device),
-            ),  # ax, bx
-            (
                 torch.ones(ny, dtype=dtype, device=device),
                 torch.ones(ny, dtype=dtype, device=device),
             ),  # ayh, byh
+            (
+                torch.ones(nx, dtype=dtype, device=device),
+                torch.ones(nx, dtype=dtype, device=device),
+            ),  # ax, bx
             (
                 torch.ones(nx, dtype=dtype, device=device),
                 torch.ones(nx, dtype=dtype, device=device),
@@ -54,8 +54,7 @@ def test_set_pml_profiles_basic_functionality() -> None:
             dtype,
             device,
             pml_freq,
-            ny,
-            nx,
+            [ny, nx],
         )
 
         # Calculate pml_start values as they are in the function
@@ -129,19 +128,19 @@ def test_set_pml_profiles_basic_functionality() -> None:
 
         # Check shapes of the returned tensors
         assert result[0].shape == (1, ny, 1)  # ay
-        assert result[1].shape == (1, ny, 1)  # ayh
-        assert result[2].shape == (
+        assert result[1].shape == (1, ny, 1)  # by
+        assert result[2].shape == (1, ny, 1)  # ayh
+        assert result[3].shape == (1, ny, 1)  # byh
+        assert result[4].shape == (
             1,
             1,
             nx,
         )  # ax
-        assert result[3].shape == (
+        assert result[5].shape == (
             1,
             1,
             nx,
         )  # axh
-        assert result[4].shape == (1, ny, 1)  # by
-        assert result[5].shape == (1, ny, 1)  # byh
         assert result[6].shape == (
             1,
             1,
@@ -176,12 +175,12 @@ def test_set_pml_profiles_different_pml_width() -> None:
                 torch.ones(ny, dtype=dtype, device=device),
             ),
             (
-                torch.ones(nx, dtype=dtype, device=device),
-                torch.ones(nx, dtype=dtype, device=device),
+                torch.ones(ny, dtype=dtype, device=device),
+                torch.ones(ny, dtype=dtype, device=device),
             ),
             (
-                torch.ones(ny, dtype=dtype, device=device),
-                torch.ones(ny, dtype=dtype, device=device),
+                torch.ones(nx, dtype=dtype, device=device),
+                torch.ones(nx, dtype=dtype, device=device),
             ),
             (
                 torch.ones(nx, dtype=dtype, device=device),
@@ -199,8 +198,7 @@ def test_set_pml_profiles_different_pml_width() -> None:
             dtype,
             device,
             pml_freq,
-            ny,
-            nx,
+            [ny, nx],
         )
 
         # Calculate pml_start values as they are in the function
@@ -274,22 +272,14 @@ def test_set_pml_profiles_different_pml_width() -> None:
         assert len(result) == 8
         assert all(isinstance(t, torch.Tensor) for t in result)
 
-        assert result[0].shape == (
-            1,
-            ny,
-            1,
-        )
-        assert result[1].shape == (1, ny, 1)
-        assert result[2].shape == (
-            1,
-            1,
-            nx,
-        )
-        assert result[3].shape == (
-            1,
-            1,
-            nx,
-        )
+        for i in range(4):
+            assert result[i].shape == (1, ny, 1)
+        for i in range(4, 8):
+            assert result[i].shape == (
+                1,
+                1,
+                nx,
+            )
 
 
 def test_set_pml_profiles_edge_cases() -> None:
@@ -314,12 +304,12 @@ def test_set_pml_profiles_edge_cases() -> None:
                 torch.zeros(ny, dtype=dtype, device=device),
             ),
             (
-                torch.zeros(nx, dtype=dtype, device=device),
-                torch.zeros(nx, dtype=dtype, device=device),
+                torch.zeros(ny, dtype=dtype, device=device),
+                torch.zeros(ny, dtype=dtype, device=device),
             ),
             (
-                torch.zeros(ny, dtype=dtype, device=device),
-                torch.zeros(ny, dtype=dtype, device=device),
+                torch.zeros(nx, dtype=dtype, device=device),
+                torch.zeros(nx, dtype=dtype, device=device),
             ),
             (
                 torch.zeros(nx, dtype=dtype, device=device),
@@ -337,8 +327,7 @@ def test_set_pml_profiles_edge_cases() -> None:
             dtype,
             device,
             pml_freq,
-            ny,
-            nx,
+            [ny, nx],
         )
 
         # Calculate pml_start values as they are in the function
@@ -421,12 +410,12 @@ def test_set_pml_profiles_edge_cases() -> None:
                 torch.ones(ny, dtype=dtype, device=device),
             ),
             (
-                torch.ones(nx, dtype=dtype, device=device),
-                torch.ones(nx, dtype=dtype, device=device),
+                torch.ones(ny, dtype=dtype, device=device),
+                torch.ones(ny, dtype=dtype, device=device),
             ),
             (
-                torch.ones(ny, dtype=dtype, device=device),
-                torch.ones(ny, dtype=dtype, device=device),
+                torch.ones(nx, dtype=dtype, device=device),
+                torch.ones(nx, dtype=dtype, device=device),
             ),
             (
                 torch.ones(nx, dtype=dtype, device=device),
@@ -444,8 +433,7 @@ def test_set_pml_profiles_edge_cases() -> None:
             dtype,
             device,
             pml_freq,
-            ny,
-            nx,
+            [ny, nx],
         )
 
         # Calculate pml_start values as they are in the function
@@ -513,15 +501,12 @@ def test_set_pml_profiles_edge_cases() -> None:
             start=0.5,
         )
 
-        assert result[0].shape == (1, ny, 1)
-        assert result[1].shape == (1, ny, 1)
-        assert result[2].shape == (
-            1,
-            1,
-            nx,
-        )
-        assert result[3].shape == (
-            1,
-            1,
-            nx,
-        )
+        assert len(result) == 8
+        for i in range(4):
+            assert result[i].shape == (1, ny, 1)
+        for i in range(4, 8):
+            assert result[i].shape == (
+                1,
+                1,
+                nx,
+            )

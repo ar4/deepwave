@@ -86,6 +86,7 @@ def test_scalar_forward_invalid_optional_args(
         "source_amplitudes_shape",
         "source_locations_shape",
         "receiver_locations_shape",
+        "exception_type",
         "expected_error_match",
     ),
     [
@@ -93,18 +94,21 @@ def test_scalar_forward_invalid_optional_args(
             (1, 1),
             (1, 1, 2),
             (1, 1, 2),
+            RuntimeError,
             "source amplitudes Tensors should have 3 dimensions",
         ),  # wrong num dims
         (
             (1, 1, 2),
             (2, 1, 2),
             (1, 1, 2),
+            RuntimeError,
             "Expected source amplitudes to have size 2 in the batch dimension",
         ),  # shape mismatch 1
         (
             (1, 1, 2),
             (1, 2, 2),
             (1, 1, 2),
+            RuntimeError,
             "Expected source amplitudes and locations to be the same size in the "
             "n_sources_per_shot dimension",
         ),  # shape mismatch 2
@@ -112,13 +116,16 @@ def test_scalar_forward_invalid_optional_args(
             (1, 1, 2),
             (1, 1, 3),
             (1, 1, 2),
-            "Source locations must have 2 dimensional coordinates, but found one "
-            "with 3.",
+            ValueError,
+            "The number of spatial coordinates in a location "
+            "Tensor does not match expectations: "
+            "Expected 3, but found 2.",
         ),  # shape mismatch 3
         (
             (2, 1, 1),
-            (1, 1, 3),
             (1, 1, 2),
+            (1, 1, 2),
+            RuntimeError,
             "Expected source amplitudes to have size 1 in the batch dimension",
         ),  # shape mismatch 4
     ],
@@ -128,6 +135,7 @@ def test_input_shape_mismatch(
     source_amplitudes_shape: Tuple[int, ...],
     source_locations_shape: Tuple[int, ...],
     receiver_locations_shape: Tuple[int, ...],
+    exception_type: Exception,
     expected_error_match: str,
 ) -> None:
     """Test that scalar forward propagation raises errors for input shape mismatches."""
@@ -135,7 +143,7 @@ def test_input_shape_mismatch(
     source_locations = torch.zeros(source_locations_shape, dtype=torch.long)
     receiver_locations = torch.zeros(receiver_locations_shape, dtype=torch.long)
     dt = 0.004
-    with pytest.raises(RuntimeError, match=re.escape(expected_error_match)):
+    with pytest.raises(exception_type, match=re.escape(expected_error_match)):
         prop(dt, source_amplitudes, source_locations, receiver_locations)
 
 

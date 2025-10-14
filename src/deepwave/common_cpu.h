@@ -26,21 +26,18 @@ static inline void add_to_wavefield(DW_DTYPE* __restrict const wavefield,
 }
 
 // Combine gradients from multiple threads into a single gradient array.
-// grad_thread is expected to be laid out as n_threads blocks each of size ny*nx
-// (i.e. threadidx * ny * nx + y*nx + x). This helper sums those per-thread
-// buffers into `grad` for the interior grid.
+// grad_thread is expected to be laid out as n_threads blocks each of size
+// n_grid_points (i.e. threadidx * n_grid_points + i). This helper sums those
+// per-thread buffers into `grad` for the interior grid.
 static inline void combine_grad(DW_DTYPE* __restrict const grad,
                          DW_DTYPE const* __restrict const grad_thread,
-                         int64_t const n_threads, int64_t const ny,
-                         int64_t const nx) {
-  int64_t y, x, threadidx;
-#pragma omp simd collapse(2)
-  for (y = 0; y < ny; ++y) {
-    for (x = 0; x < nx; ++x) {
-      int64_t const i = y * nx + x;
-      for (threadidx = 0; threadidx < n_threads; ++threadidx) {
-        grad[i] += grad_thread[threadidx * ny * nx + i];
-      }
+                         int64_t const n_threads,
+                         int64_t const n_grid_points) {
+  int64_t i, threadidx;
+#pragma omp simd
+  for (i = 0; i < n_grid_points; ++i) {
+    for (threadidx = 0; threadidx < n_threads; ++threadidx) {
+      grad[i] += grad_thread[threadidx * n_grid_points + i];
     }
   }
 }

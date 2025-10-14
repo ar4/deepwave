@@ -74,8 +74,10 @@ class Scalar(torch.nn.Module):
         survey_pad: Optional[Union[int, Sequence[Optional[int]]]] = None,
         wavefield_0: Optional[torch.Tensor] = None,
         wavefield_m1: Optional[torch.Tensor] = None,
+        psiz_m1: Optional[torch.Tensor] = None,
         psiy_m1: Optional[torch.Tensor] = None,
         psix_m1: Optional[torch.Tensor] = None,
+        zetaz_m1: Optional[torch.Tensor] = None,
         zetay_m1: Optional[torch.Tensor] = None,
         zetax_m1: Optional[torch.Tensor] = None,
         origin: Optional[Sequence[int]] = None,
@@ -88,15 +90,7 @@ class Scalar(torch.nn.Module):
         backward_callback: Optional[deepwave.common.Callback] = None,
         callback_frequency: int = 1,
         python_backend: Union[bool, str] = False,
-    ) -> Tuple[
-        torch.Tensor,
-        torch.Tensor,
-        torch.Tensor,
-        torch.Tensor,
-        torch.Tensor,
-        torch.Tensor,
-        torch.Tensor,
-    ]:
+    ) -> List[torch.Tensor]:
         """Performs forward propagation/modelling.
 
         See :func:`scalar` for details.
@@ -115,8 +109,10 @@ class Scalar(torch.nn.Module):
             survey_pad=survey_pad,
             wavefield_0=wavefield_0,
             wavefield_m1=wavefield_m1,
+            psiz_m1=psiz_m1,
             psiy_m1=psiy_m1,
             psix_m1=psix_m1,
+            zetaz_m1=zetaz_m1,
             zetay_m1=zetay_m1,
             zetax_m1=zetax_m1,
             origin=origin,
@@ -146,8 +142,10 @@ def scalar(
     survey_pad: Optional[Union[int, Sequence[Optional[int]]]] = None,
     wavefield_0: Optional[torch.Tensor] = None,
     wavefield_m1: Optional[torch.Tensor] = None,
+    psiz_m1: Optional[torch.Tensor] = None,
     psiy_m1: Optional[torch.Tensor] = None,
     psix_m1: Optional[torch.Tensor] = None,
+    zetaz_m1: Optional[torch.Tensor] = None,
     zetay_m1: Optional[torch.Tensor] = None,
     zetax_m1: Optional[torch.Tensor] = None,
     origin: Optional[Sequence[int]] = None,
@@ -160,15 +158,7 @@ def scalar(
     backward_callback: Optional[deepwave.common.Callback] = None,
     callback_frequency: int = 1,
     python_backend: Union[bool, str] = False,
-) -> Tuple[
-    torch.Tensor,
-    torch.Tensor,
-    torch.Tensor,
-    torch.Tensor,
-    torch.Tensor,
-    torch.Tensor,
-    torch.Tensor,
-]:
+) -> List[torch.Tensor]:
     """Scalar wave propagation (functional interface).
 
     This function performs forward modelling with the scalar wave equation.
@@ -197,7 +187,7 @@ def scalar(
             number of time steps in the simulation. Optional. If
             provided, `source_locations` must also be specified. If not
             provided, `nt` must be specified.
-        source_locations: A torch.Tensor with dimensions [shot, source, 2],
+        source_locations: A torch.Tensor with dimensions [shot, source, ndim],
             containing the index in the two spatial dimensions of the cell
             that each source is located in, relative to the origin of the
             model. Optional. Must be provided if `source_amplitudes` is. It
@@ -208,7 +198,7 @@ def scalar(
             deepwave.IGNORE_LOCATION will result in the source being
             ignored.
         receiver_locations: A torch.Tensor with dimensions
-            [shot, receiver, 2], containing the coordinates of the cell
+            [shot, receiver, ndim], containing the coordinates of the cell
             containing each receiver. Optional. It should have torch.long
             (int64) datatype. If not provided, the output
             `receiver_amplitudes` torch.Tensor will be empty. If
@@ -227,14 +217,15 @@ def scalar(
             If a sequence is provided, it should contain values for the
             edges in the following order:
 
-            - beginning of first dimension
+            - beginning of first (slowest) dimension
             - end of first dimension
             - beginning of second dimension
             - end of second dimension
+            ...
 
             Larger values result in smaller reflections, with values of 10
             to 20 being typical. For a reflective rigid surface, set the
-            value for that edge to be zero. For example, if your model is
+            value for that edge to be zero. For example, if your 2D model is
             oriented so that the surface that you want to be reflective is the
             beginning of the second dimension, then you could specify
             `pml_width=[20, 20, 0, 20]`. The wavespeed in the PML region
@@ -252,14 +243,14 @@ def scalar(
             to specify this is provided to allow you to ensure consistency
             between runs even if there are changes in the wavespeed.
             Optional, default None.
-        survey_pad: A single value or list of four values, all of which are
-            either an int or None, specifying whether the simulation domain
-            should be restricted to a region surrounding the sources
-            and receivers. If you have a large model, but the sources
-            and receivers of individual shots only cover a small portion
-            of it (such as in a towed streamer survey), then it may be
-            wasteful to simulate wave propagation over the whole model. This
-            parameter allows you to specify what distance around sources
+        survey_pad: A single value or list of two values for each dimension,
+            all of which are either an int or None, specifying whether the
+            simulation domain should be restricted to a region surrounding
+            the sources and receivers. If you have a large model, but the
+            sources and receivers of individual shots only cover a small
+            portion of it (such as in a towed streamer survey), then it may
+            be wasteful to simulate wave propagation over the whole model.
+            This parameter allows you to specify what distance around sources
             and receivers you would like to extract from the model to use
             for the simulation. A value of None means that no restriction
             of the model should be performed in that direction, while an
@@ -274,10 +265,11 @@ def scalar(
             encountered. Specifying a list, in the following order, allows
             the padding in each direction to be controlled:
 
-            - beginning of first dimension
+            - beginning of first (slowest) dimension
             - end of first dimension
             - beginning of second dimension
             - end of second dimension
+            ...
 
             Ints and `None` may be mixed, so a `survey_pad` of
             [5, None, None, 10] means that there should be at least 5 cells
@@ -298,20 +290,22 @@ def scalar(
             Cannot be specified if origin is also specified.
 
         wavefield_0: A torch.Tensor specifying the initial wavefield at time
-            step 0. It should have three dimensions, with the first dimension
-            being shot and the subsequent two corresponding to the two spatial
-            dimensions. The spatial shape should be equal to the simulation
-            domain, which is the extracted model plus the PML. If two shots
-            are being propagated simultaneously in a region of size [20, 30]
-            extracted from the model for the simulation, and
+            step 0. It should have (ndim + 1) dimensions, with the first
+            dimension being shot and the subsequent ones corresponding to the
+            spatial dimensions. The spatial shape should be equal to the
+            simulation domain, which is the extracted model plus the PML. If
+            two shots are being propagated simultaneously in a region of size
+            [20, 30] extracted from the model for the simulation, and
             `pml_width=[1, 2, 3, 4]`, then `wavefield_0` should be of shape
             [2, 23, 37]. Optional, default all zeros.
         wavefield_m1: A torch.Tensor specifying the initial wavefield at time
             step -1 (using Deepwave's internal time step interval, which may
             be smaller than the user provided one to obey the CFL condition).
             See the entry for `wavefield_0` for more details.
+        psiz_m1: PML-related wavefield at time step -1.
         psiy_m1: PML-related wavefield at time step -1.
         psix_m1: PML-related wavefield at time step -1.
+        zetaz_m1: PML-related wavefield at time step -1.
         zetay_m1: PML-related wavefield at time step -1.
         zetax_m1: PML-related wavefield at time step -1.
         origin: A list of ints specifying the origin of the provided initial
@@ -320,7 +314,7 @@ def scalar(
             is the cell where the extracted model used for the simulation
             domain began. It does not include the PML. So if a simulation
             is performed using the model region [10:20, 15:30], the origin
-            is [10, 15]. Optional, default [0, 0]. Cannot be specified if
+            is [10, 15]. Optional, default all zero. Cannot be specified if
             survey_pad is also specified.
         nt: If the source amplitudes are not provided then you must instead
             specify the number of time steps to run the simulation for by
@@ -370,25 +364,53 @@ def scalar(
             compiled C/CUDA.
 
     Returns:
-        Tuple:
+        List[torch.Tensor]:
 
             - wavefield_nt: The wavefield at the final time step.
             - wavefield_ntm1: The wavefield at the second-to-last time step.
-            - psiy_ntm1: PML-related wavefield.
+            - psiz_ntm1: PML-related wavefield (if ndim == 3).
+            - psiy_ntm1: PML-related wavefield (if ndim >= 2).
             - psix_ntm1: PML-related wavefield.
-            - zetay_ntm1: PML-related wavefield.
+            - zetaz_ntm1: PML-related wavefield (if ndim == 3).
+            - zetay_ntm1: PML-related wavefield (if ndim >= 2).
             - zetax_ntm1: PML-related wavefield.
             - receiver_amplitudes: The receiver amplitudes. Empty if no
               receivers were specified.
 
     """
+    ndim = deepwave.common.get_ndim(
+        [v],
+        [wavefield_0, wavefield_m1],
+        [source_locations, receiver_locations],
+        [psiz_m1, zetaz_m1],
+        [psiy_m1, zetay_m1],
+        [psix_m1, zetax_m1],
+    )
+    psi: List[Optional[torch.Tensor]] = []
+    zeta: List[Optional[torch.Tensor]] = []
+    if ndim == 3:
+        psi.append(psiz_m1)
+        zeta.append(zetaz_m1)
+    if ndim >= 2:
+        psi.append(psiy_m1)
+        zeta.append(zetay_m1)
+    if ndim >= 1:
+        psi.append(psix_m1)
+        zeta.append(zetax_m1)
+    initial_wavefields: List[Optional[torch.Tensor]] = [
+        wavefield_0,
+        wavefield_m1,
+        *psi,
+        *zeta,
+    ]
+
     v_nonzero = v[v != 0]
     if v_nonzero.numel() > 0:
         min_nonzero_model_vel = v_nonzero.abs().min().item()
     else:
         min_nonzero_model_vel = 0.0
     max_model_vel = v.abs().max().item()
-    fd_pad = [accuracy // 2] * 4
+    fd_pad = [accuracy // 2] * 2 * ndim
     (
         models,
         source_amplitudes_out,
@@ -426,21 +448,14 @@ def scalar(
         min_nonzero_model_vel,
         max_model_vel,
         survey_pad,
-        [
-            wavefield_0,
-            wavefield_m1,
-            psiy_m1,
-            psix_m1,
-            zetay_m1,
-            zetax_m1,
-        ],
+        initial_wavefields,
         origin,
         nt,
         model_gradient_sampling_interval,
         freq_taper_frac,
         time_pad_frac,
         time_taper,
-        2,
+        ndim,
     )
 
     # In the finite difference implementation, the source amplitudes we
@@ -450,13 +465,19 @@ def scalar(
     # We use 0 as the location of the sources that are to be ignored to
     # avoid out-of-bounds accesses to the model. Since these sources will not be
     # used, their amplitudes are not important.
-    ny, nx = models[0].shape[-2:]
+    model_shape = models[0].shape[-ndim:]
+    flat_model_shape = int(torch.prod(torch.tensor(model_shape)).item())
     mask = sources_i[0] == deepwave.common.IGNORE_LOCATION
     sources_i_masked = sources_i[0].clone()
     sources_i_masked[mask] = 0
     source_amplitudes_out[0] = (
         -source_amplitudes_out[0]
-        * (models[0].view(-1, ny * nx).expand(n_shots, -1).gather(1, sources_i_masked))
+        * (
+            models[0]
+            .view(-1, flat_model_shape)
+            .expand(n_shots, -1)
+            .gather(1, sources_i_masked)
+        )
         ** 2
         * dt**2
     )
@@ -471,8 +492,7 @@ def scalar(
         dtype,
         device,
         pml_freq,
-        ny,
-        nx,
+        model_shape,
     )
 
     if not isinstance(callback_frequency, int):
@@ -480,15 +500,14 @@ def scalar(
     if callback_frequency <= 0:
         raise ValueError("callback_frequency must be positive.")
 
-    (wfc, wfp, psiy, psix, zetay, zetax, receiver_amplitudes) = scalar_func(
+    outputs = scalar_func(
         python_backend,
         *models,
         *source_amplitudes_out,
-        *wavefields,
-        *pml_profiles,
+        pml_profiles,
         *sources_i,
         *receivers_i,
-        *grid_spacing,
+        grid_spacing,
         dt,
         nt,
         step_ratio * model_gradient_sampling_interval,
@@ -498,7 +517,11 @@ def scalar(
         forward_callback,
         backward_callback,
         callback_frequency,
+        *wavefields,
     )
+
+    receiver_amplitudes = outputs[-1]
+    output_wavefields = list(outputs[:-1])
 
     receiver_amplitudes = deepwave.common.downsample_and_movedim(
         receiver_amplitudes,
@@ -508,7 +531,7 @@ def scalar(
         time_taper,
     )
 
-    return wfc, wfp, psiy, psix, zetay, zetax, receiver_amplitudes
+    return [*output_wavefields, receiver_amplitudes]
 
 
 class ScalarForwardFunc(torch.autograd.Function):
@@ -524,22 +547,10 @@ class ScalarForwardFunc(torch.autograd.Function):
         ctx: Any,
         v: torch.Tensor,
         source_amplitudes: torch.Tensor,
-        wfc: torch.Tensor,
-        wfp: torch.Tensor,
-        psiy: torch.Tensor,
-        psix: torch.Tensor,
-        zetay: torch.Tensor,
-        zetax: torch.Tensor,
-        ay: torch.Tensor,
-        ax: torch.Tensor,
-        by: torch.Tensor,
-        bx: torch.Tensor,
-        dbydy: torch.Tensor,
-        dbxdx: torch.Tensor,
+        pml_profiles: List[torch.Tensor],
         sources_i: torch.Tensor,
         receivers_i: torch.Tensor,
-        dy: float,
-        dx: float,
+        grid_spacing: Sequence[float],
         dt: float,
         nt: int,
         step_ratio: int,
@@ -549,15 +560,8 @@ class ScalarForwardFunc(torch.autograd.Function):
         forward_callback: Optional[deepwave.common.Callback],
         backward_callback: Optional[deepwave.common.Callback],
         callback_frequency: int,
-    ) -> Tuple[
-        torch.Tensor,
-        torch.Tensor,
-        torch.Tensor,
-        torch.Tensor,
-        torch.Tensor,
-        torch.Tensor,
-        torch.Tensor,
-    ]:
+        *wavefields_tuple: torch.Tensor,
+    ) -> Tuple[torch.Tensor, ...]:
         """Performs the forward propagation of the scalar wave equation.
 
         This method is called by PyTorch during the forward pass. It prepares
@@ -569,22 +573,10 @@ class ScalarForwardFunc(torch.autograd.Function):
                 the backward pass.
             v: The wavespeed model tensor.
             source_amplitudes: The source amplitudes tensor.
-            wfc: Wavefield at current time step.
-            wfp: Wavefield at previous time step.
-            psiy: PML auxiliary variable for y-dimension (current time step).
-            psix: PML auxiliary variable for x-dimension (current time step).
-            zetay: PML auxiliary variable for y-dimension (previous time step).
-            zetax: PML auxiliary variable for x-dimension (previous time step).
-            ay: PML absorption profile for y-dimension (a-coefficient).
-            ax: PML absorption profile for x-dimension (a-coefficient).
-            by: PML absorption profile for y-dimension (b-coefficient).
-            bx: PML absorption profile for x-dimension (b-coefficient).
-            dbydy: Derivative of PML b-coefficient with respect to y.
-            dbxdx: Derivative of PML b-coefficient with respect to x.
+            pml_profiles: List of PML profiles.
             sources_i: 1D indices of source locations.
             receivers_i: 1D indices of receiver locations.
-            dy: Grid spacing in y-dimension.
-            dx: Grid spacing in x-dimension.
+            grid_spacing: Grid spacing for each spatial dimension.
             dt: Time step interval.
             nt: Total number of time steps.
             step_ratio: Ratio between user dt and internal dt.
@@ -594,6 +586,7 @@ class ScalarForwardFunc(torch.autograd.Function):
             forward_callback: The forward callback.
             backward_callback: The backward callback.
             callback_frequency: The callback frequency.
+            wavefields_tuple: List of wavefields (current, previous, PML).
 
         Returns:
             A tuple containing the output wavefields and receiver amplitudes.
@@ -604,14 +597,11 @@ class ScalarForwardFunc(torch.autograd.Function):
         # contiguous blocks of data.
         v = v.contiguous()
         source_amplitudes = source_amplitudes.contiguous()
-        ay = ay.contiguous()
-        ax = ax.contiguous()
-        by = by.contiguous()
-        bx = bx.contiguous()
-        dbydy = dbydy.contiguous()
-        dbxdx = dbxdx.contiguous()
+        pml_profiles = [profile.contiguous() for profile in pml_profiles]
         sources_i = sources_i.contiguous()
         receivers_i = receivers_i.contiguous()
+
+        ndim = len(grid_spacing)
 
         # If any of the input Tensors require gradients, a backward pass (and
         # possibly a double backward pass) may be performed. Save the Tensors
@@ -621,33 +611,17 @@ class ScalarForwardFunc(torch.autograd.Function):
         if (
             v.requires_grad
             or source_amplitudes.requires_grad
-            or wfc.requires_grad
-            or wfp.requires_grad
-            or psiy.requires_grad
-            or psix.requires_grad
-            or zetay.requires_grad
-            or zetax.requires_grad
+            or any(wavefield.requires_grad for wavefield in wavefields_tuple)
         ):
             ctx.save_for_backward(
                 v,
-                ay,
-                ax,
-                by,
-                bx,
-                dbydy,
-                dbxdx,
                 sources_i,
                 receivers_i,
                 source_amplitudes,
-                wfc,
-                wfp,
-                psiy,
-                psix,
-                zetay,
-                zetax,
+                *wavefields_tuple,
+                *pml_profiles,
             )
-            ctx.dy = dy
-            ctx.dx = dx
+            ctx.grid_spacing = grid_spacing
             ctx.dt = dt
             ctx.nt = nt
             ctx.n_shots = n_shots
@@ -660,69 +634,40 @@ class ScalarForwardFunc(torch.autograd.Function):
 
         # The finite difference (FD) stencil has a radius of `accuracy // 2`.
         # To avoid special boundary handling, the wavefields are padded with
-        # this many zeros on each side. This is `fd_pad`.
+        # this many zeros on each side.
         fd_pad = accuracy // 2
-        size_with_batch = (n_shots, *v.shape[-2:])
+        size_with_batch = (n_shots, *v.shape[-ndim:])
         # The `create_or_pad` function will either create a new zero tensor of
         # the correct size (if the initial wavefield is not provided) or pad
         # the provided initial wavefield.
-        wfc = deepwave.common.create_or_pad(
-            wfc,
-            fd_pad,
-            v.device,
-            v.dtype,
-            size_with_batch,
-        )
-        wfp = deepwave.common.create_or_pad(
-            wfp,
-            fd_pad,
-            v.device,
-            v.dtype,
-            size_with_batch,
-        )
-        psiy = deepwave.common.create_or_pad(
-            psiy,
-            fd_pad,
-            v.device,
-            v.dtype,
-            size_with_batch,
-        )
-        psix = deepwave.common.create_or_pad(
-            psix,
-            fd_pad,
-            v.device,
-            v.dtype,
-            size_with_batch,
-        )
-        zetay = deepwave.common.create_or_pad(
-            zetay,
-            fd_pad,
-            v.device,
-            v.dtype,
-            size_with_batch,
-        )
-        zetax = deepwave.common.create_or_pad(
-            zetax,
-            fd_pad,
-            v.device,
-            v.dtype,
-            size_with_batch,
-        )
+        wavefields = [
+            deepwave.common.create_or_pad(
+                wavefield,
+                fd_pad,
+                v.device,
+                v.dtype,
+                size_with_batch,
+            )
+            for wavefield in wavefields_tuple
+        ]
+
+        wfc, wfp, *pml_wavefields = wavefields
+        # The PML wavefields are ordered [psi, zeta] for each dimension
+        psi: List[torch.Tensor] = pml_wavefields[:ndim]
+        zeta: List[torch.Tensor] = pml_wavefields[ndim:]
 
         # The PML auxiliary variables (psi, zeta) are only non-zero in the PML
         # regions. To avoid unnecessary computation in the interior of the
         # domain, their values in the interior are set to zero here. The
         # C/CUDA code will then skip PML calculations for these grid points.
-        psiy = deepwave.common.zero_interior(psiy, fd_pad, pml_width, True)
-        psix = deepwave.common.zero_interior(psix, fd_pad, pml_width, False)
-        zetay = deepwave.common.zero_interior(zetay, fd_pad, pml_width, True)
-        zetax = deepwave.common.zero_interior(zetax, fd_pad, pml_width, False)
+        for i in range(ndim):
+            psi[i] = deepwave.common.zero_interior(psi[i], fd_pad, pml_width, i)
+            zeta[i] = deepwave.common.zero_interior(zeta[i], fd_pad, pml_width, i)
 
         # Get model properties and dimensions.
         device = v.device
         dtype = v.dtype
-        ny = v.shape[-2]
-        nx = v.shape[-1]
+        model_shape = v.shape[-ndim:]
         n_sources_per_shot = sources_i.numel() // n_shots
         n_receivers_per_shot = receivers_i.numel() // n_shots
 
@@ -731,8 +676,7 @@ class ScalarForwardFunc(torch.autograd.Function):
         # needed because the update of other wavefields at a grid point
         # depends on the values of `psiy` and `psix` at neighboring grid
         # points, so they cannot be updated in-place.
-        psiyn = torch.zeros_like(psiy)
-        psixn = torch.zeros_like(psix)
+        psin = [torch.zeros_like(wf) for wf in psi]
 
         # `dwdv` will store data needed for computing the gradient with respect
         # to the velocity model `v` in the backward pass.
@@ -742,7 +686,7 @@ class ScalarForwardFunc(torch.autograd.Function):
         # locations.
         receiver_amplitudes = torch.empty(0, device=device, dtype=dtype)
 
-        # The computational domain is divided into nine regions for performance,
+        # The computational domain is divided into regions for performance,
         # and the boundaries of these regions are calculated here. The PML
         # update involves spatial derivatives of PML variables and profiles,
         # which have a stencil radius of `fd_pad`. This causes the PML's
@@ -750,18 +694,18 @@ class ScalarForwardFunc(torch.autograd.Function):
         # additional `fd_pad` is therefore added to the PML region width.
         # The `min` and `max` calls ensure the boundaries are valid for
         # small models.
-        # `pml_y0`: First row index of the central (non-PML) region.
-        # `pml_y1`: First row index of the bottom PML region.
-        # `pml_x0`: First column index of the central (non-PML) region.
-        # `pml_x1`: First column index of the right PML region.
-        pml_y0 = min(pml_width[0] + 2 * fd_pad, ny - fd_pad)
-        pml_y1 = max(pml_y0, ny - pml_width[1] - 2 * fd_pad)
-        pml_x0 = min(pml_width[2] + 2 * fd_pad, nx - fd_pad)
-        pml_x1 = max(pml_x0, nx - pml_width[3] - 2 * fd_pad)
+        pml_b = [
+            min(pml_width[2 * i] + 2 * fd_pad, model_shape[i] - fd_pad)
+            for i in range(ndim)
+        ]
+        pml_e = [
+            max(pml_b[i], model_shape[i] - pml_width[2 * i + 1] - 2 * fd_pad)
+            for i in range(ndim)
+        ]
 
         # Check if a different velocity model is provided for each shot (i.e.,
         # if the batch dimension of `v` is greater than 1).
-        v_batched = v.ndim == 3 and v.shape[0] > 1
+        v_batched = v.ndim == ndim + 1 and v.shape[0] > 1
 
         # If `v` requires gradients, allocate memory for `dwdv`. This tensor
         # stores a partial result for use in the backward pass. The gradient
@@ -794,17 +738,23 @@ class ScalarForwardFunc(torch.autograd.Function):
         # the desired FD accuracy, the data type, and the device.
         forward = deepwave.backend_utils.get_backend_function(
             "scalar",
+            ndim,
             "forward",
             accuracy,
             dtype,
             v.device,
         )
 
+        rdx = [1 / dx for dx in grid_spacing]
+        rdx2 = [1 / dx**2 for dx in grid_spacing]
+
         # If no callback is provided, the entire propagation can be done in a
         # single call to the backend function. We achieve this by setting the
         # callback frequency to be the total number of steps.
         if forward_callback is None:
             callback_frequency = nt // step_ratio
+
+        dim_names = ["z", "y", "x"]
 
         # The main time-stepping loop. The propagation is chunked into segments
         # of `callback_frequency` steps to allow for callbacks.
@@ -813,20 +763,20 @@ class ScalarForwardFunc(torch.autograd.Function):
                 # If a `forward_callback` is provided, call it with the current
                 # state.
                 if forward_callback is not None:
+                    callback_wavefields = {
+                        "wavefield_0": wfc,
+                        "wavefield_m1": wfp,
+                    }
+                    for i in range(ndim):
+                        callback_wavefields[f"psi{dim_names[-ndim + i]}_m1"] = psi[i]
+                        callback_wavefields[f"zeta{dim_names[-ndim + i]}_m1"] = zeta[i]
                     state = deepwave.common.CallbackState(
                         dt,
                         step,
-                        {
-                            "wavefield_0": wfc,
-                            "wavefield_m1": wfp,
-                            "psiy_m1": psiy,
-                            "psix_m1": psix,
-                            "zetay_m1": zetay,
-                            "zetax_m1": zetax,
-                        },
+                        callback_wavefields,
                         {"v": v},
                         {},
-                        [fd_pad] * 4,
+                        [fd_pad] * 2 * ndim,
                         pml_width,
                     )
                     forward_callback(state)
@@ -839,41 +789,28 @@ class ScalarForwardFunc(torch.autograd.Function):
                     source_amplitudes.data_ptr(),
                     wfc.data_ptr(),
                     wfp.data_ptr(),
-                    psiy.data_ptr(),
-                    psix.data_ptr(),
-                    psiyn.data_ptr(),
-                    psixn.data_ptr(),
-                    zetay.data_ptr(),
-                    zetax.data_ptr(),
+                    *[field.data_ptr() for field in psi],
+                    *[field.data_ptr() for field in psin],
+                    *[field.data_ptr() for field in zeta],
                     dwdv.data_ptr(),
                     receiver_amplitudes.data_ptr(),
-                    ay.data_ptr(),
-                    ax.data_ptr(),
-                    by.data_ptr(),
-                    bx.data_ptr(),
-                    dbydy.data_ptr(),
-                    dbxdx.data_ptr(),
+                    *[profile.data_ptr() for profile in pml_profiles],
                     sources_i.data_ptr(),
                     receivers_i.data_ptr(),
-                    1 / dy,
-                    1 / dx,
-                    1 / dy**2,
-                    1 / dx**2,
+                    *rdx,
+                    *rdx2,
                     dt**2,
                     step_nt * step_ratio,
                     n_shots,
-                    ny,
-                    nx,
+                    *model_shape,
                     n_sources_per_shot,
                     n_receivers_per_shot,
                     step_ratio,
                     v.requires_grad,
                     v_batched,
                     step * step_ratio,
-                    pml_y0,
-                    pml_y1,
-                    pml_x0,
-                    pml_x1,
+                    *pml_b,
+                    *pml_e,
                     aux,
                 )
                 # The backend uses ping-pong buffering for the wavefields and
@@ -881,39 +818,24 @@ class ScalarForwardFunc(torch.autograd.Function):
                 # in the chunk, the pointers to the current and previous time
                 # step buffers need to be swapped for the next iteration.
                 if (step_nt * step_ratio) % 2 != 0:
-                    wfc, wfp, psiy, psix, psiyn, psixn = (
-                        wfp,
-                        wfc,
-                        psiyn,
-                        psixn,
-                        psiy,
-                        psix,
-                    )
+                    wfc, wfp = wfp, wfc
+                    psi, psin = psin, psi
 
         # Before returning the final wavefields, remove the padding that was
         # added for the finite difference stencil.
-        s = (slice(None), slice(fd_pad, -fd_pad), slice(fd_pad, -fd_pad))
+        s = (slice(None),) + (slice(fd_pad, -fd_pad),) * ndim
+        # The tuple that is returned contains the Tensors that will be passed
+        # to backward.
         return (
             wfc[s],
             wfp[s],
-            psiy[s],
-            psix[s],
-            zetay[s],
-            zetax[s],
+            *[field[s] for field in psi],
+            *[field[s] for field in zeta],
             receiver_amplitudes,
         )
 
     @staticmethod
-    def backward(
-        ctx: Any,
-        gwfc: torch.Tensor,
-        gwfp: torch.Tensor,
-        gpsiy: torch.Tensor,
-        gpsix: torch.Tensor,
-        gzetay: torch.Tensor,
-        gzetax: torch.Tensor,
-        grad_r: torch.Tensor,
-    ) -> Tuple[Optional[torch.Tensor], ...]:
+    def backward(ctx: Any, *args: torch.Tensor) -> Tuple[Optional[torch.Tensor], ...]:
         """Computes the gradients during the backward pass.
 
         This method is called by PyTorch during the backward pass to compute
@@ -922,38 +844,20 @@ class ScalarForwardFunc(torch.autograd.Function):
         Args:
             ctx: A context object that contains information saved during the
                 forward pass.
-            gwfc: Gradient of the loss with respect to `wfc`.
-            gwfp: Gradient of the loss with respect to `wfp`.
-            gpsiy: Gradient of the loss with respect to `psiy`.
-            gpsix: Gradient of the loss with respect to `psix`.
-            gzetay: Gradient of the loss with respect to `zetay`.
-            gzetax: Gradient of the loss with respect to `zetax`.
-            grad_r: Gradient of the loss with respect to `receiver_amplitudes`.
+            args: Gradients of the loss with respect to the outputs of forward.
 
         Returns:
             Gradients with respect to the inputs of the forward pass.
 
         """
-        (
-            v,
-            ay,
-            ax,
-            by,
-            bx,
-            dbydy,
-            dbxdx,
-            sources_i,
-            receivers_i,
-            source_amplitudes,
-            wfc,
-            wfp,
-            psiy,
-            psix,
-            zetay,
-            zetax,
-        ) = ctx.saved_tensors
-        dy = ctx.dy
-        dx = ctx.dx
+        ndim = len(ctx.grid_spacing)
+        grad_r = args[-1]
+        grad_wavefields = list(args[:-1])
+        v, sources_i, receivers_i, source_amplitudes = ctx.saved_tensors[:4]
+        wavefields = ctx.saved_tensors[4 : 6 + 2 * ndim]
+        pml_profiles = ctx.saved_tensors[6 + 2 * ndim : 6 + 5 * ndim]
+
+        grid_spacing = ctx.grid_spacing
         dt = ctx.dt
         nt = ctx.nt
         n_shots = ctx.n_shots
@@ -964,32 +868,14 @@ class ScalarForwardFunc(torch.autograd.Function):
         dwdv = ctx.dwdv
 
         result = ScalarBackwardFunc.apply(  # type: ignore[no-untyped-call]
-            gwfc,
-            gwfp,
-            gpsiy,
-            gpsix,
-            gzetay,
-            gzetax,
             grad_r,
             v,
-            ay,
-            ax,
-            by,
-            bx,
-            dbydy,
-            dbxdx,
+            pml_profiles,
             sources_i,
             receivers_i,
             dwdv,
             source_amplitudes,
-            wfc,
-            wfp,
-            psiy,
-            psix,
-            zetay,
-            zetax,
-            dy,
-            dx,
+            grid_spacing,
             dt,
             nt,
             n_shots,
@@ -999,16 +885,16 @@ class ScalarForwardFunc(torch.autograd.Function):
             source_amplitudes_requires_grad,
             ctx.backward_callback,
             ctx.callback_frequency,
+            *(tuple(grad_wavefields) + tuple(wavefields)),
         )
+        grad_v, grad_f, *grad_wavefields_tuple = result
         return (
-            cast(
-                "Tuple[Optional[torch.Tensor], Optional[torch.Tensor], "
-                "Optional[torch.Tensor], Optional[torch.Tensor], "
-                "Optional[torch.Tensor], Optional[torch.Tensor], "
-                "Optional[torch.Tensor], Optional[torch.Tensor]]",
-                result,
+            (
+                grad_v,
+                grad_f,
             )
-            + (None,) * 19
+            + (None,) * 13
+            + tuple(grad_wavefields_tuple)
         )
 
 
@@ -1023,32 +909,14 @@ class ScalarBackwardFunc(torch.autograd.Function):
     @staticmethod
     def forward(
         ctx: Any,
-        gwfc: torch.Tensor,
-        gwfp: torch.Tensor,
-        gpsiy: torch.Tensor,
-        gpsix: torch.Tensor,
-        gzetay: torch.Tensor,
-        gzetax: torch.Tensor,
         grad_r: torch.Tensor,
         v: torch.Tensor,
-        ay: torch.Tensor,
-        ax: torch.Tensor,
-        by: torch.Tensor,
-        bx: torch.Tensor,
-        dbydy: torch.Tensor,
-        dbxdx: torch.Tensor,
+        pml_profiles: List[torch.Tensor],
         sources_i: torch.Tensor,
         receivers_i: torch.Tensor,
         dwdv: torch.Tensor,
         source_amplitudes: torch.Tensor,
-        wfc: torch.Tensor,
-        wfp: torch.Tensor,
-        psiy: torch.Tensor,
-        psix: torch.Tensor,
-        zetay: torch.Tensor,
-        zetax: torch.Tensor,
-        dy: float,
-        dx: float,
+        grid_spacing: Sequence[float],
         dt: float,
         nt: int,
         n_shots: int,
@@ -1058,16 +926,8 @@ class ScalarBackwardFunc(torch.autograd.Function):
         source_amplitudes_requires_grad: bool,
         backward_callback: Optional[deepwave.common.Callback],
         callback_frequency: int,
-    ) -> Tuple[
-        torch.Tensor,
-        torch.Tensor,
-        torch.Tensor,
-        torch.Tensor,
-        torch.Tensor,
-        torch.Tensor,
-        torch.Tensor,
-        torch.Tensor,
-    ]:
+        *wavefields_tuple: torch.Tensor,
+    ) -> Tuple[torch.Tensor, ...]:
         """Performs the backward propagation of the scalar wave equation.
 
         This method is called by PyTorch during the backward pass to compute
@@ -1075,32 +935,14 @@ class ScalarBackwardFunc(torch.autograd.Function):
 
         Args:
             ctx: A context object for saving information for the backward pass.
-            gwfc: Gradient of the loss with respect to `wfc`.
-            gwfp: Gradient of the loss with respect to `wfp`.
-            gpsiy: Gradient of the loss with respect to `psiy`.
-            gpsix: Gradient of the loss with respect to `psix`.
-            gzetay: Gradient of the loss with respect to `zetay`.
-            gzetax: Gradient of the loss with respect to `zetax`.
             grad_r: Gradient of the loss with respect to `receiver_amplitudes`.
             v: The wavespeed model tensor.
-            ay: PML absorption profile for y-dimension (a-coefficient).
-            ax: PML absorption profile for x-dimension (a-coefficient).
-            by: PML absorption profile for y-dimension (b-coefficient).
-            bx: PML absorption profile for x-dimension (b-coefficient).
-            dbydy: Derivative of PML b-coefficient with respect to y.
-            dbxdx: Derivative of PML b-coefficient with respect to x.
+            pml_profiles: List of PML profiles.
             sources_i: 1D indices of source locations.
             receivers_i: 1D indices of receiver locations.
             dwdv: Wavefield for model gradient calculation.
             source_amplitudes: The source amplitudes tensor.
-            wfc: Wavefield at current time step (from forward pass).
-            wfp: Wavefield at previous time step (from forward pass).
-            psiy: PML y-dim auxiliary variable (current, from forward pass).
-            psix: PML x-dim auxiliary variable (current, from forward pass).
-            zetay: PML y-dim auxiliary variable (previous, from forward pass).
-            zetax: PML x-dim auxiliary variable (previous, from forward pass).
-            dy: Grid spacing in y-dimension.
-            dx: Grid spacing in x-dimension.
+            grid_spacing: Grid spacing for each spatial dimension.
             dt: Time step interval.
             nt: Total number of time steps.
             n_shots: Number of shots in the batch.
@@ -1110,38 +952,28 @@ class ScalarBackwardFunc(torch.autograd.Function):
             source_amplitudes_requires_grad: If source amplitudes need grads.
             backward_callback: The backward callback.
             callback_frequency: The callback frequency.
+            wavefields_tuple: Gradients of the loss with respect to the
+                output wavefields from the forward pass, followed by
+                initial wavefields (current, previous, PML) from forward pass.
 
         Returns:
             A tuple containing the gradients of the inputs.
 
         """
+        ndim = len(grid_spacing)
+        grad_wavefields = list(wavefields_tuple[: 2 + 2 * ndim])
+        wavefields = list(wavefields_tuple[2 + 2 * ndim :])
         ctx.save_for_backward(
-            gwfc,
-            gwfp,
-            gpsiy,
-            gpsix,
-            gzetay,
-            gzetax,
-            grad_r,
             v,
-            ay,
-            ax,
-            by,
-            bx,
-            dbydy,
-            dbxdx,
             sources_i,
             receivers_i,
             source_amplitudes,
-            wfc,
-            wfp,
-            psiy,
-            psix,
-            zetay,
-            zetax,
+            grad_r,
+            *wavefields,
+            *grad_wavefields,
+            *pml_profiles,
         )
-        ctx.dy = dy
-        ctx.dx = dx
+        ctx.grid_spacing = grid_spacing
         ctx.dt = dt
         ctx.nt = nt
         ctx.n_shots = n_shots
@@ -1151,81 +983,51 @@ class ScalarBackwardFunc(torch.autograd.Function):
         ctx.source_amplitudes_requires_grad = source_amplitudes_requires_grad
 
         v = v.contiguous()
-        grad_r = grad_r.contiguous()
-        ay = ay.contiguous()
-        ax = ax.contiguous()
-        by = by.contiguous()
-        bx = bx.contiguous()
-        dbydy = dbydy.contiguous()
-        dbxdx = dbxdx.contiguous()
         sources_i = sources_i.contiguous()
         receivers_i = receivers_i.contiguous()
+        source_amplitudes = source_amplitudes.contiguous()
+        wavefields = [p.contiguous() for p in wavefields]
+        grad_wavefields = [p.contiguous() for p in grad_wavefields]
+        pml_profiles = [p.contiguous() for p in pml_profiles]
+        grad_r = grad_r.contiguous()
         dwdv = dwdv.contiguous()
 
         device = v.device
         dtype = v.dtype
-        ny = v.shape[-2]
-        nx = v.shape[-1]
+        model_shape = v.shape[-ndim:]
         n_sources_per_shot = sources_i.numel() // n_shots
         n_receivers_per_shot = receivers_i.numel() // n_shots
         fd_pad = accuracy // 2
 
-        size_with_batch = (n_shots, *v.shape[-2:])
-        gwfc = deepwave.common.create_or_pad(
-            gwfc,
-            fd_pad,
-            v.device,
-            v.dtype,
-            size_with_batch,
-        )
-        gwfp = deepwave.common.create_or_pad(
-            gwfp,
-            fd_pad,
-            v.device,
-            v.dtype,
-            size_with_batch,
-        )
-        gpsiy = deepwave.common.create_or_pad(
-            gpsiy,
-            fd_pad,
-            v.device,
-            v.dtype,
-            size_with_batch,
-        )
-        gpsix = deepwave.common.create_or_pad(
-            gpsix,
-            fd_pad,
-            v.device,
-            v.dtype,
-            size_with_batch,
-        )
-        gzetay = deepwave.common.create_or_pad(
-            gzetay,
-            fd_pad,
-            v.device,
-            v.dtype,
-            size_with_batch,
-        )
-        gzetax = deepwave.common.create_or_pad(
-            gzetax,
-            fd_pad,
-            v.device,
-            v.dtype,
-            size_with_batch,
-        )
-        gpsiy = deepwave.common.zero_interior(gpsiy, fd_pad, pml_width, True)
-        gpsix = deepwave.common.zero_interior(gpsix, fd_pad, pml_width, False)
-        gzetay = deepwave.common.zero_interior(gzetay, fd_pad, pml_width, True)
-        gzetax = deepwave.common.zero_interior(gzetax, fd_pad, pml_width, False)
+        size_with_batch = (n_shots, *model_shape)
+        grad_wavefields = [
+            deepwave.common.create_or_pad(
+                wavefield,
+                fd_pad,
+                v.device,
+                v.dtype,
+                size_with_batch,
+            )
+            for wavefield in grad_wavefields
+        ]
+        grad_wfc, grad_wfp, *grad_pml_wavefields = grad_wavefields
+        # The PML wavefields are ordered [psi, zeta] for each dimension
+        grad_psi: List[torch.Tensor] = grad_pml_wavefields[:ndim]
+        grad_zeta: List[torch.Tensor] = grad_pml_wavefields[ndim:]
+        for i in range(ndim):
+            grad_psi[i] = deepwave.common.zero_interior(
+                grad_psi[i], fd_pad, pml_width, i
+            )
+            grad_zeta[i] = deepwave.common.zero_interior(
+                grad_zeta[i], fd_pad, pml_width, i
+            )
 
         # In the backward pass, temporary tensors are needed for the gradients
         # with respect to both `psi` and `zeta`, as their current values at
         # neighboring grid points are required for the update of other
         # gradient wavefields, preventing in-place updates.
-        gpsiyn = torch.zeros_like(gpsiy)
-        gpsixn = torch.zeros_like(gpsix)
-        gzetayn = torch.zeros_like(gzetay)
-        gzetaxn = torch.zeros_like(gzetax)
+        grad_psin = [torch.zeros_like(gwf) for gwf in grad_psi]
+        grad_zetan = [torch.zeros_like(gwf) for gwf in grad_zeta]
         grad_v = torch.empty(0, device=device, dtype=dtype)
         grad_v_tmp = torch.empty(0, device=device, dtype=dtype)
         grad_v_tmp_ptr = grad_v.data_ptr()
@@ -1241,12 +1043,16 @@ class ScalarBackwardFunc(torch.autograd.Function):
         # derivatives of terms that are themselves spatial derivatives,
         # widening the stencil and the extent of the PML's influence into
         # the non-PML region.
-        pml_y0 = min(pml_width[0] + 3 * fd_pad, ny - fd_pad)
-        pml_y1 = max(pml_y0, ny - pml_width[1] - 3 * fd_pad)
-        pml_x0 = min(pml_width[2] + 3 * fd_pad, nx - fd_pad)
-        pml_x1 = max(pml_x0, nx - pml_width[3] - 3 * fd_pad)
+        pml_b = [
+            min(pml_width[2 * i] + 3 * fd_pad, model_shape[i] - fd_pad)
+            for i in range(ndim)
+        ]
+        pml_e = [
+            max(pml_b[i], model_shape[i] - pml_width[2 * i + 1] - 3 * fd_pad)
+            for i in range(ndim)
+        ]
 
-        v_batched = v.ndim == 3 and v.shape[0] > 1
+        v_batched = v.ndim == ndim + 1 and v.shape[0] > 1
 
         if source_amplitudes_requires_grad:
             grad_f.resize_(nt, n_shots, n_sources_per_shot)
@@ -1263,7 +1069,7 @@ class ScalarBackwardFunc(torch.autograd.Function):
         if v.is_cuda:
             aux = v.get_device()
             if v.requires_grad and not v_batched and n_shots > 1:
-                grad_v_tmp.resize_(n_shots, *v.shape[-2:])
+                grad_v_tmp.resize_(n_shots, *model_shape)
                 grad_v_tmp.fill_(0)
                 grad_v_tmp_ptr = grad_v_tmp.data_ptr()
         else:
@@ -1277,11 +1083,12 @@ class ScalarBackwardFunc(torch.autograd.Function):
                 and aux > 1
                 and deepwave.backend_utils.USE_OPENMP
             ):
-                grad_v_tmp.resize_(aux, *v.shape[-2:])
+                grad_v_tmp.resize_(aux, *model_shape)
                 grad_v_tmp.fill_(0)
                 grad_v_tmp_ptr = grad_v_tmp.data_ptr()
         backward = deepwave.backend_utils.get_backend_function(
             "scalar",
+            ndim,
             "backward",
             accuracy,
             dtype,
@@ -1292,6 +1099,9 @@ class ScalarBackwardFunc(torch.autograd.Function):
         # pre-calculating it saves computation inside the time-stepping loop.
         v2dt2 = v**2 * dt**2
 
+        rdx = [1 / dx for dx in grid_spacing]
+        rdx2 = [1 / dx**2 for dx in grid_spacing]
+
         # A mathematical trick is used to implement the adjoint propagation.
         # The standard adjoint update would require negating a wavefield at
         # each time step. By negating one of the gradient wavefields at the
@@ -1299,136 +1109,103 @@ class ScalarBackwardFunc(torch.autograd.Function):
         # used that allows for a simple pointer swap between the two gradient
         # wavefields each time step, avoiding the negation within the loop.
         # This initial negation is the first part of that trick.
-        gwfp = -gwfp
+        grad_wfp = -grad_wfp
 
         if backward_callback is None:
             callback_frequency = nt // step_ratio
 
-        if gwfc.numel() > 0 and nt > 0:
+        dim_names = ["z", "y", "x"]
+
+        if grad_wfc.numel() > 0 and nt > 0:
             for step in range(nt // step_ratio, 0, -callback_frequency):
                 step_nt = min(step, callback_frequency)
                 backward(
                     v2dt2.data_ptr(),
                     grad_r.data_ptr(),
-                    gwfc.data_ptr(),
-                    gwfp.data_ptr(),
-                    gpsiy.data_ptr(),
-                    gpsix.data_ptr(),
-                    gpsiyn.data_ptr(),
-                    gpsixn.data_ptr(),
-                    gzetay.data_ptr(),
-                    gzetax.data_ptr(),
-                    gzetayn.data_ptr(),
-                    gzetaxn.data_ptr(),
+                    grad_wfc.data_ptr(),
+                    grad_wfp.data_ptr(),
+                    *[field.data_ptr() for field in grad_psi],
+                    *[field.data_ptr() for field in grad_psin],
+                    *[field.data_ptr() for field in grad_zeta],
+                    *[field.data_ptr() for field in grad_zetan],
                     dwdv.data_ptr(),
                     grad_f.data_ptr(),
                     grad_v.data_ptr(),
                     grad_v_tmp_ptr,
-                    ay.data_ptr(),
-                    ax.data_ptr(),
-                    by.data_ptr(),
-                    bx.data_ptr(),
-                    dbydy.data_ptr(),
-                    dbxdx.data_ptr(),
+                    *[profile.data_ptr() for profile in pml_profiles],
                     sources_i.data_ptr(),
                     receivers_i.data_ptr(),
-                    1 / dy,
-                    1 / dx,
-                    1 / dy**2,
-                    1 / dx**2,
+                    *rdx,
+                    *rdx2,
                     step_nt * step_ratio,
                     n_shots,
-                    ny,
-                    nx,
+                    *model_shape,
                     n_sources_per_shot * source_amplitudes_requires_grad,
                     n_receivers_per_shot,
                     step_ratio,
                     v.requires_grad,
                     v_batched,
                     step * step_ratio,
-                    pml_y0,
-                    pml_y1,
-                    pml_x0,
-                    pml_x1,
+                    *pml_b,
+                    *pml_e,
                     aux,
                 )
                 if (step_nt * step_ratio) % 2 != 0:
-                    (
-                        gwfc,
-                        gwfp,
-                        gpsiy,
-                        gpsix,
-                        gpsiyn,
-                        gpsixn,
-                        gzetay,
-                        gzetax,
-                        gzetayn,
-                        gzetaxn,
-                    ) = (
-                        gwfp,
-                        gwfc,
-                        gpsiyn,
-                        gpsixn,
-                        gpsiy,
-                        gpsix,
-                        gzetayn,
-                        gzetaxn,
-                        gzetay,
-                        gzetax,
-                    )
+                    grad_wfc, grad_wfp = grad_wfp, grad_wfc
+                    grad_psi, grad_psin = grad_psin, grad_psi
+                    grad_zeta, grad_zetan = grad_zetan, grad_zeta
+
                 if backward_callback is not None:
                     # The time step index is `step - 1` because the callback is
                     # executed *after* the calculations for the current
                     # backward step are complete, so the state reflects that
                     # of time step index `step - 1`.
+                    callback_wavefields = {
+                        "wavefield_0": grad_wfc,
+                        "wavefield_m1": grad_wfp,
+                    }
+                    for i in range(ndim):
+                        callback_wavefields[f"psi{dim_names[-ndim + i]}_m1"] = grad_psi[
+                            i
+                        ]
+                        callback_wavefields[f"zeta{dim_names[-ndim + i]}_m1"] = (
+                            grad_zeta[i]
+                        )
                     state = deepwave.common.CallbackState(
                         dt,
                         step - 1,
-                        {
-                            "wavefield_0": gwfc,
-                            "wavefield_m1": gwfp,
-                            "psiy_m1": gpsiy,
-                            "psix_m1": gpsix,
-                            "zetay_m1": gzetay,
-                            "zetax_m1": gzetax,
-                        },
+                        callback_wavefields,
                         {"v": v},
                         {"v": grad_v},
-                        [fd_pad] * 4,
+                        [fd_pad] * 2 * ndim,
                         pml_width,
                     )
                     backward_callback(state)
 
-        s = (slice(None), slice(fd_pad, -fd_pad), slice(fd_pad, -fd_pad))
+        s = (
+            slice(None),
+            *(slice(fd_pad, dim - fd_pad) for dim in model_shape),
+        )
         # The second part of the mathematical trick, which involves negating
         # the other gradient wavefield to transform the propagated state back
         # to the true adjoint state.
+        grad_wfp = -grad_wfp
         return (
             grad_v,
             grad_f,
-            gwfc[s],
-            -gwfp[s],
-            gpsiy[s],
-            gpsix[s],
-            gzetay[s],
-            gzetax[s],
+            grad_wfc[s],
+            grad_wfp[s],
+            *[gwf[s] for gwf in grad_psi],
+            *[gwf[s] for gwf in grad_zeta],
         )
 
     @staticmethod
     @torch.autograd.function.once_differentiable  # type: ignore[misc]
-    def backward(
-        ctx: Any,
-        ggv: torch.Tensor,
-        ggf: torch.Tensor,
-        ggwfc: torch.Tensor,
-        ggwfp: torch.Tensor,
-        ggpsiy: torch.Tensor,
-        ggpsix: torch.Tensor,
-        ggzetay: torch.Tensor,
-        ggzetax: torch.Tensor,
-    ) -> Tuple[Optional[torch.Tensor], ...]:
+    def backward(ctx: Any, *args: torch.Tensor) -> Tuple[Optional[torch.Tensor], ...]:
         """Performs double backpropagations.
 
+        Args:
+            *args: The gradients with respect to the outputs.
         This method implements the backward pass for `ScalarBackwardFunc`, which
         is itself the backward pass of the forward propagation. This
         "double backward" operation is used to compute second-order
@@ -1456,8 +1233,7 @@ class ScalarBackwardFunc(torch.autograd.Function):
         Args:
             ctx: A context object that contains information saved during the
                 forward pass of the backward function.
-            ggv: Gradient of the loss with respect to the gradient of `v`. This
-                is the vector that the Hessian will be multiplied by.
+            ggv: Gradient of the loss with respect to the gradient of `v`.
             ggf: Gradient of the loss with respect to the gradient of
                 `source_amplitudes`.
             ggwfc: Gradient of the loss with respect to the gradient of `wfc`.
@@ -1478,34 +1254,22 @@ class ScalarBackwardFunc(torch.autograd.Function):
         # This includes the original forward wavefields (`wfc`, `wfp`), the
         # first-order adjoint sources (`grad_r`), the final state of the first-
         # order adjoint wavefields (`gwfc`, `gwfp`), and model parameters.
+        ndim = len(ctx.grid_spacing)
+        ggv = args[0]
+        ggf = args[1]
+        gradgrad_wavefields = list(args[2:])
         (
-            gwfc,
-            gwfp,
-            gpsiy,
-            gpsix,
-            gzetay,
-            gzetax,
-            grad_r,
             v,
-            ay,
-            ax,
-            by,
-            bx,
-            dbydy,
-            dbxdx,
             sources_i,
             receivers_i,
             source_amplitudes,
-            wfc,
-            wfp,
-            psiy,
-            psix,
-            zetay,
-            zetax,
-        ) = ctx.saved_tensors
+            grad_r,
+        ) = ctx.saved_tensors[:5]
+        wavefields = ctx.saved_tensors[5 : 7 + 2 * ndim]
+        grad_wavefields = ctx.saved_tensors[7 + 2 * ndim : 9 + 4 * ndim]
+        pml_profiles = ctx.saved_tensors[9 + 4 * ndim : 9 + 7 * ndim]
         # Retrieve scalar variables from the context.
-        dy = ctx.dy
-        dx = ctx.dx
+        grid_spacing = ctx.grid_spacing
         dt = ctx.dt
         nt = ctx.nt
         n_shots = ctx.n_shots
@@ -1527,12 +1291,7 @@ class ScalarBackwardFunc(torch.autograd.Function):
         source_amplitudes = source_amplitudes.contiguous()
         ggsource_amplitudes = ggf.contiguous()
         grad_r = grad_r.contiguous()
-        ay = ay.contiguous()
-        ax = ax.contiguous()
-        by = by.contiguous()
-        bx = bx.contiguous()
-        dbydy = dbydy.contiguous()
-        dbxdx = dbxdx.contiguous()
+        pml_profiles = [p.contiguous() for p in pml_profiles]
         fwd_sources_i = sources_i.contiguous()
 
         # Step 1: Forward pass
@@ -1542,7 +1301,7 @@ class ScalarBackwardFunc(torch.autograd.Function):
         # We need snapshots of these fields over the whole grid, but we do not
         # need to record `u` at any specific receiver locations for the double
         # backward pass itself, so `fwd_receivers_i` is empty.
-        fwd_receivers_i = torch.empty(0)
+        fwd_receivers_i = torch.empty(0, dtype=torch.long, device=v.device)
         # We do, however, need to record `delta_u` at the original receiver
         # locations if we want to compute the gradient with respect to the
         # adjoint source `grad_r`. So we provide the original receiver
@@ -1550,122 +1309,66 @@ class ScalarBackwardFunc(torch.autograd.Function):
         fwd_ggreceivers_i = receivers_i.contiguous()
 
         fd_pad = accuracy // 2
-        size_with_batch = (n_shots, *v.shape[-2:])
-        wfc = deepwave.common.create_or_pad(
-            wfc,
-            fd_pad,
-            v.device,
-            v.dtype,
-            size_with_batch,
-        )
-        wfp = deepwave.common.create_or_pad(
-            wfp,
-            fd_pad,
-            v.device,
-            v.dtype,
-            size_with_batch,
-        )
-        psiy = deepwave.common.create_or_pad(
-            psiy,
-            fd_pad,
-            v.device,
-            v.dtype,
-            size_with_batch,
-        )
-        psix = deepwave.common.create_or_pad(
-            psix,
-            fd_pad,
-            v.device,
-            v.dtype,
-            size_with_batch,
-        )
-        zetay = deepwave.common.create_or_pad(
-            zetay,
-            fd_pad,
-            v.device,
-            v.dtype,
-            size_with_batch,
-        )
-        zetax = deepwave.common.create_or_pad(
-            zetax,
-            fd_pad,
-            v.device,
-            v.dtype,
-            size_with_batch,
-        )
-        ggwfc = deepwave.common.create_or_pad(
-            ggwfc,
-            fd_pad,
-            v.device,
-            v.dtype,
-            size_with_batch,
-        )
-        ggwfp = deepwave.common.create_or_pad(
-            ggwfp,
-            fd_pad,
-            v.device,
-            v.dtype,
-            size_with_batch,
-        )
-        ggpsiy = deepwave.common.create_or_pad(
-            ggpsiy,
-            fd_pad,
-            v.device,
-            v.dtype,
-            size_with_batch,
-        )
-        ggpsix = deepwave.common.create_or_pad(
-            ggpsix,
-            fd_pad,
-            v.device,
-            v.dtype,
-            size_with_batch,
-        )
-        ggzetay = deepwave.common.create_or_pad(
-            ggzetay,
-            fd_pad,
-            v.device,
-            v.dtype,
-            size_with_batch,
-        )
-        ggzetax = deepwave.common.create_or_pad(
-            ggzetax,
-            fd_pad,
-            v.device,
-            v.dtype,
-            size_with_batch,
-        )
-        psiy = deepwave.common.zero_interior(psiy, fd_pad, pml_width, True)
-        psix = deepwave.common.zero_interior(psix, fd_pad, pml_width, False)
-        zetay = deepwave.common.zero_interior(zetay, fd_pad, pml_width, True)
-        zetax = deepwave.common.zero_interior(zetax, fd_pad, pml_width, False)
-        ggpsiy = deepwave.common.zero_interior(ggpsiy, fd_pad, pml_width, True)
-        ggpsix = deepwave.common.zero_interior(ggpsix, fd_pad, pml_width, False)
-        ggzetay = deepwave.common.zero_interior(ggzetay, fd_pad, pml_width, True)
-        ggzetax = deepwave.common.zero_interior(ggzetax, fd_pad, pml_width, False)
+        model_shape = v.shape[-ndim:]
+        size_with_batch = (n_shots, *model_shape)
+        wavefields = [
+            deepwave.common.create_or_pad(
+                wavefield,
+                fd_pad,
+                v.device,
+                v.dtype,
+                size_with_batch,
+            )
+            for wavefield in wavefields
+        ]
+        gradgrad_wavefields = [
+            deepwave.common.create_or_pad(
+                wavefield,
+                fd_pad,
+                v.device,
+                v.dtype,
+                size_with_batch,
+            )
+            for wavefield in gradgrad_wavefields
+        ]
+        wfc, wfp, *pml_wavefields = wavefields
+        gradgrad_wfc, gradgrad_wfp, *gradgrad_pml_wavefields = gradgrad_wavefields
+        psi: List[torch.Tensor] = pml_wavefields[:ndim]
+        zeta: List[torch.Tensor] = pml_wavefields[ndim:]
+        gradgrad_psi: List[torch.Tensor] = gradgrad_pml_wavefields[:ndim]
+        gradgrad_zeta: List[torch.Tensor] = gradgrad_pml_wavefields[ndim:]
+        for i in range(ndim):
+            psi[i] = deepwave.common.zero_interior(psi[i], fd_pad, pml_width, i)
+            zeta[i] = deepwave.common.zero_interior(zeta[i], fd_pad, pml_width, i)
+            gradgrad_psi[i] = deepwave.common.zero_interior(
+                gradgrad_psi[i], fd_pad, pml_width, i
+            )
+            gradgrad_zeta[i] = deepwave.common.zero_interior(
+                gradgrad_zeta[i], fd_pad, pml_width, i
+            )
 
         device = v.device
         dtype = v.dtype
-        ny = v.shape[-2]
-        nx = v.shape[-1]
         n_sources_per_shot = fwd_sources_i.numel() // n_shots
         n_receivers_per_shot = fwd_receivers_i.numel() // n_shots
         n_ggreceivers_per_shot = fwd_ggreceivers_i.numel() // n_shots
-        psiyn = torch.zeros_like(psiy)
-        psixn = torch.zeros_like(psix)
-        ggpsiyn = torch.zeros_like(ggpsiy)
-        ggpsixn = torch.zeros_like(ggpsix)
+        psin = [torch.zeros_like(wf) for wf in psi]
+        gradgrad_psin = [torch.zeros_like(wf) for wf in gradgrad_psi]
         w_store = torch.empty(0, device=device, dtype=dtype)
         ggw_store = torch.empty(0, device=device, dtype=dtype)
         receiver_amplitudes = torch.empty(0, device=device, dtype=dtype)
         ggreceiver_amplitudes = torch.empty(0, device=device, dtype=dtype)
-        pml_y0 = min(pml_width[0] + 2 * fd_pad, ny - fd_pad)
-        pml_y1 = max(pml_y0, ny - pml_width[1] - 2 * fd_pad)
-        pml_x0 = min(pml_width[2] + 2 * fd_pad, nx - fd_pad)
-        pml_x1 = max(pml_x0, nx - pml_width[3] - 2 * fd_pad)
+        pml_b = [
+            min(pml_width[2 * i] + 2 * fd_pad, model_shape[i] - fd_pad)
+            for i in range(ndim)
+        ]
+        pml_e = [
+            max(pml_b[i], model_shape[i] - pml_width[2 * i + 1] - 2 * fd_pad)
+            for i in range(ndim)
+        ]
 
-        v_batched = v.ndim == 3 and v.shape[0] > 1
-        ggv_batched = ggv.ndim == 3 and ggv.shape[0] > 1
+        v_batched = v.ndim == ndim + 1 and v.shape[0] > 1
+        ggv_batched = ggv.ndim == ndim + 1 and ggv.shape[0] > 1
 
         if v.requires_grad:
             w_store.resize_(nt // step_ratio, *wfc.shape)
@@ -1687,11 +1390,15 @@ class ScalarBackwardFunc(torch.autograd.Function):
             aux = 1
         forward = deepwave.backend_utils.get_backend_function(
             "scalar_born",
+            ndim,
             "forward",
             accuracy,
             dtype,
             v.device,
         )
+
+        rdx = [1 / dx for dx in grid_spacing]
+        rdx2 = [1 / dx**2 for dx in grid_spacing]
 
         if wfc.numel() > 0 and nt > 0:
             forward(
@@ -1701,42 +1408,28 @@ class ScalarBackwardFunc(torch.autograd.Function):
                 ggsource_amplitudes.data_ptr(),
                 wfc.data_ptr(),
                 wfp.data_ptr(),
-                psiy.data_ptr(),
-                psix.data_ptr(),
-                psiyn.data_ptr(),
-                psixn.data_ptr(),
-                zetay.data_ptr(),
-                zetax.data_ptr(),
-                ggwfc.data_ptr(),
-                ggwfp.data_ptr(),
-                ggpsiy.data_ptr(),
-                ggpsix.data_ptr(),
-                ggpsiyn.data_ptr(),
-                ggpsixn.data_ptr(),
-                ggzetay.data_ptr(),
-                ggzetax.data_ptr(),
+                *[field.data_ptr() for field in psi],
+                *[field.data_ptr() for field in psin],
+                *[field.data_ptr() for field in zeta],
+                gradgrad_wfc.data_ptr(),
+                gradgrad_wfp.data_ptr(),
+                *[field.data_ptr() for field in gradgrad_psi],
+                *[field.data_ptr() for field in gradgrad_psin],
+                *[field.data_ptr() for field in gradgrad_zeta],
                 w_store.data_ptr(),
                 ggw_store.data_ptr(),
                 receiver_amplitudes.data_ptr(),
                 ggreceiver_amplitudes.data_ptr(),
-                ay.data_ptr(),
-                ax.data_ptr(),
-                by.data_ptr(),
-                bx.data_ptr(),
-                dbydy.data_ptr(),
-                dbxdx.data_ptr(),
+                *[profile.data_ptr() for profile in pml_profiles],
                 fwd_sources_i.data_ptr(),
                 fwd_receivers_i.data_ptr(),
                 fwd_ggreceivers_i.data_ptr(),
-                1 / dy,
-                1 / dx,
-                1 / dy**2,
-                1 / dx**2,
+                *rdx,
+                *rdx2,
                 dt**2,
                 nt,
                 n_shots,
-                ny,
-                nx,
+                *model_shape,
                 n_sources_per_shot,
                 n_receivers_per_shot,
                 n_ggreceivers_per_shot,
@@ -1746,17 +1439,15 @@ class ScalarBackwardFunc(torch.autograd.Function):
                 v_batched,
                 ggv_batched,
                 0,
-                pml_y0,
-                pml_y1,
-                pml_x0,
-                pml_x1,
+                *pml_b,
+                *pml_e,
                 aux,
             )
 
         # Step 2: Backward pass
 
         bwd_sources_i = sources_i.contiguous()
-        bwd_receivers_i = torch.empty(0)
+        bwd_receivers_i = torch.empty(0, dtype=torch.long, device=v.device)
         bwd_greceivers_i = receivers_i.contiguous()
 
         source_amplitudes_requires_grad = ctx.source_amplitudes_requires_grad
@@ -1779,88 +1470,50 @@ class ScalarBackwardFunc(torch.autograd.Function):
             v.dtype,
             size_with_batch,
         )
-        psiy = deepwave.common.create_or_pad(
-            torch.empty(0),
-            fd_pad,
-            v.device,
-            v.dtype,
-            size_with_batch,
-        )
-        psix = deepwave.common.create_or_pad(
-            torch.empty(0),
-            fd_pad,
-            v.device,
-            v.dtype,
-            size_with_batch,
-        )
-        zetay = deepwave.common.create_or_pad(
-            torch.empty(0),
-            fd_pad,
-            v.device,
-            v.dtype,
-            size_with_batch,
-        )
-        zetax = deepwave.common.create_or_pad(
-            torch.empty(0),
-            fd_pad,
-            v.device,
-            v.dtype,
-            size_with_batch,
-        )
-        psiyn = torch.zeros_like(psiy)
-        psixn = torch.zeros_like(psix)
-        zetayn = torch.zeros_like(zetay)
-        zetaxn = torch.zeros_like(zetax)
-        gwfc = deepwave.common.create_or_pad(
-            gwfc,
-            fd_pad,
-            v.device,
-            v.dtype,
-            size_with_batch,
-        )
-        gwfp = deepwave.common.create_or_pad(
-            gwfp,
-            fd_pad,
-            v.device,
-            v.dtype,
-            size_with_batch,
-        )
-        gpsiy = deepwave.common.create_or_pad(
-            gpsiy,
-            fd_pad,
-            v.device,
-            v.dtype,
-            size_with_batch,
-        )
-        gpsix = deepwave.common.create_or_pad(
-            gpsix,
-            fd_pad,
-            v.device,
-            v.dtype,
-            size_with_batch,
-        )
-        gzetay = deepwave.common.create_or_pad(
-            gzetay,
-            fd_pad,
-            v.device,
-            v.dtype,
-            size_with_batch,
-        )
-        gzetax = deepwave.common.create_or_pad(
-            gzetax,
-            fd_pad,
-            v.device,
-            v.dtype,
-            size_with_batch,
-        )
-        gpsiy = deepwave.common.zero_interior(gpsiy, fd_pad, pml_width, True)
-        gpsix = deepwave.common.zero_interior(gpsix, fd_pad, pml_width, False)
-        gzetay = deepwave.common.zero_interior(gzetay, fd_pad, pml_width, True)
-        gzetax = deepwave.common.zero_interior(gzetax, fd_pad, pml_width, False)
-        gpsiyn = torch.zeros_like(gpsiy)
-        gpsixn = torch.zeros_like(gpsix)
-        gzetayn = torch.zeros_like(gzetay)
-        gzetaxn = torch.zeros_like(gzetax)
+        psi = [
+            deepwave.common.create_or_pad(
+                torch.empty(0),
+                fd_pad,
+                v.device,
+                v.dtype,
+                size_with_batch,
+            )
+            for _ in range(ndim)
+        ]
+        zeta = [
+            deepwave.common.create_or_pad(
+                torch.empty(0),
+                fd_pad,
+                v.device,
+                v.dtype,
+                size_with_batch,
+            )
+            for _ in range(ndim)
+        ]
+        psin = [torch.zeros_like(wf) for wf in psi]
+        zetan = [torch.zeros_like(wf) for wf in zeta]
+        grad_wavefields = [
+            deepwave.common.create_or_pad(
+                wavefield,
+                fd_pad,
+                v.device,
+                v.dtype,
+                size_with_batch,
+            )
+            for wavefield in grad_wavefields
+        ]
+        grad_wfc, grad_wfp, *grad_pml_wavefields = grad_wavefields
+        grad_psi = grad_pml_wavefields[:ndim]
+        grad_zeta = grad_pml_wavefields[ndim:]
+        for i in range(ndim):
+            grad_psi[i] = deepwave.common.zero_interior(
+                grad_psi[i], fd_pad, pml_width, i
+            )
+            grad_zeta[i] = deepwave.common.zero_interior(
+                grad_zeta[i], fd_pad, pml_width, i
+            )
+        grad_psin = [torch.zeros_like(wf) for wf in grad_psi]
+        grad_zetan = [torch.zeros_like(wf) for wf in grad_zeta]
         grad_v = torch.empty(0, device=device, dtype=dtype)
         grad_v_tmp = torch.empty(0, device=device, dtype=dtype)
         grad_v_tmp_ptr = grad_v.data_ptr()
@@ -1870,10 +1523,14 @@ class ScalarBackwardFunc(torch.autograd.Function):
             grad_v_tmp_ptr = grad_v.data_ptr()
         grad_f = torch.empty(0, device=device, dtype=dtype)
         grad_gf = torch.empty(0, device=device, dtype=dtype)
-        pml_y0 = min(pml_width[0] + 3 * fd_pad, ny - fd_pad)
-        pml_y1 = max(pml_y0, ny - pml_width[1] - 3 * fd_pad)
-        pml_x0 = min(pml_width[2] + 3 * fd_pad, nx - fd_pad)
-        pml_x1 = max(pml_x0, nx - pml_width[3] - 3 * fd_pad)
+        pml_b = [
+            min(pml_width[2 * i] + 3 * fd_pad, model_shape[i] - fd_pad)
+            for i in range(ndim)
+        ]
+        pml_e = [
+            max(pml_b[i], model_shape[i] - pml_width[2 * i + 1] - 3 * fd_pad)
+            for i in range(ndim)
+        ]
 
         if source_amplitudes_requires_grad:
             grad_f.resize_(nt, n_shots, n_sources_per_shot)
@@ -1882,7 +1539,7 @@ class ScalarBackwardFunc(torch.autograd.Function):
         if v.is_cuda:
             aux = v.get_device()
             if v.requires_grad and not v_batched and n_shots > 1:
-                grad_v_tmp.resize_(n_shots, *v.shape[-2:])
+                grad_v_tmp.resize_(n_shots, *model_shape)
                 grad_v_tmp.fill_(0)
                 grad_v_tmp_ptr = grad_v_tmp.data_ptr()
         else:
@@ -1896,15 +1553,23 @@ class ScalarBackwardFunc(torch.autograd.Function):
                 and aux > 1
                 and deepwave.backend_utils.USE_OPENMP
             ):
-                grad_v_tmp.resize_(aux, *v.shape[-2:])
+                grad_v_tmp.resize_(aux, *model_shape)
                 grad_v_tmp.fill_(0)
                 grad_v_tmp_ptr = grad_v_tmp.data_ptr()
 
         backward = deepwave.backend_utils.get_backend_function(
-            "scalar_born", "backward", accuracy, dtype, v.device
+            "scalar_born",
+            ndim,
+            "backward",
+            accuracy,
+            dtype,
+            v.device,
         )
 
-        gwfp = -gwfp
+        rdx = [1 / dx for dx in grid_spacing]
+        rdx2 = [1 / dx**2 for dx in grid_spacing]
+
+        grad_wfp = -grad_wfp
 
         if wfc.numel() > 0 and nt > 0 and v.requires_grad:
             backward(
@@ -1914,24 +1579,16 @@ class ScalarBackwardFunc(torch.autograd.Function):
                 grad_r.data_ptr(),
                 wfc.data_ptr(),
                 wfp.data_ptr(),
-                psiy.data_ptr(),
-                psix.data_ptr(),
-                psiyn.data_ptr(),
-                psixn.data_ptr(),
-                zetay.data_ptr(),
-                zetax.data_ptr(),
-                zetayn.data_ptr(),
-                zetaxn.data_ptr(),
-                gwfc.data_ptr(),
-                gwfp.data_ptr(),
-                gpsiy.data_ptr(),
-                gpsix.data_ptr(),
-                gpsiyn.data_ptr(),
-                gpsixn.data_ptr(),
-                gzetay.data_ptr(),
-                gzetax.data_ptr(),
-                gzetayn.data_ptr(),
-                gzetaxn.data_ptr(),
+                *[field.data_ptr() for field in psi],
+                *[field.data_ptr() for field in psin],
+                *[field.data_ptr() for field in zeta],
+                *[field.data_ptr() for field in zetan],
+                grad_wfc.data_ptr(),
+                grad_wfp.data_ptr(),
+                *[field.data_ptr() for field in grad_psi],
+                *[field.data_ptr() for field in grad_psin],
+                *[field.data_ptr() for field in grad_zeta],
+                *[field.data_ptr() for field in grad_zetan],
                 w_store.data_ptr(),
                 ggw_store.data_ptr(),
                 grad_f.data_ptr(),
@@ -1940,24 +1597,16 @@ class ScalarBackwardFunc(torch.autograd.Function):
                 torch.empty(0).data_ptr(),
                 grad_v_tmp_ptr,
                 torch.empty(0).data_ptr(),
-                ay.data_ptr(),
-                ax.data_ptr(),
-                by.data_ptr(),
-                bx.data_ptr(),
-                dbydy.data_ptr(),
-                dbxdx.data_ptr(),
+                *[profile.data_ptr() for profile in pml_profiles],
                 bwd_sources_i.data_ptr(),
                 bwd_receivers_i.data_ptr(),
                 bwd_greceivers_i.data_ptr(),
-                1 / dy,
-                1 / dx,
-                1 / dy**2,
-                1 / dx**2,
+                *rdx,
+                *rdx2,
                 dt**2,
                 nt,
                 n_shots,
-                ny,
-                nx,
+                *model_shape,
                 n_sources_per_shot * source_amplitudes_requires_grad,
                 0,
                 n_receivers_per_shot,
@@ -1968,162 +1617,131 @@ class ScalarBackwardFunc(torch.autograd.Function):
                 v_batched,
                 ggv_batched,
                 nt,
-                pml_y0,
-                pml_y1,
-                pml_x0,
-                pml_x1,
+                *pml_b,
+                *pml_e,
                 aux,
             )
 
-        s = (slice(None), slice(fd_pad, -fd_pad), slice(fd_pad, -fd_pad))
+        s = (
+            slice(None),
+            *(slice(fd_pad, dim - fd_pad) for dim in model_shape),
+        )
         if nt % 2 == 0:
             return (
-                ggwfc[s],
-                ggwfp[s],
-                ggpsiy[s],
-                ggpsix[s],
-                ggzetay[s],
-                ggzetax[s],
                 ggreceiver_amplitudes,
                 grad_v,
                 None,
                 None,
                 None,
                 None,
-                None,
-                None,
-                None,
-                None,
-                None,
                 grad_f,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                gradgrad_wfc[s],
+                gradgrad_wfp[s],
+                *[wf[s] for wf in gradgrad_psi],
+                *[wf[s] for wf in gradgrad_zeta],
                 wfc[s],
                 -wfp[s],
-                psiy[s],
-                psix[s],
-                zetay[s],
-                zetax[s],
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
+                *[wf[s] for wf in psi],
+                *[wf[s] for wf in zeta],
             )
         return (
-            ggwfp[s],
-            ggwfc[s],
-            ggpsiyn[s],
-            ggpsixn[s],
-            ggzetay[s],
-            ggzetax[s],
             ggreceiver_amplitudes,
             grad_v,
             None,
             None,
             None,
             None,
-            None,
-            None,
-            None,
-            None,
-            None,
             grad_f,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            gradgrad_wfp[s],
+            gradgrad_wfc[s],
+            *[wf[s] for wf in gradgrad_psin],
+            *[wf[s] for wf in gradgrad_zeta],
             wfp[s],
             -wfc[s],
-            psiyn[s],
-            psixn[s],
-            zetayn[s],
-            zetaxn[s],
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
+            *[wf[s] for wf in psin],
+            *[wf[s] for wf in zetan],
         )
 
 
-def forward_step(
+def _forward_step(
     v: torch.Tensor,
-    rdy: torch.Tensor,
-    rdx: torch.Tensor,
-    rdy2: torch.Tensor,
-    rdx2: torch.Tensor,
-    dt: torch.Tensor,
+    grid_spacing: List[float],
+    dt: float,
     accuracy: int,
-    ay: torch.Tensor,
-    ax: torch.Tensor,
-    by: torch.Tensor,
-    bx: torch.Tensor,
-    dbydy: torch.Tensor,
-    dbxdx: torch.Tensor,
-    wfc: torch.Tensor,
-    wfp: torch.Tensor,
-    psiy: torch.Tensor,
-    psix: torch.Tensor,
-    zetay: torch.Tensor,
-    zetax: torch.Tensor,
-) -> Tuple[
-    torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor
-]:
+    pml_profiles: List[torch.Tensor],
+    wavefields: List[torch.Tensor],
+) -> List[torch.Tensor]:
     """Performs a single time step of scalar wave propagation."""
-    dudy = deepwave.regular_grid.diffy1(wfc, accuracy, rdy)
-    dudx = deepwave.regular_grid.diffx1(wfc, accuracy, rdx)
+    ndim = len(grid_spacing)
 
-    tmpy = (
-        (1 + by) * deepwave.regular_grid.diffy2(wfc, accuracy, rdy2)
-        + dbydy * dudy
-        + deepwave.regular_grid.diffy1(ay * psiy, accuracy, rdy)
-    )
-    tmpx = (
-        (1 + bx) * deepwave.regular_grid.diffx2(wfc, accuracy, rdx2)
-        + dbxdx * dudx
-        + deepwave.regular_grid.diffx1(ax * psix, accuracy, rdx)
-    )
+    wfc, wfp = wavefields[:2]
+    psi: List[torch.Tensor] = wavefields[2 : 2 + ndim]
+    zeta: List[torch.Tensor] = wavefields[2 + ndim :]
+    a = pml_profiles[::3]
+    b = pml_profiles[1::3]
+    dbdx = pml_profiles[2::3]
+    dudx = [
+        deepwave.regular_grid.diff1(wfc, dim, accuracy, 1 / grid_spacing[dim], ndim)
+        for dim in range(ndim)
+    ]
+    tmp = [
+        (1 + b[dim])
+        * deepwave.regular_grid.diff2(
+            wfc, dim, accuracy, 1 / grid_spacing[dim] ** 2, ndim
+        )
+        + dbdx[dim] * dudx[dim]
+        + deepwave.regular_grid.diff1(
+            a[dim] * psi[dim], dim, accuracy, 1 / grid_spacing[dim], ndim
+        )
+        for dim in range(ndim)
+    ]
+
+    w_sum = torch.zeros_like(tmp[0])
+    for dim in range(ndim):
+        w_sum = w_sum + (1 + b[dim]) * tmp[dim] + a[dim] * zeta[dim]
 
     return (
-        v**2 * dt**2 * ((1 + by) * tmpy + ay * zetay + (1 + bx) * tmpx + ax * zetax)
-        + 2 * wfc
-        - wfp,
-        wfc,
-        by * dudy + ay * psiy,
-        bx * dudx + ax * psix,
-        by * tmpy + ay * zetay,
-        bx * tmpx + ax * zetax,
+        [
+            v**2 * dt * dt * w_sum + 2 * wfc - wfp,
+            wfc,
+        ]
+        + [b[dim] * dudx[dim] + a[dim] * psi[dim] for dim in range(ndim)]
+        + [b[dim] * tmp[dim] + a[dim] * zeta[dim] for dim in range(ndim)]
     )
+
+
+_forward_step_jit = None
+_forward_step_compile = None
+_forward_step_opt = _forward_step
 
 
 def scalar_python(
     v: torch.Tensor,
     source_amplitudes: torch.Tensor,
-    wfc: torch.Tensor,
-    wfp: torch.Tensor,
-    psiy: torch.Tensor,
-    psix: torch.Tensor,
-    zetay: torch.Tensor,
-    zetax: torch.Tensor,
-    ay: torch.Tensor,
-    ax: torch.Tensor,
-    by: torch.Tensor,
-    bx: torch.Tensor,
-    dbydy: torch.Tensor,
-    dbxdx: torch.Tensor,
+    pml_profiles: List[torch.Tensor],
     sources_i: torch.Tensor,
     receivers_i: torch.Tensor,
-    dy: float,
-    dx: float,
+    grid_spacing: List[float],
     dt: float,
     nt: int,
     step_ratio: int,
@@ -2133,15 +1751,8 @@ def scalar_python(
     forward_callback: Optional[deepwave.common.Callback],
     backward_callback: Optional[deepwave.common.Callback],
     callback_frequency: int,
-) -> Tuple[
-    torch.Tensor,
-    torch.Tensor,
-    torch.Tensor,
-    torch.Tensor,
-    torch.Tensor,
-    torch.Tensor,
-    torch.Tensor,
-]:
+    *wavefields_tuple: torch.Tensor,
+) -> Tuple[torch.Tensor, ...]:
     """Performs the forward propagation of the scalar wave equation.
 
     This method is written purely in PyTorch, rather than using the
@@ -2150,22 +1761,10 @@ def scalar_python(
     Args:
         v: The wavespeed model tensor.
         source_amplitudes: The source amplitudes tensor.
-        wfc: Wavefield at current time step.
-        wfp: Wavefield at previous time step.
-        psiy: PML auxiliary variable for y-dimension (current time step).
-        psix: PML auxiliary variable for x-dimension (current time step).
-        zetay: PML auxiliary variable for y-dimension (previous time step).
-        zetax: PML auxiliary variable for x-dimension (previous time step).
-        ay: PML absorption profile for y-dimension (a-coefficient).
-        ax: PML absorption profile for x-dimension (a-coefficient).
-        by: PML absorption profile for y-dimension (b-coefficient).
-        bx: PML absorption profile for x-dimension (b-coefficient).
-        dbydy: Derivative of PML b-coefficient with respect to y.
-        dbxdx: Derivative of PML b-coefficient with respect to x.
+        pml_profiles: List of PML profiles.
         sources_i: 1D indices of source locations.
         receivers_i: 1D indices of receiver locations.
-        dy: Grid spacing in y-dimension.
-        dx: Grid spacing in x-dimension.
+        grid_spacing: List of grid spacing in each spatial dimension.
         dt: Time step interval.
         nt: Total number of time steps.
         step_ratio: Ratio between user dt and internal dt.
@@ -2175,6 +1774,7 @@ def scalar_python(
         forward_callback: The forward callback.
         backward_callback: The backward callback.
         callback_frequency: The callback frequency.
+        wavefields_tuple: List of wavefields (current, previous, PML).
 
     Returns:
         A tuple containing the output wavefields and receiver amplitudes.
@@ -2183,61 +1783,25 @@ def scalar_python(
     if backward_callback is not None:
         raise RuntimeError("backward_callback is not supported in the Python backend.")
     fd_pad = accuracy // 2
-    size_with_batch = (n_shots, *v.shape[-2:])
-    wfc = deepwave.common.create_or_pad(
-        wfc,
-        fd_pad,
-        v.device,
-        v.dtype,
-        size_with_batch,
-    )
-    wfp = deepwave.common.create_or_pad(
-        wfp,
-        fd_pad,
-        v.device,
-        v.dtype,
-        size_with_batch,
-    )
-    psiy = deepwave.common.create_or_pad(
-        psiy,
-        fd_pad,
-        v.device,
-        v.dtype,
-        size_with_batch,
-    )
-    psix = deepwave.common.create_or_pad(
-        psix,
-        fd_pad,
-        v.device,
-        v.dtype,
-        size_with_batch,
-    )
-    zetay = deepwave.common.create_or_pad(
-        zetay,
-        fd_pad,
-        v.device,
-        v.dtype,
-        size_with_batch,
-    )
-    zetax = deepwave.common.create_or_pad(
-        zetax,
-        fd_pad,
-        v.device,
-        v.dtype,
-        size_with_batch,
-    )
+    size_with_batch = (n_shots, *v.shape[1:])
+    wavefields = [
+        deepwave.common.create_or_pad(
+            wavefield,
+            fd_pad,
+            v.device,
+            v.dtype,
+            size_with_batch,
+        )
+        for wavefield in wavefields_tuple
+    ]
 
     device = v.device
     dtype = v.dtype
-    ny = v.shape[-2]
-    nx = v.shape[-1]
+    shape = v.shape[1:]
+    flat_shape = int(torch.prod(torch.tensor(shape)).item())
+    ndim = len(shape)
     n_receivers_per_shot = receivers_i.numel() // n_shots
     receiver_amplitudes = torch.empty(0, device=device, dtype=dtype)
-    rdy = torch.tensor(1 / dy, dtype=dtype, device=device)
-    rdx = torch.tensor(1 / dx, dtype=dtype, device=device)
-    rdy2 = rdy**2
-    rdx2 = rdx**2
-    dt_tensor = torch.tensor(dt, dtype=dtype, device=device)
 
     if receivers_i.numel() > 0:
         receiver_amplitudes.resize_(nt, n_shots, n_receivers_per_shot)
@@ -2247,60 +1811,48 @@ def scalar_python(
     sources_i_masked = torch.zeros_like(sources_i)
     sources_i_masked[source_mask] = sources_i[source_mask]
     source_amplitudes_masked = torch.zeros_like(source_amplitudes)
-    source_amplitudes_masked[:, source_mask] = source_amplitudes[:, source_mask]
+    if source_amplitudes.numel() > 0:
+        source_amplitudes_masked[:, source_mask] = source_amplitudes[:, source_mask]
 
     receiver_mask = receivers_i != deepwave.common.IGNORE_LOCATION
     receivers_i_masked = torch.zeros_like(receivers_i)
-    receivers_i_masked[receiver_mask] = receivers_i[receiver_mask]
+    if receivers_i.numel() > 0:
+        receivers_i_masked[receiver_mask] = receivers_i[receiver_mask]
+
+    dim_names = ["z", "y", "x"]
 
     for step in range(nt // step_ratio):
         if forward_callback is not None and step % callback_frequency == 0:
+            wavefield_dict = {
+                "wavefield_0": wavefields[0],
+                "wavefield_m1": wavefields[1],
+            }
+            for i in range(ndim):
+                wavefield_dict[f"psi{dim_names[-ndim + i]}_m1"] = wavefields[2 + i]
+                wavefield_dict[f"zeta{dim_names[-ndim + i]}_m1"] = wavefields[
+                    2 + ndim + i
+                ]
             state = deepwave.common.CallbackState(
                 dt,
                 step,
-                {
-                    "wavefield_0": wfc,
-                    "wavefield_m1": wfp,
-                    "psiy_m1": psiy,
-                    "psix_m1": psix,
-                    "zetay_m1": zetay,
-                    "zetax_m1": zetax,
-                },
+                wavefield_dict,
                 {"v": v},
                 {},
-                [fd_pad] * 4,
+                [fd_pad] * ndim * 2,
                 pml_width,
             )
             forward_callback(state)
         for inner_step in range(step_ratio):
             t = step * step_ratio + inner_step
             if receiver_amplitudes.numel() > 0:
-                receiver_amplitudes[t] = wfc.view(-1, ny * nx).gather(
-                    1, receivers_i_masked
+                receiver_amplitudes[t] = (
+                    wavefields[0].view(-1, flat_shape).gather(1, receivers_i_masked)
                 )
-            wfc, wfp, psiy, psix, zetay, zetax = _forward_step_opt(
-                v,
-                rdy,
-                rdx,
-                rdy2,
-                rdx2,
-                dt_tensor,
-                accuracy,
-                ay,
-                ax,
-                by,
-                bx,
-                dbydy,
-                dbxdx,
-                wfc,
-                wfp,
-                psiy,
-                psix,
-                zetay,
-                zetax,
+            wavefields = _forward_step_opt(
+                v, grid_spacing, dt, accuracy, pml_profiles, wavefields
             )
             if source_amplitudes_masked.numel() > 0:
-                wfc.view(-1, ny * nx).scatter_add_(
+                wavefields[0].view(-1, flat_shape).scatter_add_(
                     1, sources_i_masked, source_amplitudes_masked[t]
                 )
 
@@ -2309,21 +1861,13 @@ def scalar_python(
         receiver_amplitudes_masked[:, receiver_mask] = receiver_amplitudes[
             :, receiver_mask
         ]
-    s = (slice(None), slice(fd_pad, -fd_pad), slice(fd_pad, -fd_pad))
-    return (
-        wfc[s],
-        wfp[s],
-        psiy[s],
-        psix[s],
-        zetay[s],
-        zetax[s],
-        receiver_amplitudes_masked,
+    s = (
+        slice(None),
+        *(slice(fd_pad, -fd_pad) for _ in range(ndim)),
     )
-
-
-_forward_step_jit = None
-_forward_step_compile = None
-_forward_step_opt = forward_step
+    return tuple(
+        [wavefield[s] for wavefield in wavefields] + [receiver_amplitudes_masked]
+    )
 
 
 def scalar_func(
@@ -2358,21 +1902,21 @@ def scalar_func(
 
         if mode == "jit":
             if _forward_step_jit is None:
-                _forward_step_jit = torch.jit.script(forward_step)
+                _forward_step_jit = torch.jit.script(_forward_step)
             _forward_step_opt = _forward_step_jit
         elif mode == "compile":
             if _forward_step_compile is None:
-                _forward_step_compile = torch.compile(forward_step, fullgraph=True)
+                _forward_step_compile = torch.compile(_forward_step, fullgraph=True)
             _forward_step_opt = _forward_step_compile
         elif mode == "eager":
-            _forward_step_opt = forward_step
+            _forward_step_opt = _forward_step
         else:
             raise ValueError(f"Unknown python_backend value {mode!r}.")
+        return scalar_python(*args)
 
-    func = scalar_python if python_backend else ScalarForwardFunc.apply
+    func = ScalarForwardFunc.apply
 
     return cast(
-        "Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, "
-        "torch.Tensor, torch.Tensor, torch.Tensor]",
-        func(*args),
+        "Tuple[torch.Tensor, ...]",
+        func(*args),  # type: ignore[no-untyped-call]
     )

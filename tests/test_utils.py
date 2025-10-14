@@ -306,6 +306,33 @@ def test_set_coords_non_positive_nx_elements() -> None:
         _set_coords(1, 1, (10, -1))
 
 
+def _shift(f: torch.Tensor, t_shift: float) -> torch.Tensor:
+    """Shift a 1D tensor by a fractional amount in time."""
+    nt = len(f)
+    w = torch.fft.rfftfreq(nt, 1.0)
+    fw = torch.fft.rfft(f)
+    fw_shifted = fw * torch.exp(-1j * 2 * torch.pi * w * t_shift)
+    return torch.fft.irfft(fw_shifted, nt)
+
+
+def direct_1d(
+    x: torch.Tensor,
+    x_s: torch.Tensor,
+    dx: torch.Tensor,
+    dt: Union[int, float],
+    c: Union[int, float],
+    f: torch.Tensor,
+) -> torch.Tensor:
+    """Calculate receiver data using the 1D Green's function."""
+    r = torch.abs(x - x_s).item() * dx.item()
+    t_shift = r / c / dt
+    # The analytical solution involves a scaled, time-shifted,
+    # cumulative sum of the source.
+    f_cumsum = torch.cumsum(f, dim=0)
+    f_shifted_cumsum = _shift(f_cumsum, t_shift)
+    return f_shifted_cumsum * dx.item() * dt * c / 2
+
+
 def direct_2d_approx(
     x: torch.Tensor,
     x_s: torch.Tensor,
@@ -355,7 +382,21 @@ def direct_2d_approx(
     return torch.fft.irfft(s, nt)
 
 
-def scattered_2d(
+def direct_3d(
+    x: torch.Tensor,
+    x_s: torch.Tensor,
+    dx: torch.Tensor,
+    dt: float,
+    c: float,
+    f: torch.Tensor,
+) -> torch.Tensor:
+    """Calculate receiver data using the 3D Green's function."""
+    r = torch.norm(x.double() * dx - x_s.double() * dx).item()
+    t_shift = (r / c) / dt
+    return torch.prod(dx) / 4 / torch.pi / r * _shift(f, t_shift)
+
+
+def scattered(
     x: torch.Tensor,
     x_s: torch.Tensor,
     x_p: torch.Tensor,
@@ -364,24 +405,25 @@ def scattered_2d(
     c: Union[int, float],
     dc: Union[int, float],
     f: torch.Tensor,
+    ndim: int,
 ) -> torch.Tensor:
     """Calculate the scattered wavefield at a given location."""
     if not isinstance(x, torch.Tensor):
         raise TypeError("x must be a torch.Tensor.")
-    if x.ndim != 1 or x.shape[0] != 2:
-        raise RuntimeError("x must be a 1D Tensor of length 2.")
+    if x.ndim != 1 or x.shape[0] != ndim:
+        raise RuntimeError("x must be a 1D Tensor of length ndim.")
     if not isinstance(x_s, torch.Tensor):
         raise TypeError("x_s must be a torch.Tensor.")
-    if x_s.ndim != 1 or x_s.shape[0] != 2:
-        raise RuntimeError("x_s must be a 1D Tensor of length 2.")
+    if x_s.ndim != 1 or x_s.shape[0] != ndim:
+        raise RuntimeError("x_s must be a 1D Tensor of length ndim.")
     if not isinstance(x_p, torch.Tensor):
         raise TypeError("x_p must be a torch.Tensor.")
-    if x_p.ndim != 1 or x_p.shape[0] != 2:
-        raise RuntimeError("x_p must be a 1D Tensor of length 2.")
+    if x_p.ndim != 1 or x_p.shape[0] != ndim:
+        raise RuntimeError("x_p must be a 1D Tensor of length ndim.")
     if not isinstance(dx, torch.Tensor):
         raise TypeError("dx must be a torch.Tensor.")
-    if dx.ndim != 1 or dx.shape[0] != 2:
-        raise RuntimeError("dx must be a 1D Tensor of length 2.")
+    if dx.ndim != 1 or dx.shape[0] != ndim:
+        raise RuntimeError("dx must be a 1D Tensor of length ndim.")
     if not isinstance(dt, (int, float)):
         raise TypeError("dt must be a number.")
     if dt <= 0:
@@ -396,10 +438,21 @@ def scattered_2d(
         raise TypeError("f must be a torch.Tensor.")
     if f.ndim != 1:
         raise RuntimeError("f must be a 1D Tensor.")
+    if not isinstance(ndim, int):
+        raise TypeError("ndim must be an integer.")
+    if ndim < 1 or ndim > 3:
+        raise ValueError("ndim must be 1, 2, or 3.")
 
-    u_p = direct_2d_approx(x_p, x_s, dx, dt, c, f)
+    if ndim == 1:
+        direct = direct_1d
+    elif ndim == 2:
+        direct = direct_2d_approx
+    else:
+        direct = direct_3d
+
+    u_p = direct(x_p, x_s, dx, dt, c, f)
     du_pdt2 = _second_deriv(u_p, dt)
-    return 2 * dc / c**3 * direct_2d_approx(x, x_p, dx, dt, c, du_pdt2)
+    return 2 * dc / c**3 * direct(x, x_p, dx, dt, c, du_pdt2)
 
 
 def _second_deriv(arr: torch.Tensor, dt: Union[int, float]) -> torch.Tensor:
@@ -437,9 +490,9 @@ def test_direct_2d_approx_output_shape() -> None:
     assert result.shape == (100,)
 
 
-# Unit tests for scattered_2d
-def test_scattered_2d_output_shape() -> None:
-    """Test the output shape of scattered_2d."""
+# Unit tests for scattered
+def test_scattered_output_shape() -> None:
+    """Test the output shape of scattered."""
     x = torch.tensor([0, 0])
     x_s = torch.tensor([1, 1])
     x_p = torch.tensor([0, 0])
@@ -448,7 +501,7 @@ def test_scattered_2d_output_shape() -> None:
     c = 1500
     dc = 100
     f = torch.randn(100)
-    result = scattered_2d(x, x_s, x_p, dx, dt, c, dc, f)
+    result = scattered(x, x_s, x_p, dx, dt, c, dc, f, 2)
     assert result.shape == (100,)
 
 
@@ -472,3 +525,43 @@ def test_second_deriv_values() -> None:
     # Check boundary conditions
     assert torch.allclose(result[0], result[1])
     assert torch.allclose(result[-1], result[-2])
+
+
+def run_reciprocity_check(
+    models,
+    dx,
+    dt,
+    source_amplitudes,
+    src_comp,
+    rec_comp,
+    src_idx,
+    rec_idx,
+    loc_a,
+    loc_b,
+    prop_kwargs,
+    propagator,
+):
+    """Helper for test_reciprocity."""
+    # Run 1: src_comp at A, rec_comp at B
+    kwargs1 = {
+        f"source_amplitudes{src_comp}": source_amplitudes,
+        f"source_locations{src_comp}": loc_a,
+        f"receiver_locations{rec_comp}": loc_b,
+    }
+
+    outputs1 = propagator(*models, list(dx), dt, **kwargs1, prop_kwargs=prop_kwargs)
+
+    rec1 = outputs1[rec_idx]
+
+    # Run 2: rec_comp at B, src_comp at A
+    kwargs2 = {
+        f"source_amplitudes{rec_comp}": source_amplitudes,
+        f"source_locations{rec_comp}": loc_b,
+        f"receiver_locations{src_comp}": loc_a,
+    }
+
+    outputs2 = propagator(*models, list(dx), dt, **kwargs2, prop_kwargs=prop_kwargs)
+
+    rec2 = outputs2[src_idx]
+
+    assert torch.allclose(rec1, rec2, atol=5e-3)

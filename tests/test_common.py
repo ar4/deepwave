@@ -126,12 +126,12 @@ def test_set_grid_spacing_list_incorrect_length() -> None:
     """Test set_grid_spacing with a list of incorrect length."""
     with pytest.raises(
         RuntimeError,
-        match=re.escape("grid_spacing must have 1 or 2 elements, got 3."),
+        match=re.escape("grid_spacing must have 2 elements, got 3."),
     ):
         set_grid_spacing([10.0, 11.0, 12.0], 2)
     with pytest.raises(
         RuntimeError,
-        match=re.escape("grid_spacing must have 1 or 3 elements, got 2."),
+        match=re.escape("grid_spacing must have 3 elements, got 2."),
     ):
         set_grid_spacing([5, 6], 3)
 

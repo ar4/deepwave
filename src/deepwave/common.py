@@ -9,6 +9,7 @@ import math
 import warnings
 from collections import abc
 from typing import (
+    TYPE_CHECKING,
     Any,
     Callable,
     Dict,
@@ -17,6 +18,9 @@ from typing import (
     Tuple,
     Union,
 )
+
+if TYPE_CHECKING:
+    from types import EllipsisType
 
 import torch
 import torch.fft
@@ -53,6 +57,7 @@ class CallbackState:
         self._gradients = gradients
         self._fd_pad = fd_pad
         self._pml_width = pml_width
+        self._ndim = next(iter(models.values())).ndim - 1
 
     def get_wavefield(self, name: str, view: str = "inner") -> torch.Tensor:
         """Get a wavefield.
@@ -106,21 +111,31 @@ class CallbackState:
         if view == "full":
             return x
         if view == "pml":
-            return x[
+            idx: Tuple[Union[EllipsisType, slice], ...] = (
                 ...,
-                self._fd_pad[0] : x.shape[-2] - self._fd_pad[1],
-                self._fd_pad[2] : x.shape[-1] - self._fd_pad[3],
-            ]
+                *(
+                    slice(
+                        self._fd_pad[dim * 2],
+                        x.shape[-self._ndim + dim] - self._fd_pad[dim * 2 + 1],
+                    )
+                    for dim in range(self._ndim)
+                ),
+            )
+            return x[idx]
         if view == "inner":
-            return x[
+            idx_inner: Tuple[Union[EllipsisType, slice], ...] = (
                 ...,
-                self._fd_pad[0] + self._pml_width[0] : x.shape[-2]
-                - self._fd_pad[1]
-                - self._pml_width[1],
-                self._fd_pad[2] + self._pml_width[2] : x.shape[-1]
-                - self._fd_pad[3]
-                - self._pml_width[3],
-            ]
+                *(
+                    slice(
+                        self._fd_pad[dim * 2] + self._pml_width[dim * 2],
+                        x.shape[-self._ndim + dim]
+                        - self._fd_pad[dim * 2 + 1]
+                        - self._pml_width[dim * 2 + 1],
+                    )
+                    for dim in range(self._ndim)
+                ),
+            )
+            return x[idx_inner]
         raise ValueError(f"view must be 'full', 'pml', or 'inner', but got {view}")
 
 
@@ -152,7 +167,7 @@ def setup_propagator(
     freq_taper_frac: float,
     time_pad_frac: float,
     time_taper: bool,
-    n_dims: int,
+    ndims: int,
 ) -> Tuple[
     List[torch.Tensor],
     List[torch.Tensor],
@@ -244,7 +259,7 @@ def setup_propagator(
             The fraction of the time axis to pad with zeros.
         time_taper:
             Whether to apply a Hann window in time.
-        n_dims:
+        ndims:
             The number of spatial dimensions of the model.
 
     Returns:
@@ -282,11 +297,11 @@ def setup_propagator(
     device = models[0].device
     dtype = models[0].dtype
     n_batch = get_n_batch(source_locations, wavefields)
-    grid_spacing = set_grid_spacing(grid_spacing, n_dims)
+    grid_spacing = set_grid_spacing(grid_spacing, ndims)
     max_vel = set_max_vel(max_vel, max_model_vel)
     dt, step_ratio = cfl_condition_n(grid_spacing, dt, max_vel)
     accuracy = set_accuracy(accuracy)
-    pml_width = set_pml_width(pml_width, n_dims)
+    pml_width = set_pml_width(pml_width, ndims)
     pml_freq = set_pml_freq(pml_freq, dt)
     check_points_per_wavelength(min_nonzero_model_vel, pml_freq, grid_spacing)
     nt = set_nt(nt, source_amplitudes, step_ratio)
@@ -319,7 +334,7 @@ def setup_propagator(
             pml_width,
             model_pad_modes,
             n_batch,
-            n_dims,
+            ndims,
             device,
             dtype,
         )
@@ -420,15 +435,15 @@ def downsample_and_movedim(
 
 def set_grid_spacing(
     grid_spacing: Union[float, abc.Sequence[float]],
-    n_dims: int,
+    ndims: int,
 ) -> List[float]:
-    """Ensures grid_spacing is a sequence of length n_dims.
+    """Ensures grid_spacing is a sequence of length ndims.
 
     Args:
         grid_spacing: The spacing between grid points in each dimension.
             Can be a single float (for isotropic spacing) or a float for
             each dimension (for anisotropic spacing).
-        n_dims: The number of spatial dimensions.
+        ndims: The number of spatial dimensions.
 
     Returns:
         A list of floats representing the grid spacing for each dimension.
@@ -436,13 +451,13 @@ def set_grid_spacing(
     Raises:
         TypeError: If `grid_spacing` is not a float or sequence of floats.
         ValueError: If any element of `grid_spacing` is not positive.
-        RuntimeError: If the length of `grid_spacing` is not 1 or `n_dims`.
+        RuntimeError: If the length of `grid_spacing` is not 1 or `ndims`.
 
     """
     # Validate input and convert to list even for edge-cases such as 0-dim Tensors
     try:
         # Check if convertible to a float
-        processed_grid_spacing = [float(grid_spacing)] * n_dims  # type: ignore
+        processed_grid_spacing = [float(grid_spacing)] * ndims  # type: ignore
     except (TypeError, ValueError):
         # Check if a sequence of values convertible to floats
         try:
@@ -455,9 +470,9 @@ def set_grid_spacing(
     if any(spacing <= 0 for spacing in processed_grid_spacing):
         raise ValueError("grid_spacing elements must be positive.")
 
-    if len(processed_grid_spacing) != n_dims:
+    if len(processed_grid_spacing) != ndims:
         raise RuntimeError(
-            f"grid_spacing must have 1 or {n_dims} elements, "
+            f"grid_spacing must have {ndims} elements, "
             f"got {len(processed_grid_spacing)}.",
         )
     return processed_grid_spacing
@@ -484,14 +499,14 @@ def set_accuracy(accuracy: int) -> int:
     return accuracy
 
 
-def set_pml_width(pml_width: Union[int, abc.Sequence[int]], n_dims: int) -> List[int]:
-    """Ensures pml_width is a sequence of length 2 * n_dims.
+def set_pml_width(pml_width: Union[int, abc.Sequence[int]], ndims: int) -> List[int]:
+    """Ensures pml_width is a sequence of length 2 * ndims.
 
     Args:
         pml_width: The width of the PML (Perfectly Matched Layer) in grid
             cells. Can be a single integer or a sequence of integers for
             each side of each dimension.
-        n_dims: The number of spatial dimensions.
+        ndims: The number of spatial dimensions.
 
     Returns:
         A list of integers representing the PML width for each side of each
@@ -500,13 +515,13 @@ def set_pml_width(pml_width: Union[int, abc.Sequence[int]], n_dims: int) -> List
     Raises:
         TypeError: If `pml_width` is not an int or sequence of ints.
         ValueError: If any element of `pml_width` is negative.
-        RuntimeError: If the length of `pml_width` is not 1 or `2 * n_dims`.
+        RuntimeError: If the length of `pml_width` is not 1 or `2 * ndims`.
 
     """
     # Validate input and covert to list even for edge-cases such as 0-dim Tensors
     try:
         # Check if convertible to an int
-        processed_pml_width = [int(pml_width)] * 2 * n_dims  # type: ignore
+        processed_pml_width = [int(pml_width)] * 2 * ndims  # type: ignore
         if float(pml_width) != float(int(pml_width)):  # type: ignore
             raise TypeError("pml_width must be an int or sequence of ints.")
     except (TypeError, ValueError):
@@ -522,9 +537,9 @@ def set_pml_width(pml_width: Union[int, abc.Sequence[int]], n_dims: int) -> List
     if any(width < 0 for width in processed_pml_width):
         raise ValueError("pml_width must be non-negative.")
 
-    if len(processed_pml_width) != 2 * n_dims:
+    if len(processed_pml_width) != 2 * ndims:
         raise RuntimeError(
-            f"Expected pml_width to be of length 1 or {2 * n_dims}, "
+            f"Expected pml_width to be of length 1 or {2 * ndims}, "
             f"got {len(processed_pml_width)}.",
         )
     return processed_pml_width
@@ -1179,7 +1194,7 @@ def extract_survey(
     pml_width: abc.Sequence[int],
     model_pad_modes: abc.Sequence[str],
     n_batch: int,
-    n_dims: int,
+    ndims: int,
     device: torch.device,
     dtype: torch.dtype,
 ) -> Tuple[
@@ -1225,7 +1240,7 @@ def extract_survey(
         model_pad_modes: A sequence of strings specifying the padding mode
             for each model.
         n_batch: The batch size.
-        n_dims: The number of spatial dimensions of the model.
+        ndims: The number of spatial dimensions of the model.
         device: The PyTorch device to which the tensors should be moved.
         dtype: The PyTorch data type to which the tensors should be cast.
 
@@ -1245,7 +1260,7 @@ def extract_survey(
     locations: List[Optional[torch.Tensor]] = list(source_locations) + list(
         receiver_locations,
     )
-    model_spatial_shape = list(models[0].shape[-n_dims:])
+    model_spatial_shape = list(models[0].shape[-ndims:])
     check_locations_are_within_model(model_spatial_shape, locations)
     pad = [fd + pml for fd, pml in zip(fd_pad, pml_width)]
     if survey_pad is None and any(w is not None for w in wavefields):
@@ -1679,14 +1694,14 @@ def check_extents_match_wavefields_shape(
             the expected shape based on the extents and padding.
 
     """
-    n_dims = len(extents)
-    if not len(pad) == 2 * n_dims:
-        raise AssertionError("Expected len(pad) == 2 * n_dims")
+    ndims = len(extents)
+    if not len(pad) == 2 * ndims:
+        raise AssertionError("Expected len(pad) == 2 * ndims")
     for wavefield in wavefields:
         if wavefield is not None:
-            if not len(wavefield.shape) - 1 == n_dims:
-                raise AssertionError("Expected len(wavefield.shape) - 1 == n_dims")
-            for dim in range(n_dims):
+            if not len(wavefield.shape) - 1 == ndims:
+                raise AssertionError("Expected len(wavefield.shape) - 1 == ndims")
+            for dim in range(ndims):
                 # The spatial dimensions should have size equal to the extent
                 # plus the padding
                 expected = (
@@ -1719,9 +1734,9 @@ def reverse_pad(pad: abc.Sequence[int]) -> List[int]:
              dim0_start, dim0_end].
 
     """
-    n_dims = len(pad) // 2
+    ndims = len(pad) // 2
     reversed_pad: List[int] = []
-    for dim in range(n_dims - 1, -1, -1):
+    for dim in range(ndims - 1, -1, -1):
         reversed_pad.extend([pad[2 * dim], pad[2 * dim + 1]])
     return reversed_pad
 
@@ -1759,27 +1774,27 @@ def extract_models(
         applied and a batch dimension of size either 1 or n_batch.
 
     """
-    n_dims = len(pad) // 2
+    ndims = len(pad) // 2
     if not len(models) == len(pad_modes):
         raise AssertionError("Expected len(models) == len(pad_modes)")
-    if not len(extents) == n_dims:
-        raise AssertionError("Expected len(extents) == n_dims")
+    if not len(extents) == ndims:
+        raise AssertionError("Expected len(extents) == ndims")
 
     # Check all models have correct dimensions and consistent attributes
-    spatial_shape = models[0].shape[-n_dims:]
+    spatial_shape = models[0].shape[-ndims:]
     for model in models:
         if not isinstance(model, torch.Tensor):
             raise TypeError("Models must be a torch.Tensor.")
-        if model.ndim not in (n_dims, n_dims + 1):
-            raise RuntimeError(f"Models must have {n_dims} or {n_dims + 1} dimensions.")
+        if model.ndim not in (ndims, ndims + 1):
+            raise RuntimeError(f"Models must have {ndims} or {ndims + 1} dimensions.")
         if model.device != device:
             raise RuntimeError(f"All models must be on device {device}.")
         if model.dtype != dtype:
             raise RuntimeError(f"All models must have dtype {dtype}.")
-        if model.shape[-n_dims:] != spatial_shape:
+        if model.shape[-ndims:] != spatial_shape:
             raise RuntimeError("All models must have the same spatial shape.")
 
-    models = [m.unsqueeze(0) if m.ndim == n_dims else m for m in models]
+    models = [m.unsqueeze(0) if m.ndim == ndims else m for m in models]
     for m in models:
         if m.shape[0] not in (1, n_batch):
             raise RuntimeError(
@@ -1807,7 +1822,7 @@ def extract_models(
 def _validate_location_tensor(
     location: torch.Tensor,
     name: str,
-    n_dims: int,
+    ndims: int,
     n_batch: int,
     eps: float,
 ) -> None:
@@ -1832,9 +1847,9 @@ def _validate_location_tensor(
             "locations torch.Tensor with a batch size of "
             f"{location.shape[0]}.",
         )
-    if location.shape[-1] != n_dims:
+    if location.shape[-1] != ndims:
         raise RuntimeError(
-            f"{name} locations must have {n_dims} dimensional "
+            f"{name} locations must have {ndims} dimensional "
             f"coordinates, but found one with {location.shape[-1]}.",
         )
 
@@ -1842,18 +1857,18 @@ def _validate_location_tensor(
 def _calculate_origin_and_stride(
     extents: abc.Sequence[Tuple[int, int]],
     pad: abc.Sequence[int],
-    n_dims: int,
+    ndims: int,
 ) -> Tuple[List[int], List[int]]:
     """Calculate origin and stride for extracted survey."""
     origin: List[int] = []
     shape: List[int] = []
-    stride: List[int] = [1] * n_dims
-    for dim in range(n_dims):
+    stride: List[int] = [1] * ndims
+    for dim in range(ndims):
         origin.append(extents[dim][0] - pad[2 * dim])
         shape.append(
             extents[dim][1] - extents[dim][0] + pad[2 * dim] + pad[2 * dim + 1],
         )
-    for dim in range(n_dims - 2, -1, -1):
+    for dim in range(ndims - 2, -1, -1):
         stride[dim] = stride[dim + 1] * shape[dim + 1]
     return origin, stride
 
@@ -1861,7 +1876,7 @@ def _calculate_origin_and_stride(
 def _convert_to_1d_and_check_uniqueness(
     location: torch.Tensor,
     name: str,
-    n_dims: int,
+    ndims: int,
     n_batch: int,
     origin: List[int],
     stride: List[int],
@@ -1869,7 +1884,7 @@ def _convert_to_1d_and_check_uniqueness(
 ) -> torch.Tensor:
     """Convert locations to 1D and check for uniqueness."""
     shifted_location = location.clone().long().to(device)
-    for dim in range(n_dims):
+    for dim in range(ndims):
         shifted_location[..., dim] = torch.where(
             shifted_location[..., dim] != IGNORE_LOCATION,
             shifted_location[..., dim] - origin[dim],
@@ -1881,7 +1896,7 @@ def _convert_to_1d_and_check_uniqueness(
         0,
         IGNORE_LOCATION,
     )
-    for dim in range(n_dims):
+    for dim in range(ndims):
         location_1d += torch.where(
             shifted_location[..., dim] != IGNORE_LOCATION,
             shifted_location[..., dim] * stride[dim],
@@ -1944,15 +1959,15 @@ def extract_locations(
             size, or if locations are not unique within a shot.
 
     """
-    n_dims = len(extents)
-    origin, stride = _calculate_origin_and_stride(extents, pad, n_dims)
+    ndims = len(extents)
+    origin, stride = _calculate_origin_and_stride(extents, pad, ndims)
 
     extracted_locations: List[torch.Tensor] = []
     for location in locations:
         if location is not None:
-            _validate_location_tensor(location, name, n_dims, n_batch, eps)
+            _validate_location_tensor(location, name, ndims, n_batch, eps)
             location_1d = _convert_to_1d_and_check_uniqueness(
-                location, name, n_dims, n_batch, origin, stride, device
+                location, name, ndims, n_batch, origin, stride, device
             )
             extracted_locations.append(location_1d)
         else:
@@ -1998,10 +2013,10 @@ def prepare_wavefields(
             dtype, batch size, or spatial shape of the wavefields.
 
     """
-    n_dims = len(extents)
+    ndims = len(extents)
     spatial_shape = [
         extents[dim][1] - extents[dim][0] + pad[2 * dim] + pad[2 * dim + 1]
-        for dim in range(n_dims)
+        for dim in range(ndims)
     ]
     prepared_wavefields: List[torch.Tensor] = []
     for wavefield in wavefields:
@@ -2020,9 +2035,9 @@ def prepare_wavefields(
                     f"datatype {dtype}, but found one with dtype "
                     f"{wavefield.dtype}.",
                 )
-            if wavefield.ndim != n_dims + 1:
+            if wavefield.ndim != ndims + 1:
                 raise RuntimeError(
-                    f"Wavefields must have {n_dims + 1} dimensions, but found "
+                    f"Wavefields must have {ndims + 1} dimensions, but found "
                     f"one with {wavefield.ndim}.",
                 )
             if wavefield.shape[0] != n_batch:
@@ -2299,79 +2314,153 @@ def create_or_pad(
 
     """
     if isinstance(fd_pad, int):
-        fd_pad = [fd_pad] * len(size) * 2
+        fd_pad = [fd_pad] * (len(size) - 1) * 2
     if tensor.numel() == 0:
-        return torch.zeros(size[0], size[1], size[2], device=device, dtype=dtype)
+        return torch.zeros(size, device=device, dtype=dtype)
     if max(fd_pad) == 0:
         return tensor.clone()
-    return (
-        torch.nn.functional.pad(tensor, (fd_pad[2], fd_pad[3], fd_pad[0], fd_pad[1]))
-    ).requires_grad_(tensor.requires_grad)
+    reversed_fd_pad = reverse_pad(fd_pad)
+    return (torch.nn.functional.pad(tensor, reversed_fd_pad)).requires_grad_(
+        tensor.requires_grad
+    )
 
 
 def zero_interior(
     tensor: torch.Tensor,
     fd_pad: Union[int, abc.Sequence[int]],
     pml_width: abc.Sequence[int],
-    y: bool,
+    dim: int,
 ) -> torch.Tensor:
-    """Zeros out the interior region of a 2D tensor.
+    """Zeros out the interior region of a tensor.
 
     Args:
-        tensor: The input 2D torch.Tensor.
+        tensor: The input torch.Tensor.
         fd_pad: The finite-difference padding. Can be an integer or a sequence
-            of integers [top, bottom, left, right].
+            of integers (e.g., [top, bottom, left, right] for 2D).
         pml_width: The width of the PML regions for each side
-            [top, bottom, left, right].
-        y: A boolean indicating whether to zero along the y-dimension (True)
-            or x-dimension (False).
+            (e.g., [top, bottom, left, right] for 2D).
+        dim: The spatial dimension to zero.
 
     Returns:
         torch.Tensor: A new torch.Tensor with the interior region zeroed out.
 
     """
-    ny = tensor.shape[1]
-    nx = tensor.shape[2]
+    shape = tensor.shape[1:]
+    ndim = len(shape)
     tensor = tensor.clone()
     if isinstance(fd_pad, int):
-        fd_pad = [fd_pad] * 4
-    if y:
-        tensor[:, fd_pad[0] + pml_width[0] : ny - pml_width[1] - fd_pad[1]].fill_(0)
-    else:
-        tensor[:, :, fd_pad[2] + pml_width[2] : nx - pml_width[3] - fd_pad[3]].fill_(0)
+        fd_pad = [fd_pad] * 2 * ndim
+    tensor[
+        (slice(None),)
+        + (slice(None),) * dim
+        + (
+            slice(
+                fd_pad[dim * 2] + pml_width[dim * 2],
+                shape[dim] - pml_width[dim * 2 + 1] - fd_pad[dim * 2 + 1],
+            ),
+        )
+    ].fill_(0)
     return tensor
 
 
-def diff(a: torch.Tensor, accuracy: int, grid_spacing: float) -> torch.Tensor:
-    """Calculates the spatial derivative of a 1D tensor.
+def get_ndim(
+    models: abc.Sequence[torch.Tensor],
+    wavefields: abc.Sequence[Optional[torch.Tensor]],
+    locations: abc.Sequence[Optional[torch.Tensor]],
+    z_fields: abc.Sequence[Optional[torch.Tensor]],
+    y_fields: abc.Sequence[Optional[torch.Tensor]],
+    x_fields: abc.Sequence[Optional[torch.Tensor]],
+) -> int:
+    """Get the number of spatial dimensions from models, wavefields, or locations.
 
     Args:
-        a: The input 1D torch.Tensor.
-        accuracy: The finite-difference accuracy order (2, 4, 6, or 8).
-        grid_spacing: The spacing between grid points.
+        models: A sequence of model tensors.
+        wavefields: A sequence of wavefield tensors.
+        locations: A sequence of location tensors.
+        z_fields: A sequence of z-dimension field tensors.
+        y_fields: A sequence of y-dimension field tensors.
+        x_fields: A sequence of x-dimension field tensors.
 
     Returns:
-        The spatial derivative of the input tensor.
+        The number of spatial dimensions.
 
+    Raises:
+        TypeError: If any field is not a torch.Tensor.
+        ValueError: If there is an inconsistency in the number of dimensions.
+        RuntimeError: If the number of dimensions cannot be determined.
     """
-    if accuracy == 2:
-        # Coefficients from Wikipedia
-        # https://en.wikipedia.org/wiki/Finite_difference_coefficient
-        coeffs = [-1 / 2, 1 / 2]
-        stencil = [-1, 1]
-    elif accuracy == 4:
-        coeffs = [1 / 12, -2 / 3, 2 / 3, -1 / 12]
-        stencil = [-2, -1, 1, 2]
-    elif accuracy == 6:
-        coeffs = [-1 / 60, 3 / 20, -3 / 4, 3 / 4, -3 / 20, 1 / 60]
-        stencil = [-3, -2, -1, 1, 2, 3]
-    else:
-        coeffs = [1 / 280, -4 / 105, 1 / 5, -4 / 5, 4 / 5, -1 / 5, 4 / 105, -1 / 280]
-        stencil = [-4, -3, -2, -1, 1, 2, 3, 4]
-    return (
-        sum(
-            (c * torch.roll(a, -s, dims=-1) for c, s in zip(coeffs, stencil)),
-            start=torch.zeros_like(a, memory_format=torch.contiguous_format),
+    ndim = -1
+    for field in wavefields:
+        if field is not None:
+            if not isinstance(field, torch.Tensor):
+                raise TypeError(
+                    "Wavefields must be of type torch.Tensor, "
+                    f"but found {type(field).__name__}"
+                )
+            if ndim < 0:
+                ndim = field.ndim - 1
+            elif ndim != field.ndim - 1:
+                raise ValueError(
+                    "There is an inconsistency in the number of "
+                    f"wavefield dimensions: Expected {ndim + 1}, "
+                    f"but found {field.ndim}."
+                )
+    for location in locations:
+        if location is not None:
+            if not isinstance(location, torch.Tensor):
+                raise TypeError(
+                    "Locations must be of type torch.Tensor, "
+                    f"but found {type(location).__name__}"
+                )
+            if ndim < 0:
+                ndim = location.shape[-1]
+            elif ndim != location.shape[-1]:
+                raise ValueError(
+                    "The number of spatial coordinates in a location "
+                    "Tensor does not match expectations: "
+                    f"Expected {ndim}, but found {location.shape[-1]}."
+                )
+    dim_fields = [x_fields, y_fields, z_fields]
+    dim_names = ["x", "y", "z"]
+    for dim in range(3):
+        for field in dim_fields[dim]:
+            if field is not None:
+                if not isinstance(field, torch.Tensor):
+                    raise TypeError(
+                        "Wavefields must be of type torch.Tensor, "
+                        f"but found {type(field).__name__}"
+                    )
+                if ndim < 0:
+                    ndim = field.ndim - 1
+                elif ndim != field.ndim - 1:
+                    raise ValueError(
+                        "There is an inconsistency in the number of "
+                        f"wavefield dimensions: Expected {ndim + 1}, "
+                        f"but found {field.ndim}."
+                    )
+                elif dim + 1 > ndim:
+                    raise ValueError(
+                        "The propagation was determined to be "
+                        f"{ndim}d, so fields related to the "
+                        f"{dim_names[dim]} dimension should not be "
+                        "provided."
+                    )
+    for model in models:
+        if not isinstance(model, torch.Tensor):
+            raise TypeError(
+                f"Models must be of type torch.Tensor, but found {type(model).__name__}"
+            )
+        if model.ndim != ndim and model.ndim != ndim + 1:
+            raise ValueError(
+                "The propagation was determined to be "
+                f"{ndim}d, so the provided models must have "
+                f"either {ndim} or {ndim + 1} dimensions, but "
+                f"found {model.ndim} dimensions."
+            )
+    if ndim < 0:
+        raise RuntimeError(
+            "The number of spatial dimensions could not be "
+            "determined. Please provide at least one source or "
+            "initial wavefield."
         )
-        / grid_spacing
-    )
+    return ndim

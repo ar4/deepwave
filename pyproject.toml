@@ -4,7 +4,7 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "deepwave"
-version = "0.0.23"
+version = "0.0.24"
 dependencies = [
     "torch",
     "setuptools"
@@ -26,6 +26,7 @@ Homepage = "https://github.com/ar4/deepwave"
 [tool.scikit-build]
 wheel.py-api = "py3"
 cmake.version = ">=3.18"
+#cmake.build-type = "Debug"
 
 [tool.cibuildwheel]
 # Only build for one python version, as the wheel is python-independent
@@ -61,7 +62,9 @@ exclude = [
     "tests/*",
     "docs/*",
     ".github/*",
-    ".gitignore"
+    ".gitignore",
+    "src/deepwave/*.so",
+    "dist/*",
 ]
 
 [tool.ruff.lint.pydocstyle]

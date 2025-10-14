@@ -45,8 +45,7 @@ def test_set_pml_profiles_basic_functionality() -> None:
             dtype,
             device,
             pml_freq,
-            ny,
-            nx,
+            [ny, nx],
         )
 
         # Assert that setup_pml was called twice with correct arguments
@@ -99,12 +98,10 @@ def test_set_pml_profiles_basic_functionality() -> None:
         assert all(isinstance(t, torch.Tensor) for t in result)
 
         # Check shapes of the returned tensors after unsqueezing
-        assert result[0].shape == (1, ny, 1)  # ay
-        assert result[1].shape == (1, 1, nx)  # ax
-        assert result[2].shape == (1, ny, 1)  # by
-        assert result[3].shape == (1, 1, nx)  # bx
-        assert result[4].shape == (1, ny, 1)  # dbydy
-        assert result[5].shape == (1, 1, nx)  # dbxdx
+        for i in range(3):
+            assert result[i].shape == (1, ny, 1)
+        for i in range(3, 6):
+            assert result[i].shape == (1, 1, nx)
 
 
 def test_set_pml_profiles_different_pml_width() -> None:
@@ -144,8 +141,7 @@ def test_set_pml_profiles_different_pml_width() -> None:
             dtype,
             device,
             pml_freq,
-            ny,
-            nx,
+            [ny, nx],
         )
 
         # Assert setup_pml calls with updated pml_start and max_pml
@@ -197,15 +193,17 @@ def test_set_pml_profiles_different_pml_width() -> None:
         assert len(result) == 6
         assert all(isinstance(t, torch.Tensor) for t in result)
 
-        assert result[0].shape == (1, ny, 1)
-        assert result[1].shape == (1, 1, nx)
+        for i in range(3):
+            assert result[i].shape == (1, ny, 1)
+        for i in range(3, 6):
+            assert result[i].shape == (1, 1, nx)
 
 
 def test_set_pml_profiles_edge_cases() -> None:
     """Test set_pml_profiles with edge cases (zero PML width)."""
     # Test with zero pml_width everywhere
     pml_width = [0, 0, 0, 0]
-    accuracy = 4
+    accuracy = 2
     fd_pad = [0, 0, 0, 0]
     dt = 0.001
     grid_spacing = [10.0, 10.0]
@@ -238,8 +236,7 @@ def test_set_pml_profiles_edge_cases() -> None:
             dtype,
             device,
             pml_freq,
-            ny,
-            nx,
+            [ny, nx],
         )
 
         # setup_pml should still be called, but with pml_width of 0
@@ -296,8 +293,7 @@ def test_set_pml_profiles_edge_cases() -> None:
             dtype,
             device,
             pml_freq,
-            ny,
-            nx,
+            [ny, nx],
         )
 
         # Check pml_start values for minimal grid
@@ -344,5 +340,8 @@ def test_set_pml_profiles_edge_cases() -> None:
             pml_freq,
         )
 
-        assert result[0].shape == (1, ny, 1)
-        assert result[1].shape == (1, 1, nx)
+        assert len(result) == 6
+        for i in range(3):
+            assert result[i].shape == (1, ny, 1)
+        for i in range(3, 6):
+            assert result[i].shape == (1, 1, nx)

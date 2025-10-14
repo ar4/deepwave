@@ -1,7 +1,7 @@
 #ifndef DW_COMMON_GPU_H
 #define DW_COMMON_GPU_H
 
-#ifdef DW_DEBUG
+#ifdef DEBUG
 #define CHECK_KERNEL_ERROR              \
   {                                     \
     gpuErrchk(cudaPeekAtLastError());   \
@@ -9,6 +9,6 @@
   }
 #else
 #define CHECK_KERNEL_ERROR gpuErrchk(cudaPeekAtLastError());
-#endif /* DW_DEBUG */
+#endif /* DEBUG */
 
 #endif /* DW_COMMON_GPU_H */

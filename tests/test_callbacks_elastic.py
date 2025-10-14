@@ -1,11 +1,19 @@
 """Tests for deepwave.callbacks_elastic."""
 
+import pytest
 import torch
 
 import deepwave
 
 
-def test_elastic_callback_call_count() -> None:
+@pytest.mark.parametrize(
+    "python_backend",
+    [
+        True,
+        False,
+    ],
+)
+def test_elastic_callback_call_count(python_backend) -> None:
     """Check that the callbacks are called the correct number of times."""
     lamb = torch.ones(10, 10) * 2200
     mu = torch.ones(10, 10) * 1000
@@ -37,7 +45,7 @@ def test_elastic_callback_call_count() -> None:
 
     # Test with a frequency that divides nt evenly
     forward_counter = Counter()
-    backward_counter = Counter()
+    backward_counter = None if python_backend else Counter()
     out = deepwave.elastic(
         lamb,
         mu,
@@ -50,17 +58,20 @@ def test_elastic_callback_call_count() -> None:
         forward_callback=forward_counter,
         backward_callback=backward_counter,
         callback_frequency=2,
+        python_backend=python_backend,
     )
-    out[-1].sum().backward()
     assert forward_counter.count == nt / 2
-    assert backward_counter.count == nt / 2
+
+    if not python_backend:
+        out[-1].sum().backward()
+        assert backward_counter.count == nt / 2
+        lamb.grad.zero_()
+        mu.grad.zero_()
+        buoyancy.grad.zero_()
 
     # Test with a frequency that does not divide nt evenly
-    lamb.grad.zero_()
-    mu.grad.zero_()
-    buoyancy.grad.zero_()
     forward_counter = Counter()
-    backward_counter = Counter()
+    backward_counter = None if python_backend else Counter()
     out = deepwave.elastic(
         lamb,
         mu,
@@ -74,12 +85,21 @@ def test_elastic_callback_call_count() -> None:
         backward_callback=backward_counter,
         callback_frequency=3,
     )
-    out[-1].sum().backward()
     assert forward_counter.count == (nt + 2) // 3
-    assert backward_counter.count == (nt + 2) // 3
+
+    if not python_backend:
+        out[-1].sum().backward()
+        assert backward_counter.count == (nt + 2) // 3
 
 
-def test_elastic_callback_wavefield_shape() -> None:
+@pytest.mark.parametrize(
+    "python_backend",
+    [
+        True,
+        False,
+    ],
+)
+def test_elastic_callback_wavefield_shape(python_backend) -> None:
     """Check that the wavefield has the correct shape for each view."""
     lamb = torch.ones(10, 10) * 2200
     mu = torch.ones(10, 10) * 1000
@@ -118,10 +138,18 @@ def test_elastic_callback_wavefield_shape() -> None:
         accuracy=4,
         forward_callback=Checker(),
         callback_frequency=20,
+        python_backend=python_backend,
     )
 
 
-def test_elastic_callback_wavefield_modification() -> None:
+@pytest.mark.parametrize(
+    "python_backend",
+    [
+        True,
+        False,
+    ],
+)
+def test_elastic_callback_wavefield_modification(python_backend) -> None:
     """Check that the wavefield can be modified in the forward callback."""
     lamb = torch.ones(10, 10) * 2200
     mu = torch.ones(10, 10) * 1000
@@ -168,11 +196,19 @@ def test_elastic_callback_wavefield_modification() -> None:
         forward_callback=setter,
         callback_frequency=1,
         pml_width=5,
+        python_backend=python_backend,
     )
     assert torch.allclose(out[-3].flatten(), setter.expected)
 
 
-def test_elastic_multishot_equivalence() -> None:
+@pytest.mark.parametrize(
+    "python_backend",
+    [
+        True,
+        False,
+    ],
+)
+def test_elastic_multishot_equivalence(python_backend) -> None:
     """Check that a do-nothing callback does not change the output.
 
     Checks it for multiple shots.
@@ -208,6 +244,7 @@ def test_elastic_multishot_equivalence() -> None:
         source_amplitudes_y=source_amplitudes_y,
         source_locations_y=source_locations_y,
         receiver_locations_y=receiver_locations_y,
+        python_backend=python_backend,
     )
     out2 = deepwave.elastic(
         lamb,
@@ -220,6 +257,7 @@ def test_elastic_multishot_equivalence() -> None:
         receiver_locations_y=receiver_locations_y,
         forward_callback=do_nothing,
         callback_frequency=1,
+        python_backend=python_backend,
     )
     for i in range(len(out1)):
         assert torch.allclose(out1[i], out2[i])

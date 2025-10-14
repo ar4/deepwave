@@ -1,11 +1,19 @@
 """Tests for deepwave.callbacks."""
 
+import pytest
 import torch
 
 import deepwave
 
 
-def test_scalar_callback_call_count() -> None:
+@pytest.mark.parametrize(
+    "python_backend",
+    [
+        True,
+        False,
+    ],
+)
+def test_scalar_callback_call_count(python_backend) -> None:
     """Check that the callbacks are called the correct number of times."""
     v = torch.ones(10, 10) * 1500
     v.requires_grad_()
@@ -33,7 +41,7 @@ def test_scalar_callback_call_count() -> None:
 
     # Test with a frequency that divides nt evenly
     forward_counter = Counter()
-    backward_counter = Counter()
+    backward_counter = None if python_backend else Counter()
     out = deepwave.scalar(
         v,
         dx,
@@ -44,15 +52,18 @@ def test_scalar_callback_call_count() -> None:
         forward_callback=forward_counter,
         backward_callback=backward_counter,
         callback_frequency=2,
+        python_backend=python_backend,
     )
-    out[-1].sum().backward()
     assert forward_counter.count == nt / 2
-    assert backward_counter.count == nt / 2
+
+    if not python_backend:
+        out[-1].sum().backward()
+        assert backward_counter.count == nt / 2
+        v.grad.zero_()
 
     # Test with a frequency that does not divide nt evenly
-    v.grad.zero_()
     forward_counter = Counter()
-    backward_counter = Counter()
+    backward_counter = None if python_backend else Counter()
     out = deepwave.scalar(
         v,
         dx,
@@ -64,12 +75,21 @@ def test_scalar_callback_call_count() -> None:
         backward_callback=backward_counter,
         callback_frequency=3,
     )
-    out[-1].sum().backward()
     assert forward_counter.count == (nt + 2) // 3
-    assert backward_counter.count == (nt + 2) // 3
+
+    if not python_backend:
+        out[-1].sum().backward()
+        assert backward_counter.count == (nt + 2) // 3
 
 
-def test_scalar_callback_wavefield_shape() -> None:
+@pytest.mark.parametrize(
+    "python_backend",
+    [
+        True,
+        False,
+    ],
+)
+def test_scalar_callback_wavefield_shape(python_backend) -> None:
     """Check that the wavefield has the correct shape for each view."""
     v = torch.ones(10, 10) * 1500
     dx = 5.0
@@ -108,10 +128,18 @@ def test_scalar_callback_wavefield_shape() -> None:
         accuracy=8,
         forward_callback=Checker(),
         callback_frequency=20,
+        python_backend=python_backend,
     )
 
 
-def test_scalar_callback_wavefield_modification() -> None:
+@pytest.mark.parametrize(
+    "python_backend",
+    [
+        True,
+        False,
+    ],
+)
+def test_scalar_callback_wavefield_modification(python_backend) -> None:
     """Check that the wavefield can be modified in the forward callback."""
     v = torch.ones(10, 10) * 1500
     dx = 5.0
@@ -152,6 +180,7 @@ def test_scalar_callback_wavefield_modification() -> None:
         forward_callback=setter,
         callback_frequency=1,
         pml_width=5,
+        python_backend=python_backend,
     )
     assert torch.allclose(out[-1].flatten(), setter.expected)
 

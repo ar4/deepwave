@@ -7,6 +7,7 @@
  * propagator. It is compiled multiple times with different options
  * to generate a set of functions that can be called from Python.
  * The options are specified by the following macros:
+ *  * DW_NDIM: The number of spatial dimensions. Possible values are 1-3.
  *  * DW_ACCURACY: The order of accuracy of the spatial finite difference
  *    stencil. Possible values are 2, 4, 6, and 8.
  *  * DW_DTYPE: The floating point type to use for calculations. Possible
@@ -18,10 +19,11 @@
  * This file implements the same functionality, but for execution on a GPU
  * using CUDA.
  *
- * The CUDA kernels are launched with a 3D grid of threads. The slowest
- * varying dimension corresponds to the shot number, while the other two
- * correspond to the spatial dimensions of the model. This allows multiple
- * shots to be propagated simultaneously.
+ * The CUDA kernels are launched with a grid of threads that is appropriate
+ * for the number of dimensions. For 1D and 2D, one of the grid dimensions
+ * is used for shots, allowing multiple shots to be propagated simultaneously.
+ * For 3D, the three grid dimensions are used for the spatial dimensions,
+ * and the kernel loops over shots.
  *
  * Constant memory is used to store the configuration parameters of the
  * propagator, which are the same for all threads. This is more efficient
@@ -35,84 +37,101 @@
 #include "common_gpu.h"
 #include "regular_grid.h"
 
-#define CAT_I(name, accuracy, dtype, device) \
-  scalar_iso_##accuracy##_##dtype##_##name##_##device
-#define CAT(name, accuracy, dtype, device) CAT_I(name, accuracy, dtype, device)
-#define FUNC(name) CAT(name, DW_ACCURACY, DW_DTYPE, DW_DEVICE)
+#define CAT_I(name, ndim, accuracy, dtype, device) \
+  scalar_iso_##ndim##d_##accuracy##_##dtype##_##name##_##device
+#define CAT(name, ndim, accuracy, dtype, device) \
+  CAT_I(name, ndim, accuracy, dtype, device)
+#define FUNC(name) CAT(name, DW_NDIM, DW_ACCURACY, DW_DTYPE, DW_DEVICE)
 
-#define WFC(dy, dx) \
-  wfc[i + dy * nx + dx]  // Access wavefield at offset (dy, dx) from i
-#define AY_PSIY(dy, dx) \
-  ay[y + dy] *          \
-      psiy[i + dy * nx + dx]  // PML profile ay times auxiliary field psiy
-#define AX_PSIX(dy, dx) \
-  ax[x + dx] *          \
-      psix[i + dy * nx + dx]  // PML profile ax times auxiliary field psix
-#define V2DT2_WFC(dy, dx)        \
-  v2dt2_shot[j + dy * nx + dx] * \
-      wfc[i + dy * nx + dx]  // v^2 * dt^2 * wfc at offset
+#if DW_NDIM == 3
+#define ND_INDEX(i, dz, dy, dx) (i + (dz)*ny * nx + (dy)*nx + (dx))
+#elif DW_NDIM == 2
+#define ND_INDEX(i, dz, dy, dx) (i + (dy)*nx + (dx))
+#else /* DW_NDIM == 1 */
+#define ND_INDEX(i, dz, dy, dx) (i + (dx))
+#endif
 
-// --- PML Update Terms ---
+#define WFC(dz, dy, dx) wfc[ND_INDEX(i, dz, dy, dx)]
+#define V2DT2_WFC(dz, dy, dx) \
+  v2dt2_shot[ND_INDEX(j, dz, dy, dx)] * WFC(dz, dy, dx)
 
-// Update term for the y-derivative of the wavefield in the PML region (backward
-// pass). This corresponds to the first derivative term in the update equation
-// for the auxiliary wavefield psi (y-direction).
-#define UT_TERMY1(dy, dx)                                               \
-  (dbydy[y + dy] *                                                      \
-       ((1 + by[y + dy]) * v2dt2_shot[j + dy * nx] * wfc[i + dy * nx] + \
-        by[y + dy] * zetay[i + dy * nx]) +                              \
-   by[y + dy] * psiy[i + dy * nx])
+#if DW_NDIM >= 3
+#define PSIZ(dz, dy, dx) psiz[ND_INDEX(i, dz, dy, dx)]
+#define ZETAZ(dz, dy, dx) zetaz[ND_INDEX(i, dz, dy, dx)]
+#define AZ_PSIZ(dz, dy, dx) az[z + (dz)] * PSIZ(dz, dy, dx)
+#endif
 
-// Update term for the x-derivative of the wavefield in the PML region (backward
-// pass). This corresponds to the first derivative term in the update equation
-// for the auxiliary wavefield psi (x-direction).
-#define UT_TERMX1(dy, dx)                                                 \
-  (dbxdx[x + dx] * ((1 + bx[x + dx]) * v2dt2_shot[j + dx] * wfc[i + dx] + \
-                    bx[x + dx] * zetax[i + dx]) +                         \
-   bx[x + dx] * psix[i + dx])
+#if DW_NDIM >= 2
+#define PSIY(dz, dy, dx) psiy[ND_INDEX(i, dz, dy, dx)]
+#define ZETAY(dz, dy, dx) zetay[ND_INDEX(i, dz, dy, dx)]
+#define AY_PSIY(dz, dy, dx) ay[y + (dy)] * PSIY(dz, dy, dx)
+#endif
 
-// Update term for the y-derivative of the wavefield in the PML region (backward
-// pass). This corresponds to the second derivative term in the update equation
-// for the auxiliary wavefield psi (y-direction).
-#define UT_TERMY2(dy, dx)                                           \
-  ((1 + by[y + dy]) *                                               \
-   ((1 + by[y + dy]) * v2dt2_shot[j + dy * nx] * wfc[i + dy * nx] + \
-    by[y + dy] * zetay[i + dy * nx]))
+#define PSIX(dz, dy, dx) psix[ND_INDEX(i, dz, dy, dx)]
+#define ZETAX(dz, dy, dx) zetax[ND_INDEX(i, dz, dy, dx)]
+#define AX_PSIX(dz, dy, dx) ax[x + (dx)] * PSIX(dz, dy, dx)
 
-// Update term for the x-derivative of the wavefield in the PML region (backward
-// pass). This corresponds to the second derivative term in the update equation
-// for the auxiliary wavefield psi (x-direction).
-#define UT_TERMX2(dy, dx)                                                    \
-  ((1 + bx[x + dx]) * ((1 + bx[x + dx]) * v2dt2_shot[j + dx] * wfc[i + dx] + \
-                       bx[x + dx] * zetax[i + dx]))
-#define PSIY_TERM(dy, dx)                                          \
-  ((1 + by[y + dy]) * v2dt2_shot[j + dy * nx] * wfc[i + dy * nx] + \
-   by[y + dy] *                                                    \
-       zetay[i + dy * nx])  // Term for auxiliary psi update (y-derivative)
+#if DW_NDIM == 3
+#define UT_TERMZ1(dz, dy, dx)                                \
+  (dbzdz[z + dz] * ((1 + bz[z + dz]) * V2DT2_WFC(dz, 0, 0) + \
+                    bz[z + dz] * ZETAZ(dz, 0, 0)) +          \
+   bz[z + dz] * PSIZ(dz, 0, 0))
+#define UT_TERMZ2(dz, dy, dx) \
+  ((1 + bz[z + dz]) *         \
+   ((1 + bz[z + dz]) * V2DT2_WFC(dz, 0, 0) + bz[z + dz] * ZETAZ(dz, 0, 0)))
+#define PSIZ_TERM(dz, dy, dx) \
+  ((1 + bz[z + dz]) * V2DT2_WFC(dz, 0, 0) + bz[z + dz] * ZETAZ(dz, 0, 0))
+#endif
 
-#define PSIX_TERM(dy, dx)                                \
-  ((1 + bx[x + dx]) * v2dt2_shot[j + dx] * wfc[i + dx] + \
-   bx[x + dx] *                                          \
-       zetax[i + dx])  // Term for auxiliary psi update (x-derivative)
+#if DW_NDIM >= 2
+#define UT_TERMY1(dz, dy, dx)                                \
+  (dbydy[y + dy] * ((1 + by[y + dy]) * V2DT2_WFC(0, dy, 0) + \
+                    by[y + dy] * ZETAY(0, dy, 0)) +          \
+   by[y + dy] * PSIY(0, dy, 0))
+#define UT_TERMY2(dz, dy, dx) \
+  ((1 + by[y + dy]) *         \
+   ((1 + by[y + dy]) * V2DT2_WFC(0, dy, 0) + by[y + dy] * ZETAY(0, dy, 0)))
+#define PSIY_TERM(dz, dy, dx) \
+  ((1 + by[y + dy]) * V2DT2_WFC(0, dy, 0) + by[y + dy] * ZETAY(0, dy, 0))
+#endif
+
+#define UT_TERMX1(dz, dy, dx)                                \
+  (dbxdx[x + dx] * ((1 + bx[x + dx]) * V2DT2_WFC(0, 0, dx) + \
+                    bx[x + dx] * ZETAX(0, 0, dx)) +          \
+   bx[x + dx] * PSIX(0, 0, dx))
+#define UT_TERMX2(dz, dy, dx) \
+  ((1 + bx[x + dx]) *         \
+   ((1 + bx[x + dx]) * V2DT2_WFC(0, 0, dx) + bx[x + dx] * ZETAX(0, 0, dx)))
+#define PSIX_TERM(dz, dy, dx) \
+  ((1 + bx[x + dx]) * V2DT2_WFC(0, 0, dx) + bx[x + dx] * ZETAX(0, 0, dx))
 
 #define gpuErrchk(ans) \
   { gpuAssert((ans), __FILE__, __LINE__); }
 
 namespace {
 __constant__ DW_DTYPE dt2;
+#if DW_NDIM >= 3
+__constant__ DW_DTYPE rdz;
+__constant__ DW_DTYPE rdz2;
+__constant__ int64_t nz;
+__constant__ int64_t pml_z0;
+__constant__ int64_t pml_z1;
+#endif
+#if DW_NDIM >= 2
 __constant__ DW_DTYPE rdy;
-__constant__ DW_DTYPE rdx;
 __constant__ DW_DTYPE rdy2;
-__constant__ DW_DTYPE rdx2;
-__constant__ int64_t n_shots;
 __constant__ int64_t ny;
+__constant__ int64_t pml_y0;
+__constant__ int64_t pml_y1;
+#endif
+__constant__ DW_DTYPE rdx;
+__constant__ DW_DTYPE rdx2;
 __constant__ int64_t nx;
-__constant__ int64_t nynx;
+__constant__ int64_t shot_numel;
+__constant__ int64_t n_shots;
 __constant__ int64_t n_sources_per_shot;
 __constant__ int64_t n_receivers_per_shot;
 __constant__ int64_t step_ratio;
-__constant__ int64_t pml_y0;
-__constant__ int64_t pml_y1;
 __constant__ int64_t pml_x0;
 __constant__ int64_t pml_x1;
 __constant__ bool v_batched;
@@ -124,7 +143,7 @@ __global__ void add_sources(DW_DTYPE *__restrict const wf,
   int64_t shot_idx = blockIdx.y * blockDim.y + threadIdx.y;
   if (source_idx < n_sources_per_shot && shot_idx < n_shots) {
     int64_t k = shot_idx * n_sources_per_shot + source_idx;
-    if (0 <= sources_i[k]) wf[shot_idx * nynx + sources_i[k]] += f[k];
+    if (0 <= sources_i[k]) wf[shot_idx * shot_numel + sources_i[k]] += f[k];
   }
 }
 
@@ -135,121 +154,250 @@ __global__ void record_receivers(DW_DTYPE *__restrict const r,
   int64_t shot_idx = blockIdx.y * blockDim.y + threadIdx.y;
   if (receiver_idx < n_receivers_per_shot && shot_idx < n_shots) {
     int64_t k = shot_idx * n_receivers_per_shot + receiver_idx;
-    if (0 <= receivers_i[k]) r[k] = wf[shot_idx * nynx + receivers_i[k]];
+    if (0 <= receivers_i[k]) r[k] = wf[shot_idx * shot_numel + receivers_i[k]];
   }
 }
 
+#if DW_NDIM == 3
 __global__ void combine_grad_v(DW_DTYPE *__restrict const grad_v,
                                DW_DTYPE const *__restrict const grad_v_shot) {
   int64_t x = blockIdx.x * blockDim.x + threadIdx.x + FD_PAD;
   int64_t y = blockIdx.y * blockDim.y + threadIdx.y + FD_PAD;
-  int64_t i = y * nx + x;
-  if (y < ny - FD_PAD && x < nx - FD_PAD) {
-    int64_t shot_idx;
-    for (shot_idx = 0; shot_idx < n_shots; ++shot_idx) {
-      grad_v[i] += grad_v_shot[shot_idx * nynx + i];
+  int64_t z = blockIdx.z * blockDim.z + threadIdx.z + FD_PAD;
+  if (z < nz - FD_PAD && y < ny - FD_PAD && x < nx - FD_PAD) {
+    int64_t i = z * ny * nx + y * nx + x;
+    for (int64_t shot_idx = 0; shot_idx < n_shots; ++shot_idx) {
+      grad_v[i] += grad_v_shot[shot_idx * shot_numel + i];
     }
   }
 }
-
-__global__ void forward_kernel(
-    DW_DTYPE const *__restrict const v, DW_DTYPE const *__restrict const wfc,
-    DW_DTYPE *__restrict const wfp, DW_DTYPE const *__restrict const psiy,
-    DW_DTYPE const *__restrict const psix, DW_DTYPE *__restrict const psiyn,
-    DW_DTYPE *__restrict const psixn, DW_DTYPE *__restrict const zetay,
-    DW_DTYPE *__restrict const zetax, DW_DTYPE *__restrict const dwdv,
-    DW_DTYPE const *__restrict const ay, DW_DTYPE const *__restrict const ax,
-    DW_DTYPE const *__restrict const by, DW_DTYPE const *__restrict const bx,
-    DW_DTYPE const *__restrict const dbydy,
-    DW_DTYPE const *__restrict const dbxdx, bool const v_requires_grad) {
+#elif DW_NDIM == 2
+__global__ void combine_grad_v(DW_DTYPE *__restrict const grad_v,
+                               DW_DTYPE const *__restrict const grad_v_shot) {
   int64_t x = blockIdx.x * blockDim.x + threadIdx.x + FD_PAD;
   int64_t y = blockIdx.y * blockDim.y + threadIdx.y + FD_PAD;
   if (y < ny - FD_PAD && x < nx - FD_PAD) {
-    int64_t shot_idx = blockIdx.z * blockDim.z + threadIdx.z;
-    int64_t j = y * nx + x;
-    int64_t i = shot_idx * nynx + j;
-    // Select velocity for this shot/grid point
-    DW_DTYPE const v_shot = v_batched ? v[i] : v[j];
-    bool pml_y = y < pml_y0 || y >= pml_y1;
-    bool pml_x = x < pml_x0 || x >= pml_x1;
-    DW_DTYPE w_sum;
-    // y dimension
-    if (!pml_y) {
-      w_sum = DIFFY2(WFC);
-    } else {
-      DW_DTYPE dwfcdy = DIFFY1(WFC);
-      DW_DTYPE tmpy =
-          ((1 + by[y]) * DIFFY2(WFC) + dbydy[y] * dwfcdy + DIFFY1(AY_PSIY));
-      w_sum = (1 + by[y]) * tmpy + ay[y] * zetay[i];
-      psiyn[i] = by[y] * dwfcdy + ay[y] * psiy[i];
-      zetay[i] = by[y] * tmpy + ay[y] * zetay[i];
+    int64_t i = y * nx + x;
+    for (int64_t shot_idx = 0; shot_idx < n_shots; ++shot_idx) {
+      grad_v[i] += grad_v_shot[shot_idx * shot_numel + i];
     }
-    // x dimension
-    if (!pml_x) {
-      w_sum += DIFFX2(WFC);
-    } else {
-      DW_DTYPE dwfcdx = DIFFX1(WFC);
-      DW_DTYPE tmpx =
-          ((1 + bx[x]) * DIFFX2(WFC) + dbxdx[x] * dwfcdx + DIFFX1(AX_PSIX));
-      w_sum += (1 + bx[x]) * tmpx + ax[x] * zetax[i];
-      psixn[i] = bx[x] * dwfcdx + ax[x] * psix[i];
-      zetax[i] = bx[x] * tmpx + ax[x] * zetax[i];
-    }
-    // If gradients are required, store snapshot for backward
-    if (v_requires_grad) {
-      dwdv[i] = 2 * v_shot * dt2 * w_sum;
-    }
-    // Main wavefield update: finite difference time stepping
-    wfp[i] = v_shot * v_shot * dt2 * w_sum + 2 * wfc[i] - wfp[i];
   }
 }
+#else /* DW_NDIM == 1 */
+__global__ void combine_grad_v(DW_DTYPE *__restrict const grad_v,
+                               DW_DTYPE const *__restrict const grad_v_shot) {
+  int64_t x = blockIdx.x * blockDim.x + threadIdx.x + FD_PAD;
+  if (x < nx - FD_PAD) {
+    int64_t i = x;
+    for (int64_t shot_idx = 0; shot_idx < n_shots; ++shot_idx) {
+      grad_v[i] += grad_v_shot[shot_idx * shot_numel + i];
+    }
+  }
+}
+#endif
 
-__global__ void backward_kernel(
-    DW_DTYPE const *__restrict const v2dt2,
-    DW_DTYPE const *__restrict const wfc, DW_DTYPE *__restrict const wfp,
-    DW_DTYPE const *__restrict const psiy,
-    DW_DTYPE const *__restrict const psix, DW_DTYPE *__restrict const psiyn,
-    DW_DTYPE *__restrict const psixn, DW_DTYPE *__restrict const zetay,
-    DW_DTYPE *__restrict const zetax, DW_DTYPE *__restrict const zetayn,
-    DW_DTYPE *__restrict const zetaxn, DW_DTYPE const *__restrict const dwdv,
-    DW_DTYPE *__restrict const grad_v, DW_DTYPE const *__restrict const ay,
-    DW_DTYPE const *__restrict const ax, DW_DTYPE const *__restrict const by,
-    DW_DTYPE const *__restrict const bx, DW_DTYPE const *__restrict const dbydy,
-    DW_DTYPE const *__restrict const dbxdx, bool const v_requires_grad) {
+#if DW_NDIM == 3
+__launch_bounds__(128)
+#elif DW_NDIM == 2
+__launch_bounds__(1024)
+#else
+__launch_bounds__(256)
+#endif
+    __global__ void forward_kernel(
+        DW_DTYPE const *__restrict const v,
+        DW_DTYPE const *__restrict const wfc, DW_DTYPE *__restrict const wfp,
+        DW_DTYPE *__restrict const dwdv,
+#if DW_NDIM >= 3
+        /* z-dimension */
+        DW_DTYPE const *__restrict const psiz, DW_DTYPE *__restrict const psizn,
+        DW_DTYPE *__restrict const zetaz, DW_DTYPE const *__restrict const az,
+        DW_DTYPE const *__restrict const bz,
+        DW_DTYPE const *__restrict const dbzdz,
+#endif
+#if DW_NDIM >= 2
+        /* y-dimension */
+        DW_DTYPE const *__restrict const psiy, DW_DTYPE *__restrict const psiyn,
+        DW_DTYPE *__restrict const zetay, DW_DTYPE const *__restrict const ay,
+        DW_DTYPE const *__restrict const by,
+        DW_DTYPE const *__restrict const dbydy,
+#endif
+        /* x-dimension */
+        DW_DTYPE const *__restrict const psix, DW_DTYPE *__restrict const psixn,
+        DW_DTYPE *__restrict const zetax, DW_DTYPE const *__restrict const ax,
+        DW_DTYPE const *__restrict const bx,
+        DW_DTYPE const *__restrict const dbxdx, bool const v_requires_grad) {
+#if DW_NDIM == 3
   int64_t x = blockIdx.x * blockDim.x + threadIdx.x + FD_PAD;
   int64_t y = blockIdx.y * blockDim.y + threadIdx.y + FD_PAD;
-  if (y < ny - FD_PAD && x < nx - FD_PAD) {
-    int64_t shot_idx = blockIdx.z * blockDim.z + threadIdx.z;
+  int64_t z = blockIdx.z * blockDim.z + threadIdx.z + FD_PAD;
+  if (z < nz - FD_PAD && y < ny - FD_PAD && x < nx - FD_PAD) {
+    for (int64_t shot_idx = 0; shot_idx < n_shots; ++shot_idx) {
+      int64_t j = z * ny * nx + y * nx + x;
+#elif DW_NDIM == 2
+  int64_t x = blockIdx.x * blockDim.x + threadIdx.x + FD_PAD;
+  int64_t y = blockIdx.y * blockDim.y + threadIdx.y + FD_PAD;
+  int64_t shot_idx = blockIdx.z * blockDim.z + threadIdx.z;
+  if (y < ny - FD_PAD && x < nx - FD_PAD && shot_idx < n_shots) {
     int64_t j = y * nx + x;
-    int64_t i = shot_idx * nynx + j;
-    // Select v^2*dt^2 for this shot/grid point
-    DW_DTYPE const *__restrict const v2dt2_shot =
-        v_batched ? v2dt2 + shot_idx * nynx : v2dt2;
-    bool pml_y = y < pml_y0 || y >= pml_y1;
-    bool pml_x = x < pml_x0 || x >= pml_x1;
-    // Main adjoint wavefield update
-    wfp[i] =
-        (pml_y ? -DIFFY1(UT_TERMY1) + DIFFY2(UT_TERMY2) : DIFFY2(V2DT2_WFC)) +
-        (pml_x ? -DIFFX1(UT_TERMX1) + DIFFX2(UT_TERMX2) : DIFFX2(V2DT2_WFC)) +
-        2 * wfc[i] - wfp[i];
-    // Update PML auxiliary fields in y
-    if (pml_y) {
-      psiyn[i] = -ay[y] * DIFFY1(PSIY_TERM) + ay[y] * psiy[i];
-      zetayn[i] = ay[y] * v2dt2_shot[j] * wfc[i] + ay[y] * zetay[i];
+#else /* DW_NDIM == 1 */
+  int64_t x = blockIdx.x * blockDim.x + threadIdx.x + FD_PAD;
+  int64_t shot_idx = blockIdx.y * blockDim.y + threadIdx.y;
+  if (x < nx - FD_PAD && shot_idx < n_shots) {
+    int64_t j = x;
+#endif
+      int64_t i = shot_idx * shot_numel + j;
+      // Select velocity for this shot/grid point
+      DW_DTYPE const v_shot = v_batched ? v[i] : v[j];
+      DW_DTYPE w_sum = 0;
+#if DW_NDIM >= 3
+      bool pml_z = z < pml_z0 || z >= pml_z1;
+      if (!pml_z) {
+        w_sum += DIFFZ2(WFC);
+      } else {
+        DW_DTYPE dwfcdz = DIFFZ1(WFC);
+        DW_DTYPE tmpz =
+            ((1 + bz[z]) * DIFFZ2(WFC) + dbzdz[z] * dwfcdz + DIFFZ1(AZ_PSIZ));
+        w_sum += (1 + bz[z]) * tmpz + az[z] * zetaz[i];
+        psizn[i] = bz[z] * dwfcdz + az[z] * psiz[i];
+        zetaz[i] = bz[z] * tmpz + az[z] * zetaz[i];
+      }
+#endif
+#if DW_NDIM >= 2
+      bool pml_y = y < pml_y0 || y >= pml_y1;
+      if (!pml_y) {
+        w_sum += DIFFY2(WFC);
+      } else {
+        DW_DTYPE dwfcdy = DIFFY1(WFC);
+        DW_DTYPE tmpy =
+            ((1 + by[y]) * DIFFY2(WFC) + dbydy[y] * dwfcdy + DIFFY1(AY_PSIY));
+        w_sum += (1 + by[y]) * tmpy + ay[y] * zetay[i];
+        psiyn[i] = by[y] * dwfcdy + ay[y] * psiy[i];
+        zetay[i] = by[y] * tmpy + ay[y] * zetay[i];
+      }
+#endif
+      bool pml_x = x < pml_x0 || x >= pml_x1;
+      if (!pml_x) {
+        w_sum += DIFFX2(WFC);
+      } else {
+        DW_DTYPE dwfcdx = DIFFX1(WFC);
+        DW_DTYPE tmpx =
+            ((1 + bx[x]) * DIFFX2(WFC) + dbxdx[x] * dwfcdx + DIFFX1(AX_PSIX));
+        w_sum += (1 + bx[x]) * tmpx + ax[x] * zetax[i];
+        psixn[i] = bx[x] * dwfcdx + ax[x] * psix[i];
+        zetax[i] = bx[x] * tmpx + ax[x] * zetax[i];
+      }
+      // If gradients are required, store snapshot for backward
+      if (v_requires_grad) {
+        dwdv[i] = 2 * v_shot * dt2 * w_sum;
+      }
+      // Main wavefield update: finite difference time stepping
+      wfp[i] = v_shot * v_shot * dt2 * w_sum + 2 * wfc[i] - wfp[i];
+#if DW_NDIM == 3
     }
-    // Update PML auxiliary fields in x
-    if (pml_x) {
-      psixn[i] = -ax[x] * DIFFX1(PSIX_TERM) + ax[x] * psix[i];
-      zetaxn[i] = ax[x] * v2dt2_shot[j] * wfc[i] + ax[x] * zetax[i];
-    }
-    // If gradients are required, accumulate gradient for velocity
-    if (v_requires_grad) {
-      grad_v[i] += wfc[i] * dwdv[i] * step_ratio;
-    }
+#endif
   }
 }
 
-inline void gpuAssert(cudaError_t code, const char *file, bool line,
+#if DW_NDIM == 3
+__launch_bounds__(128)
+#elif DW_NDIM == 2
+__launch_bounds__(256)
+#else
+__launch_bounds__(256)
+#endif
+    __global__ void backward_kernel(
+        DW_DTYPE const *__restrict const v2dt2,
+        DW_DTYPE const *__restrict const wfc, DW_DTYPE *__restrict const wfp,
+        DW_DTYPE const *__restrict const dwdv,
+        DW_DTYPE *__restrict const grad_v,
+#if DW_NDIM >= 3
+        /* z-dimension */
+        DW_DTYPE const *__restrict const psiz, DW_DTYPE *__restrict const psizn,
+        DW_DTYPE *__restrict const zetaz, DW_DTYPE *__restrict const zetazn,
+        DW_DTYPE const *__restrict const az,
+        DW_DTYPE const *__restrict const bz,
+        DW_DTYPE const *__restrict const dbzdz,
+#endif
+#if DW_NDIM >= 2
+        /* y-dimension */
+        DW_DTYPE const *__restrict const psiy, DW_DTYPE *__restrict const psiyn,
+        DW_DTYPE *__restrict const zetay, DW_DTYPE *__restrict const zetayn,
+        DW_DTYPE const *__restrict const ay,
+        DW_DTYPE const *__restrict const by,
+        DW_DTYPE const *__restrict const dbydy,
+#endif
+        /* x-dimension */
+        DW_DTYPE const *__restrict const psix, DW_DTYPE *__restrict const psixn,
+        DW_DTYPE *__restrict const zetax, DW_DTYPE *__restrict const zetaxn,
+        DW_DTYPE const *__restrict const ax,
+        DW_DTYPE const *__restrict const bx,
+        DW_DTYPE const *__restrict const dbxdx, bool const v_requires_grad) {
+#if DW_NDIM == 3
+  int64_t x = blockIdx.x * blockDim.x + threadIdx.x + FD_PAD;
+  int64_t y = blockIdx.y * blockDim.y + threadIdx.y + FD_PAD;
+  int64_t z = blockIdx.z * blockDim.z + threadIdx.z + FD_PAD;
+  if (z < nz - FD_PAD && y < ny - FD_PAD && x < nx - FD_PAD) {
+    for (int64_t shot_idx = 0; shot_idx < n_shots; ++shot_idx) {
+      int64_t j = z * ny * nx + y * nx + x;
+#elif DW_NDIM == 2
+  int64_t x = blockIdx.x * blockDim.x + threadIdx.x + FD_PAD;
+  int64_t y = blockIdx.y * blockDim.y + threadIdx.y + FD_PAD;
+  int64_t shot_idx = blockIdx.z * blockDim.z + threadIdx.z;
+  if (y < ny - FD_PAD && x < nx - FD_PAD && shot_idx < n_shots) {
+    int64_t j = y * nx + x;
+#else /* DW_NDIM == 1 */
+  int64_t x = blockIdx.x * blockDim.x + threadIdx.x + FD_PAD;
+  int64_t shot_idx = blockIdx.y * blockDim.y + threadIdx.y;
+  if (x < nx - FD_PAD && shot_idx < n_shots) {
+    int64_t j = x;
+#endif
+      int64_t i = shot_idx * shot_numel + j;
+      // Select v^2*dt^2 for this shot/grid point
+      DW_DTYPE const *__restrict const v2dt2_shot =
+          v_batched ? v2dt2 + shot_idx * shot_numel : v2dt2;
+      DW_DTYPE w_sum = 0;
+#if DW_NDIM >= 3
+      bool pml_z = z < pml_z0 || z >= pml_z1;
+      w_sum +=
+          pml_z ? -DIFFZ1(UT_TERMZ1) + DIFFZ2(UT_TERMZ2) : DIFFZ2(V2DT2_WFC);
+#endif
+#if DW_NDIM >= 2
+      bool pml_y = y < pml_y0 || y >= pml_y1;
+      w_sum +=
+          pml_y ? -DIFFY1(UT_TERMY1) + DIFFY2(UT_TERMY2) : DIFFY2(V2DT2_WFC);
+#endif
+      bool pml_x = x < pml_x0 || x >= pml_x1;
+      w_sum +=
+          pml_x ? -DIFFX1(UT_TERMX1) + DIFFX2(UT_TERMX2) : DIFFX2(V2DT2_WFC);
+      // Main adjoint wavefield update
+      wfp[i] = w_sum + 2 * wfc[i] - wfp[i];
+#if DW_NDIM >= 3
+      if (pml_z) {
+        psizn[i] = -az[z] * DIFFZ1(PSIZ_TERM) + az[z] * psiz[i];
+        zetazn[i] = az[z] * V2DT2_WFC(0, 0, 0) + az[z] * zetaz[i];
+      }
+#endif
+#if DW_NDIM >= 2
+      if (pml_y) {
+        psiyn[i] = -ay[y] * DIFFY1(PSIY_TERM) + ay[y] * psiy[i];
+        zetayn[i] = ay[y] * V2DT2_WFC(0, 0, 0) + ay[y] * zetay[i];
+      }
+#endif
+      if (pml_x) {
+        psixn[i] = -ax[x] * DIFFX1(PSIX_TERM) + ax[x] * psix[i];
+        zetaxn[i] = ax[x] * V2DT2_WFC(0, 0, 0) + ax[x] * zetax[i];
+      }
+      // If gradients are required, accumulate gradient for velocity
+      if (v_requires_grad) {
+        grad_v[i] += wfc[i] * dwdv[i] * step_ratio;
+      }
+#if DW_NDIM == 3
+    }
+#endif
+  }
+}
+
+inline void gpuAssert(cudaError_t code, const char *file, int line,
                       bool abort = true) {
   if (code != cudaSuccess) {
     fprintf(stderr, "GPUassert: %s %s %d\n", cudaGetErrorString(code), file,
@@ -262,32 +410,49 @@ inline unsigned int ceil_div(unsigned int numerator, unsigned int denominator) {
   return (numerator + denominator - 1) / denominator;
 }
 
-void set_config(DW_DTYPE const dt2_h, DW_DTYPE const rdy_h,
-                DW_DTYPE const rdx_h, DW_DTYPE const rdy2_h,
-                DW_DTYPE const rdx2_h, int64_t const n_shots_h,
-                int64_t const ny_h, int64_t const nx_h,
-                int64_t const n_sources_per_shot_h,
-                int64_t const n_receivers_per_shot_h,
-                int64_t const step_ratio_h, int64_t const pml_y0_h,
-                int64_t const pml_y1_h, int64_t const pml_x0_h,
-                int64_t const pml_x1_h, bool const v_batched_h) {
-  int64_t const nynx_h = ny_h * nx_h;
+void set_config(
+#if DW_NDIM >= 3
+    /* z-dimension */
+    DW_DTYPE const rdz_h, DW_DTYPE const rdz2_h, int64_t const nz_h,
+    int64_t const pml_z0_h, int64_t const pml_z1_h,
+#endif
+#if DW_NDIM >= 2
+    /* y-dimension */
+    DW_DTYPE const rdy_h, DW_DTYPE const rdy2_h, int64_t const ny_h,
+    int64_t const pml_y0_h, int64_t const pml_y1_h,
+#endif
+    /* x-dimension */
+    DW_DTYPE const rdx_h, DW_DTYPE const rdx2_h, int64_t const nx_h,
+    int64_t const shot_numel_h, int64_t const pml_x0_h, int64_t const pml_x1_h,
+    /* other */
+    DW_DTYPE const dt2_h, int64_t const n_shots_h,
+    int64_t const n_sources_per_shot_h, int64_t const n_receivers_per_shot_h,
+    int64_t const step_ratio_h, bool const v_batched_h) {
   gpuErrchk(cudaMemcpyToSymbol(dt2, &dt2_h, sizeof(DW_DTYPE)));
+#if DW_NDIM >= 3
+  gpuErrchk(cudaMemcpyToSymbol(rdz, &rdz_h, sizeof(DW_DTYPE)));
+  gpuErrchk(cudaMemcpyToSymbol(rdz2, &rdz2_h, sizeof(DW_DTYPE)));
+  gpuErrchk(cudaMemcpyToSymbol(nz, &nz_h, sizeof(int64_t)));
+  gpuErrchk(cudaMemcpyToSymbol(pml_z0, &pml_z0_h, sizeof(int64_t)));
+  gpuErrchk(cudaMemcpyToSymbol(pml_z1, &pml_z1_h, sizeof(int64_t)));
+#endif
+#if DW_NDIM >= 2
   gpuErrchk(cudaMemcpyToSymbol(rdy, &rdy_h, sizeof(DW_DTYPE)));
-  gpuErrchk(cudaMemcpyToSymbol(rdx, &rdx_h, sizeof(DW_DTYPE)));
   gpuErrchk(cudaMemcpyToSymbol(rdy2, &rdy2_h, sizeof(DW_DTYPE)));
-  gpuErrchk(cudaMemcpyToSymbol(rdx2, &rdx2_h, sizeof(DW_DTYPE)));
-  gpuErrchk(cudaMemcpyToSymbol(n_shots, &n_shots_h, sizeof(int64_t)));
   gpuErrchk(cudaMemcpyToSymbol(ny, &ny_h, sizeof(int64_t)));
+  gpuErrchk(cudaMemcpyToSymbol(pml_y0, &pml_y0_h, sizeof(int64_t)));
+  gpuErrchk(cudaMemcpyToSymbol(pml_y1, &pml_y1_h, sizeof(int64_t)));
+#endif
+  gpuErrchk(cudaMemcpyToSymbol(rdx, &rdx_h, sizeof(DW_DTYPE)));
+  gpuErrchk(cudaMemcpyToSymbol(rdx2, &rdx2_h, sizeof(DW_DTYPE)));
   gpuErrchk(cudaMemcpyToSymbol(nx, &nx_h, sizeof(int64_t)));
-  gpuErrchk(cudaMemcpyToSymbol(nynx, &nynx_h, sizeof(int64_t)));
+  gpuErrchk(cudaMemcpyToSymbol(shot_numel, &shot_numel_h, sizeof(int64_t)));
+  gpuErrchk(cudaMemcpyToSymbol(n_shots, &n_shots_h, sizeof(int64_t)));
   gpuErrchk(cudaMemcpyToSymbol(n_sources_per_shot, &n_sources_per_shot_h,
                                sizeof(int64_t)));
   gpuErrchk(cudaMemcpyToSymbol(n_receivers_per_shot, &n_receivers_per_shot_h,
                                sizeof(int64_t)));
   gpuErrchk(cudaMemcpyToSymbol(step_ratio, &step_ratio_h, sizeof(int64_t)));
-  gpuErrchk(cudaMemcpyToSymbol(pml_y0, &pml_y0_h, sizeof(int64_t)));
-  gpuErrchk(cudaMemcpyToSymbol(pml_y1, &pml_y1_h, sizeof(int64_t)));
   gpuErrchk(cudaMemcpyToSymbol(pml_x0, &pml_x0_h, sizeof(int64_t)));
   gpuErrchk(cudaMemcpyToSymbol(pml_x1, &pml_x1_h, sizeof(int64_t)));
   gpuErrchk(cudaMemcpyToSymbol(v_batched, &v_batched_h, sizeof(bool)));
@@ -301,32 +466,100 @@ extern "C"
 #endif
         void FUNC(forward)(
             DW_DTYPE const *__restrict const v,
-            DW_DTYPE const *__restrict const f, DW_DTYPE *__restrict const wfc,
-            DW_DTYPE *__restrict const wfp, DW_DTYPE *__restrict const psiy,
-            DW_DTYPE *__restrict const psix, DW_DTYPE *__restrict const psiyn,
-            DW_DTYPE *__restrict const psixn, DW_DTYPE *__restrict const zetay,
+            DW_DTYPE const *__restrict const f, DW_DTYPE *__restrict wfc,
+            DW_DTYPE *__restrict wfp,
+#if DW_NDIM >= 3
+            DW_DTYPE *__restrict psiz,
+#endif
+#if DW_NDIM >= 2
+            DW_DTYPE *__restrict psiy,
+#endif
+            DW_DTYPE *__restrict psix,
+#if DW_NDIM >= 3
+            DW_DTYPE *__restrict psizn,
+#endif
+#if DW_NDIM >= 2
+            DW_DTYPE *__restrict psiyn,
+#endif
+            DW_DTYPE *__restrict psixn,
+#if DW_NDIM >= 3
+            DW_DTYPE *__restrict const zetaz,
+#endif
+#if DW_NDIM >= 2
+            DW_DTYPE *__restrict const zetay,
+#endif
             DW_DTYPE *__restrict const zetax, DW_DTYPE *__restrict const dwdv,
-            DW_DTYPE *__restrict const r, DW_DTYPE const *__restrict const ay,
-            DW_DTYPE const *__restrict const ax,
+            DW_DTYPE *__restrict const r,
+#if DW_NDIM >= 3
+            DW_DTYPE const *__restrict const az,
+            DW_DTYPE const *__restrict const bz,
+            DW_DTYPE const *__restrict const dbzdz,
+#endif
+#if DW_NDIM >= 2
+            DW_DTYPE const *__restrict const ay,
             DW_DTYPE const *__restrict const by,
-            DW_DTYPE const *__restrict const bx,
             DW_DTYPE const *__restrict const dbydy,
+#endif
+            DW_DTYPE const *__restrict const ax,
+            DW_DTYPE const *__restrict const bx,
             DW_DTYPE const *__restrict const dbxdx,
             int64_t const *__restrict const sources_i,
-            int64_t const *__restrict const receivers_i, DW_DTYPE const rdy_h,
-            DW_DTYPE const rdx_h, DW_DTYPE const rdy2_h, DW_DTYPE const rdx2_h,
-            DW_DTYPE const dt2_h, int64_t const nt, int64_t const n_shots_h,
-            int64_t const ny_h, int64_t const nx_h,
-            int64_t const n_sources_per_shot_h,
+            int64_t const *__restrict const receivers_i,
+#if DW_NDIM >= 3
+            DW_DTYPE const rdz_h,
+#endif
+#if DW_NDIM >= 2
+            DW_DTYPE const rdy_h,
+#endif
+            DW_DTYPE const rdx_h,
+#if DW_NDIM >= 3
+            DW_DTYPE const rdz2_h,
+#endif
+#if DW_NDIM >= 2
+            DW_DTYPE const rdy2_h,
+#endif
+            DW_DTYPE const rdx2_h, DW_DTYPE const dt2_h, int64_t const nt,
+            int64_t const n_shots_h,
+#if DW_NDIM >= 3
+            int64_t const nz_h,
+#endif
+#if DW_NDIM >= 2
+            int64_t const ny_h,
+#endif
+            int64_t const nx_h, int64_t const n_sources_per_shot_h,
             int64_t const n_receivers_per_shot_h, int64_t const step_ratio_h,
             bool const v_requires_grad, bool const v_batched_h,
-            int64_t const start_t, int64_t const pml_y0_h,
-            int64_t const pml_y1_h, int64_t const pml_x0_h,
+            int64_t const start_t,
+#if DW_NDIM >= 3
+            int64_t const pml_z0_h,
+#endif
+#if DW_NDIM >= 2
+            int64_t const pml_y0_h,
+#endif
+            int64_t const pml_x0_h,
+#if DW_NDIM >= 3
+            int64_t const pml_z1_h,
+#endif
+#if DW_NDIM >= 2
+            int64_t const pml_y1_h,
+#endif
             int64_t const pml_x1_h, int64_t const device) {
+#if DW_NDIM == 3
+  dim3 dimBlock(32, 4, 1);
+  unsigned int gridx = ceil_div(nx_h - 2 * FD_PAD, dimBlock.x);
+  unsigned int gridy = ceil_div(ny_h - 2 * FD_PAD, dimBlock.y);
+  unsigned int gridz = ceil_div(nz_h - 2 * FD_PAD, dimBlock.z);
+#elif DW_NDIM == 2
   dim3 dimBlock(32, 32, 1);
   unsigned int gridx = ceil_div(nx_h - 2 * FD_PAD, dimBlock.x);
   unsigned int gridy = ceil_div(ny_h - 2 * FD_PAD, dimBlock.y);
   unsigned int gridz = ceil_div(n_shots_h, dimBlock.z);
+#else /* DW_NDIM == 1 */
+  dim3 dimBlock(256, 1, 1);
+  unsigned int gridx = ceil_div(nx_h - 2 * FD_PAD, dimBlock.x);
+  unsigned int gridy = ceil_div(n_shots_h, dimBlock.y);
+  unsigned int gridz = 1;
+#endif
   dim3 dimGrid(gridx, gridy, gridz);
   dim3 dimBlock_sources(32, 1, 1);
   unsigned int gridx_sources =
@@ -340,33 +573,35 @@ extern "C"
   unsigned int gridy_receivers = ceil_div(n_shots_h, dimBlock_receivers.y);
   unsigned int gridz_receivers = 1;
   dim3 dimGrid_receivers(gridx_receivers, gridy_receivers, gridz_receivers);
+#if DW_NDIM == 3
+  int64_t const shot_numel_h = nz_h * ny_h * nx_h;
+#elif DW_NDIM == 2
+  int64_t const shot_numel_h = ny_h * nx_h;
+#else
+  int64_t const shot_numel_h = nx_h;
+#endif
   int64_t t;
   gpuErrchk(cudaSetDevice(device));
-  set_config(dt2_h, rdy_h, rdx_h, rdy2_h, rdx2_h, n_shots_h, ny_h, nx_h,
-             n_sources_per_shot_h, n_receivers_per_shot_h, step_ratio_h,
-             pml_y0_h, pml_y1_h, pml_x0_h, pml_x1_h, v_batched_h);
+  set_config(
+#if DW_NDIM >= 3
+      rdz_h, rdz2_h, nz_h, pml_z0_h, pml_z1_h,
+#endif
+#if DW_NDIM >= 2
+      rdy_h, rdy2_h, ny_h, pml_y0_h, pml_y1_h,
+#endif
+      rdx_h, rdx2_h, nx_h, shot_numel_h, pml_x0_h, pml_x1_h, dt2_h, n_shots_h,
+      n_sources_per_shot_h, n_receivers_per_shot_h, step_ratio_h, v_batched_h);
   for (t = start_t; t < start_t + nt; ++t) {
-    if ((t - start_t) & 1) {
       forward_kernel<<<dimGrid, dimBlock>>>(
-          v, wfp, wfc, psiyn, psixn, psiy, psix, zetay, zetax,
-          dwdv + (t / step_ratio_h) * ny_h * nx_h * n_shots_h, ay, ax, by, bx,
-          dbydy, dbxdx, v_requires_grad && ((t % step_ratio_h) == 0));
-      CHECK_KERNEL_ERROR
-      if (n_sources_per_shot_h > 0) {
-        add_sources<<<dimGrid_sources, dimBlock_sources>>>(
-            wfc, f + t * n_shots_h * n_sources_per_shot_h, sources_i);
-        CHECK_KERNEL_ERROR
-      }
-      if (n_receivers_per_shot_h > 0) {
-        record_receivers<<<dimGrid_receivers, dimBlock_receivers>>>(
-            r + t * n_shots_h * n_receivers_per_shot_h, wfp, receivers_i);
-        CHECK_KERNEL_ERROR
-      }
-    } else {
-      forward_kernel<<<dimGrid, dimBlock>>>(
-          v, wfc, wfp, psiy, psix, psiyn, psixn, zetay, zetax,
-          dwdv + (t / step_ratio_h) * ny_h * nx_h * n_shots_h, ay, ax, by, bx,
-          dbydy, dbxdx, v_requires_grad && ((t % step_ratio_h) == 0));
+          v, wfc, wfp, dwdv + (t / step_ratio_h) * shot_numel_h * n_shots_h,
+#if DW_NDIM >= 3
+          psiz, psizn, zetaz, az, bz, dbzdz,
+#endif
+#if DW_NDIM >= 2
+          psiy, psiyn, zetay, ay, by, dbydy,
+#endif
+          psix, psixn, zetax, ax, bx, dbxdx,
+          v_requires_grad && ((t % step_ratio_h) == 0));
       CHECK_KERNEL_ERROR
       if (n_sources_per_shot_h > 0) {
         add_sources<<<dimGrid_sources, dimBlock_sources>>>(
@@ -378,8 +613,15 @@ extern "C"
             r + t * n_shots_h * n_receivers_per_shot_h, wfc, receivers_i);
         CHECK_KERNEL_ERROR
       }
+#if DW_NDIM >= 3
+      std::swap(psiz, psizn);
+#endif
+#if DW_NDIM >= 2
+      std::swap(psiy, psiyn);
+#endif
+      std::swap(wfc, wfp);
+      std::swap(psix, psixn);
     }
-  }
 }
 
 extern "C"
@@ -389,36 +631,107 @@ extern "C"
         void FUNC(backward)(
             DW_DTYPE const *__restrict const v2dt2,
             DW_DTYPE const *__restrict const grad_r,
-            DW_DTYPE *__restrict const wfc, DW_DTYPE *__restrict const wfp,
-            DW_DTYPE *__restrict const psiy, DW_DTYPE *__restrict const psix,
-            DW_DTYPE *__restrict const psiyn, DW_DTYPE *__restrict const psixn,
-            DW_DTYPE *__restrict const zetay, DW_DTYPE *__restrict const zetax,
-            DW_DTYPE *__restrict const zetayn,
-            DW_DTYPE *__restrict const zetaxn,
+            DW_DTYPE *__restrict wfc, DW_DTYPE *__restrict wfp,
+#if DW_NDIM >= 3
+            DW_DTYPE *__restrict psiz,
+#endif
+#if DW_NDIM >= 2
+            DW_DTYPE *__restrict psiy,
+#endif
+            DW_DTYPE *__restrict psix,
+#if DW_NDIM >= 3
+            DW_DTYPE *__restrict psizn,
+#endif
+#if DW_NDIM >= 2
+            DW_DTYPE *__restrict psiyn,
+#endif
+            DW_DTYPE *__restrict psixn,
+#if DW_NDIM >= 3
+            DW_DTYPE *__restrict zetaz,
+#endif
+#if DW_NDIM >= 2
+            DW_DTYPE *__restrict zetay,
+#endif
+            DW_DTYPE *__restrict zetax,
+#if DW_NDIM >= 3
+            DW_DTYPE *__restrict zetazn,
+#endif
+#if DW_NDIM >= 2
+            DW_DTYPE *__restrict zetayn,
+#endif
+            DW_DTYPE *__restrict zetaxn,
             DW_DTYPE const *__restrict const dwdv,
             DW_DTYPE *__restrict const grad_f,
             DW_DTYPE *__restrict const grad_v,
             DW_DTYPE *__restrict const grad_v_shot,
+#if DW_NDIM >= 3
+            DW_DTYPE const *__restrict const az,
+            DW_DTYPE const *__restrict const bz,
+            DW_DTYPE const *__restrict const dbzdz,
+#endif
+#if DW_NDIM >= 2
             DW_DTYPE const *__restrict const ay,
-            DW_DTYPE const *__restrict const ax,
             DW_DTYPE const *__restrict const by,
-            DW_DTYPE const *__restrict const bx,
             DW_DTYPE const *__restrict const dbydy,
+#endif
+            DW_DTYPE const *__restrict const ax,
+            DW_DTYPE const *__restrict const bx,
             DW_DTYPE const *__restrict const dbxdx,
             int64_t const *__restrict const sources_i,
-            int64_t const *__restrict const receivers_i, DW_DTYPE const rdy_h,
-            DW_DTYPE const rdx_h, DW_DTYPE const rdy2_h, DW_DTYPE const rdx2_h,
-            int64_t const nt, int64_t const n_shots_h, int64_t const ny_h,
+            int64_t const *__restrict const receivers_i,
+#if DW_NDIM >= 3
+            DW_DTYPE const rdz_h,
+#endif
+#if DW_NDIM >= 2
+            DW_DTYPE const rdy_h,
+#endif
+            DW_DTYPE const rdx_h,
+#if DW_NDIM >= 3
+            DW_DTYPE const rdz2_h,
+#endif
+#if DW_NDIM >= 2
+            DW_DTYPE const rdy2_h,
+#endif
+            DW_DTYPE const rdx2_h, int64_t const nt, int64_t const n_shots_h,
+#if DW_NDIM >= 3
+            int64_t const nz_h,
+#endif
+#if DW_NDIM >= 2
+            int64_t const ny_h,
+#endif
             int64_t const nx_h, int64_t const n_sources_per_shot_h,
             int64_t const n_receivers_per_shot_h, int64_t const step_ratio_h,
             bool const v_requires_grad, bool const v_batched_h, int64_t start_t,
-            int64_t const pml_y0_h, int64_t const pml_y1_h,
-            int64_t const pml_x0_h, int64_t const pml_x1_h,
-            int64_t const device) {
+#if DW_NDIM >= 3
+            int64_t const pml_z0_h,
+#endif
+#if DW_NDIM >= 2
+            int64_t const pml_y0_h,
+#endif
+            int64_t const pml_x0_h,
+#if DW_NDIM >= 3
+            int64_t const pml_z1_h,
+#endif
+#if DW_NDIM >= 2
+            int64_t const pml_y1_h,
+#endif
+            int64_t const pml_x1_h, int64_t const device) {
+#if DW_NDIM == 3
+  dim3 dimBlock(32, 4, 1);
+  unsigned int gridx = ceil_div(nx_h - 2 * FD_PAD, dimBlock.x);
+  unsigned int gridy = ceil_div(ny_h - 2 * FD_PAD, dimBlock.y);
+  unsigned int gridz = ceil_div(nz_h - 2 * FD_PAD, dimBlock.z);
+#elif DW_NDIM == 2
   dim3 dimBlock(32, 8, 1);
   unsigned int gridx = ceil_div(nx_h - 2 * FD_PAD, dimBlock.x);
   unsigned int gridy = ceil_div(ny_h - 2 * FD_PAD, dimBlock.y);
   unsigned int gridz = ceil_div(n_shots_h, dimBlock.z);
+#else /* DW_NDIM == 1 */
+  dim3 dimBlock(256, 1, 1);
+  unsigned int gridx = ceil_div(nx_h - 2 * FD_PAD, dimBlock.x);
+  unsigned int gridy = ceil_div(n_shots_h, dimBlock.y);
+  unsigned int gridz = 1;
+#endif
   dim3 dimGrid(gridx, gridy, gridz);
   dim3 dimBlock_sources(32, 1, 1);
   unsigned int gridx_sources =
@@ -432,44 +745,57 @@ extern "C"
   unsigned int gridy_receivers = ceil_div(n_shots_h, dimBlock_receivers.y);
   unsigned int gridz_receivers = 1;
   dim3 dimGrid_receivers(gridx_receivers, gridy_receivers, gridz_receivers);
+#if DW_NDIM == 3
+  dim3 dimBlock_combine(32, 8, 1);
+  unsigned int gridx_combine = ceil_div(nx_h - 2 * FD_PAD, dimBlock_combine.x);
+  unsigned int gridy_combine = ceil_div(ny_h - 2 * FD_PAD, dimBlock_combine.y);
+  unsigned int gridz_combine = ceil_div(nz_h - 2 * FD_PAD, dimBlock_combine.z);
+#elif DW_NDIM == 2
   dim3 dimBlock_combine(32, 32, 1);
   unsigned int gridx_combine = ceil_div(nx_h - 2 * FD_PAD, dimBlock_combine.x);
   unsigned int gridy_combine = ceil_div(ny_h - 2 * FD_PAD, dimBlock_combine.y);
   unsigned int gridz_combine = 1;
+#else /* DW_NDIM == 1 */
+  dim3 dimBlock_combine(256, 1, 1);
+  unsigned int gridx_combine = ceil_div(nx_h - 2 * FD_PAD, dimBlock_combine.x);
+  unsigned int gridy_combine = 1;
+  unsigned int gridz_combine = 1;
+#endif
   dim3 dimGrid_combine(gridx_combine, gridy_combine, gridz_combine);
+#if DW_NDIM == 3
+  int64_t const shot_numel_h = nz_h * ny_h * nx_h;
+#elif DW_NDIM == 2
+  int64_t const shot_numel_h = ny_h * nx_h;
+#else
+  int64_t const shot_numel_h = nx_h;
+#endif
   int64_t t;
   gpuErrchk(cudaSetDevice(device));
-  set_config(0, rdy_h, rdx_h, rdy2_h, rdx2_h, n_shots_h, ny_h, nx_h,
-             n_receivers_per_shot_h, n_sources_per_shot_h, step_ratio_h,
-             pml_y0_h, pml_y1_h, pml_x0_h, pml_x1_h, v_batched_h);
+  set_config(
+#if DW_NDIM >= 3
+      rdz_h, rdz2_h, nz_h, pml_z0_h, pml_z1_h,
+#endif
+#if DW_NDIM >= 2
+      rdy_h, rdy2_h, ny_h, pml_y0_h, pml_y1_h,
+#endif
+      rdx_h, rdx2_h, nx_h, shot_numel_h, pml_x0_h, pml_x1_h, 0, n_shots_h,
+      n_receivers_per_shot_h, n_sources_per_shot_h, step_ratio_h, v_batched_h);
   for (t = start_t - 1; t >= start_t - nt; --t) {
-    if ((start_t - 1 - t) & 1) {
-      if (n_sources_per_shot_h > 0) {
-        record_receivers<<<dimGrid_sources, dimBlock_sources>>>(
-            grad_f + t * n_shots_h * n_sources_per_shot_h, wfp, sources_i);
-        CHECK_KERNEL_ERROR
-      }
-      backward_kernel<<<dimGrid, dimBlock>>>(
-          v2dt2, wfp, wfc, psiyn, psixn, psiy, psix, zetayn, zetaxn, zetay,
-          zetax, dwdv + (t / step_ratio_h) * n_shots_h * ny_h * nx_h,
-          grad_v_shot, ay, ax, by, bx, dbydy, dbxdx,
-          v_requires_grad && ((t % step_ratio_h) == 0));
-      CHECK_KERNEL_ERROR
-      if (n_receivers_per_shot_h > 0) {
-        add_sources<<<dimGrid_receivers, dimBlock_receivers>>>(
-            wfc, grad_r + t * n_shots_h * n_receivers_per_shot_h, receivers_i);
-        CHECK_KERNEL_ERROR
-      }
-    } else {
       if (n_sources_per_shot_h > 0) {
         record_receivers<<<dimGrid_sources, dimBlock_sources>>>(
             grad_f + t * n_shots_h * n_sources_per_shot_h, wfc, sources_i);
         CHECK_KERNEL_ERROR
       }
       backward_kernel<<<dimGrid, dimBlock>>>(
-          v2dt2, wfc, wfp, psiy, psix, psiyn, psixn, zetay, zetax, zetayn,
-          zetaxn, dwdv + (t / step_ratio_h) * n_shots_h * ny_h * nx_h,
-          grad_v_shot, ay, ax, by, bx, dbydy, dbxdx,
+          v2dt2, wfc, wfp, dwdv + (t / step_ratio_h) * n_shots_h * shot_numel_h,
+          grad_v_shot,
+#if DW_NDIM >= 3
+          psiz, psizn, zetaz, zetazn, az, bz, dbzdz,
+#endif
+#if DW_NDIM >= 2
+          psiy, psiyn, zetay, zetayn, ay, by, dbydy,
+#endif
+          psix, psixn, zetax, zetaxn, ax, bx, dbxdx,
           v_requires_grad && ((t % step_ratio_h) == 0));
       CHECK_KERNEL_ERROR
       if (n_receivers_per_shot_h > 0) {
@@ -477,7 +803,17 @@ extern "C"
             wfp, grad_r + t * n_shots_h * n_receivers_per_shot_h, receivers_i);
         CHECK_KERNEL_ERROR
       }
-    }
+#if DW_NDIM >= 3
+      std::swap(psiz, psizn);
+      std::swap(zetaz, zetazn);
+#endif
+#if DW_NDIM >= 2
+      std::swap(psiy, psiyn);
+      std::swap(zetay, zetayn);
+#endif
+      std::swap(wfc, wfp);
+      std::swap(psix, psixn);
+      std::swap(zetax, zetaxn);
   }
   if (v_requires_grad && !v_batched_h && n_shots_h > 1) {
     combine_grad_v<<<dimGrid_combine, dimBlock_combine>>>(grad_v, grad_v_shot);

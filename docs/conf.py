@@ -12,7 +12,7 @@
 project = "Deepwave"
 project_copyright = "2025, Alan Richardson"
 author = "Alan Richardson"
-release = "v0.0.23"
+release = "v0.0.24"
 
 # -- General configuration ------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html
