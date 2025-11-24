@@ -53,6 +53,7 @@ def prepare_parameters(mu: torch.Tensor, buoyancy: torch.Tensor) -> List[torch.T
         )
         mu_zy = torch.nn.functional.pad(mu_zy, (0, 0, 0, 1, 0, 1))
         parameters.append(mu_zy)
+        del mu_zy
         mask = (
             (rfmax < mu[..., 1:, :, 1:].abs())
             .logical_and(rfmax < mu[..., :-1, :, :-1].abs())
@@ -68,6 +69,7 @@ def prepare_parameters(mu: torch.Tensor, buoyancy: torch.Tensor) -> List[torch.T
         )
         mu_zx = torch.nn.functional.pad(mu_zx, (0, 1, 0, 0, 0, 1))
         parameters.append(mu_zx)
+        del mu_zx
     if ndim >= 2:
         mask = (
             (rfmax < mu[..., 1:, 1:].abs())
@@ -84,6 +86,7 @@ def prepare_parameters(mu: torch.Tensor, buoyancy: torch.Tensor) -> List[torch.T
         )
         mu_yx = torch.nn.functional.pad(mu_yx, (0, 1, 0, 1))
         parameters.append(mu_yx)
+        del mu_yx
 
     # Buoyancy (inverse of arithmetic mean of density)
     # Arithmetic mean: rho[i+1/2] = (rho[i] + rho[i+1])/2
@@ -99,6 +102,7 @@ def prepare_parameters(mu: torch.Tensor, buoyancy: torch.Tensor) -> List[torch.T
         buoyancy_z = torch.zeros_like(buoyancy)
         buoyancy_z[mask] = 1 / rho_z[mask]
         parameters.append(buoyancy_z)
+        del rho_z, buoyancy_z
     if ndim >= 2:
         rho_y = torch.nn.functional.pad(
             (rho[..., :-1, :] + rho[..., 1:, :]) / 2, (0, 0, 0, 1)
@@ -107,6 +111,7 @@ def prepare_parameters(mu: torch.Tensor, buoyancy: torch.Tensor) -> List[torch.T
         buoyancy_y = torch.zeros_like(buoyancy)
         buoyancy_y[mask] = 1 / rho_y[mask]
         parameters.append(buoyancy_y)
+        del rho_y, buoyancy_y
     rho_x = torch.nn.functional.pad((rho[..., :-1] + rho[..., 1:]) / 2, (0, 1))
     mask = rfmax < rho_x.abs()
     buoyancy_x = torch.zeros_like(buoyancy)
@@ -739,6 +744,7 @@ def elastic(
         min_nonzero_model_vel = float(min_nonzero_vp)
     else:
         min_nonzero_model_vel = float(min(min_nonzero_vp, min_nonzero_vs))
+    del vp, vs, vp_nonzero, vs_nonzero
     fd_pad = [accuracy // 2, accuracy // 2 - 1] * ndim
 
     (
@@ -787,6 +793,52 @@ def elastic(
         time_taper,
         ndim,
     )
+    del lamb, mu, buoyancy
+    if ndim >= 3:
+        del (
+            source_amplitudes_z,
+            source_locations_z,
+            receiver_locations_z,
+            vz_0,
+            sigmazz_0,
+            sigmayz_0,
+            sigmaxz_0,
+            m_vzz_0,
+            m_vzy_0,
+            m_vzx_0,
+            m_vyz_0,
+            m_vxz_0,
+            m_sigmazzz_0,
+            m_sigmayzy_0,
+            m_sigmaxzx_0,
+            m_sigmayzz_0,
+            m_sigmaxzz_0,
+        )
+    if ndim >= 2:
+        del (
+            source_amplitudes_y,
+            source_locations_y,
+            receiver_locations_y,
+            vy_0,
+            sigmayy_0,
+            sigmaxy_0,
+            m_vyy_0,
+            m_vyx_0,
+            m_vxy_0,
+            m_sigmayyy_0,
+            m_sigmaxyy_0,
+            m_sigmaxyx_0,
+        )
+    del (
+        source_amplitudes_x,
+        source_locations_x,
+        receiver_locations_x,
+        vx_0,
+        sigmaxx_0,
+        m_vxx_0,
+        m_sigmaxxx_0,
+    )
+    del source_amplitudes, source_locations, receiver_locations
 
     models.extend(prepare_parameters(models[1], models[2]))
     del models[2]  # Remove buoyancy as it is no longer needed
@@ -866,32 +918,31 @@ def elastic(
         raise ValueError("callback_frequency must be positive.")
 
     # Run the forward propagator
-    outputs = elastic_func(
-        python_backend,
-        pml_profiles,
-        grid_spacing,
-        dt,
-        nt,
-        step_ratio * model_gradient_sampling_interval,
-        accuracy,
-        pml_width,
-        n_shots,
-        forward_callback,
-        backward_callback,
-        callback_frequency,
-        *models,
-        *source_amplitudes_out,
-        *sources_i,
-        *receivers_i,
-        *wavefields,
+    outputs = list(
+        elastic_func(
+            python_backend,
+            pml_profiles,
+            grid_spacing,
+            dt,
+            nt,
+            step_ratio * model_gradient_sampling_interval,
+            accuracy,
+            pml_width,
+            n_shots,
+            forward_callback,
+            backward_callback,
+            callback_frequency,
+            *models,
+            *source_amplitudes_out,
+            *sources_i,
+            *receivers_i,
+            *wavefields,
+        )
     )
 
-    receiver_amplitudes = list(outputs[-1 - ndim :])
-    wavefields = list(outputs[: -1 - ndim])
-
-    for i, amplitudes in enumerate(receiver_amplitudes):
-        receiver_amplitudes[i] = deepwave.common.downsample_and_movedim(
-            amplitudes,
+    for i in range(len(outputs) - 1 - ndim, len(outputs)):
+        outputs[i] = deepwave.common.downsample_and_movedim(
+            outputs[i],
             step_ratio,
             freq_taper_frac,
             time_pad_frac,
@@ -899,13 +950,13 @@ def elastic(
         )
 
     # Pressure is calculated as the negative arithmetic mean of normal stresses
-    if receiver_amplitudes[-1] is not None:
-        receiver_amplitudes[-1] = -receiver_amplitudes[-1] / ndim
+    if outputs[-1] is not None:
+        outputs[-1] = -outputs[-1] / ndim
 
     # Reorder the wavefields to that expected by users
     if ndim == 3:
-        wavefields = [
-            wavefields[i]
+        outputs[: -1 - ndim] = [
+            outputs[i]
             for i in [
                 0,
                 14,
@@ -937,9 +988,11 @@ def elastic(
             ]
         ]
     elif ndim == 2:
-        wavefields = [wavefields[i] for i in [0, 9, 1, 2, 10, 3, 4, 5, 11, 6, 7, 8, 12]]
+        outputs[: -1 - ndim] = [
+            outputs[i] for i in [0, 9, 1, 2, 10, 3, 4, 5, 11, 6, 7, 8, 12]
+        ]
 
-    return (*wavefields, receiver_amplitudes[-1], *receiver_amplitudes[:-1])
+    return (*outputs[: -1 - ndim], outputs[-1], *outputs[-1 - ndim : -1])
 
 
 def zero_edge(tensor: torch.Tensor, fd_pad: int, dim: int) -> torch.Tensor:
@@ -955,7 +1008,6 @@ def zero_edge(tensor: torch.Tensor, fd_pad: int, dim: int) -> torch.Tensor:
         fd_pad: Half the length of the spatial finite difference stencil.
         dim: The dimension in which to zero.
     """
-    tensor = tensor.clone()
     tensor[(slice(None),) + (slice(None),) * dim + (-fd_pad,)].fill_(0)
     return tensor
 
@@ -1138,6 +1190,7 @@ class ElasticForwardFunc(torch.autograd.Function):
                 raise AssertionError("len(models) != 3")
             if len(args_list) != 0:
                 raise AssertionError("len(args_list) != 0")
+        del args
         models = [model.contiguous() for model in models]
         source_amplitudes = [
             amplitudes.contiguous() for amplitudes in source_amplitudes
@@ -1344,16 +1397,17 @@ class ElasticForwardFunc(torch.autograd.Function):
             for step in range(0, nt // step_ratio, callback_frequency):
                 if forward_callback is not None:
                     callback_wavefields = dict(zip(wavefield_names, wavefields))
-                    state = deepwave.common.CallbackState(
-                        dt,
-                        step,
-                        callback_wavefields,
-                        callback_models,
-                        {},
-                        fd_pad_list,
-                        pml_width,
+                    forward_callback(
+                        deepwave.common.CallbackState(
+                            dt,
+                            step,
+                            callback_wavefields,
+                            callback_models,
+                            {},
+                            fd_pad_list,
+                            pml_width,
+                        )
                     )
-                    forward_callback(state)
                 step_nt = min(nt // step_ratio - step, callback_frequency)
                 forward(
                     *[model.data_ptr() for model in models],
@@ -1417,6 +1471,7 @@ class ElasticForwardFunc(torch.autograd.Function):
         ndim = len(grid_spacing)
         grad_r = list(args[-ndim - 1 :])
         grad_wavefields = list(args[: -ndim - 1])
+        del args
         if ndim == 3:
             models = list(ctx.saved_tensors[:8])
             sources_i = list(ctx.saved_tensors[8:12])
@@ -1695,16 +1750,17 @@ class ElasticForwardFunc(torch.autograd.Function):
                     callback_wavefields = dict(
                         zip(wavefield_names, grad_wavefields[:-1])
                     )
-                    state = deepwave.common.CallbackState(
-                        dt,
-                        step - 1,
-                        callback_wavefields,
-                        callback_models,
-                        callback_grad_models,
-                        fd_pad_list,
-                        pml_width,
+                    backward_callback(
+                        deepwave.common.CallbackState(
+                            dt,
+                            step - 1,
+                            callback_wavefields,
+                            callback_models,
+                            callback_grad_models,
+                            fd_pad_list,
+                            pml_width,
+                        )
                     )
-                    backward_callback(state)
 
         s = (
             slice(None),
@@ -1742,9 +1798,7 @@ def update_velocities(
     b = pml_profiles[1::4]
     ah = pml_profiles[2::4]
     bh = pml_profiles[3::4]
-
-    new_s_mem_vars_normal_list = list(s_mem_vars_normal)
-    new_s_mem_vars_shear_list = [list(row) for row in s_mem_vars_shear]
+    del pml_profiles
 
     # Calculate derivatives of normal stresses
     dsigmaxxdx = [
@@ -1760,10 +1814,10 @@ def update_velocities(
 
     # Update memory variables for siii
     for dim in range(ndim):
-        new_s_mem_vars_normal_list[dim] = (
+        s_mem_vars_normal[dim] = (
             ah[dim] * s_mem_vars_normal[dim] + bh[dim] * dsigmaxxdx[dim]
         )
-        dsigmaxxdx[dim] = dsigmaxxdx[dim] + new_s_mem_vars_normal_list[dim]
+        dsigmaxxdx[dim] = dsigmaxxdx[dim] + s_mem_vars_normal[dim]
 
     sigma_sum = list(dsigmaxxdx)
 
@@ -1779,7 +1833,7 @@ def update_velocities(
             )
             mem = s_mem_vars_shear[dim1][dim2]
             new_mem = a[dim2] * mem + b[dim2] * d_shear_d_dim2
-            new_s_mem_vars_shear_list[dim1][dim2] = new_mem
+            s_mem_vars_shear[dim1][dim2] = new_mem
             d_shear_d_dim2 += new_mem
             sigma_sum[dim1] += d_shear_d_dim2
 
@@ -1792,20 +1846,20 @@ def update_velocities(
             )
             mem = s_mem_vars_shear[dim2][dim1]
             new_mem = a[dim1] * mem + b[dim1] * d_shear_d_dim1
-            new_s_mem_vars_shear_list[dim2][dim1] = new_mem
+            s_mem_vars_shear[dim2][dim1] = new_mem
             d_shear_d_dim1 += new_mem
             sigma_sum[dim2] += d_shear_d_dim1
 
     buoyancy = models[-ndim:]
 
-    new_velocities_list = [
+    velocities = [
         velocities[dim] + buoyancy[dim] * dt * sigma_sum[dim] for dim in range(ndim)
     ]
 
     return (
-        new_velocities_list,
-        new_s_mem_vars_normal_list,
-        new_s_mem_vars_shear_list,
+        velocities,
+        s_mem_vars_normal,
+        s_mem_vars_shear,
     )
 
 
@@ -1858,16 +1912,12 @@ def update_stresses(
     b = pml_profiles[1::4]
     ah = pml_profiles[2::4]
     bh = pml_profiles[3::4]
-
-    new_v_mem_vars_normal_list = list(v_mem_vars_normal)
-    new_v_mem_vars_shear_list = [list(row) for row in v_mem_vars_shear]
+    del pml_profiles
 
     # PML correct all derivatives
     for dim in range(ndim):
-        new_v_mem_vars_normal_list[dim] = (
-            a[dim] * v_mem_vars_normal[dim] + b[dim] * dvxdx[dim]
-        )
-        dvxdx[dim] = dvxdx[dim] + new_v_mem_vars_normal_list[dim]
+        v_mem_vars_normal[dim] = a[dim] * v_mem_vars_normal[dim] + b[dim] * dvxdx[dim]
+        dvxdx[dim] = dvxdx[dim] + v_mem_vars_normal[dim]
 
     for dim1 in range(ndim):
         for dim2 in range(ndim):
@@ -1875,7 +1925,7 @@ def update_stresses(
                 continue
             mem = v_mem_vars_shear[dim1][dim2]
             new_mem = ah[dim2] * mem + bh[dim2] * dvxdy[dim1][dim2]
-            new_v_mem_vars_shear_list[dim1][dim2] = new_mem
+            v_mem_vars_shear[dim1][dim2] = new_mem
             dvxdy[dim1][dim2] = dvxdy[dim1][dim2] + new_mem
 
     lamb = models[0]
@@ -1883,13 +1933,12 @@ def update_stresses(
 
     # Update normal stresses
     v_strain_sum = torch.sum(torch.stack(dvxdx), dim=0)
-    new_normal_stresses_list = [
+    normal_stresses = [
         normal_stresses[dim] + dt * (lamb * v_strain_sum + 2 * mu * dvxdx[dim])
         for dim in range(ndim)
     ]
 
     # Update shear stresses
-    new_shear_stresses_list = [list(row) for row in shear_stresses]
     if ndim > 1:
         if ndim == 3:
             mu_zy, mu_zx, mu_yx = models[2], models[3], models[4]
@@ -1904,20 +1953,18 @@ def update_stresses(
 
         for dim1 in range(ndim):
             for dim2 in range(dim1 + 1, ndim):
-                new_shear_stresses_list[dim1][dim2] = shear_stresses[dim1][
+                shear_stresses[dim1][dim2] = shear_stresses[dim1][
                     dim2
                 ] + dt * shear_models[dim1][dim2] * (
                     dvxdy[dim1][dim2] + dvxdy[dim2][dim1]
                 )
-                new_shear_stresses_list[dim2][dim1] = new_shear_stresses_list[dim1][
-                    dim2
-                ]
+                shear_stresses[dim2][dim1] = shear_stresses[dim1][dim2]
 
     return (
-        new_normal_stresses_list,
-        new_shear_stresses_list,
-        new_v_mem_vars_normal_list,
-        new_v_mem_vars_shear_list,
+        normal_stresses,
+        shear_stresses,
+        v_mem_vars_normal,
+        v_mem_vars_shear,
     )
 
 
@@ -1940,6 +1987,7 @@ def elastic_python(
         raise RuntimeError("backward_callback is not supported in the Python backend.")
     ndim = len(grid_spacing)
     args_list = list(args)
+    del args
     if ndim == 3:
         wavefields_flat = args_list[-27:]
         del args_list[-27:]
@@ -2024,6 +2072,36 @@ def elastic_python(
             [m_s_xzz, m_s_xyy, torch.empty(0)],
         ]
 
+        del (
+            v_z,
+            v_y,
+            v_x,
+            s_zz,
+            s_yy,
+            s_xx,
+            s_yz,
+            s_xz,
+            s_xy,
+            m_v_zz,
+            m_v_yy,
+            m_v_xx,
+            m_v_zy,
+            m_v_zx,
+            m_v_yz,
+            m_v_xz,
+            m_v_yx,
+            m_v_xy,
+            m_s_zzz,
+            m_s_yyy,
+            m_s_xxx,
+            m_s_yzy,
+            m_s_xzx,
+            m_s_yzz,
+            m_s_xzz,
+            m_s_xyy,
+            m_s_xyx,
+        )
+
         v_names = ["vz_0", "vy_0", "vx_0"]
         normal_s_names = ["sigmazz_0", "sigmayy_0", "sigmaxx_0"]
         shear_s_names = [
@@ -2071,6 +2149,22 @@ def elastic_python(
         # v_y. The corresponding variable is m_s_xyx.
         s_mem_vars_shear = [[torch.empty(0), m_s_xyx], [m_s_xyy, torch.empty(0)]]
 
+        del (
+            v_y,
+            v_x,
+            s_yy,
+            s_xx,
+            s_xy,
+            m_v_yy,
+            m_v_xx,
+            m_v_yx,
+            m_v_xy,
+            m_s_yyy,
+            m_s_xxx,
+            m_s_xyy,
+            m_s_xyx,
+        )
+
         v_names = ["vy_0", "vx_0"]
         normal_s_names = ["sigmayy_0", "sigmaxx_0"]
         shear_s_names = [
@@ -2114,6 +2208,7 @@ def elastic_python(
         s_mem_vars_shear = [
             [],
         ]
+        del v_x, s_xx, m_v_xx, m_s_xxx
 
         v_names = [
             "vx_0",
@@ -2136,6 +2231,7 @@ def elastic_python(
         s_mem_shear_names = [
             [],
         ]
+    del wavefields_flat
 
     if ndim == 3:
         receivers_i = args_list[-4:]
@@ -2164,6 +2260,7 @@ def elastic_python(
         del args_list[-2:]
         models = args_list[-3:]
         del args_list[-3:]
+    del args_list
 
     n_receivers_per_shot = [locs.numel() // n_shots for locs in receivers_i]
 
@@ -2188,6 +2285,7 @@ def elastic_python(
             source_amplitudes_masked[-1][:, source_mask] = source_amplitudes[i][
                 :, source_mask
             ]
+    del sources_i, source_amplitudes
 
     receivers_mask = []
     receivers_i_masked = []
@@ -2196,6 +2294,7 @@ def elastic_python(
         receivers_i_masked.append(torch.zeros_like(loc))
         if loc.numel() > 0:
             receivers_i_masked[-1][receivers_mask[-1]] = loc[receivers_mask[-1]]
+    del receivers_i
 
     model_names = []
     if ndim >= 3:
@@ -2235,16 +2334,17 @@ def elastic_python(
                 callback_wavefields.update(
                     dict(zip(s_mem_shear_names[i], s_mem_vars_shear[i]))
                 )
-            state = deepwave.common.CallbackState(
-                dt,
-                step,
-                callback_wavefields,
-                callback_models,
-                {},
-                fd_pad_list,
-                pml_width,
+            forward_callback(
+                deepwave.common.CallbackState(
+                    dt,
+                    step,
+                    callback_wavefields,
+                    callback_models,
+                    {},
+                    fd_pad_list,
+                    pml_width,
+                )
             )
-            forward_callback(state)
         for inner_step in range(step_ratio):
             t = step * step_ratio + inner_step
 
@@ -2293,6 +2393,7 @@ def elastic_python(
                         .reshape(size_with_batch)
                     )
             velocities = list(new_velocities_list)
+            del new_velocities_list
 
             (
                 normal_stresses,
@@ -2327,6 +2428,7 @@ def elastic_python(
                         .reshape(size_with_batch)
                     )
                 normal_stresses = list(new_normal_stresses)
+                del new_normal_stresses
 
     receiver_amplitudes_masked = []
     for i, amp in enumerate(receiver_amplitudes):

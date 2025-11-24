@@ -947,17 +947,16 @@ def cosine_taper_end(signal: torch.Tensor, n_taper: int) -> torch.Tensor:
         raise TypeError("n_taper must be an int.")
     if n_taper < 0:
         raise ValueError("n_taper must be non-negative.")
-    taper = torch.ones(signal.shape[-1], dtype=signal.dtype, device=signal.device)
     n_taper = min(n_taper, signal.shape[-1])
-    if n_taper == 0:
-        return signal * taper
-    taper[len(taper) - n_taper :] = (
-        torch.cos(
-            torch.arange(1, n_taper + 1, device=signal.device) / n_taper * math.pi,
-        )
-        + 1
-    ).to(signal.dtype) / 2
-    return signal * taper
+    if n_taper > 0:
+        taper_values = (
+            torch.cos(
+                torch.arange(1, n_taper + 1, device=signal.device) / n_taper * math.pi
+            )
+            + 1
+        ).to(signal.dtype) / 2
+        signal[..., -n_taper:] *= taper_values
+    return signal
 
 
 def zero_last_element_of_final_dimension(signal: torch.Tensor) -> torch.Tensor:
@@ -976,11 +975,9 @@ def zero_last_element_of_final_dimension(signal: torch.Tensor) -> torch.Tensor:
     """
     if not isinstance(signal, torch.Tensor):
         raise TypeError("signal must be a torch.Tensor.")
-    if signal.numel() == 0:
-        return signal
-    zeroer = torch.ones(signal.shape[-1], dtype=signal.dtype, device=signal.device)
-    zeroer[-1] = 0
-    return signal * zeroer
+    if signal.numel() > 0:
+        signal[..., -1] = 0
+    return signal
 
 
 def _validate_sample_args(
@@ -2054,9 +2051,7 @@ def prepare_wavefields(
                 )
             prepared_wavefields.append(wavefield)
         else:
-            prepared_wavefields.append(
-                torch.zeros(n_batch, *spatial_shape, device=device, dtype=dtype),
-            )
+            prepared_wavefields.append(torch.empty(0, device=device, dtype=dtype))
     return prepared_wavefields
 
 
@@ -2347,7 +2342,6 @@ def zero_interior(
     """
     shape = tensor.shape[1:]
     ndim = len(shape)
-    tensor = tensor.clone()
     if isinstance(fd_pad, int):
         fd_pad = [fd_pad] * 2 * ndim
     tensor[

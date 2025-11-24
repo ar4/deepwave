@@ -379,6 +379,7 @@ def scalar_born(
         min_nonzero_model_vel = v_nonzero.abs().min().item()
     else:
         min_nonzero_model_vel = 0.0
+    del v_nonzero
     max_model_vel = v.abs().max().item()
     fd_pad = [accuracy // 2] * 2 * ndim
     (
@@ -426,6 +427,14 @@ def scalar_born(
         time_pad_frac,
         time_taper,
         ndim,
+    )
+    del (
+        v,
+        scatter,
+        source_amplitudes,
+        source_locations,
+        bg_receiver_locations,
+        receiver_locations,
     )
 
     model_shape = models[0].shape[-ndim:]
@@ -485,45 +494,44 @@ def scalar_born(
     if callback_frequency <= 0:
         raise ValueError("callback_frequency must be positive.")
 
-    outputs = scalar_born_func(
-        python_backend,
-        *models,
-        *source_amplitudes_out,
-        pml_profiles,
-        *sources_i,
-        *receivers_i,
-        grid_spacing,
-        dt,
-        nt,
-        step_ratio * model_gradient_sampling_interval,
-        accuracy,
-        pml_width,
-        n_shots,
-        forward_callback,
-        backward_callback,
-        callback_frequency,
-        *wavefields,
+    outputs = list(
+        scalar_born_func(
+            python_backend,
+            *models,
+            *source_amplitudes_out,
+            pml_profiles,
+            *sources_i,
+            *receivers_i,
+            grid_spacing,
+            dt,
+            nt,
+            step_ratio * model_gradient_sampling_interval,
+            accuracy,
+            pml_width,
+            n_shots,
+            forward_callback,
+            backward_callback,
+            callback_frequency,
+            *wavefields,
+        )
     )
 
-    receiver_amplitudes = list(outputs[-2:])
-    wavefields = list(outputs[:-2])
-
-    receiver_amplitudes[0] = deepwave.common.downsample_and_movedim(
-        receiver_amplitudes[0],
+    outputs[-2] = deepwave.common.downsample_and_movedim(
+        outputs[-2],
         step_ratio,
         freq_taper_frac,
         time_pad_frac,
         time_taper,
     )
-    receiver_amplitudes[1] = deepwave.common.downsample_and_movedim(
-        receiver_amplitudes[1],
+    outputs[-1] = deepwave.common.downsample_and_movedim(
+        outputs[-1],
         step_ratio,
         freq_taper_frac,
         time_pad_frac,
         time_taper,
     )
 
-    return tuple(wavefields + receiver_amplitudes)
+    return tuple(outputs)
 
 
 class ScalarBornForwardFunc(torch.autograd.Function):
@@ -611,11 +619,19 @@ class ScalarBornForwardFunc(torch.autograd.Function):
 
         wfc, wfp, *pml_wavefields = wavefields[: 2 + 2 * ndim]
         wfcsc, wfpsc, *pml_wavefields_sc = wavefields[2 + 2 * ndim :]
+        bg_wavefield_requires_grad = any(
+            wavefield.requires_grad for wavefield in wavefields[: 2 + 2 * ndim]
+        )
+        wavefield_requires_grad = any(
+            wavefield.requires_grad for wavefield in wavefields
+        )
+        del wavefields
         # The PML wavefields are ordered [psi, zeta] for each dimension
         psi = list(pml_wavefields[:ndim])
         zeta = list(pml_wavefields[ndim:])
         psisc = list(pml_wavefields_sc[:ndim])
         zetasc = list(pml_wavefields_sc[ndim:])
+        del pml_wavefields, pml_wavefields_sc
 
         for i in range(ndim):
             psi[i] = deepwave.common.zero_interior(psi[i], fd_pad, pml_width, i)
@@ -665,7 +681,7 @@ class ScalarBornForwardFunc(torch.autograd.Function):
             or scatter.requires_grad
             or source_amplitudes.requires_grad
             or source_amplitudessc.requires_grad
-            or any(wavefield.requires_grad for wavefield in wavefields)
+            or wavefield_requires_grad
         ):
             ctx.save_for_backward(
                 v,
@@ -691,9 +707,7 @@ class ScalarBornForwardFunc(torch.autograd.Function):
             ctx.non_sc = (
                 v.requires_grad
                 or source_amplitudes.requires_grad
-                or any(
-                    wavefield.requires_grad for wavefield in wavefields[: 2 + 2 * ndim]
-                )
+                or bg_wavefield_requires_grad
             )
 
         if v.is_cuda:
@@ -738,16 +752,17 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                         callback_wavefields[f"zeta{dim_names[-ndim + i]}_sc_m1"] = (
                             zetasc[i]
                         )
-                    state = deepwave.common.CallbackState(
-                        dt,
-                        step,
-                        callback_wavefields,
-                        {"v": v, "scatter": scatter},
-                        {},
-                        [fd_pad] * 2 * ndim,
-                        pml_width,
+                    forward_callback(
+                        deepwave.common.CallbackState(
+                            dt,
+                            step,
+                            callback_wavefields,
+                            {"v": v, "scatter": scatter},
+                            {},
+                            [fd_pad] * 2 * ndim,
+                            pml_width,
+                        )
                     )
-                    forward_callback(state)
                 step_nt = min(nt // step_ratio - step, callback_frequency)
                 forward(
                     v.data_ptr(),
@@ -839,6 +854,7 @@ class ScalarBornForwardFunc(torch.autograd.Function):
         grad_r = args[-2]
         grad_rsc = args[-1]
         grad_wavefields = list(args[:-2])
+        del args
         (
             v,
             scatter,
@@ -882,6 +898,31 @@ class ScalarBornForwardFunc(torch.autograd.Function):
         fd_pad = accuracy // 2
 
         size_with_batch = (n_shots, *model_shape)
+        grad_wavefields[2 + 2 * ndim :] = [
+            deepwave.common.create_or_pad(
+                wavefield,
+                fd_pad,
+                v.device,
+                v.dtype,
+                size_with_batch,
+            )
+            for wavefield in grad_wavefields[2 + 2 * ndim :]
+        ]
+        grad_wfcsc, grad_wfpsc, *grad_pml_wavefieldssc = grad_wavefields[2 + 2 * ndim :]
+        del grad_wavefields[2 + 2 * ndim :]
+        grad_psisc = list(grad_pml_wavefieldssc[:ndim])
+        grad_zetasc = list(grad_pml_wavefieldssc[ndim:])
+        del grad_pml_wavefieldssc
+        for i in range(ndim):
+            grad_psisc[i] = deepwave.common.zero_interior(
+                grad_psisc[i], fd_pad, pml_width, i
+            )
+            grad_zetasc[i] = deepwave.common.zero_interior(
+                grad_zetasc[i], fd_pad, pml_width, i
+            )
+        grad_psinsc = [torch.zeros_like(gwf) for gwf in grad_psisc]
+        grad_zetansc = [torch.zeros_like(gwf) for gwf in grad_zetasc]
+
         if non_sc:
             grad_wavefields[: 2 + 2 * ndim] = [
                 deepwave.common.create_or_pad(
@@ -894,8 +935,10 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                 for wavefield in grad_wavefields[: 2 + 2 * ndim]
             ]
             grad_wfc, grad_wfp, *grad_pml_wavefields = grad_wavefields[: 2 + 2 * ndim]
+            del grad_wavefields[: 2 + 2 * ndim]
             grad_psi = list(grad_pml_wavefields[:ndim])
             grad_zeta = list(grad_pml_wavefields[ndim:])
+            del grad_pml_wavefields
             for i in range(ndim):
                 grad_psi[i] = deepwave.common.zero_interior(
                     grad_psi[i], fd_pad, pml_width, i
@@ -905,28 +948,9 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                 )
             grad_psin = [torch.zeros_like(gwf) for gwf in grad_psi]
             grad_zetan = [torch.zeros_like(gwf) for gwf in grad_zeta]
-        grad_wavefields[2 + 2 * ndim :] = [
-            deepwave.common.create_or_pad(
-                wavefield,
-                fd_pad,
-                v.device,
-                v.dtype,
-                size_with_batch,
-            )
-            for wavefield in grad_wavefields[2 + 2 * ndim :]
-        ]
-        grad_wfcsc, grad_wfpsc, *grad_pml_wavefieldssc = grad_wavefields[2 + 2 * ndim :]
-        grad_psisc = list(grad_pml_wavefieldssc[:ndim])
-        grad_zetasc = list(grad_pml_wavefieldssc[ndim:])
-        for i in range(ndim):
-            grad_psisc[i] = deepwave.common.zero_interior(
-                grad_psisc[i], fd_pad, pml_width, i
-            )
-            grad_zetasc[i] = deepwave.common.zero_interior(
-                grad_zetasc[i], fd_pad, pml_width, i
-            )
-        grad_psinsc = [torch.zeros_like(gwf) for gwf in grad_psisc]
-        grad_zetansc = [torch.zeros_like(gwf) for gwf in grad_zetasc]
+
+        del grad_wavefields
+
         grad_v = torch.empty(0, device=device, dtype=dtype)
         grad_v_tmp = torch.empty(0, device=device, dtype=dtype)
         grad_v_tmp_ptr = grad_v.data_ptr()
@@ -1129,16 +1153,17 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                             callback_wavefields[f"zeta{dim_names[-ndim + i]}_sc_m1"] = (
                                 grad_zetasc[i]
                             )
-                        state = deepwave.common.CallbackState(
-                            dt,
-                            step - 1,
-                            callback_wavefields,
-                            {"v": v, "scatter": scatter},
-                            {"v": grad_v, "scatter": grad_scatter},
-                            [fd_pad] * 2 * ndim,
-                            pml_width,
+                        backward_callback(
+                            deepwave.common.CallbackState(
+                                dt,
+                                step - 1,
+                                callback_wavefields,
+                                {"v": v, "scatter": scatter},
+                                {"v": grad_v, "scatter": grad_scatter},
+                                [fd_pad] * 2 * ndim,
+                                pml_width,
+                            )
                         )
-                        backward_callback(state)
             else:
                 for step in range(nt // step_ratio, 0, -callback_frequency):
                     step_nt = min(step, callback_frequency)
@@ -1203,16 +1228,17 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                             callback_wavefields[f"zeta{dim_names[-ndim + i]}_sc_m1"] = (
                                 grad_zetasc[i]
                             )
-                        state = deepwave.common.CallbackState(
-                            dt,
-                            step - 1,
-                            callback_wavefields,
-                            {"v": v, "scatter": scatter},
-                            {"scatter": grad_scatter},
-                            [fd_pad] * 2 * ndim,
-                            pml_width,
+                        backward_callback(
+                            deepwave.common.CallbackState(
+                                dt,
+                                step - 1,
+                                callback_wavefields,
+                                {"v": v, "scatter": scatter},
+                                {"scatter": grad_scatter},
+                                [fd_pad] * 2 * ndim,
+                                pml_width,
+                            )
                         )
-                        backward_callback(state)
 
         s = (
             slice(None),
@@ -1275,9 +1301,11 @@ def _forward_step(
     wfcsc, wfpsc = wavefields[2 + 2 * ndim : 4 + 2 * ndim]
     psisc = list(wavefields[4 + 2 * ndim : 4 + 3 * ndim])
     zetasc = list(wavefields[4 + 3 * ndim : 4 + 4 * ndim])
+    del wavefields
     a = pml_profiles[::3]
     b = pml_profiles[1::3]
     dbdx = pml_profiles[2::3]
+    del pml_profiles
     dudx = [
         deepwave.regular_grid.diff1(wfc, dim, accuracy, 1 / grid_spacing[dim], ndim)
         for dim in range(ndim)
@@ -1395,6 +1423,8 @@ def scalar_born_python(
     del unused_tensor  # Unused.
     fd_pad = accuracy // 2
     size_with_batch = (n_shots, *v.shape[1:])
+    wavefields = list(wavefields_tuple)
+    del wavefields_tuple
     wavefields = [
         deepwave.common.create_or_pad(
             wavefield,
@@ -1403,7 +1433,7 @@ def scalar_born_python(
             v.dtype,
             size_with_batch,
         )
-        for wavefield in wavefields_tuple
+        for wavefield in wavefields
     ]
 
     device = v.device
@@ -1429,18 +1459,22 @@ def scalar_born_python(
     source_amplitudes_masked = torch.zeros_like(source_amplitudes)
     if source_amplitudes.numel() > 0:
         source_amplitudes_masked[:, source_mask] = source_amplitudes[:, source_mask]
+        del source_amplitudes
     source_amplitudessc_masked = torch.zeros_like(source_amplitudessc)
     if source_amplitudessc.numel() > 0:
         source_amplitudessc_masked[:, source_mask] = source_amplitudessc[:, source_mask]
+        del source_amplitudessc
 
     receiver_mask = receivers_i != deepwave.common.IGNORE_LOCATION
     receivers_i_masked = torch.zeros_like(receivers_i)
     if receivers_i.numel() > 0:
         receivers_i_masked[receiver_mask] = receivers_i[receiver_mask]
+        del receivers_i
     receiversc_mask = receiverssc_i != deepwave.common.IGNORE_LOCATION
     receiverssc_i_masked = torch.zeros_like(receiverssc_i)
     if receiverssc_i.numel() > 0:
         receiverssc_i_masked[receiversc_mask] = receiverssc_i[receiversc_mask]
+        del receiverssc_i
 
     dim_names = ["z", "y", "x"]
 
@@ -1464,16 +1498,17 @@ def scalar_born_python(
                     4 + 3 * ndim + i
                 ]
 
-            state = deepwave.common.CallbackState(
-                dt,
-                step,
-                callback_wavefields,
-                {"v": v, "scatter": scatter},
-                {},
-                [fd_pad] * 2 * ndim,
-                pml_width,
+            forward_callback(
+                deepwave.common.CallbackState(
+                    dt,
+                    step,
+                    callback_wavefields,
+                    {"v": v, "scatter": scatter},
+                    {},
+                    [fd_pad] * 2 * ndim,
+                    pml_width,
+                )
             )
-            forward_callback(state)
         for inner_step in range(step_ratio):
             t = step * step_ratio + inner_step
             if receiver_amplitudes.numel() > 0:
@@ -1508,11 +1543,13 @@ def scalar_born_python(
         receiver_amplitudes_masked[:, receiver_mask] = receiver_amplitudes[
             :, receiver_mask
         ]
+        del receiver_amplitudes
     receiver_amplitudessc_masked = torch.zeros_like(receiver_amplitudessc)
     if receiver_amplitudessc.numel() > 0:
         receiver_amplitudessc_masked[:, receiversc_mask] = receiver_amplitudessc[
             :, receiversc_mask
         ]
+        del receiver_amplitudessc
     s = (
         slice(None),
         *(slice(fd_pad, -fd_pad) for _ in range(ndim)),

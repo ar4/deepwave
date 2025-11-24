@@ -1382,6 +1382,28 @@ def test_gradcheck_batched_buoyancy_2d():
     )
 
 
+def test_gradcheck_zeros_in_properties():
+    """Test gradcheck when the property models contain zeros."""
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    dtype = torch.double
+    nx = (10, 10)
+    lamb = torch.ones(*nx, device=device, dtype=dtype) * DEFAULT_LAMB
+    mu = torch.ones(*nx, device=device, dtype=dtype) * DEFAULT_MU
+    buoyancy = torch.ones(*nx, device=device, dtype=dtype) * DEFAULT_BUOYANCY
+    lamb[:2] = 0
+    mu[:4] = 0
+    buoyancy[:6] = 0
+    lamb[-1] = 0
+    mu[-2] = 0
+    buoyancy[-3] = 0
+    run_gradcheck(
+        propagator=elasticprop,
+        lamb=lamb,
+        mu=mu,
+        buoyancy=buoyancy,
+    )
+
+
 def run_forward_lamb(
     orientation=0,
     prop_kwargs=None,
@@ -1593,6 +1615,9 @@ def run_gradcheck(
     only_receivers_out: bool = False,
     wavefield_size: Optional[List[int]] = None,
     nt_add=0,
+    lamb: Optional[torch.Tensor] = None,
+    mu: Optional[torch.Tensor] = None,
+    buoyancy: Optional[torch.Tensor] = None,
     atol=1e-5,
     rtol=1e-3,
 ):
@@ -1606,12 +1631,15 @@ def run_gradcheck(
         mmu = mmu.to(device)
     if isinstance(mbuoyancy, torch.Tensor):
         mbuoyancy = mbuoyancy.to(device)
-    lamb = torch.ones(*nx, device=device, dtype=dtype) * mlamb
-    lamb += torch.randn(*lamb.shape, dtype=dtype).to(device) * dlamb
-    mu = torch.ones(*nx, device=device, dtype=dtype) * mmu
-    mu += torch.randn(*mu.shape, dtype=dtype).to(device) * dmu
-    buoyancy = torch.ones(*nx, device=device, dtype=dtype) * mbuoyancy
-    buoyancy += torch.randn(*buoyancy.shape, dtype=dtype).to(device) * dbuoyancy
+    if lamb is None:
+        lamb = torch.ones(*nx, device=device, dtype=dtype) * mlamb
+        lamb += torch.randn(*lamb.shape, dtype=dtype).to(device) * dlamb
+    if mu is None:
+        mu = torch.ones(*nx, device=device, dtype=dtype) * mmu
+        mu += torch.randn(*mu.shape, dtype=dtype).to(device) * dmu
+    if buoyancy is None:
+        buoyancy = torch.ones(*nx, device=device, dtype=dtype) * mbuoyancy
+        buoyancy += torch.randn(*buoyancy.shape, dtype=dtype).to(device) * dbuoyancy
 
     nx = torch.tensor(nx, dtype=torch.long)
     dx = torch.tensor(dx, dtype=dtype)
