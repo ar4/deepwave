@@ -25,14 +25,13 @@ jobs:
         shell: bash
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v3.1.4
+        uses: pypa/cibuildwheel@v3.3.0
         env:
-          # For Linux, install CUDA in the container. Note that manylinux2014
+          # For Linux, install CUDA in the container. Note that manylinux_2_28
           # is specified in pyproject.toml
           CIBW_BEFORE_ALL_LINUX: >
-            yum-config-manager --add-repo https://developer.download.nvidia.com/compute/cuda/repos/rhel7/x86_64/cuda-rhel7.repo &&
-            yum install -y cuda-nvcc-11-8 cuda-cudart-devel-11-8
-          CIBW_ENVIRONMENT_LINUX: PATH="$PATH:/usr/local/cuda-11.8/bin" CUDA_PATH="/usr/local/cuda-11.8/bin" CUDA_HOME="/usr/local/cuda-11.8" CUDA_ROOT="/usr/local/cuda-11.8" LD_LIBRARY_PATH="$LD_LIBRARY_PATH:/usr/local/cuda-11.8/lib64" CUDACXX="/usr/local/cuda-11.8/bin/nvcc"
+            curl -sL https://developer.download.nvidia.com/compute/cuda/repos/rhel8/x86_64/cuda-rhel8.repo -o /etc/yum.repos.d/cuda-rhel8.repo && dnf install -y cuda-nvcc-12-4 cuda-cudart-devel-12-4 gcc-toolset-13
+          CIBW_ENVIRONMENT_LINUX: PATH="/opt/rh/gcc-toolset-13/root/usr/bin/:$PATH:/usr/local/cuda-12.4/bin" CUDA_PATH="/usr/local/cuda-12.4/bin" CUDA_HOME="/usr/local/cuda-12.4" CUDA_ROOT="/usr/local/cuda-12.4" LD_LIBRARY_PATH="/opt/rh/gcc-toolset-13/root/usr/lib64:$LD_LIBRARY_PATH:/usr/local/cuda-12.4/lib64" CUDACXX="/usr/local/cuda-12.4/bin/nvcc" CC=/opt/rh/gcc-toolset-13/root/usr/bin/gcc CXX=/opt/rh/gcc-toolset-13/root/usr/bin/g++ CMAKE_CUDA_HOST_COMPILER=/opt/rh/gcc-toolset-13/root/usr/bin/g++
           # For Windows, install CUDA
           CIBW_BEFORE_ALL_WINDOWS: >
             nuget install intelopenmp.devel.win -DirectDownload -NonInteractive &&
