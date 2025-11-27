@@ -23,12 +23,14 @@ def test_get_argtypes_scalar_forward_float():
         or t == ctypes.c_void_p
         or t == ctypes.c_int64
         or t == ctypes.c_bool
+        or t == ctypes.c_size_t
         for t in argtypes
     )
     assert argtypes.count(ctypes.c_float) == 5  # Based on scalar_forward_template
-    assert argtypes.count(ctypes.c_void_p) == 20
-    assert argtypes.count(ctypes.c_int64) == 13
-    assert argtypes.count(ctypes.c_bool) == 2
+    assert argtypes.count(ctypes.c_void_p) == 23
+    assert argtypes.count(ctypes.c_int64) == 14
+    assert argtypes.count(ctypes.c_bool) == 3
+    assert argtypes.count(ctypes.c_size_t) == 2
 
 
 def test_get_argtypes_elastic_backward_double():
@@ -43,12 +45,14 @@ def test_get_argtypes_elastic_backward_double():
         or t == ctypes.c_void_p
         or t == ctypes.c_int64
         or t == ctypes.c_bool
+        or t == ctypes.c_size_t
         for t in argtypes
     )
     assert argtypes.count(ctypes.c_double) == 3  # Based on elastic_backward_template
-    assert argtypes.count(ctypes.c_void_p) == 57
-    assert argtypes.count(ctypes.c_int64) == 17
-    assert argtypes.count(ctypes.c_bool) == 6
+    assert argtypes.count(ctypes.c_void_p) == 72
+    assert argtypes.count(ctypes.c_int64) == 18
+    assert argtypes.count(ctypes.c_bool) == 7
+    assert argtypes.count(ctypes.c_size_t) == 2
 
 
 # Tests for get_backend_function

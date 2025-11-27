@@ -36,6 +36,7 @@
 
 #include "common_gpu.h"
 #include "regular_grid.h"
+#include "storage_utils.h"
 
 #define CAT_I(name, ndim, accuracy, dtype, device) \
   scalar_iso_##ndim##d_##accuracy##_##dtype##_##name##_##device
@@ -136,6 +137,7 @@ __constant__ int64_t pml_x0;
 __constant__ int64_t pml_x1;
 __constant__ bool v_batched;
 
+__launch_bounds__(32)
 __global__ void add_sources(DW_DTYPE *__restrict const wf,
                             DW_DTYPE const *__restrict const f,
                             int64_t const *__restrict const sources_i) {
@@ -147,6 +149,7 @@ __global__ void add_sources(DW_DTYPE *__restrict const wf,
   }
 }
 
+__launch_bounds__(32)
 __global__ void record_receivers(DW_DTYPE *__restrict const r,
                                  DW_DTYPE const *__restrict const wf,
                                  int64_t const *__restrict receivers_i) {
@@ -159,6 +162,7 @@ __global__ void record_receivers(DW_DTYPE *__restrict const r,
 }
 
 #if DW_NDIM == 3
+__launch_bounds__(128)
 __global__ void combine_grad_v(DW_DTYPE *__restrict const grad_v,
                                DW_DTYPE const *__restrict const grad_v_shot) {
   int64_t x = blockIdx.x * blockDim.x + threadIdx.x + FD_PAD;
@@ -172,6 +176,7 @@ __global__ void combine_grad_v(DW_DTYPE *__restrict const grad_v,
   }
 }
 #elif DW_NDIM == 2
+__launch_bounds__(128)
 __global__ void combine_grad_v(DW_DTYPE *__restrict const grad_v,
                                DW_DTYPE const *__restrict const grad_v_shot) {
   int64_t x = blockIdx.x * blockDim.x + threadIdx.x + FD_PAD;
@@ -184,6 +189,7 @@ __global__ void combine_grad_v(DW_DTYPE *__restrict const grad_v,
   }
 }
 #else /* DW_NDIM == 1 */
+__launch_bounds__(128)
 __global__ void combine_grad_v(DW_DTYPE *__restrict const grad_v,
                                DW_DTYPE const *__restrict const grad_v_shot) {
   int64_t x = blockIdx.x * blockDim.x + threadIdx.x + FD_PAD;
@@ -196,13 +202,7 @@ __global__ void combine_grad_v(DW_DTYPE *__restrict const grad_v,
 }
 #endif
 
-#if DW_NDIM == 3
 __launch_bounds__(128)
-#elif DW_NDIM == 2
-__launch_bounds__(1024)
-#else
-__launch_bounds__(256)
-#endif
     __global__ void forward_kernel(
         DW_DTYPE const *__restrict const v,
         DW_DTYPE const *__restrict const wfc, DW_DTYPE *__restrict const wfp,
@@ -298,13 +298,7 @@ __launch_bounds__(256)
   }
 }
 
-#if DW_NDIM == 3
 __launch_bounds__(128)
-#elif DW_NDIM == 2
-__launch_bounds__(256)
-#else
-__launch_bounds__(256)
-#endif
     __global__ void backward_kernel(
         DW_DTYPE const *__restrict const v2dt2,
         DW_DTYPE const *__restrict const wfc, DW_DTYPE *__restrict const wfp,
@@ -488,7 +482,9 @@ extern "C"
 #if DW_NDIM >= 2
             DW_DTYPE *__restrict const zetay,
 #endif
-            DW_DTYPE *__restrict const zetax, DW_DTYPE *__restrict const dwdv,
+            DW_DTYPE *__restrict const zetax,
+            DW_DTYPE *__restrict const w_store_1,
+            void *__restrict const w_store_2, void *__restrict const w_store_3,
             DW_DTYPE *__restrict const r,
 #if DW_NDIM >= 3
             DW_DTYPE const *__restrict const az,
@@ -505,6 +501,7 @@ extern "C"
             DW_DTYPE const *__restrict const dbxdx,
             int64_t const *__restrict const sources_i,
             int64_t const *__restrict const receivers_i,
+            char const *__restrict const *__restrict const w_filenames_ptr,
 #if DW_NDIM >= 3
             DW_DTYPE const rdz_h,
 #endif
@@ -528,7 +525,9 @@ extern "C"
 #endif
             int64_t const nx_h, int64_t const n_sources_per_shot_h,
             int64_t const n_receivers_per_shot_h, int64_t const step_ratio_h,
-            bool const v_requires_grad, bool const v_batched_h,
+            int64_t const storage_mode, size_t const shot_bytes_uncomp,
+            size_t const shot_bytes_comp, bool const v_requires_grad,
+            bool const v_batched_h, bool const storage_compression,
             int64_t const start_t,
 #if DW_NDIM >= 3
             int64_t const pml_z0_h,
@@ -550,12 +549,12 @@ extern "C"
   unsigned int gridy = ceil_div(ny_h - 2 * FD_PAD, dimBlock.y);
   unsigned int gridz = ceil_div(nz_h - 2 * FD_PAD, dimBlock.z);
 #elif DW_NDIM == 2
-  dim3 dimBlock(32, 32, 1);
+  dim3 dimBlock(32, 4, 1);
   unsigned int gridx = ceil_div(nx_h - 2 * FD_PAD, dimBlock.x);
   unsigned int gridy = ceil_div(ny_h - 2 * FD_PAD, dimBlock.y);
   unsigned int gridz = ceil_div(n_shots_h, dimBlock.z);
 #else /* DW_NDIM == 1 */
-  dim3 dimBlock(256, 1, 1);
+  dim3 dimBlock(128, 1, 1);
   unsigned int gridx = ceil_div(nx_h - 2 * FD_PAD, dimBlock.x);
   unsigned int gridy = ceil_div(n_shots_h, dimBlock.y);
   unsigned int gridz = 1;
@@ -591,37 +590,71 @@ extern "C"
 #endif
       rdx_h, rdx2_h, nx_h, shot_numel_h, pml_x0_h, pml_x1_h, dt2_h, n_shots_h,
       n_sources_per_shot_h, n_receivers_per_shot_h, step_ratio_h, v_batched_h);
+
+  FILE *fp_w = NULL;
+  if (storage_mode == STORAGE_DISK) {
+    if (v_requires_grad) fp_w = fopen(w_filenames_ptr[0], "wb");
+  }
+
   for (t = start_t; t < start_t + nt; ++t) {
-      forward_kernel<<<dimGrid, dimBlock>>>(
-          v, wfc, wfp, dwdv + (t / step_ratio_h) * shot_numel_h * n_shots_h,
+    bool const store_step = ((t % step_ratio_h) == 0);
+    bool const store_w = store_step && v_requires_grad;
+    DW_DTYPE *__restrict const w_store_1_t =
+        w_store_1 + (storage_mode == STORAGE_DEVICE && !storage_compression
+                         ? (t / step_ratio_h) * shot_numel_h * n_shots_h
+                         : 0);
+    void *__restrict const w_store_2_t =
+        (uint8_t *)w_store_2 +
+        (storage_mode == STORAGE_DEVICE && storage_compression
+             ? (t / step_ratio_h) * shot_bytes_comp * n_shots_h
+             : 0);
+    void *__restrict const w_store_3_t =
+        (uint8_t *)w_store_3 +
+        (storage_mode == STORAGE_CPU
+             ? (t / step_ratio_h) *
+                   (storage_compression ? shot_bytes_comp : shot_bytes_uncomp) *
+                   n_shots_h
+             : 0);
+
+    forward_kernel<<<dimGrid, dimBlock>>>(v, wfc, wfp, w_store_1_t,
 #if DW_NDIM >= 3
-          psiz, psizn, zetaz, az, bz, dbzdz,
+                                          psiz, psizn, zetaz, az, bz, dbzdz,
 #endif
 #if DW_NDIM >= 2
-          psiy, psiyn, zetay, ay, by, dbydy,
+                                          psiy, psiyn, zetay, ay, by, dbydy,
 #endif
-          psix, psixn, zetax, ax, bx, dbxdx,
-          v_requires_grad && ((t % step_ratio_h) == 0));
-      CHECK_KERNEL_ERROR
-      if (n_sources_per_shot_h > 0) {
-        add_sources<<<dimGrid_sources, dimBlock_sources>>>(
-            wfp, f + t * n_shots_h * n_sources_per_shot_h, sources_i);
-        CHECK_KERNEL_ERROR
-      }
-      if (n_receivers_per_shot_h > 0) {
-        record_receivers<<<dimGrid_receivers, dimBlock_receivers>>>(
-            r + t * n_shots_h * n_receivers_per_shot_h, wfc, receivers_i);
-        CHECK_KERNEL_ERROR
-      }
-#if DW_NDIM >= 3
-      std::swap(psiz, psizn);
-#endif
-#if DW_NDIM >= 2
-      std::swap(psiy, psiyn);
-#endif
-      std::swap(wfc, wfp);
-      std::swap(psix, psixn);
+                                          psix, psixn, zetax, ax, bx, dbxdx,
+                                          store_w);
+    CHECK_KERNEL_ERROR
+
+    if (store_w) {
+      int64_t step_idx = t / step_ratio_h;
+      storage_save_snapshot_gpu(
+          w_store_1_t, w_store_2_t, w_store_3_t, fp_w, storage_mode,
+          storage_compression, step_idx, shot_bytes_uncomp, shot_bytes_comp,
+          n_shots_h, shot_numel_h, sizeof(DW_DTYPE) == sizeof(double));
     }
+
+    if (n_sources_per_shot_h > 0) {
+      add_sources<<<dimGrid_sources, dimBlock_sources>>>(
+          wfp, f + t * n_shots_h * n_sources_per_shot_h, sources_i);
+      CHECK_KERNEL_ERROR
+    }
+    if (n_receivers_per_shot_h > 0) {
+      record_receivers<<<dimGrid_receivers, dimBlock_receivers>>>(
+          r + t * n_shots_h * n_receivers_per_shot_h, wfc, receivers_i);
+      CHECK_KERNEL_ERROR
+    }
+#if DW_NDIM >= 3
+    std::swap(psiz, psizn);
+#endif
+#if DW_NDIM >= 2
+    std::swap(psiy, psiyn);
+#endif
+    std::swap(wfc, wfp);
+    std::swap(psix, psixn);
+  }
+  if (fp_w) fclose(fp_w);
 }
 
 extern "C"
@@ -630,8 +663,8 @@ extern "C"
 #endif
         void FUNC(backward)(
             DW_DTYPE const *__restrict const v2dt2,
-            DW_DTYPE const *__restrict const grad_r,
-            DW_DTYPE *__restrict wfc, DW_DTYPE *__restrict wfp,
+            DW_DTYPE const *__restrict const grad_r, DW_DTYPE *__restrict wfc,
+            DW_DTYPE *__restrict wfp,
 #if DW_NDIM >= 3
             DW_DTYPE *__restrict psiz,
 #endif
@@ -659,8 +692,8 @@ extern "C"
 #if DW_NDIM >= 2
             DW_DTYPE *__restrict zetayn,
 #endif
-            DW_DTYPE *__restrict zetaxn,
-            DW_DTYPE const *__restrict const dwdv,
+            DW_DTYPE *__restrict zetaxn, DW_DTYPE *__restrict const w_store_1,
+            void *__restrict const w_store_2, void *__restrict const w_store_3,
             DW_DTYPE *__restrict const grad_f,
             DW_DTYPE *__restrict const grad_v,
             DW_DTYPE *__restrict const grad_v_shot,
@@ -679,6 +712,7 @@ extern "C"
             DW_DTYPE const *__restrict const dbxdx,
             int64_t const *__restrict const sources_i,
             int64_t const *__restrict const receivers_i,
+            char const *__restrict const *__restrict const w_filenames_ptr,
 #if DW_NDIM >= 3
             DW_DTYPE const rdz_h,
 #endif
@@ -701,7 +735,10 @@ extern "C"
 #endif
             int64_t const nx_h, int64_t const n_sources_per_shot_h,
             int64_t const n_receivers_per_shot_h, int64_t const step_ratio_h,
-            bool const v_requires_grad, bool const v_batched_h, int64_t start_t,
+            int64_t const storage_mode, size_t const shot_bytes_uncomp,
+            size_t const shot_bytes_comp, bool const v_requires_grad,
+            bool const v_batched_h, bool const storage_compression,
+            int64_t const start_t,
 #if DW_NDIM >= 3
             int64_t const pml_z0_h,
 #endif
@@ -722,12 +759,12 @@ extern "C"
   unsigned int gridy = ceil_div(ny_h - 2 * FD_PAD, dimBlock.y);
   unsigned int gridz = ceil_div(nz_h - 2 * FD_PAD, dimBlock.z);
 #elif DW_NDIM == 2
-  dim3 dimBlock(32, 8, 1);
+  dim3 dimBlock(32, 4, 1);
   unsigned int gridx = ceil_div(nx_h - 2 * FD_PAD, dimBlock.x);
   unsigned int gridy = ceil_div(ny_h - 2 * FD_PAD, dimBlock.y);
   unsigned int gridz = ceil_div(n_shots_h, dimBlock.z);
 #else /* DW_NDIM == 1 */
-  dim3 dimBlock(256, 1, 1);
+  dim3 dimBlock(128, 1, 1);
   unsigned int gridx = ceil_div(nx_h - 2 * FD_PAD, dimBlock.x);
   unsigned int gridy = ceil_div(n_shots_h, dimBlock.y);
   unsigned int gridz = 1;
@@ -746,17 +783,17 @@ extern "C"
   unsigned int gridz_receivers = 1;
   dim3 dimGrid_receivers(gridx_receivers, gridy_receivers, gridz_receivers);
 #if DW_NDIM == 3
-  dim3 dimBlock_combine(32, 8, 1);
+  dim3 dimBlock_combine(32, 4, 1);
   unsigned int gridx_combine = ceil_div(nx_h - 2 * FD_PAD, dimBlock_combine.x);
   unsigned int gridy_combine = ceil_div(ny_h - 2 * FD_PAD, dimBlock_combine.y);
   unsigned int gridz_combine = ceil_div(nz_h - 2 * FD_PAD, dimBlock_combine.z);
 #elif DW_NDIM == 2
-  dim3 dimBlock_combine(32, 32, 1);
+  dim3 dimBlock_combine(32, 4, 1);
   unsigned int gridx_combine = ceil_div(nx_h - 2 * FD_PAD, dimBlock_combine.x);
   unsigned int gridy_combine = ceil_div(ny_h - 2 * FD_PAD, dimBlock_combine.y);
   unsigned int gridz_combine = 1;
 #else /* DW_NDIM == 1 */
-  dim3 dimBlock_combine(256, 1, 1);
+  dim3 dimBlock_combine(128, 1, 1);
   unsigned int gridx_combine = ceil_div(nx_h - 2 * FD_PAD, dimBlock_combine.x);
   unsigned int gridy_combine = 1;
   unsigned int gridz_combine = 1;
@@ -780,43 +817,75 @@ extern "C"
 #endif
       rdx_h, rdx2_h, nx_h, shot_numel_h, pml_x0_h, pml_x1_h, 0, n_shots_h,
       n_receivers_per_shot_h, n_sources_per_shot_h, step_ratio_h, v_batched_h);
+
+  FILE *fp_w = NULL;
+  if (storage_mode == STORAGE_DISK) {
+    if (v_requires_grad) fp_w = fopen(w_filenames_ptr[0], "rb");
+  }
+
   for (t = start_t - 1; t >= start_t - nt; --t) {
-      if (n_sources_per_shot_h > 0) {
-        record_receivers<<<dimGrid_sources, dimBlock_sources>>>(
-            grad_f + t * n_shots_h * n_sources_per_shot_h, wfc, sources_i);
-        CHECK_KERNEL_ERROR
-      }
-      backward_kernel<<<dimGrid, dimBlock>>>(
-          v2dt2, wfc, wfp, dwdv + (t / step_ratio_h) * n_shots_h * shot_numel_h,
-          grad_v_shot,
-#if DW_NDIM >= 3
-          psiz, psizn, zetaz, zetazn, az, bz, dbzdz,
-#endif
-#if DW_NDIM >= 2
-          psiy, psiyn, zetay, zetayn, ay, by, dbydy,
-#endif
-          psix, psixn, zetax, zetaxn, ax, bx, dbxdx,
-          v_requires_grad && ((t % step_ratio_h) == 0));
+    bool const load_step = (t % step_ratio_h) == 0;
+    bool const load_w = load_step && v_requires_grad;
+    DW_DTYPE *__restrict const w_store_1_t =
+        w_store_1 + (storage_mode == STORAGE_DEVICE && !storage_compression
+                         ? (t / step_ratio_h) * shot_numel_h * n_shots_h
+                         : 0);
+    void *__restrict const w_store_2_t =
+        (uint8_t *)w_store_2 +
+        (storage_mode == STORAGE_DEVICE && storage_compression
+             ? (t / step_ratio_h) * shot_bytes_comp * n_shots_h
+             : 0);
+    void *__restrict const w_store_3_t =
+        (uint8_t *)w_store_3 +
+        (storage_mode == STORAGE_CPU
+             ? (t / step_ratio_h) *
+                   (storage_compression ? shot_bytes_comp : shot_bytes_uncomp) *
+                   n_shots_h
+             : 0);
+
+    if (load_w) {
+      int step_idx = t / step_ratio_h;
+      storage_load_snapshot_gpu(
+          w_store_1_t, w_store_2_t, w_store_3_t, fp_w, storage_mode,
+          storage_compression, step_idx, shot_bytes_uncomp, shot_bytes_comp,
+          n_shots_h, shot_numel_h, sizeof(DW_DTYPE) == sizeof(double));
+    }
+
+    if (n_sources_per_shot_h > 0) {
+      record_receivers<<<dimGrid_sources, dimBlock_sources>>>(
+          grad_f + t * n_shots_h * n_sources_per_shot_h, wfc, sources_i);
       CHECK_KERNEL_ERROR
-      if (n_receivers_per_shot_h > 0) {
-        add_sources<<<dimGrid_receivers, dimBlock_receivers>>>(
-            wfp, grad_r + t * n_shots_h * n_receivers_per_shot_h, receivers_i);
-        CHECK_KERNEL_ERROR
-      }
+    }
+    backward_kernel<<<dimGrid, dimBlock>>>(
+        v2dt2, wfc, wfp, w_store_1_t, grad_v_shot,
 #if DW_NDIM >= 3
-      std::swap(psiz, psizn);
-      std::swap(zetaz, zetazn);
+        psiz, psizn, zetaz, zetazn, az, bz, dbzdz,
 #endif
 #if DW_NDIM >= 2
-      std::swap(psiy, psiyn);
-      std::swap(zetay, zetayn);
+        psiy, psiyn, zetay, zetayn, ay, by, dbydy,
 #endif
-      std::swap(wfc, wfp);
-      std::swap(psix, psixn);
-      std::swap(zetax, zetaxn);
+        psix, psixn, zetax, zetaxn, ax, bx, dbxdx, load_w);
+    CHECK_KERNEL_ERROR
+    if (n_receivers_per_shot_h > 0) {
+      add_sources<<<dimGrid_receivers, dimBlock_receivers>>>(
+          wfp, grad_r + t * n_shots_h * n_receivers_per_shot_h, receivers_i);
+      CHECK_KERNEL_ERROR
+    }
+#if DW_NDIM >= 3
+    std::swap(psiz, psizn);
+    std::swap(zetaz, zetazn);
+#endif
+#if DW_NDIM >= 2
+    std::swap(psiy, psiyn);
+    std::swap(zetay, zetayn);
+#endif
+    std::swap(wfc, wfp);
+    std::swap(psix, psixn);
+    std::swap(zetax, zetaxn);
   }
   if (v_requires_grad && !v_batched_h && n_shots_h > 1) {
     combine_grad_v<<<dimGrid_combine, dimBlock_combine>>>(grad_v, grad_v_shot);
     CHECK_KERNEL_ERROR
   }
+  if (fp_w) fclose(fp_w);
 }

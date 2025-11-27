@@ -9,7 +9,7 @@ and the underlying C/CUDA implementations.
 import ctypes
 import pathlib
 import platform
-from ctypes import c_bool, c_double, c_float, c_int64, c_void_p
+from ctypes import c_bool, c_double, c_float, c_int64, c_size_t, c_void_p
 from typing import Any, Callable, List, TypeAlias
 
 import torch
@@ -44,16 +44,20 @@ def get_scalar_forward_template(ndim: int) -> List[Any]:
     args += [c_void_p] * ndim  # psi
     args += [c_void_p] * ndim  # psin
     args += [c_void_p] * ndim  # zeta
-    args += [c_void_p] * 2  # dwdv, r
+    args += [c_void_p] * 3  # w_store_1, w_store_2, w_store_3
+    args += [c_void_p]  # r
     args += [c_void_p] * (3 * ndim)  # a, b, dbdx
     args += [c_void_p] * 2  # sources_i, receivers_i
+    args += [c_void_p]  # w_filenames_ptr
     args += [FLOAT_TYPE] * ndim  # rd
     args += [FLOAT_TYPE] * ndim  # rd2
     args += [FLOAT_TYPE]  # dt2
     args += [c_int64] * 2  # nt, n_shots
     args += [c_int64] * ndim  # n
     args += [c_int64] * 3  # n_sources_per_shot, n_receivers_per_shot, step_ratio
-    args += [c_bool] * 2  # v_requires_grad, v_batched
+    args += [c_int64]  # storage_mode
+    args += [c_size_t] * 2  # shot_bytes_uncomp, shot_bytes_comp
+    args += [c_bool] * 3  # v_requires_grad, v_batched, storage_compression
     args += [c_int64]  # start_t
     args += [c_int64] * (2 * ndim)  # pml
     args += [c_int64]  # n_threads
@@ -71,15 +75,19 @@ def get_scalar_backward_template(ndim: int) -> List[Any]:
     args += [c_void_p] * ndim  # psin
     args += [c_void_p] * ndim  # zeta
     args += [c_void_p] * ndim  # zetan
-    args += [c_void_p] * 4  # dwdv, grad_f, grad_v, grad_v_thread
+    args += [c_void_p] * 3  # w_store_1, w_store_2, w_store_3
+    args += [c_void_p] * 3  # grad_f, grad_v, grad_v_thread
     args += [c_void_p] * (3 * ndim)  # a, b, dbdx
     args += [c_void_p] * 2  # sources_i, receivers_i
+    args += [c_void_p]  # w_filenames_ptr
     args += [FLOAT_TYPE] * ndim  # rd
     args += [FLOAT_TYPE] * ndim  # rd2
     args += [c_int64] * 2  # nt, n_shots
     args += [c_int64] * ndim  # n
     args += [c_int64] * 3  # n_sources_per_shot, n_receivers_per_shot, step_ratio
-    args += [c_bool] * 2  # v_requires_grad, v_batched
+    args += [c_int64]  # storage_mode
+    args += [c_size_t] * 2  # shot_bytes_uncomp, shot_bytes_comp
+    args += [c_bool] * 3  # v_requires_grad, v_batched, storage_compression
     args += [c_int64]  # start_t
     args += [c_int64] * (2 * ndim)  # pml
     args += [c_int64]  # n_threads
@@ -101,10 +109,12 @@ def get_scalar_born_forward_template(ndim: int) -> List[Any]:
     args += [c_void_p] * ndim  # psiysc, psixsc...
     args += [c_void_p] * ndim  # psiynsc, psixnsc...
     args += [c_void_p] * ndim  # zetaysc, zetaxsc...
-    args += [c_void_p] * 2  # w_store, wsc_store
+    args += [c_void_p] * 3  # w_store_1, w_store_2, w_store_3
+    args += [c_void_p] * 3  # wsc_store_1, wsc_store_2, wsc_store_3
     args += [c_void_p] * 2  # r, rsc
     args += [c_void_p] * (3 * ndim)  # a, b, dbdx
     args += [c_void_p] * 3  # sources_i, receivers_i, receiverssc_i
+    args += [c_void_p] * 2  # w_filenames, wsc_filenames
     args += [FLOAT_TYPE] * ndim  # rdy, rdx...
     args += [FLOAT_TYPE] * ndim  # rdy2, rdx2...
     args += [FLOAT_TYPE]  # dt2
@@ -114,9 +124,12 @@ def get_scalar_born_forward_template(ndim: int) -> List[Any]:
         c_int64
     ] * 3  # n_sources_per_shot, n_receivers_per_shot, n_receiverssc_per_shot
     args += [c_int64]  # step_ratio
+    args += [c_int64]  # storage_mode
+    args += [c_size_t] * 2  # shot_bytes_uncomp, shot_bytes_comp
     args += [
         c_bool
-    ] * 4  # v_requires_grad, scatter_requires_grad, v_batched, scatter_batched
+    ] * 5  # v_requires_grad, scatter_requires_grad, v_batched, scatter_batched,
+    # storage_compression
     args += [c_int64]  # start_t
     args += [c_int64] * (2 * ndim)  # pml
     args += [c_int64]  # n_threads
@@ -140,12 +153,14 @@ def get_scalar_born_backward_template(ndim: int) -> List[Any]:
     args += [c_void_p] * ndim  # psinsc
     args += [c_void_p] * ndim  # zetasc
     args += [c_void_p] * ndim  # zetansc
-    args += [c_void_p] * 2  # w_store, wsc_store
+    args += [c_void_p] * 3  # w_store_1, w_store_2, w_store_3
+    args += [c_void_p] * 3  # wsc_store_1, wsc_store_2, wsc_store_3
     args += [
         c_void_p
     ] * 6  # grad_f, grad_fsc, grad_v, grad_scatter, grad_v_thread, grad_scatter_thread
     args += [c_void_p] * (3 * ndim)  # a, b, dbdx
     args += [c_void_p] * 3  # sources_i, receivers_i, receiverssc_i
+    args += [c_void_p] * 2  # w_filenames, wsc_filenames
     args += [FLOAT_TYPE] * ndim  # rd
     args += [FLOAT_TYPE] * ndim  # rd2
     args += [FLOAT_TYPE]  # dt2
@@ -154,9 +169,12 @@ def get_scalar_born_backward_template(ndim: int) -> List[Any]:
     args += [c_int64] * 4  # n_sources_per_shot, n_sourcessc_per_shot,
     # n_receivers_per_shot, n_receiverssc_per_shot
     args += [c_int64]  # step_ratio
+    args += [c_int64]  # storage_mode
+    args += [c_size_t] * 2  # shot_bytes_uncomp, shot_bytes_comp
     args += [
         c_bool
-    ] * 4  # v_requires_grad, scatter_requires_grad, v_batched, scatter_batched
+    ] * 5  # v_requires_grad, scatter_requires_grad, v_batched, scatter_batched,
+    # storage_compression
     args += [c_int64]  # start_t
     args += [c_int64] * (2 * ndim)  # pml
     args += [c_int64]  # n_threads
@@ -175,10 +193,11 @@ def get_scalar_born_backward_sc_template(ndim: int) -> List[Any]:
     args += [c_void_p] * ndim  # psinsc
     args += [c_void_p] * ndim  # zetasc
     args += [c_void_p] * ndim  # zetansc
-    args += [c_void_p] * 1  # w_store
+    args += [c_void_p] * 3  # w_store_1, w_store_2, w_store_3
     args += [c_void_p] * 3  # grad_fsc, grad_scatter, grad_scatter_thread
     args += [c_void_p] * (3 * ndim)  # a, b, dbdx
     args += [c_void_p] * 2  # sources_i, receiverssc_i
+    args += [c_void_p] * 1  # w_filenames
     args += [FLOAT_TYPE] * ndim  # rd
     args += [FLOAT_TYPE] * ndim  # rd2
     args += [FLOAT_TYPE]  # dt2
@@ -186,7 +205,11 @@ def get_scalar_born_backward_sc_template(ndim: int) -> List[Any]:
     args += [c_int64] * ndim  # n
     args += [c_int64] * 2  # n_sourcessc_per_shot, n_receiverssc_per_shot
     args += [c_int64]  # step_ratio
-    args += [c_bool] * 3  # scatter_requires_grad, v_batched, scatter_batched
+    args += [c_int64]  # storage_mode
+    args += [c_size_t] * 2  # shot_bytes_uncomp, shot_bytes_comp
+    args += [
+        c_bool
+    ] * 4  # scatter_requires_grad, v_batched, scatter_batched, storage_compression
     args += [c_int64]  # start_t
     args += [c_int64] * (2 * ndim)  # pml
     args += [c_int64]  # n_threads
@@ -223,10 +246,10 @@ def get_elastic_forward_template(ndim: int) -> List[Any]:
 
     # backward storage
     if ndim == 3:
-        args += [c_void_p] * 4
+        args += [c_void_p] * 4 * 4
     if ndim >= 2:
-        args += [c_void_p] * 3
-    args += [c_void_p] * 2
+        args += [c_void_p] * 3 * 4
+    args += [c_void_p] * 2 * 4
 
     # recorded data
     if ndim == 3:
@@ -261,14 +284,17 @@ def get_elastic_forward_template(ndim: int) -> List[Any]:
     args += [FLOAT_TYPE]  # dt
 
     # sizes
-    args += [c_int64] * 2  # nt
+    args += [c_int64] * 2  # nt, n_shots
     args += [c_int64] * ndim  # model_shape
     args += [c_int64] * (ndim + 1)  # n_sources_per_shot
     args += [c_int64] * (ndim + 1)  # n_receivers_per_shot
     args += [c_int64]  # step_ratio
 
     # options
+    args += [c_int64]  # storage_mode
+    args += [c_size_t] * 2  # shot_bytes_uncomp, shot_bytes_comp
     args += [c_bool] * 6  # requires_grad, batched
+    args += [c_bool]  # storage_compression
 
     # start_t
     args += [c_int64]
@@ -319,10 +345,10 @@ def get_elastic_backward_template(ndim: int) -> List[Any]:
 
     # backward storage
     if ndim == 3:
-        args += [c_void_p] * 4
+        args += [c_void_p] * 4 * 4
     if ndim >= 2:
-        args += [c_void_p] * 3
-    args += [c_void_p] * 2
+        args += [c_void_p] * 3 * 4
+    args += [c_void_p] * 2 * 4
 
     # grad_f
     if ndim == 3:
@@ -388,7 +414,10 @@ def get_elastic_backward_template(ndim: int) -> List[Any]:
     args += [c_int64]  # step_ratio
 
     # options
+    args += [c_int64]  # storage_mode
+    args += [c_size_t] * 2  # shot_bytes_uncomp, shot_bytes_comp
     args += [c_bool] * 6  # requires_grad, batched
+    args += [c_bool]  # storage_compression
 
     # start_t
     args += [c_int64]

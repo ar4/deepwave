@@ -10,6 +10,7 @@ These examples demonstrate how to use Deepwave. Each is designed to show differe
     example_fwi
     example_lsrtm
     example_rtm
+    example_storage
     example_checkpointing
     example_batched_models
     example_callback_animation

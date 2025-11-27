@@ -12,7 +12,7 @@ To install it, I recommend first installing PyTorch using the instructions on th
 [The documentation](https://ausargeo.com/deepwave) contains examples and instructions on how to install and use Deepwave. You might also like to watch [a video summary of Deepwave](https://www.youtube.com/watch?v=rTVEV-EHl98).
 
 ## Features
-- Supports the 2D constant density acoustic / scalar wave equation (regular and Born modelling) and 2D elastic wave equation (P-SV)
+- Supports the 1D, 2D, and 3D constant density acoustic / scalar wave equation (regular and Born modelling) and elastic wave equation
 - Runs on CPUs and appropriate GPUs
 - The gradient of all outputs (final wavefields and receiver data) can be calculated with respect to the model parameters (wavespeed, scattering potential, etc.), initial wavefields, and source amplitudes
 - Uses the [Pasalic and McGarry](https://doi.org/10.1190/1.3513453) PML for accurate absorbing boundaries in the scalar wave propagator
@@ -62,10 +62,10 @@ If you would like to cite Deepwave, I suggest:
 @software{richardson_alan_2025,
   author       = {Richardson, Alan},
   title        = {Deepwave},
-  month        = oct,
+  month        = dec,
   year         = 2025,
   publisher    = {Zenodo},
-  version      = {v0.0.23},
+  version      = {v0.0.24},
   doi          = {10.5281/zenodo.3829886},
   url          = {https://doi.org/10.5281/zenodo.3829886}
 }

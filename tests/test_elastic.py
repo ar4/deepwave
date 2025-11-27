@@ -1213,6 +1213,9 @@ def run_elasticfunc(nt: int = 3) -> None:
             None,
             None,
             1,
+            "device",
+            ".",
+            False,
             lamb,
             mu,
             mu_yx,
@@ -1402,6 +1405,230 @@ def test_gradcheck_zeros_in_properties():
         mu=mu,
         buoyancy=buoyancy,
     )
+
+
+@pytest.mark.parametrize(("lamb_requires_grad"), [True, False])
+@pytest.mark.parametrize(("num_shots"), [1, 2])
+@pytest.mark.parametrize(
+    ("nx", "dx"),
+    [
+        ((5,), (5,)),
+        ((5, 4), (5, 5)),
+        ((5, 4, 4), (6, 6, 6)),
+    ],
+)
+def test_storage(
+    lamb_requires_grad,
+    num_shots,
+    nx,
+    dx,
+    mlamb=DEFAULT_LAMB,
+    mmu=DEFAULT_MU,
+    mbuoyancy=DEFAULT_BUOYANCY,
+    freq=25,
+    dt=0.004,
+    num_sources_per_shot=2,
+    num_receivers_per_shot=2,
+    propagator=elasticprop,
+    prop_kwargs=None,
+    device=None,
+    dtype=None,
+    dlamb=DEFAULT_LAMB / 10,
+    dmu=DEFAULT_MU / 10,
+    dbuoyancy=DEFAULT_BUOYANCY / 10,
+    nt=None,
+):
+    """Test forward and backward propagation when a source and receiver are unused."""
+    nx = torch.tensor(nx, dtype=torch.long)
+    dx = torch.tensor(dx, dtype=dtype)
+    ndim = len(nx)
+
+    torch.manual_seed(1)
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    if prop_kwargs is None:
+        prop_kwargs = {}
+
+    lamb = (
+        torch.ones(*nx, device=device, dtype=dtype) * mlamb
+        + torch.randn(*nx, dtype=dtype).to(device) * dlamb
+    )
+    mu = (
+        torch.ones(*nx, device=device, dtype=dtype) * mmu
+        + torch.randn(*nx, dtype=dtype).to(device) * dmu
+    )
+    buoyancy = (
+        torch.ones(*nx, device=device, dtype=dtype) * mbuoyancy
+        + torch.randn(*nx, dtype=dtype).to(device) * dbuoyancy
+    )
+
+    vp, vs, _rho = lambmubuoyancy_to_vpvsrho(lamb.abs(), mu.abs(), buoyancy.abs())
+    vmin = min(vp.abs().min(), vs.abs().min())
+
+    if nt is None:
+        nt = int((2 * torch.norm(nx.float() * dx) / vmin + 0.35 + 2 / freq) / dt)
+
+    source_amplitudes = {
+        "source_amplitudes_z": None,
+        "source_amplitudes_y": None,
+        "source_amplitudes_x": None,
+        "source_amplitudes_p": None,
+    }
+    source_locations = {
+        "source_locations_z": None,
+        "source_locations_y": None,
+        "source_locations_x": None,
+        "source_locations_p": None,
+    }
+    receiver_locations = {
+        "receiver_locations_z": None,
+        "receiver_locations_y": None,
+        "receiver_locations_x": None,
+        "receiver_locations_p": None,
+    }
+    if num_sources_per_shot > 0:
+        x_s = _set_coords(num_shots, num_sources_per_shot, nx.tolist())
+        sources_x = _set_sources(x_s, freq, dt, nt, dtype, dpeak_time=0.05)
+        sources_x["amplitude"] = sources_x["amplitude"].to(device)
+        source_amplitudes["source_amplitudes_x"] = sources_x["amplitude"]
+        source_locations["source_locations_x"] = sources_x["locations"]
+        sources_p = _set_sources(x_s, freq, dt, nt, dtype, dpeak_time=0.05)
+        sources_p["amplitude"] = sources_p["amplitude"].to(device)
+        source_amplitudes["source_amplitudes_p"] = sources_p["amplitude"]
+        source_locations["source_locations_p"] = sources_p["locations"]
+        if ndim >= 2:
+            sources_y = _set_sources(x_s, freq, dt, nt, dtype, dpeak_time=0.05)
+            sources_y["amplitude"] = sources_y["amplitude"].to(device)
+            source_amplitudes["source_amplitudes_y"] = sources_y["amplitude"]
+            source_locations["source_locations_y"] = sources_y["locations"]
+        if ndim >= 3:
+            sources_z = _set_sources(x_s, freq, dt, nt, dtype, dpeak_time=0.05)
+            sources_z["amplitude"] = sources_z["amplitude"].to(device)
+            source_amplitudes["source_amplitudes_z"] = sources_z["amplitude"]
+            source_locations["source_locations_z"] = sources_z["locations"]
+        nt = None
+    if num_receivers_per_shot > 0:
+        x_r = _set_coords(num_shots, num_receivers_per_shot, nx.tolist())
+        receiver_locations["receiver_locations_x"] = x_r
+        receiver_locations["receiver_locations_p"] = x_r
+        if ndim >= 2:
+            receiver_locations["receiver_locations_y"] = x_r
+        if ndim >= 3:
+            receiver_locations["receiver_locations_z"] = x_r
+
+    # Store uncompressed in device memory (default)
+    lambd = lamb.clone()
+    lambd.requires_grad_(lamb_requires_grad)
+    mud = mu.clone()
+    mud.requires_grad_()
+    buoyancyd = buoyancy.clone()
+    buoyancyd.requires_grad_()
+    out = propagator(
+        lambd,
+        mud,
+        buoyancyd,
+        dx.tolist(),
+        dt,
+        source_amplitudes_z=source_amplitudes["source_amplitudes_z"],
+        source_amplitudes_y=source_amplitudes["source_amplitudes_y"],
+        source_amplitudes_x=source_amplitudes["source_amplitudes_x"],
+        source_amplitudes_p=source_amplitudes["source_amplitudes_p"],
+        source_locations_z=source_locations["source_locations_z"],
+        source_locations_y=source_locations["source_locations_y"],
+        source_locations_x=source_locations["source_locations_x"],
+        source_locations_p=source_locations["source_locations_p"],
+        receiver_locations_z=receiver_locations["receiver_locations_z"],
+        receiver_locations_y=receiver_locations["receiver_locations_y"],
+        receiver_locations_x=receiver_locations["receiver_locations_x"],
+        receiver_locations_p=receiver_locations["receiver_locations_p"],
+        prop_kwargs=prop_kwargs,
+    )
+
+    sum([(o**2).sum() for o in out[-ndim - 1 :]]).backward()
+
+    modes = ["device", "disk", "none"]
+    if lamb.is_cuda:
+        modes.append("cpu")
+
+    atol_lamb = [0.004, 0.002, 0.002]
+    atol_mu = [0.004, 0.002, 0.004]
+    atol_buoyancy = [0.01, 0.02, 0.04]
+
+    for mode in modes:
+        for compression in [False, True]:
+            if mode == "device" and not compression:  # Default
+                continue
+            lambi = lamb.clone()
+            lambi.requires_grad_(lamb_requires_grad)
+            mui = mu.clone()
+            mui.requires_grad_()
+            buoyancyi = buoyancy.clone()
+            buoyancyi.requires_grad_()
+            prop_kwargs = dict(prop_kwargs)
+            prop_kwargs["storage_mode"] = mode
+            prop_kwargs["storage_compression"] = compression
+            out = propagator(
+                lambi,
+                mui,
+                buoyancyi,
+                dx.tolist(),
+                dt,
+                source_amplitudes_z=source_amplitudes["source_amplitudes_z"],
+                source_amplitudes_y=source_amplitudes["source_amplitudes_y"],
+                source_amplitudes_x=source_amplitudes["source_amplitudes_x"],
+                source_amplitudes_p=source_amplitudes["source_amplitudes_p"],
+                source_locations_z=source_locations["source_locations_z"],
+                source_locations_y=source_locations["source_locations_y"],
+                source_locations_x=source_locations["source_locations_x"],
+                source_locations_p=source_locations["source_locations_p"],
+                receiver_locations_z=receiver_locations["receiver_locations_z"],
+                receiver_locations_y=receiver_locations["receiver_locations_y"],
+                receiver_locations_x=receiver_locations["receiver_locations_x"],
+                receiver_locations_p=receiver_locations["receiver_locations_p"],
+                prop_kwargs=prop_kwargs,
+            )
+
+            sum([(o**2).sum() for o in out[-ndim - 1 :]]).backward()
+
+            if mode != "none":
+                if compression:
+                    if lamb_requires_grad:
+                        assert torch.allclose(
+                            lambd.grad,
+                            lambi.grad,
+                            atol=atol_lamb[len(nx) - 1]
+                            * lambd.grad.detach().abs().max().item(),
+                        )
+                    assert torch.allclose(
+                        mud.grad,
+                        mui.grad,
+                        atol=atol_mu[len(nx) - 1]
+                        * mud.grad.detach().abs().max().item(),
+                    )
+                    assert torch.allclose(
+                        buoyancyd.grad,
+                        buoyancyi.grad,
+                        atol=atol_buoyancy[len(nx) - 1]
+                        * buoyancyd.grad.detach().abs().max().item(),
+                    )
+                else:
+                    if lamb_requires_grad:
+                        assert torch.allclose(
+                            lambd.grad,
+                            lambi.grad,
+                            atol=lambd.grad.detach().abs().max().item() * 1e-5,
+                        )
+                    assert torch.allclose(
+                        mud.grad,
+                        mui.grad,
+                        atol=mud.grad.detach().abs().max().item() * 1e-5,
+                    )
+                    assert torch.allclose(
+                        buoyancyd.grad,
+                        buoyancyi.grad,
+                        atol=buoyancyd.grad.detach().abs().max().item() * 1e-5,
+                    )
 
 
 def run_forward_lamb(

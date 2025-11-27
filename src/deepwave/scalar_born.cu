@@ -19,13 +19,14 @@
  * scalar_born.c and scalar.c. This file implements the same functionality,
  * but for execution on a GPU using CUDA.
  */
-
+#include <cuda_runtime.h>
 #include <stdio.h>
 
 #include <cstdint>
 
 #include "common_gpu.h"
 #include "regular_grid.h"
+#include "storage_utils.h"
 
 // Macro to concatenate function names with accuracy, dtype, and device for
 // Python bindings
@@ -217,6 +218,7 @@ __constant__ int64_t pml_x0, pml_x1;  // PML region bounds
 __constant__ bool v_batched,
     scatter_batched;  // Whether v/scatter are shared or per shot
 
+__launch_bounds__(32)
 __global__ void add_sources_both(DW_DTYPE *__restrict const wf,
                                  DW_DTYPE *__restrict const wfsc,
                                  DW_DTYPE const *__restrict const f,
@@ -233,6 +235,7 @@ __global__ void add_sources_both(DW_DTYPE *__restrict const wf,
   }
 }
 
+__launch_bounds__(32)
 __global__ void add_adjoint_sources(DW_DTYPE *__restrict const wf,
                                     DW_DTYPE const *__restrict const f,
                                     int64_t const *__restrict const sources_i) {
@@ -244,6 +247,7 @@ __global__ void add_adjoint_sources(DW_DTYPE *__restrict const wf,
   }
 }
 
+__launch_bounds__(32)
 __global__ void add_adjoint_sourcessc(
     DW_DTYPE *__restrict const wf, DW_DTYPE const *__restrict const f,
     int64_t const *__restrict const sources_i) {
@@ -255,6 +259,7 @@ __global__ void add_adjoint_sourcessc(
   }
 }
 
+__launch_bounds__(32)
 __global__ void record_receivers(DW_DTYPE *__restrict const r,
                                  DW_DTYPE const *__restrict const wf,
                                  int64_t const *__restrict receivers_i) {
@@ -267,6 +272,7 @@ __global__ void record_receivers(DW_DTYPE *__restrict const r,
 }
 
 // Record scattered wavefield amplitudes at receiver locations for all shots.
+__launch_bounds__(32)
 __global__ void record_receiverssc(DW_DTYPE *__restrict const r,
                                    DW_DTYPE const *__restrict const wf,
                                    int64_t const *__restrict receivers_i) {
@@ -280,6 +286,7 @@ __global__ void record_receiverssc(DW_DTYPE *__restrict const r,
 
 // Record adjoint wavefield amplitudes at source locations for all shots (used
 // in adjoint computations).
+__launch_bounds__(32)
 __global__ void record_adjoint_receivers(
     DW_DTYPE *__restrict const r, DW_DTYPE const *__restrict const wf,
     int64_t const *__restrict receivers_i) {
@@ -291,6 +298,7 @@ __global__ void record_adjoint_receivers(
   }
 }
 
+__launch_bounds__(32)
 __global__ void record_adjoint_receiverssc(
     DW_DTYPE *__restrict const rsc, DW_DTYPE const *__restrict const wfsc,
     int64_t const *__restrict receivers_i) {
@@ -304,6 +312,7 @@ __global__ void record_adjoint_receiverssc(
 }
 
 // Combine per-shot gradients into a single gradient array (for v or scatter).
+__launch_bounds__(128)
 __global__ void combine_grad(DW_DTYPE *__restrict const grad,
                              DW_DTYPE const *__restrict const grad_shot) {
 #if DW_NDIM == 3
@@ -353,13 +362,7 @@ __global__ void combine_grad(DW_DTYPE *__restrict const grad,
 //   ay, ax, by, bx, dbydy, dbxdx: PML profiles and derivatives for y-dim and
 //   x-dim v_requires_grad, scatter_requires_grad: whether to store values for
 //   gradient computation
-#if DW_NDIM == 3
 __launch_bounds__(128)
-#elif DW_NDIM == 2
-__launch_bounds__(1024)
-#else
-__launch_bounds__(256)
-#endif
     __global__ void forward_kernel(
         DW_DTYPE const *__restrict const v,
         DW_DTYPE const *__restrict const scatter,
@@ -512,13 +515,7 @@ __launch_bounds__(256)
 // scattered wavefields. Computes gradients with respect to velocity and scatter
 // if requested. Arguments are analogous to forward_kernel, with additional
 // gradient outputs.
-#if DW_NDIM == 3
 __launch_bounds__(128)
-#elif DW_NDIM == 2
-__launch_bounds__(256)
-#else
-__launch_bounds__(256)
-#endif
     __global__ void backward_kernel(
         DW_DTYPE const *__restrict const v,
         DW_DTYPE const *__restrict const scatter,
@@ -657,15 +654,16 @@ __launch_bounds__(256)
       }
       // Accumulate gradients for velocity and scatter if required
       if (v_requires_grad) {
-        grad_v[i] += wfc[i] * 2 * v_shot[j] * dt2 * w_store[i] * step_ratio +
-                     wfcsc[i] *
-                         (2 * dt2 * scatter_shot[j] * w_store[i] +
-                          2 * v_shot[j] * dt2 * wsc_store[i]) *
-                         step_ratio;
+        grad_v[i] +=
+            wfc[i] * 2 * v_shot[j] * dt2 * w_store[i] * (DW_DTYPE)step_ratio +
+            wfcsc[i] *
+                (2 * dt2 * scatter_shot[j] * w_store[i] +
+                 2 * v_shot[j] * dt2 * wsc_store[i]) *
+                (DW_DTYPE)step_ratio;
       }
       if (scatter_requires_grad) {
         grad_scatter[i] +=
-            wfcsc[i] * 2 * v_shot[j] * dt2 * w_store[i] * step_ratio;
+            wfcsc[i] * 2 * v_shot[j] * dt2 * w_store[i] * (DW_DTYPE)step_ratio;
       }
 #if DW_NDIM == 3
     }
@@ -674,13 +672,7 @@ __launch_bounds__(256)
 }
 
 // Specialized backward kernel for computing only the scatter gradient.
-#if DW_NDIM == 3
 __launch_bounds__(128)
-#elif DW_NDIM == 2
-__launch_bounds__(256)
-#else
-__launch_bounds__(256)
-#endif
     __global__ void backward_kernel_sc(DW_DTYPE const *__restrict const v,
                                        DW_DTYPE const *__restrict const wfcsc,
                                        DW_DTYPE *__restrict const wfpsc,
@@ -780,7 +772,7 @@ __launch_bounds__(256)
       // Accumulate gradient for scatter if required
       if (scatter_requires_grad) {
         grad_scatter[i] +=
-            wfcsc[i] * 2 * v_shot[j] * dt2 * w_store[i] * step_ratio;
+            wfcsc[i] * 2 * v_shot[j] * dt2 * w_store[i] * (DW_DTYPE)step_ratio;
       }
 #if DW_NDIM == 3
     }
@@ -916,8 +908,11 @@ extern "C"
             DW_DTYPE *__restrict const zetaysc,
 #endif
             DW_DTYPE *__restrict const zetaxsc,
-            DW_DTYPE *__restrict const w_store,
-            DW_DTYPE *__restrict const wsc_store, DW_DTYPE *__restrict const r,
+            DW_DTYPE *__restrict const w_store_1,
+            void *__restrict const w_store_2, void *__restrict const w_store_3,
+            DW_DTYPE *__restrict const wsc_store_1,
+            void *__restrict const wsc_store_2,
+            void *__restrict const wsc_store_3, DW_DTYPE *__restrict const r,
             DW_DTYPE *__restrict const rsc,
 #if DW_NDIM >= 3
             DW_DTYPE const *__restrict const az,
@@ -935,6 +930,8 @@ extern "C"
             int64_t const *__restrict const sources_i,
             int64_t const *__restrict const receivers_i,
             int64_t const *__restrict const receiverssc_i,
+            char const *__restrict const *__restrict const w_filenames_ptr,
+            char const *__restrict const *__restrict const wsc_filenames_ptr,
 #if DW_NDIM >= 3
             DW_DTYPE const rdz_h,
 #endif
@@ -959,8 +956,10 @@ extern "C"
             int64_t const nx_h, int64_t const n_sources_per_shot_h,
             int64_t const n_receivers_per_shot_h,
             int64_t const n_receiverssc_per_shot_h, int64_t const step_ratio_h,
-            bool const v_requires_grad, bool const scatter_requires_grad,
-            bool const v_batched_h, bool const scatter_batched_h,
+            int64_t const storage_mode, size_t const shot_bytes_uncomp,
+            size_t const shot_bytes_comp, bool const v_requires_grad,
+            bool const scatter_requires_grad, bool const v_batched_h,
+            bool const scatter_batched_h, bool const storage_compression,
             int64_t const start_t,
 #if DW_NDIM >= 3
             int64_t const pml_z0_h,
@@ -983,12 +982,12 @@ extern "C"
   unsigned int gridy = ceil_div(ny_h - 2 * FD_PAD, dimBlock.y);
   unsigned int gridz = ceil_div(nz_h - 2 * FD_PAD, dimBlock.z);
 #elif DW_NDIM == 2
-  dim3 dimBlock(32, 32, 1);
+  dim3 dimBlock(32, 4, 1);
   unsigned int gridx = ceil_div(nx_h - 2 * FD_PAD, dimBlock.x);
   unsigned int gridy = ceil_div(ny_h - 2 * FD_PAD, dimBlock.y);
   unsigned int gridz = ceil_div(n_shots_h, dimBlock.z);
 #else /* DW_NDIM == 1 */
-  dim3 dimBlock(256, 1, 1);
+  dim3 dimBlock(128, 1, 1);
   unsigned int gridx = ceil_div(nx_h - 2 * FD_PAD, dimBlock.x);
   unsigned int gridy = ceil_div(n_shots_h, dimBlock.y);
   unsigned int gridz = 1;
@@ -1036,36 +1035,94 @@ extern "C"
       rdx_h, rdx2_h, nx_h, dt2_h, n_shots_h, n_sources_per_shot_h,
       n_sources_per_shot_h, n_receivers_per_shot_h, n_receiverssc_per_shot_h,
       step_ratio_h, pml_x0_h, pml_x1_h, v_batched_h, scatter_batched_h);
+
+  FILE *fp_w = NULL;
+  FILE *fp_wsc = NULL;
+  if (storage_mode == STORAGE_DISK) {
+    if (v_requires_grad || scatter_requires_grad)
+      fp_w = fopen(w_filenames_ptr[0], "wb");
+    if (v_requires_grad) fp_wsc = fopen(wsc_filenames_ptr[0], "wb");
+  }
+
   // --- Time-stepping loop for forward propagation ---
   // Alternates between wfc/wfp and wfp/wfc for memory efficiency
   for (t = start_t; t < start_t + nt; ++t) {
-    forward_kernel<<<dimGrid, dimBlock>>>(
-        v, scatter, wfc, wfp,
+    bool store_step = ((t % step_ratio_h) == 0);
+    bool store_w = store_step && (v_requires_grad || scatter_requires_grad);
+    bool store_wsc = store_step && v_requires_grad;
+    DW_DTYPE *__restrict const w_store_1_t =
+        w_store_1 + (storage_mode == STORAGE_DEVICE && !storage_compression
+                         ? (t / step_ratio_h) * shot_numel_h * n_shots_h
+                         : 0);
+    DW_DTYPE *__restrict const wsc_store_1_t =
+        wsc_store_1 + (storage_mode == STORAGE_DEVICE && !storage_compression
+                           ? (t / step_ratio_h) * shot_numel_h * n_shots_h
+                           : 0);
+    void *__restrict const w_store_2_t =
+        (uint8_t *)w_store_2 +
+        (storage_mode == STORAGE_DEVICE && storage_compression
+             ? (t / step_ratio_h) * shot_bytes_comp * n_shots_h
+             : 0);
+    void *__restrict const wsc_store_2_t =
+        (uint8_t *)wsc_store_2 +
+        (storage_mode == STORAGE_DEVICE && storage_compression
+             ? (t / step_ratio_h) * shot_bytes_comp * n_shots_h
+             : 0);
+    void *__restrict const w_store_3_t =
+        (uint8_t *)w_store_3 +
+        (storage_mode == STORAGE_CPU
+             ? (t / step_ratio_h) *
+                   (storage_compression ? shot_bytes_comp : shot_bytes_uncomp) *
+                   n_shots_h
+             : 0);
+    void *__restrict const wsc_store_3_t =
+        (uint8_t *)wsc_store_3 +
+        (storage_mode == STORAGE_CPU
+             ? (t / step_ratio_h) *
+                   (storage_compression ? shot_bytes_comp : shot_bytes_uncomp) *
+                   n_shots_h
+             : 0);
+
+    forward_kernel<<<dimGrid, dimBlock>>>(v, scatter, wfc, wfp,
 #if DW_NDIM >= 3
-        psiz, psizn, zetaz,
+                                          psiz, psizn, zetaz,
 #endif
 #if DW_NDIM >= 2
-        psiy, psiyn, zetay,
+                                          psiy, psiyn, zetay,
 #endif
-        psix, psixn, zetax, wfcsc, wfpsc,
+                                          psix, psixn, zetax, wfcsc, wfpsc,
 #if DW_NDIM >= 3
-        psizsc, psiznsc, zetazsc,
+                                          psizsc, psiznsc, zetazsc,
 #endif
 #if DW_NDIM >= 2
-        psiysc, psiynsc, zetaysc,
+                                          psiysc, psiynsc, zetaysc,
 #endif
-        psixsc, psixnsc, zetaxsc,
-        w_store + (t / step_ratio_h) * shot_numel_h * n_shots_h,
-        wsc_store + (t / step_ratio_h) * shot_numel_h * n_shots_h,
+                                          psixsc, psixnsc, zetaxsc, w_store_1_t,
+                                          wsc_store_1_t,
 #if DW_NDIM >= 3
-        az, bz, dbzdz,
+                                          az, bz, dbzdz,
 #endif
 #if DW_NDIM >= 2
-        ay, by, dbydy,
+                                          ay, by, dbydy,
 #endif
-        ax, bx, dbxdx, v_requires_grad && ((t % step_ratio_h) == 0),
-        scatter_requires_grad && ((t % step_ratio_h) == 0));
+                                          ax, bx, dbxdx, store_w, store_wsc);
     CHECK_KERNEL_ERROR
+
+    if (store_w) {
+      int64_t step_idx = t / step_ratio_h;
+      storage_save_snapshot_gpu(
+          w_store_1_t, w_store_2_t, w_store_3_t, fp_w, storage_mode,
+          storage_compression, step_idx, shot_bytes_uncomp, shot_bytes_comp,
+          n_shots_h, shot_numel_h, sizeof(DW_DTYPE) == sizeof(double));
+    }
+    if (store_wsc) {
+      int64_t step_idx = t / step_ratio_h;
+      storage_save_snapshot_gpu(
+          wsc_store_1_t, wsc_store_2_t, wsc_store_3_t, fp_wsc, storage_mode,
+          storage_compression, step_idx, shot_bytes_uncomp, shot_bytes_comp,
+          n_shots_h, shot_numel_h, sizeof(DW_DTYPE) == sizeof(double));
+    }
+
     // Add sources to both background and scattered wavefields
     if (n_sources_per_shot_h > 0) {
       add_sources_both<<<dimGrid_sources, dimBlock_sources>>>(
@@ -1098,6 +1155,9 @@ extern "C"
     std::swap(wfcsc, wfpsc);
     std::swap(psixsc, psixnsc);
   }
+
+  if (fp_w) fclose(fp_w);
+  if (fp_wsc) fclose(fp_wsc);
 }
 
 //
@@ -1182,9 +1242,11 @@ extern "C"
 #if DW_NDIM >= 2
             DW_DTYPE *__restrict zetaynsc,
 #endif
-            DW_DTYPE *__restrict zetaxnsc,
-            DW_DTYPE const *__restrict const w_store,
-            DW_DTYPE const *__restrict const wsc_store,
+            DW_DTYPE *__restrict zetaxnsc, DW_DTYPE *__restrict const w_store_1,
+            void *__restrict const w_store_2, void *__restrict const w_store_3,
+            DW_DTYPE *__restrict const wsc_store_1,
+            void *__restrict const wsc_store_2,
+            void *__restrict const wsc_store_3,
             DW_DTYPE *__restrict const grad_f,
             DW_DTYPE *__restrict const grad_fsc,
             DW_DTYPE *__restrict const grad_v,
@@ -1207,6 +1269,8 @@ extern "C"
             int64_t const *__restrict const sources_i,
             int64_t const *__restrict const receivers_i,
             int64_t const *__restrict const receiverssc_i,
+            char const *__restrict const *__restrict const w_filenames_ptr,
+            char const *__restrict const *__restrict const wsc_filenames_ptr,
 #if DW_NDIM >= 3
             DW_DTYPE const rdz_h,
 #endif
@@ -1232,8 +1296,10 @@ extern "C"
             int64_t const n_sourcessc_per_shot_h,
             int64_t const n_receivers_per_shot_h,
             int64_t const n_receiverssc_per_shot_h, int64_t const step_ratio_h,
-            bool const v_requires_grad, bool const scatter_requires_grad,
-            bool const v_batched_h, bool const scatter_batched_h,
+            int64_t const storage_mode, size_t const shot_bytes_uncomp,
+            size_t const shot_bytes_comp, bool const v_requires_grad,
+            bool const scatter_requires_grad, bool const v_batched_h,
+            bool const scatter_batched_h, bool const storage_compression,
             int64_t const start_t,
 #if DW_NDIM >= 3
             int64_t const pml_z0_h,
@@ -1255,18 +1321,19 @@ extern "C"
   unsigned int gridy = ceil_div(ny_h - 2 * FD_PAD, dimBlock.y);
   unsigned int gridz = ceil_div(nz_h - 2 * FD_PAD, dimBlock.z);
 #elif DW_NDIM == 2
-  dim3 dimBlock(32, 8, 1);
+  dim3 dimBlock(32, 4, 1);
   unsigned int gridx = ceil_div(nx_h - 2 * FD_PAD, dimBlock.x);
   unsigned int gridy = ceil_div(ny_h - 2 * FD_PAD, dimBlock.y);
   unsigned int gridz = ceil_div(n_shots_h, dimBlock.z);
 #else /* DW_NDIM == 1 */
-  dim3 dimBlock(256, 1, 1);
+  dim3 dimBlock(128, 1, 1);
   unsigned int gridx = ceil_div(nx_h - 2 * FD_PAD, dimBlock.x);
   unsigned int gridy = ceil_div(n_shots_h, dimBlock.y);
   unsigned int gridz = 1;
 #endif
   dim3 dimGrid(gridx, gridy, gridz);
 
+  // For source and receiver operations
   dim3 dimBlock_sources(32, 1, 1);
   unsigned int gridx_sources =
       ceil_div(n_sources_per_shot_h, dimBlock_sources.x);
@@ -1294,17 +1361,17 @@ extern "C"
                            gridz_receiverssc);
 
 #if DW_NDIM == 3
-  dim3 dimBlock_combine(32, 8, 1);
+  dim3 dimBlock_combine(32, 4, 1);
   unsigned int gridx_combine = ceil_div(nx_h - 2 * FD_PAD, dimBlock_combine.x);
   unsigned int gridy_combine = ceil_div(ny_h - 2 * FD_PAD, dimBlock_combine.y);
   unsigned int gridz_combine = ceil_div(nz_h - 2 * FD_PAD, dimBlock_combine.z);
 #elif DW_NDIM == 2
-  dim3 dimBlock_combine(32, 32, 1);
+  dim3 dimBlock_combine(32, 4, 1);
   unsigned int gridx_combine = ceil_div(nx_h - 2 * FD_PAD, dimBlock_combine.x);
   unsigned int gridy_combine = ceil_div(ny_h - 2 * FD_PAD, dimBlock_combine.y);
   unsigned int gridz_combine = 1;
 #else /* DW_NDIM == 1 */
-  dim3 dimBlock_combine(256, 1, 1);
+  dim3 dimBlock_combine(128, 1, 1);
   unsigned int gridx_combine = ceil_div(nx_h - 2 * FD_PAD, dimBlock_combine.x);
   unsigned int gridy_combine = 1;
   unsigned int gridz_combine = 1;
@@ -1331,9 +1398,70 @@ extern "C"
       rdx_h, rdx2_h, nx_h, dt2_h, n_shots_h, n_sources_per_shot_h,
       n_sourcessc_per_shot_h, n_receivers_per_shot_h, n_receiverssc_per_shot_h,
       step_ratio_h, pml_x0_h, pml_x1_h, v_batched_h, scatter_batched_h);
+
+  FILE *fp_w = NULL;
+  FILE *fp_wsc = NULL;
+  if (storage_mode == STORAGE_DISK) {
+    if (v_requires_grad || scatter_requires_grad)
+      fp_w = fopen(w_filenames_ptr[0], "rb");
+    if (v_requires_grad) fp_wsc = fopen(wsc_filenames_ptr[0], "rb");
+  }
+
   // --- Time-reversed loop for adjoint propagation ---
   // Alternates between wfc/wfp and wfp/wfc for memory efficiency
   for (t = start_t - 1; t >= start_t - nt; --t) {
+    bool const load_step = (t % step_ratio_h) == 0;
+    bool const load_w = load_step && (v_requires_grad || scatter_requires_grad);
+    bool const load_wsc = load_step && v_requires_grad;
+    DW_DTYPE *__restrict const w_store_1_t =
+        w_store_1 + (storage_mode == STORAGE_DEVICE && !storage_compression
+                         ? (t / step_ratio_h) * shot_numel_h * n_shots_h
+                         : 0);
+    DW_DTYPE *__restrict const wsc_store_1_t =
+        wsc_store_1 + (storage_mode == STORAGE_DEVICE && !storage_compression
+                           ? (t / step_ratio_h) * shot_numel_h * n_shots_h
+                           : 0);
+    void *__restrict const w_store_2_t =
+        (uint8_t *)w_store_2 +
+        (storage_mode == STORAGE_DEVICE && storage_compression
+             ? (t / step_ratio_h) * shot_bytes_comp * n_shots_h
+             : 0);
+    void *__restrict const wsc_store_2_t =
+        (uint8_t *)wsc_store_2 +
+        (storage_mode == STORAGE_DEVICE && storage_compression
+             ? (t / step_ratio_h) * shot_bytes_comp * n_shots_h
+             : 0);
+    void *__restrict const w_store_3_t =
+        (uint8_t *)w_store_3 +
+        (storage_mode == STORAGE_CPU
+             ? (t / step_ratio_h) *
+                   (storage_compression ? shot_bytes_comp : shot_bytes_uncomp) *
+                   n_shots_h
+             : 0);
+    void *__restrict const wsc_store_3_t =
+        (uint8_t *)wsc_store_3 +
+        (storage_mode == STORAGE_CPU
+             ? (t / step_ratio_h) *
+                   (storage_compression ? shot_bytes_comp : shot_bytes_uncomp) *
+                   n_shots_h
+             : 0);
+
+    if (load_w) {
+      int step_idx = t / step_ratio_h;
+      storage_load_snapshot_gpu(
+          w_store_1_t, w_store_2_t, w_store_3_t, fp_w, storage_mode,
+          storage_compression, step_idx, shot_bytes_uncomp, shot_bytes_comp,
+          n_shots_h, shot_numel_h, sizeof(DW_DTYPE) == sizeof(double));
+    }
+
+    if (load_wsc) {
+      int step_idx = t / step_ratio_h;
+      storage_load_snapshot_gpu(
+          wsc_store_1_t, wsc_store_2_t, wsc_store_3_t, fp_wsc, storage_mode,
+          storage_compression, step_idx, shot_bytes_uncomp, shot_bytes_comp,
+          n_shots_h, shot_numel_h, sizeof(DW_DTYPE) == sizeof(double));
+    }
+
     // Record source gradients for background and scattered fields
     if (n_sources_per_shot_h > 0) {
       record_adjoint_receivers<<<dimGrid_sources, dimBlock_sources>>>(
@@ -1361,18 +1489,16 @@ extern "C"
 #if DW_NDIM >= 2
         psiysc, psiynsc, zetaysc, zetaynsc,
 #endif
-        psixsc, psixnsc, zetaxsc, zetaxnsc,
-        w_store + (t / step_ratio_h) * n_shots_h * shot_numel_h,
-        wsc_store + (t / step_ratio_h) * n_shots_h * shot_numel_h, grad_v_shot,
-        grad_scatter_shot,
+        psixsc, psixnsc, zetaxsc, zetaxnsc, w_store_1_t, wsc_store_1_t,
+        grad_v_shot, grad_scatter_shot,
 #if DW_NDIM >= 3
         az, bz, dbzdz,
 #endif
 #if DW_NDIM >= 2
         ay, by, dbydy,
 #endif
-        ax, bx, dbxdx, v_requires_grad && ((t % step_ratio_h) == 0),
-        scatter_requires_grad && ((t % step_ratio_h) == 0));
+        ax, bx, dbxdx, load_w && v_requires_grad,
+        load_w && scatter_requires_grad);
     CHECK_KERNEL_ERROR
     // Add receiver gradients as adjoint sources
     if (n_receivers_per_shot_h > 0) {
@@ -1415,6 +1541,9 @@ extern "C"
                                                         grad_scatter_shot);
     CHECK_KERNEL_ERROR
   }
+
+  if (fp_w) fclose(fp_w);
+  if (fp_wsc) fclose(fp_wsc);
 }
 
 //
@@ -1460,8 +1589,8 @@ extern "C"
 #if DW_NDIM >= 2
             DW_DTYPE *__restrict zetaynsc,
 #endif
-            DW_DTYPE *__restrict zetaxnsc,
-            DW_DTYPE const *__restrict const w_store,
+            DW_DTYPE *__restrict zetaxnsc, DW_DTYPE *__restrict const w_store_1,
+            void *__restrict const w_store_2, void *__restrict const w_store_3,
             DW_DTYPE *__restrict const grad_fsc,
             DW_DTYPE *__restrict const grad_scatter,
             DW_DTYPE *__restrict const grad_scatter_shot,
@@ -1480,6 +1609,7 @@ extern "C"
             DW_DTYPE const *__restrict const dbxdx,
             int64_t const *__restrict const sources_i,
             int64_t const *__restrict const receiverssc_i,
+            char const *__restrict const *__restrict const w_filenames_ptr,
 #if DW_NDIM >= 3
             DW_DTYPE const rdz_h,
 #endif
@@ -1503,8 +1633,10 @@ extern "C"
 #endif
             int64_t const nx_h, int64_t const n_sourcessc_per_shot_h,
             int64_t const n_receiverssc_per_shot_h, int64_t const step_ratio_h,
-            bool const scatter_requires_grad, bool const v_batched_h,
-            bool const scatter_batched_h, int64_t const start_t,
+            int64_t const storage_mode, size_t const shot_bytes_uncomp,
+            size_t const shot_bytes_comp, bool const scatter_requires_grad,
+            bool const v_batched_h, bool const scatter_batched_h,
+            bool const storage_compression, int64_t const start_t,
 #if DW_NDIM >= 3
             int64_t const pml_z0_h,
 #endif
@@ -1525,12 +1657,12 @@ extern "C"
   unsigned int gridy = ceil_div(ny_h - 2 * FD_PAD, dimBlock.y);
   unsigned int gridz = ceil_div(nz_h - 2 * FD_PAD, dimBlock.z);
 #elif DW_NDIM == 2
-  dim3 dimBlock(32, 8, 1);
+  dim3 dimBlock(32, 4, 1);
   unsigned int gridx = ceil_div(nx_h - 2 * FD_PAD, dimBlock.x);
   unsigned int gridy = ceil_div(ny_h - 2 * FD_PAD, dimBlock.y);
   unsigned int gridz = ceil_div(n_shots_h, dimBlock.z);
 #else /* DW_NDIM == 1 */
-  dim3 dimBlock(256, 1, 1);
+  dim3 dimBlock(128, 1, 1);
   unsigned int gridx = ceil_div(nx_h - 2 * FD_PAD, dimBlock.x);
   unsigned int gridy = ceil_div(n_shots_h, dimBlock.y);
   unsigned int gridz = 1;
@@ -1552,17 +1684,17 @@ extern "C"
                            gridz_receiverssc);
 
 #if DW_NDIM == 3
-  dim3 dimBlock_combine(32, 8, 1);
+  dim3 dimBlock_combine(32, 4, 1);
   unsigned int gridx_combine = ceil_div(nx_h - 2 * FD_PAD, dimBlock_combine.x);
   unsigned int gridy_combine = ceil_div(ny_h - 2 * FD_PAD, dimBlock_combine.y);
   unsigned int gridz_combine = ceil_div(nz_h - 2 * FD_PAD, dimBlock_combine.z);
 #elif DW_NDIM == 2
-  dim3 dimBlock_combine(32, 32, 1);
+  dim3 dimBlock_combine(32, 4, 1);
   unsigned int gridx_combine = ceil_div(nx_h - 2 * FD_PAD, dimBlock_combine.x);
   unsigned int gridy_combine = ceil_div(ny_h - 2 * FD_PAD, dimBlock_combine.y);
   unsigned int gridz_combine = 1;
 #else /* DW_NDIM == 1 */
-  dim3 dimBlock_combine(256, 1, 1);
+  dim3 dimBlock_combine(128, 1, 1);
   unsigned int gridx_combine = ceil_div(nx_h - 2 * FD_PAD, dimBlock_combine.x);
   unsigned int gridy_combine = 1;
   unsigned int gridz_combine = 1;
@@ -1590,9 +1722,42 @@ extern "C"
       n_sourcessc_per_shot_h, n_receiverssc_per_shot_h,
       n_receiverssc_per_shot_h, step_ratio_h, pml_x0_h, pml_x1_h, v_batched_h,
       scatter_batched_h);
+
+  FILE *fp_w = NULL;
+  if (storage_mode == STORAGE_DISK) {
+    if (scatter_requires_grad) fp_w = fopen(w_filenames_ptr[0], "rb");
+  }
+
   // --- Time-reversed loop for adjoint propagation (scattered field only)
   // ---
   for (t = start_t - 1; t >= start_t - nt; --t) {
+    bool load_step = ((t % step_ratio_h) == 0);
+    bool load_w = load_step && scatter_requires_grad;
+    DW_DTYPE *__restrict const w_store_1_t =
+        w_store_1 + (storage_mode == STORAGE_DEVICE && !storage_compression
+                         ? (t / step_ratio_h) * shot_numel_h * n_shots_h
+                         : 0);
+    void *__restrict const w_store_2_t =
+        (uint8_t *)w_store_2 +
+        (storage_mode == STORAGE_DEVICE && storage_compression
+             ? (t / step_ratio_h) * shot_bytes_comp * n_shots_h
+             : 0);
+    void *__restrict const w_store_3_t =
+        (uint8_t *)w_store_3 +
+        (storage_mode == STORAGE_CPU
+             ? (t / step_ratio_h) *
+                   (storage_compression ? shot_bytes_comp : shot_bytes_uncomp) *
+                   n_shots_h
+             : 0);
+
+    if (load_w) {
+      int step_idx = t / step_ratio_h;
+      storage_load_snapshot_gpu(
+          w_store_1_t, w_store_2_t, w_store_3_t, fp_w, storage_mode,
+          storage_compression, step_idx, shot_bytes_uncomp, shot_bytes_comp,
+          n_shots_h, shot_numel_h, sizeof(DW_DTYPE) == sizeof(double));
+    }
+
     // Record source gradients for scattered field
     if (n_sourcessc_per_shot_h > 0) {
       record_adjoint_receiverssc<<<dimGrid_sourcessc, dimBlock_sourcessc>>>(
@@ -1608,16 +1773,14 @@ extern "C"
 #if DW_NDIM >= 2
         psiysc, psiynsc, zetaysc, zetaynsc,
 #endif
-        psixsc, psixnsc, zetaxsc, zetaxnsc,
-        w_store + (t / step_ratio_h) * n_shots_h * shot_numel_h,
-        grad_scatter_shot,
+        psixsc, psixnsc, zetaxsc, zetaxnsc, w_store_1_t, grad_scatter_shot,
 #if DW_NDIM >= 3
         az, bz, dbzdz,
 #endif
 #if DW_NDIM >= 2
         ay, by, dbydy,
 #endif
-        ax, bx, dbxdx, scatter_requires_grad && ((t % step_ratio_h) == 0));
+        ax, bx, dbxdx, load_w);
     CHECK_KERNEL_ERROR
     // Add receiver gradients as adjoint sources
     if (n_receiverssc_per_shot_h > 0) {
@@ -1644,4 +1807,6 @@ extern "C"
                                                         grad_scatter_shot);
     CHECK_KERNEL_ERROR
   }
+
+  if (fp_w) fclose(fp_w);
 }

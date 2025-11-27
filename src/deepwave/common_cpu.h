@@ -30,9 +30,9 @@ static inline void add_to_wavefield(DW_DTYPE* __restrict const wavefield,
 // n_grid_points (i.e. threadidx * n_grid_points + i). This helper sums those
 // per-thread buffers into `grad` for the interior grid.
 static inline void combine_grad(DW_DTYPE* __restrict const grad,
-                         DW_DTYPE const* __restrict const grad_thread,
-                         int64_t const n_threads,
-                         int64_t const n_grid_points) {
+                                DW_DTYPE const* __restrict const grad_thread,
+                                int64_t const n_threads,
+                                int64_t const n_grid_points) {
   int64_t i, threadidx;
 #pragma omp simd
   for (i = 0; i < n_grid_points; ++i) {

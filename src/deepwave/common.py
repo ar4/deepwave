@@ -5,9 +5,13 @@ Deepwave propagators. These functions handle tasks such as input validation,
 PML setup, and data preparation for wave propagation simulations.
 """
 
+import contextlib
 import math
+import os
+import shutil
 import warnings
 from collections import abc
+from pathlib import Path
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -18,6 +22,7 @@ from typing import (
     Tuple,
     Union,
 )
+from uuid import uuid4
 
 if TYPE_CHECKING:
     from types import EllipsisType
@@ -2458,3 +2463,38 @@ def get_ndim(
             "initial wavefield."
         )
     return ndim
+
+
+class TemporaryStorage:
+    """Manages temporary files for disk storage.
+
+    Creates a unique subdirectory for each instantiation to prevent collisions.
+    """
+
+    def __init__(self, base_path: str, num_files: int) -> None:
+        """Initialise the temporary storage.
+
+        Args:
+            base_path: The base path for the temporary directory.
+            num_files: The number of files to create.
+        """
+        self.base_dir = Path(base_path) / f"deepwave_tmp_{os.getpid()}_{uuid4().hex}"
+        self.base_dir.mkdir(parents=True, exist_ok=True)
+        self.filenames: List[str] = []
+
+        for i in range(num_files):
+            self.filenames.append(str(self.base_dir / f"shot_{i}.bin"))
+
+    def get_filenames(self) -> List[str]:
+        """Return the list of filenames."""
+        return self.filenames
+
+    def close(self) -> None:
+        """Close the storage and remove the temporary directory."""
+        if self.base_dir.exists():
+            with contextlib.suppress(OSError):
+                shutil.rmtree(self.base_dir)
+
+    def __del__(self) -> None:
+        """Destructor to ensure cleanup."""
+        self.close()

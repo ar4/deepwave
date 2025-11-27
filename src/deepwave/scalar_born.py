@@ -6,6 +6,7 @@ described in the scalar module, with the addition of a scattered
 wavefield that uses 2 / v * scatter * dt^2 * wavefield as the source term.
 """
 
+import ctypes
 from typing import Any, List, Literal, Optional, Sequence, Tuple, Union, cast
 
 import torch
@@ -13,6 +14,7 @@ import torch
 import deepwave.backend_utils
 import deepwave.common
 import deepwave.regular_grid
+from deepwave.common import TemporaryStorage
 
 
 class ScalarBorn(torch.nn.Module):
@@ -44,6 +46,12 @@ class ScalarBorn(torch.nn.Module):
             whether the necessary data should be stored to calculate the
             gradient with respect to `scatter` during backpropagation.
             Defaults to False.
+        storage_mode: A string specifying the storage mode for intermediate
+            data. One of "device", "cpu", "disk", or "none". Defaults to "device".
+        storage_path: A string specifying the path for disk storage.
+            Defaults to ".".
+        storage_compression: A bool specifying whether to use compression
+            for intermediate data. Defaults to False.
 
     """
 
@@ -54,6 +62,9 @@ class ScalarBorn(torch.nn.Module):
         grid_spacing: Union[float, Sequence[float]],
         v_requires_grad: bool = False,
         scatter_requires_grad: bool = False,
+        storage_mode: Literal["device", "cpu", "disk", "none"] = "device",
+        storage_path: str = ".",
+        storage_compression: bool = False,
     ) -> None:
         """Initializes the ScalarBorn propagator module.
 
@@ -68,6 +79,9 @@ class ScalarBorn(torch.nn.Module):
                 attribute of the wavespeed should be set.
             scatter_requires_grad: A bool specifying whether the `requires_grad`
                 attribute of the scattering potential should be set.
+            storage_mode: A string specifying the storage mode.
+            storage_path: A string specifying the storage path.
+            storage_compression: A bool specifying whether to use compression.
 
         """
         super().__init__()
@@ -87,6 +101,9 @@ class ScalarBorn(torch.nn.Module):
         self.v = torch.nn.Parameter(v, requires_grad=v_requires_grad)
         self.scatter = torch.nn.Parameter(scatter, requires_grad=scatter_requires_grad)
         self.grid_spacing = grid_spacing
+        self.storage_mode = storage_mode
+        self.storage_path = storage_path
+        self.storage_compression = storage_compression
 
     def forward(
         self,
@@ -173,6 +190,9 @@ class ScalarBorn(torch.nn.Module):
             backward_callback=backward_callback,
             callback_frequency=callback_frequency,
             python_backend=python_backend,
+            storage_mode=self.storage_mode,
+            storage_path=self.storage_path,
+            storage_compression=self.storage_compression,
         )
 
 
@@ -216,6 +236,9 @@ def scalar_born(
     backward_callback: Optional[deepwave.common.Callback] = None,
     callback_frequency: int = 1,
     python_backend: Union[Literal["eager", "jit", "compile"], bool] = False,
+    storage_mode: Literal["device", "cpu", "disk", "none"] = "device",
+    storage_path: str = ".",
+    storage_compression: bool = False,
 ) -> Tuple[torch.Tensor, ...]:
     """Scalar Born wave propagation (functional interface).
 
@@ -290,6 +313,9 @@ def scalar_born(
             a boolean can be provided, with True using the Python backend
             with torch.compile, while the default, False, instead uses the
             compiled C/CUDA.
+        storage_mode: A string specifying the storage mode.
+        storage_path: A string specifying the storage path.
+        storage_compression: A bool specifying whether to use compression.
 
     Returns:
         Tuple:
@@ -512,6 +538,9 @@ def scalar_born(
             forward_callback,
             backward_callback,
             callback_frequency,
+            storage_mode,
+            storage_path,
+            storage_compression,
             *wavefields,
         )
     )
@@ -559,6 +588,9 @@ class ScalarBornForwardFunc(torch.autograd.Function):
         forward_callback: Optional[deepwave.common.Callback],
         backward_callback: Optional[deepwave.common.Callback],
         callback_frequency: int,
+        storage_mode_str: str,
+        storage_path: str,
+        storage_compression: bool,
         *wavefields: torch.Tensor,
     ) -> Tuple[torch.Tensor, ...]:
         """Forward propagation of the scalar Born wave equation.
@@ -575,8 +607,6 @@ class ScalarBornForwardFunc(torch.autograd.Function):
             receivers_i: Receiver locations.
             receiverssc_i: Scattered wavefield receiver locations.
             grid_spacing: Grid spacing for each spatial dimension.
-            dy: Grid spacing in the y-direction.
-            dx: Grid spacing in the x-direction.
             dt: Time step size.
             nt: Number of time steps.
             step_ratio: Step ratio for storing wavefields.
@@ -586,6 +616,9 @@ class ScalarBornForwardFunc(torch.autograd.Function):
             forward_callback: The forward callback.
             backward_callback: The backward callback.
             callback_frequency: The callback frequency.
+            storage_mode_str: Storage mode ("device", "cpu", "disk", "none").
+            storage_path: Path for disk storage.
+            storage_compression: Whether to use compression.
             wavefields: List of wavefields.
 
         Returns:
@@ -601,6 +634,25 @@ class ScalarBornForwardFunc(torch.autograd.Function):
         sources_i = sources_i.contiguous()
         receivers_i = receivers_i.contiguous()
         receiverssc_i = receiverssc_i.contiguous()
+
+        device = v.device
+        dtype = v.dtype
+        if str(device) == "cpu" and storage_mode_str == "cpu":
+            storage_mode_str = "device"
+
+        if storage_mode_str == "device":
+            storage_mode = 0
+        elif storage_mode_str == "cpu":
+            storage_mode = 1
+        elif storage_mode_str == "disk":
+            storage_mode = 2
+        elif storage_mode_str == "none":
+            storage_mode = 3
+        else:
+            raise ValueError(
+                "storage_mode must be 'device', 'cpu', 'disk', or 'none', "
+                f"but got {storage_mode_str}"
+            )
 
         ndim = len(grid_spacing)
 
@@ -639,16 +691,13 @@ class ScalarBornForwardFunc(torch.autograd.Function):
             psisc[i] = deepwave.common.zero_interior(psisc[i], fd_pad, pml_width, i)
             zetasc[i] = deepwave.common.zero_interior(zetasc[i], fd_pad, pml_width, i)
 
-        device = v.device
-        dtype = v.dtype
+        is_cuda = v.is_cuda
         model_shape = v.shape[-ndim:]
         n_sources_per_shot = sources_i.numel() // n_shots
         n_receivers_per_shot = receivers_i.numel() // n_shots
         n_receiverssc_per_shot = receiverssc_i.numel() // n_shots
         psin = [torch.zeros_like(wf) for wf in psi]
         psinsc = [torch.zeros_like(wf) for wf in psisc]
-        w_store = torch.empty(0, device=device, dtype=dtype)
-        wsc_store = torch.empty(0, device=device, dtype=dtype)
         receiver_amplitudes = torch.empty(0, device=device, dtype=dtype)
         receiver_amplitudessc = torch.empty(0, device=device, dtype=dtype)
         pml_b = [
@@ -663,12 +712,132 @@ class ScalarBornForwardFunc(torch.autograd.Function):
         v_batched = v.ndim == ndim + 1 and v.shape[0] > 1
         scatter_batched = scatter.ndim == ndim + 1 and scatter.shape[0] > 1
 
-        if v.requires_grad or scatter.requires_grad:
-            w_store.resize_(nt // step_ratio, *wfc.shape)
-            w_store.fill_(0)
-        if v.requires_grad:
-            wsc_store.resize_(nt // step_ratio, *wfc.shape)
-            wsc_store.fill_(0)
+        # Storage allocation
+        shot_shape = model_shape
+        num_elements_per_shot = int(torch.prod(torch.tensor(shot_shape)).item())
+        dtype_size = 4 if dtype == torch.float32 else 8
+        shot_bytes_uncomp = num_elements_per_shot * dtype_size
+        shot_bytes_comp = 0
+        if storage_compression and storage_mode != 3:
+            # Round up to be a multiple of dtype_size to avoid alignment issues
+            shot_bytes_comp = (
+                (num_elements_per_shot + 2 * dtype_size + dtype_size - 1) // dtype_size
+            ) * dtype_size
+
+        w_stores = []
+        w_filenames = []
+        ctx.w_storage = []
+        w_filenames_arr: List[Any] = []
+        ctx.w_filenames_bytes = []
+        for requires_grad in [
+            v.requires_grad or scatter.requires_grad,
+            v.requires_grad,
+        ]:  # w_store and wsc_store
+            w_store_1 = torch.empty(0)
+            w_store_2 = torch.empty(0)
+            w_store_3 = torch.empty(0)
+            w_filenames_ptr = ctypes.cast(0, ctypes.c_void_p)
+            char_ptr_type = ctypes.POINTER(ctypes.c_char)
+            w_filenames_arr_tmp = (char_ptr_type * 0)()
+            if requires_grad and storage_mode != 3:
+                num_steps_stored = nt // step_ratio
+                if storage_mode == 0:  # Device
+                    if storage_compression:
+                        w_store_1 = torch.zeros(
+                            n_shots,
+                            *shot_shape,
+                            device=device,
+                            dtype=dtype,
+                        )
+                        w_store_2 = torch.zeros(
+                            num_steps_stored,
+                            n_shots,
+                            shot_bytes_comp // dtype_size,
+                            device=device,
+                            dtype=dtype,
+                        )
+                    else:
+                        w_store_1 = torch.zeros(
+                            num_steps_stored,
+                            n_shots,
+                            *shot_shape,
+                            device=device,
+                            dtype=dtype,
+                        )
+                elif storage_mode == 1:  # CPU
+                    w_store_1 = torch.zeros(
+                        n_shots,
+                        *shot_shape,
+                        device=device,
+                        dtype=dtype,
+                    )
+                    if storage_compression:
+                        w_store_2 = torch.zeros(
+                            n_shots,
+                            shot_bytes_comp // dtype_size,
+                            device=device,
+                            dtype=dtype,
+                        )
+                    w_store_3 = torch.zeros(
+                        num_steps_stored,
+                        n_shots,
+                        (shot_bytes_comp if storage_compression else shot_bytes_uncomp)
+                        // dtype_size,
+                        device="cpu",
+                        pin_memory=True,
+                        dtype=dtype,
+                    )
+                elif storage_mode == 2:  # Disk
+                    w_storage = TemporaryStorage(
+                        storage_path, 1 if is_cuda else n_shots
+                    )
+                    ctx.w_storage.append(w_storage)
+                    # Convert list of strings to list of bytes, then to ctypes
+                    w_filenames_list = [
+                        f.encode("utf-8") for f in w_storage.get_filenames()
+                    ]
+                    # We need to keep reference to these bytes so they aren't GC'd
+                    ctx.w_filenames_bytes.append(w_filenames_list)
+                    # Create ctypes array
+                    w_filenames_arr_tmp = (char_ptr_type * len(w_filenames_list))()
+                    for i, f in enumerate(w_filenames_list):
+                        w_filenames_arr_tmp[i] = ctypes.cast(
+                            ctypes.create_string_buffer(f), char_ptr_type
+                        )
+                    # We need to pass the address of the array
+                    w_filenames_ptr = ctypes.cast(w_filenames_arr_tmp, ctypes.c_void_p)
+
+                    w_store_1 = torch.zeros(
+                        n_shots,
+                        *shot_shape,
+                        device=device,
+                        dtype=dtype,
+                    )
+                    if storage_compression:
+                        w_store_2 = torch.zeros(
+                            n_shots,
+                            shot_bytes_comp // dtype_size,
+                            device=device,
+                            dtype=dtype,
+                        )
+                    if is_cuda:
+                        w_store_3 = torch.zeros(
+                            n_shots,
+                            (
+                                shot_bytes_comp
+                                if storage_compression
+                                else shot_bytes_uncomp
+                            )
+                            // dtype_size,
+                            device="cpu",
+                            pin_memory=True,
+                            dtype=dtype,
+                        )
+            w_stores.extend([w_store_1, w_store_2, w_store_3])
+            w_filenames.append(w_filenames_ptr)
+            w_filenames_arr.append(w_filenames_arr_tmp)
+        ctx.w_filenames_arr = w_filenames_arr
+
         if receivers_i.numel() > 0:
             receiver_amplitudes.resize_(nt, n_shots, n_receivers_per_shot)
             receiver_amplitudes.fill_(0)
@@ -689,8 +858,7 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                 sources_i,
                 receivers_i,
                 receiverssc_i,
-                w_store,
-                wsc_store,
+                *w_stores,
                 *pml_profiles,
             )
             ctx.grid_spacing = grid_spacing
@@ -709,8 +877,12 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                 or source_amplitudes.requires_grad
                 or bg_wavefield_requires_grad
             )
+            ctx.storage_mode = storage_mode
+            ctx.storage_compression = storage_compression
+            ctx.shot_bytes_uncomp = shot_bytes_uncomp
+            ctx.shot_bytes_comp = shot_bytes_comp
 
-        if v.is_cuda:
+        if is_cuda:
             aux = v.get_device()
         elif deepwave.backend_utils.USE_OPENMP:
             aux = min(n_shots, torch.get_num_threads())
@@ -779,14 +951,14 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                     *[field.data_ptr() for field in psisc],
                     *[field.data_ptr() for field in psinsc],
                     *[field.data_ptr() for field in zetasc],
-                    w_store.data_ptr(),
-                    wsc_store.data_ptr(),
+                    *[w_store.data_ptr() for w_store in w_stores],
                     receiver_amplitudes.data_ptr(),
                     receiver_amplitudessc.data_ptr(),
                     *[profile.data_ptr() for profile in pml_profiles],
                     sources_i.data_ptr(),
                     receivers_i.data_ptr(),
                     receiverssc_i.data_ptr(),
+                    *w_filenames,
                     *rdx,
                     *rdx2,
                     dt**2,
@@ -797,10 +969,14 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                     n_receivers_per_shot,
                     n_receiverssc_per_shot,
                     step_ratio,
-                    v.requires_grad,
-                    scatter.requires_grad,
+                    storage_mode,
+                    shot_bytes_uncomp,
+                    shot_bytes_comp,
+                    v.requires_grad and storage_mode != 3,
+                    scatter.requires_grad and storage_mode != 3,
                     v_batched,
                     scatter_batched,
+                    storage_compression,
                     step * step_ratio,
                     *pml_b,
                     *pml_e,
@@ -861,8 +1037,12 @@ class ScalarBornForwardFunc(torch.autograd.Function):
             sources_i,
             receivers_i,
             receiverssc_i,
-            w_store,
-            wsc_store,
+            w_store_1,
+            w_store_2,
+            w_store_3,
+            wsc_store_1,
+            wsc_store_2,
+            wsc_store_3,
             *pml_profiles,
         ) = ctx.saved_tensors
 
@@ -891,11 +1071,24 @@ class ScalarBornForwardFunc(torch.autograd.Function):
         non_sc = ctx.non_sc
         device = v.device
         dtype = v.dtype
+        is_cuda = v.is_cuda
         model_shape = v.shape[-ndim:]
         n_sources_per_shot = sources_i.numel() // n_shots
         n_receivers_per_shot = receivers_i.numel() // n_shots
         n_receiverssc_per_shot = receiverssc_i.numel() // n_shots
         fd_pad = accuracy // 2
+        storage_mode = ctx.storage_mode
+        storage_compression = ctx.storage_compression
+        shot_bytes_uncomp = ctx.shot_bytes_uncomp
+        shot_bytes_comp = ctx.shot_bytes_comp
+
+        w_filenames: List[Any] = [0, 0]
+
+        if storage_mode == 2:  # Disk
+            w_filenames = [
+                ctypes.cast(w_filenames_arr, ctypes.c_void_p)
+                for w_filenames_arr in ctx.w_filenames_arr
+            ]
 
         size_with_batch = (n_shots, *model_shape)
         grad_wavefields[2 + 2 * ndim :] = [
@@ -986,13 +1179,18 @@ class ScalarBornForwardFunc(torch.autograd.Function):
             grad_fsc.resize_(nt, n_shots, n_sources_per_shot)
             grad_fsc.fill_(0)
 
-        if v.is_cuda:
+        if is_cuda:
             aux = v.get_device()
-            if v.requires_grad and not v_batched and n_shots > 1:
+            if v.requires_grad and not v_batched and n_shots > 1 and storage_mode != 3:
                 grad_v_tmp.resize_(n_shots, *model_shape)
                 grad_v_tmp.fill_(0)
                 grad_v_tmp_ptr = grad_v_tmp.data_ptr()
-            if scatter.requires_grad and not scatter_batched and n_shots > 1:
+            if (
+                scatter.requires_grad
+                and not scatter_batched
+                and n_shots > 1
+                and storage_mode != 3
+            ):
                 grad_scatter_tmp.resize_(n_shots, *model_shape)
                 grad_scatter_tmp.fill_(0)
                 grad_scatter_tmp_ptr = grad_scatter_tmp.data_ptr()
@@ -1006,6 +1204,7 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                 and not v_batched
                 and aux > 1
                 and deepwave.backend_utils.USE_OPENMP
+                and storage_mode != 3
             ):
                 grad_v_tmp.resize_(aux, *model_shape)
                 grad_v_tmp.fill_(0)
@@ -1015,6 +1214,7 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                 and not scatter_batched
                 and aux > 1
                 and deepwave.backend_utils.USE_OPENMP
+                and storage_mode != 3
             ):
                 grad_scatter_tmp.resize_(aux, *model_shape)
                 grad_scatter_tmp.fill_(0)
@@ -1070,8 +1270,12 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                         *[field.data_ptr() for field in grad_psinsc],
                         *[field.data_ptr() for field in grad_zetasc],
                         *[field.data_ptr() for field in grad_zetansc],
-                        w_store.data_ptr(),
-                        wsc_store.data_ptr(),
+                        w_store_1.data_ptr(),
+                        w_store_2.data_ptr(),
+                        w_store_3.data_ptr(),
+                        wsc_store_1.data_ptr(),
+                        wsc_store_2.data_ptr(),
+                        wsc_store_3.data_ptr(),
                         grad_f.data_ptr(),
                         grad_fsc.data_ptr(),
                         grad_v.data_ptr(),
@@ -1082,6 +1286,7 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                         sources_i.data_ptr(),
                         receivers_i.data_ptr(),
                         receiverssc_i.data_ptr(),
+                        *w_filenames,
                         *rdx,
                         *rdx2,
                         dt**2,
@@ -1093,10 +1298,14 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                         n_receivers_per_shot,
                         n_receiverssc_per_shot,
                         step_ratio,
-                        v.requires_grad,
-                        scatter.requires_grad,
+                        storage_mode,
+                        shot_bytes_uncomp,
+                        shot_bytes_comp,
+                        v.requires_grad and storage_mode != 3,
+                        scatter.requires_grad and storage_mode != 3,
                         v_batched,
                         scatter_batched,
+                        storage_compression,
                         step * step_ratio,
                         *pml_b,
                         *pml_e,
@@ -1176,13 +1385,16 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                         *[field.data_ptr() for field in grad_psinsc],
                         *[field.data_ptr() for field in grad_zetasc],
                         *[field.data_ptr() for field in grad_zetansc],
-                        w_store.data_ptr(),
+                        w_store_1.data_ptr(),
+                        w_store_2.data_ptr(),
+                        w_store_3.data_ptr(),
                         grad_fsc.data_ptr(),
                         grad_scatter.data_ptr(),
                         grad_scatter_tmp_ptr,
                         *[profile.data_ptr() for profile in pml_profiles],
                         sources_i.data_ptr(),
                         receiverssc_i.data_ptr(),
+                        w_filenames[0],
                         *rdx,
                         *rdx2,
                         dt**2,
@@ -1192,9 +1404,13 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                         n_sources_per_shot * source_amplitudessc_requires_grad,
                         n_receiverssc_per_shot,
                         step_ratio,
-                        scatter.requires_grad,
+                        storage_mode,
+                        shot_bytes_uncomp,
+                        shot_bytes_comp,
+                        scatter.requires_grad and storage_mode != 3,
                         v_batched,
                         scatter_batched,
+                        storage_compression,
                         step * step_ratio,
                         *pml_b,
                         *pml_e,
@@ -1254,7 +1470,7 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                     grad_f,
                     grad_fsc,
                 )
-                + (None,) * 15
+                + (None,) * 18
                 + (
                     grad_wfc[s],
                     grad_wfp[s],
@@ -1273,7 +1489,7 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                 None,
                 grad_fsc,
             )
-            + (None,) * (17 + 2 * ndim)
+            + (None,) * (20 + 2 * ndim)
             + (
                 grad_wfcsc[s],
                 grad_wfpsc[s],
@@ -1388,6 +1604,9 @@ def scalar_born_python(
     forward_callback: Optional[deepwave.common.Callback],
     backward_callback: Optional[deepwave.common.Callback],
     callback_frequency: int,
+    storage_mode_str: str,
+    storage_path: str,
+    storage_compression: bool,
     *wavefields_tuple: torch.Tensor,
 ) -> Tuple[torch.Tensor, ...]:
     """Forward propagation of the scalar Born wave equation.
@@ -1412,6 +1631,9 @@ def scalar_born_python(
         forward_callback: The forward callback.
         backward_callback: The backward callback.
         callback_frequency: The callback frequency.
+        storage_mode_str: The storage mode (Unused).
+        storage_path: The path to disk storage (Unused).
+        storage_compression: Whether to apply compression to storage (Unused).
         wavefields_tuple: Tuple of wavefields.
 
     Returns:
@@ -1420,6 +1642,14 @@ def scalar_born_python(
     """
     if backward_callback is not None:
         raise RuntimeError("backward_callback is not supported in the Python backend.")
+    if storage_mode_str != "device":
+        raise RuntimeError(
+            "Specifying the storage mode is not supported in the Python backend."
+        )
+    if storage_compression:
+        raise RuntimeError(
+            "Storage compression is not supported in the Python backend."
+        )
     del unused_tensor  # Unused.
     fd_pad = accuracy // 2
     size_with_batch = (n_shots, *v.shape[1:])

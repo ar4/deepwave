@@ -53,9 +53,11 @@
 #endif /* _OPENMP */
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
 
 #include "common_cpu.h"
 #include "staggered_grid.h"
+#include "storage_utils.h"
 
 #define CAT_I(name, ndim, accuracy, dtype, device) \
   elastic_iso_##ndim##d_##accuracy##_##dtype##_##name##_##device
@@ -463,18 +465,51 @@ __declspec(dllexport)
         DW_DTYPE *__restrict const vx, DW_DTYPE *__restrict const sigmaxx,
         DW_DTYPE *__restrict const m_vxx, DW_DTYPE *__restrict const m_sigmaxxx,
 #if DW_NDIM >= 3
-        DW_DTYPE *__restrict const dvzdbuoyancy,
-        DW_DTYPE *__restrict const dvzdz_store,
-        DW_DTYPE *__restrict const dvzdx_plus_dvxdz_store,
-        DW_DTYPE *__restrict const dvzdy_plus_dvydz_store,
+        DW_DTYPE *__restrict const dvzdbuoyancy_store_1,
+        void *__restrict const dvzdbuoyancy_store_2,
+        void *__restrict const dvzdbuoyancy_store_3,
+        char const *__restrict const
+            *__restrict const dvzdbuoyancy_filenames_ptr,
+        DW_DTYPE *__restrict const dvzdz_store_1,
+        void *__restrict const dvzdz_store_2,
+        void *__restrict const dvzdz_store_3,
+        char const *__restrict const *__restrict const dvzdz_filenames_ptr,
+        DW_DTYPE *__restrict const dvzdx_plus_dvxdz_store_1,
+        void *__restrict const dvzdx_plus_dvxdz_store_2,
+        void *__restrict const dvzdx_plus_dvxdz_store_3,
+        char const *__restrict const
+            *__restrict const dvzdx_plus_dvxdz_filenames_ptr,
+        DW_DTYPE *__restrict const dvzdy_plus_dvydz_store_1,
+        void *__restrict const dvzdy_plus_dvydz_store_2,
+        void *__restrict const dvzdy_plus_dvydz_store_3,
+        char const *__restrict const
+            *__restrict const dvzdy_plus_dvydz_filenames_ptr,
 #endif
 #if DW_NDIM >= 2
-        DW_DTYPE *__restrict const dvydbuoyancy,
-        DW_DTYPE *__restrict const dvydy_store,
-        DW_DTYPE *__restrict const dvydx_plus_dvxdy_store,
+        DW_DTYPE *__restrict const dvydbuoyancy_store_1,
+        void *__restrict const dvydbuoyancy_store_2,
+        void *__restrict const dvydbuoyancy_store_3,
+        char const *__restrict const
+            *__restrict const dvydbuoyancy_filenames_ptr,
+        DW_DTYPE *__restrict const dvydy_store_1,
+        void *__restrict const dvydy_store_2,
+        void *__restrict const dvydy_store_3,
+        char const *__restrict const *__restrict const dvydy_filenames_ptr,
+        DW_DTYPE *__restrict const dvydx_plus_dvxdy_store_1,
+        void *__restrict const dvydx_plus_dvxdy_store_2,
+        void *__restrict const dvydx_plus_dvxdy_store_3,
+        char const *__restrict const
+            *__restrict const dvydx_plus_dvxdy_filenames_ptr,
 #endif
-        DW_DTYPE *__restrict const dvxdbuoyancy,
-        DW_DTYPE *__restrict const dvxdx_store,
+        DW_DTYPE *__restrict const dvxdbuoyancy_store_1,
+        void *__restrict const dvxdbuoyancy_store_2,
+        void *__restrict const dvxdbuoyancy_store_3,
+        char const *__restrict const
+            *__restrict const dvxdbuoyancy_filenames_ptr,
+        DW_DTYPE *__restrict const dvxdx_store_1,
+        void *__restrict const dvxdx_store_2,
+        void *__restrict const dvxdx_store_3,
+        char const *__restrict const *__restrict const dvxdx_filenames_ptr,
 #if DW_NDIM >= 3
         DW_DTYPE *__restrict const r_z,
 #endif
@@ -543,10 +578,12 @@ __declspec(dllexport)
         int64_t const n_receivers_y_per_shot,
 #endif
         int64_t n_receivers_x_per_shot, int64_t const n_receivers_p_per_shot,
-        int64_t const step_ratio, bool const lamb_requires_grad,
-        bool const mu_requires_grad, bool const buoyancy_requires_grad,
-        bool const lamb_batched, bool const mu_batched,
-        bool const buoyancy_batched, int64_t start_t,
+        int64_t const step_ratio, int64_t const storage_mode,
+        size_t const shot_bytes_uncomp, size_t const shot_bytes_comp,
+        bool const lamb_requires_grad, bool const mu_requires_grad,
+        bool const buoyancy_requires_grad, bool const lamb_batched,
+        bool const mu_batched, bool const buoyancy_batched,
+        bool const storage_compression, int64_t start_t,
 #if DW_NDIM >= 3
         int64_t const pml_z0,
 #endif
@@ -637,8 +674,8 @@ __declspec(dllexport)
     DW_DTYPE *__restrict const m_sigmaxyx_shot = m_sigmaxyx + si;
 #endif
     int64_t const six = shot * n_sources_x_per_shot;
-    int64_t const rix = shot * n_receivers_x_per_shot;
     int64_t const sip = shot * n_sources_p_per_shot;
+    int64_t const rix = shot * n_receivers_x_per_shot;
     int64_t const rip = shot * n_receivers_p_per_shot;
     int64_t const *__restrict const sources_x_i_shot = sources_x_i + six;
     int64_t const *__restrict const sources_p_i_shot = sources_p_i + sip;
@@ -659,25 +696,75 @@ __declspec(dllexport)
     DW_DTYPE *__restrict const m_sigmaxxx_shot = m_sigmaxxx + si;
     int64_t t;
 
-    for (t = start_t; t < start_t + nt; ++t) {
-      int64_t const store_t =
-          (t / step_ratio) * n_shots * n_grid_points + shot * n_grid_points;
+#define OPEN_FILE_WRITE(name, grad_cond)                 \
+  FILE *fp_##name = NULL;                                \
+  if (storage_mode == STORAGE_DISK && (grad_cond)) {     \
+    fp_##name = fopen(name##_filenames_ptr[shot], "wb"); \
+  }
+
 #if DW_NDIM >= 3
-      DW_DTYPE *__restrict const dvzdbuoyancy_t = dvzdbuoyancy + store_t;
-      DW_DTYPE *__restrict const dvzdz_store_t = dvzdz_store + store_t;
-      DW_DTYPE *__restrict const dvzdx_plus_dvxdz_store_t =
-          dvzdx_plus_dvxdz_store + store_t;
-      DW_DTYPE *__restrict const dvzdy_plus_dvydz_store_t =
-          dvzdy_plus_dvydz_store + store_t;
+    OPEN_FILE_WRITE(dvzdbuoyancy, buoyancy_requires_grad)
+    OPEN_FILE_WRITE(dvzdz, lamb_requires_grad || mu_requires_grad)
+    OPEN_FILE_WRITE(dvzdx_plus_dvxdz, mu_requires_grad)
+    OPEN_FILE_WRITE(dvzdy_plus_dvydz, mu_requires_grad)
 #endif
 #if DW_NDIM >= 2
-      DW_DTYPE *__restrict const dvydbuoyancy_t = dvydbuoyancy + store_t;
-      DW_DTYPE *__restrict const dvydy_store_t = dvydy_store + store_t;
-      DW_DTYPE *__restrict const dvydx_plus_dvxdy_store_t =
-          dvydx_plus_dvxdy_store + store_t;
+    OPEN_FILE_WRITE(dvydbuoyancy, buoyancy_requires_grad)
+    OPEN_FILE_WRITE(dvydy, lamb_requires_grad || mu_requires_grad)
+    OPEN_FILE_WRITE(dvydx_plus_dvxdy, mu_requires_grad)
 #endif
-      DW_DTYPE *__restrict const dvxdbuoyancy_t = dvxdbuoyancy + store_t;
-      DW_DTYPE *__restrict const dvxdx_store_t = dvxdx_store + store_t;
+    OPEN_FILE_WRITE(dvxdbuoyancy, buoyancy_requires_grad)
+    OPEN_FILE_WRITE(dvxdx, lamb_requires_grad || mu_requires_grad)
+
+    for (t = start_t; t < start_t + nt; ++t) {
+      int64_t const store_1_t =
+          (shot + ((storage_mode == STORAGE_DEVICE && !storage_compression)
+                       ? t / step_ratio * n_shots
+                       : 0)) *
+          n_grid_points;
+      int64_t const store_2_t =
+          (shot + ((storage_mode == STORAGE_DEVICE && storage_compression)
+                       ? t / step_ratio * n_shots
+                       : 0)) *
+          (int64_t)shot_bytes_comp;
+
+#if DW_NDIM >= 3
+      DW_DTYPE *__restrict const dvzdbuoyancy_store_1_t =
+          dvzdbuoyancy_store_1 + store_1_t;
+      void *__restrict const dvzdbuoyancy_store_2_t =
+          (uint8_t *)dvzdbuoyancy_store_2 + store_2_t;
+      DW_DTYPE *__restrict const dvzdz_store_1_t = dvzdz_store_1 + store_1_t;
+      void *__restrict const dvzdz_store_2_t =
+          (uint8_t *)dvzdz_store_2 + store_2_t;
+      DW_DTYPE *__restrict const dvzdx_plus_dvxdz_store_1_t =
+          dvzdx_plus_dvxdz_store_1 + store_1_t;
+      void *__restrict const dvzdx_plus_dvxdz_store_2_t =
+          (uint8_t *)dvzdx_plus_dvxdz_store_2 + store_2_t;
+      DW_DTYPE *__restrict const dvzdy_plus_dvydz_store_1_t =
+          dvzdy_plus_dvydz_store_1 + store_1_t;
+      void *__restrict const dvzdy_plus_dvydz_store_2_t =
+          (uint8_t *)dvzdy_plus_dvydz_store_2 + store_2_t;
+#endif
+#if DW_NDIM >= 2
+      DW_DTYPE *__restrict const dvydbuoyancy_store_1_t =
+          dvydbuoyancy_store_1 + store_1_t;
+      void *__restrict const dvydbuoyancy_store_2_t =
+          (uint8_t *)dvydbuoyancy_store_2 + store_2_t;
+      DW_DTYPE *__restrict const dvydy_store_1_t = dvydy_store_1 + store_1_t;
+      void *__restrict const dvydy_store_2_t =
+          (uint8_t *)dvydy_store_2 + store_2_t;
+      DW_DTYPE *__restrict const dvydx_plus_dvxdy_store_1_t =
+          dvydx_plus_dvxdy_store_1 + store_1_t;
+      void *__restrict const dvydx_plus_dvxdy_store_2_t =
+          (uint8_t *)dvydx_plus_dvxdy_store_2 + store_2_t;
+#endif
+      DW_DTYPE *__restrict const dvxdbuoyancy_store_1_t =
+          dvxdbuoyancy_store_1 + store_1_t;
+      void *__restrict const dvxdbuoyancy_store_2_t =
+          (uint8_t *)dvxdbuoyancy_store_2 + store_2_t;
+      DW_DTYPE *__restrict const dvxdx_store_1_t = dvxdx_store_1 + store_1_t;
+      void *__restrict const dvxdx_store_2_t =
+          (uint8_t *)dvxdx_store_2 + store_2_t;
       bool const lamb_requires_grad_t =
           lamb_requires_grad && ((t % step_ratio) == 0);
       bool const mu_requires_grad_t =
@@ -786,7 +873,7 @@ __declspec(dllexport)
                   }
 
                   if (buoyancy_requires_grad_t) {
-                    dvzdbuoyancy_t[i] = dt * w_sum;
+                    dvzdbuoyancy_store_1_t[i] = dt * w_sum;
                   }
                   vz_shot[i] += buoyancy_z_shot[i] * dt * w_sum;
                 }
@@ -837,7 +924,7 @@ __declspec(dllexport)
                   }
 
                   if (buoyancy_requires_grad_t) {
-                    dvydbuoyancy_t[i] = dt * w_sum;
+                    dvydbuoyancy_store_1_t[i] = dt * w_sum;
                   }
                   vy_shot[i] += buoyancy_y_shot[i] * dt * w_sum;
                 }
@@ -890,7 +977,7 @@ __declspec(dllexport)
                   }
 
                   if (buoyancy_requires_grad_t) {
-                    dvxdbuoyancy_t[i] = dt * w_sum;
+                    dvxdbuoyancy_store_1_t[i] = dt * w_sum;
                   }
                   vx_shot[i] += buoyancy_x_shot[i] * dt * w_sum;
                 }
@@ -960,7 +1047,7 @@ __declspec(dllexport)
                   }
                   w_sum += lamb_shot[i] * dvzdz;
                   if (lamb_or_mu_requires_grad_t) {
-                    dvzdz_store_t[i] = dt * dvzdz;
+                    dvzdz_store_1_t[i] = dt * dvzdz;
                   }
 #endif
 
@@ -975,7 +1062,7 @@ __declspec(dllexport)
                   }
                   w_sum += lamb_shot[i] * dvydy;
                   if (lamb_or_mu_requires_grad_t) {
-                    dvydy_store_t[i] = dt * dvydy;
+                    dvydy_store_1_t[i] = dt * dvydy;
                   }
 #endif
 
@@ -989,7 +1076,7 @@ __declspec(dllexport)
                   }
                   w_sum += lamb_shot[i] * dvxdx;
                   if (lamb_or_mu_requires_grad_t) {
-                    dvxdx_store_t[i] = dt * dvxdx;
+                    dvxdx_store_1_t[i] = dt * dvxdx;
                   }
 
 #if DW_NDIM >= 3
@@ -1036,7 +1123,7 @@ __declspec(dllexport)
                   w_sum += dvydx;
 
                   if (mu_requires_grad_t) {
-                    dvydx_plus_dvxdy_store_t[i] = dt * w_sum;
+                    dvydx_plus_dvxdy_store_1_t[i] = dt * w_sum;
                   }
                   sigmaxy_shot[i] += dt * mu_yx_shot[i] * w_sum;
                 }
@@ -1075,7 +1162,7 @@ __declspec(dllexport)
                   w_sum += dvzdx;
 
                   if (mu_requires_grad_t) {
-                    dvzdx_plus_dvxdz_store_t[i] = dt * w_sum;
+                    dvzdx_plus_dvxdz_store_1_t[i] = dt * w_sum;
                   }
                   sigmaxz_shot[i] += dt * mu_zx_shot[i] * w_sum;
                 }
@@ -1113,7 +1200,7 @@ __declspec(dllexport)
                   w_sum += dvzdy;
 
                   if (mu_requires_grad_t) {
-                    dvzdy_plus_dvydz_store_t[i] = dt * w_sum;
+                    dvzdy_plus_dvydz_store_1_t[i] = dt * w_sum;
                   }
                   sigmayz_shot[i] += dt * mu_zy_shot[i] * w_sum;
                 }
@@ -1132,7 +1219,47 @@ __declspec(dllexport)
             f_p_shot + t * n_shots * n_sources_p_per_shot,
             n_sources_p_per_shot);
       }
+
+#define SAVE_SNAPSHOT(name, grad_cond)                                     \
+  if (grad_cond) {                                                         \
+    int64_t step_idx = t / step_ratio;                                     \
+    storage_save_snapshot_cpu(                                             \
+        name##_store_1_t, name##_store_2_t, fp_##name, storage_mode,       \
+        storage_compression, step_idx, shot_bytes_uncomp, shot_bytes_comp, \
+        n_grid_points, sizeof(DW_DTYPE) == sizeof(double));                \
+  }
+
+#if DW_NDIM >= 3
+      SAVE_SNAPSHOT(dvzdbuoyancy, buoyancy_requires_grad_t)
+      SAVE_SNAPSHOT(dvzdz, lamb_or_mu_requires_grad_t)
+      SAVE_SNAPSHOT(dvzdx_plus_dvxdz, mu_requires_grad_t)
+      SAVE_SNAPSHOT(dvzdy_plus_dvydz, mu_requires_grad_t)
+#endif
+#if DW_NDIM >= 2
+      SAVE_SNAPSHOT(dvydbuoyancy, buoyancy_requires_grad_t)
+      SAVE_SNAPSHOT(dvydy, lamb_or_mu_requires_grad_t)
+      SAVE_SNAPSHOT(dvydx_plus_dvxdy, mu_requires_grad_t)
+#endif
+      SAVE_SNAPSHOT(dvxdbuoyancy, buoyancy_requires_grad_t)
+      SAVE_SNAPSHOT(dvxdx, lamb_or_mu_requires_grad_t)
     }
+
+#define CLOSE_FILE(name) \
+  if (fp_##name) fclose(fp_##name);
+
+#if DW_NDIM >= 3
+    CLOSE_FILE(dvzdbuoyancy)
+    CLOSE_FILE(dvzdz)
+    CLOSE_FILE(dvzdx_plus_dvxdz)
+    CLOSE_FILE(dvzdy_plus_dvydz)
+#endif
+#if DW_NDIM >= 2
+    CLOSE_FILE(dvydbuoyancy)
+    CLOSE_FILE(dvydy)
+    CLOSE_FILE(dvydx_plus_dvxdy)
+#endif
+    CLOSE_FILE(dvxdbuoyancy)
+    CLOSE_FILE(dvxdx)
   }
 }
 
@@ -1199,18 +1326,51 @@ __declspec(dllexport)
 #endif
         DW_DTYPE *__restrict const m_sigmaxxxn,
 #if DW_NDIM >= 3
-        DW_DTYPE const *__restrict const dvzdbuoyancy,
-        DW_DTYPE const *__restrict const dvzdz_store,
-        DW_DTYPE const *__restrict const dvzdx_plus_dvxdz_store,
-        DW_DTYPE const *__restrict const dvzdy_plus_dvydz_store,
+        DW_DTYPE *__restrict const dvzdbuoyancy_store_1,
+        void *__restrict const dvzdbuoyancy_store_2,
+        void *__restrict const dvzdbuoyancy_store_3,
+        char const *__restrict const
+            *__restrict const dvzdbuoyancy_filenames_ptr,
+        DW_DTYPE *__restrict const dvzdz_store_1,
+        void *__restrict const dvzdz_store_2,
+        void *__restrict const dvzdz_store_3,
+        char const *__restrict const *__restrict const dvzdz_filenames_ptr,
+        DW_DTYPE *__restrict const dvzdx_plus_dvxdz_store_1,
+        void *__restrict const dvzdx_plus_dvxdz_store_2,
+        void *__restrict const dvzdx_plus_dvxdz_store_3,
+        char const *__restrict const
+            *__restrict const dvzdx_plus_dvxdz_filenames_ptr,
+        DW_DTYPE *__restrict const dvzdy_plus_dvydz_store_1,
+        void *__restrict const dvzdy_plus_dvydz_store_2,
+        void *__restrict const dvzdy_plus_dvydz_store_3,
+        char const *__restrict const
+            *__restrict const dvzdy_plus_dvydz_filenames_ptr,
 #endif
 #if DW_NDIM >= 2
-        DW_DTYPE const *__restrict const dvydbuoyancy,
-        DW_DTYPE const *__restrict const dvydy_store,
-        DW_DTYPE const *__restrict const dvydx_plus_dvxdy_store,
+        DW_DTYPE *__restrict const dvydbuoyancy_store_1,
+        void *__restrict const dvydbuoyancy_store_2,
+        void *__restrict const dvydbuoyancy_store_3,
+        char const *__restrict const
+            *__restrict const dvydbuoyancy_filenames_ptr,
+        DW_DTYPE *__restrict const dvydy_store_1,
+        void *__restrict const dvydy_store_2,
+        void *__restrict const dvydy_store_3,
+        char const *__restrict const *__restrict const dvydy_filenames_ptr,
+        DW_DTYPE *__restrict const dvydx_plus_dvxdy_store_1,
+        void *__restrict const dvydx_plus_dvxdy_store_2,
+        void *__restrict const dvydx_plus_dvxdy_store_3,
+        char const *__restrict const
+            *__restrict const dvydx_plus_dvxdy_filenames_ptr,
 #endif
-        DW_DTYPE const *__restrict const dvxdbuoyancy,
-        DW_DTYPE const *__restrict const dvxdx_store,
+        DW_DTYPE *__restrict const dvxdbuoyancy_store_1,
+        void *__restrict const dvxdbuoyancy_store_2,
+        void *__restrict const dvxdbuoyancy_store_3,
+        char const *__restrict const
+            *__restrict const dvxdbuoyancy_filenames_ptr,
+        DW_DTYPE *__restrict const dvxdx_store_1,
+        void *__restrict const dvxdx_store_2,
+        void *__restrict const dvxdx_store_3,
+        char const *__restrict const *__restrict const dvxdx_filenames_ptr,
 #if DW_NDIM >= 3
         DW_DTYPE *__restrict const grad_f_z,
 #endif
@@ -1312,10 +1472,12 @@ __declspec(dllexport)
         int64_t const n_receivers_y_per_shot,
 #endif
         int64_t n_receivers_x_per_shot, int64_t const n_receivers_p_per_shot,
-        int64_t const step_ratio, bool const lamb_requires_grad,
-        bool const mu_requires_grad, bool const buoyancy_requires_grad,
-        bool const lamb_batched, bool const mu_batched,
-        bool const buoyancy_batched, int64_t start_t,
+        int64_t const step_ratio, int64_t const storage_mode,
+        size_t const shot_bytes_uncomp, size_t const shot_bytes_comp,
+        bool const lamb_requires_grad, bool const mu_requires_grad,
+        bool const buoyancy_requires_grad, bool const lamb_batched,
+        bool const mu_batched, bool const buoyancy_batched,
+        bool const storage_compression, int64_t start_t,
 #if DW_NDIM >= 3
         int64_t const pml_z0,
 #endif
@@ -1441,16 +1603,52 @@ __declspec(dllexport)
     DW_DTYPE *__restrict const m_vxx_shot = m_vxx + si;
     int64_t t;
 
-    for (t = start_t - 1; t >= start_t - nt; --t) {
-      int64_t store_t =
-          (t / step_ratio) * n_shots * n_grid_points + shot * n_grid_points;
+#define OPEN_FILE_READ(name, grad_cond)                  \
+  FILE *fp_##name = NULL;                                \
+  if (storage_mode == STORAGE_DISK && (grad_cond)) {     \
+    fp_##name = fopen(name##_filenames_ptr[shot], "rb"); \
+  }
+
 #if DW_NDIM >= 3
-      DW_DTYPE const *__restrict const dvzdbuoyancy_t = dvzdbuoyancy + store_t;
-      DW_DTYPE const *__restrict const dvzdz_store_t = dvzdz_store + store_t;
-      DW_DTYPE const *__restrict const dvzdx_plus_dvxdz_store_t =
-          dvzdx_plus_dvxdz_store + store_t;
-      DW_DTYPE const *__restrict const dvzdy_plus_dvydz_store_t =
-          dvzdy_plus_dvydz_store + store_t;
+    OPEN_FILE_READ(dvzdbuoyancy, buoyancy_requires_grad)
+    OPEN_FILE_READ(dvzdz, lamb_requires_grad || mu_requires_grad)
+    OPEN_FILE_READ(dvzdx_plus_dvxdz, mu_requires_grad)
+    OPEN_FILE_READ(dvzdy_plus_dvydz, mu_requires_grad)
+#endif
+#if DW_NDIM >= 2
+    OPEN_FILE_READ(dvydbuoyancy, buoyancy_requires_grad)
+    OPEN_FILE_READ(dvydy, lamb_requires_grad || mu_requires_grad)
+    OPEN_FILE_READ(dvydx_plus_dvxdy, mu_requires_grad)
+#endif
+    OPEN_FILE_READ(dvxdbuoyancy, buoyancy_requires_grad)
+    OPEN_FILE_READ(dvxdx, lamb_requires_grad || mu_requires_grad)
+
+    for (t = start_t - 1; t >= start_t - nt; --t) {
+#define SETUP_STORE_LOAD(name, grad_cond)                                    \
+  DW_DTYPE *__restrict const name##_store_1_t =                              \
+      name##_store_1 + si +                                                  \
+      ((storage_mode == STORAGE_DEVICE && !storage_compression)              \
+           ? (t / step_ratio) * n_shots * n_grid_points                      \
+           : 0);                                                             \
+  void *__restrict const name##_store_2_t =                                  \
+      (uint8_t *)name##_store_2 +                                            \
+      (shot + ((storage_mode == STORAGE_DEVICE && storage_compression)       \
+                   ? t / step_ratio * n_shots                                \
+                   : 0)) *                                                   \
+          (int64_t)shot_bytes_comp;                                          \
+  if ((grad_cond) && ((t % step_ratio) == 0)) {                              \
+    int64_t step_idx = t / step_ratio;                                       \
+    storage_load_snapshot_cpu(                                               \
+        (void *)name##_store_1_t, name##_store_2_t, fp_##name, storage_mode, \
+        storage_compression, step_idx, shot_bytes_uncomp, shot_bytes_comp,   \
+        n_grid_points, sizeof(DW_DTYPE) == sizeof(double));                  \
+  }
+
+#if DW_NDIM >= 3
+      SETUP_STORE_LOAD(dvzdbuoyancy, buoyancy_requires_grad)
+      SETUP_STORE_LOAD(dvzdz, lamb_requires_grad || mu_requires_grad)
+      SETUP_STORE_LOAD(dvzdx_plus_dvxdz, mu_requires_grad)
+      SETUP_STORE_LOAD(dvzdy_plus_dvydz, mu_requires_grad)
       DW_DTYPE *__restrict const m_sigmazzz_t =
           (((start_t - 1 - t) & 1) ? m_sigmazzzn : m_sigmazzz) + si;
       DW_DTYPE *__restrict const m_sigmayzy_t =
@@ -1473,10 +1671,9 @@ __declspec(dllexport)
           (((start_t - 1 - t) & 1) ? m_sigmaxzz : m_sigmaxzzn) + si;
 #endif
 #if DW_NDIM >= 2
-      DW_DTYPE const *__restrict const dvydbuoyancy_t = dvydbuoyancy + store_t;
-      DW_DTYPE const *__restrict const dvydy_store_t = dvydy_store + store_t;
-      DW_DTYPE const *__restrict const dvydx_plus_dvxdy_store_t =
-          dvydx_plus_dvxdy_store + store_t;
+      SETUP_STORE_LOAD(dvydbuoyancy, buoyancy_requires_grad)
+      SETUP_STORE_LOAD(dvydy, lamb_requires_grad || mu_requires_grad)
+      SETUP_STORE_LOAD(dvydx_plus_dvxdy, mu_requires_grad)
       DW_DTYPE *__restrict const m_sigmayyy_t =
           (((start_t - 1 - t) & 1) ? m_sigmayyyn : m_sigmayyy) + si;
       DW_DTYPE *__restrict const m_sigmaxyy_t =
@@ -1490,8 +1687,9 @@ __declspec(dllexport)
       DW_DTYPE *__restrict const m_sigmaxyxn_t =
           (((start_t - 1 - t) & 1) ? m_sigmaxyx : m_sigmaxyxn) + si;
 #endif
-      DW_DTYPE const *__restrict const dvxdbuoyancy_t = dvxdbuoyancy + store_t;
-      DW_DTYPE const *__restrict const dvxdx_store_t = dvxdx_store + store_t;
+      SETUP_STORE_LOAD(dvxdbuoyancy, buoyancy_requires_grad)
+      SETUP_STORE_LOAD(dvxdx, lamb_requires_grad || mu_requires_grad)
+
       bool const lamb_requires_grad_t =
           lamb_requires_grad && ((t % step_ratio) == 0);
       bool const mu_requires_grad_t =
@@ -1576,8 +1774,9 @@ __declspec(dllexport)
                   }
 
                   if (buoyancy_requires_grad_t) {
-                    grad_buoyancy_z_shot[i] +=
-                        vz_shot[i] * dvzdbuoyancy_t[i] * (DW_DTYPE)step_ratio;
+                    grad_buoyancy_z_shot[i] += vz_shot[i] *
+                                               dvzdbuoyancy_store_1_t[i] *
+                                               (DW_DTYPE)step_ratio;
                   }
                 }
 #endif
@@ -1624,8 +1823,9 @@ __declspec(dllexport)
                   }
 
                   if (buoyancy_requires_grad_t) {
-                    grad_buoyancy_y_shot[i] +=
-                        vy_shot[i] * dvydbuoyancy_t[i] * (DW_DTYPE)step_ratio;
+                    grad_buoyancy_y_shot[i] += vy_shot[i] *
+                                               dvydbuoyancy_store_1_t[i] *
+                                               (DW_DTYPE)step_ratio;
                   }
                 }
 
@@ -1675,8 +1875,9 @@ __declspec(dllexport)
                   }
 
                   if (buoyancy_requires_grad_t) {
-                    grad_buoyancy_x_shot[i] +=
-                        vx_shot[i] * dvxdbuoyancy_t[i] * (DW_DTYPE)step_ratio;
+                    grad_buoyancy_x_shot[i] += vx_shot[i] *
+                                               dvxdbuoyancy_store_1_t[i] *
+                                               (DW_DTYPE)step_ratio;
                   }
                 }
           }
@@ -1739,33 +1940,33 @@ __declspec(dllexport)
 #if DW_NDIM == 3
                     grad_lamb_shot[i] +=
                         (sigmaxx_shot[i] + sigmayy_shot[i] + sigmazz_shot[i]) *
-                        (dvxdx_store_t[i] + dvydy_store_t[i] +
-                         dvzdz_store_t[i]) *
+                        (dvxdx_store_1_t[i] + dvydy_store_1_t[i] +
+                         dvzdz_store_1_t[i]) *
                         (DW_DTYPE)step_ratio;
 #elif DW_NDIM == 2
             grad_lamb_shot[i] += (sigmaxx_shot[i] + sigmayy_shot[i]) *
-                                 (dvxdx_store_t[i] + dvydy_store_t[i]) *
+                                 (dvxdx_store_1_t[i] + dvydy_store_1_t[i]) *
                                  (DW_DTYPE)step_ratio;
 #else
             grad_lamb_shot[i] +=
-                sigmaxx_shot[i] * dvxdx_store_t[i] * (DW_DTYPE)step_ratio;
+                sigmaxx_shot[i] * dvxdx_store_1_t[i] * (DW_DTYPE)step_ratio;
 #endif
                   }
                   if (mu_requires_grad_t) {
 #if DW_NDIM == 3
                     grad_mu_shot[i] += 2 *
-                                       (sigmaxx_shot[i] * dvxdx_store_t[i] +
-                                        sigmayy_shot[i] * dvydy_store_t[i] +
-                                        sigmazz_shot[i] * dvzdz_store_t[i]) *
+                                       (sigmaxx_shot[i] * dvxdx_store_1_t[i] +
+                                        sigmayy_shot[i] * dvydy_store_1_t[i] +
+                                        sigmazz_shot[i] * dvzdz_store_1_t[i]) *
                                        (DW_DTYPE)step_ratio;
 #elif DW_NDIM == 2
             grad_mu_shot[i] += 2 *
-                               (sigmaxx_shot[i] * dvxdx_store_t[i] +
-                                sigmayy_shot[i] * dvydy_store_t[i]) *
+                               (sigmaxx_shot[i] * dvxdx_store_1_t[i] +
+                                sigmayy_shot[i] * dvydy_store_1_t[i]) *
                                (DW_DTYPE)step_ratio;
 #else
             grad_mu_shot[i] +=
-                2 * sigmaxx_shot[i] * dvxdx_store_t[i] * (DW_DTYPE)step_ratio;
+                2 * sigmaxx_shot[i] * dvxdx_store_1_t[i] * (DW_DTYPE)step_ratio;
 #endif
                   }
 
@@ -1831,7 +2032,7 @@ __declspec(dllexport)
 
                   if (mu_requires_grad_t) {
                     grad_mu_yx_shot[i] += sigmaxy_shot[i] *
-                                          dvydx_plus_dvxdy_store_t[i] *
+                                          dvydx_plus_dvxdy_store_1_t[i] *
                                           (DW_DTYPE)step_ratio;
                   }
 
@@ -1867,7 +2068,7 @@ __declspec(dllexport)
 
                   if (mu_requires_grad_t) {
                     grad_mu_zx_shot[i] += sigmaxz_shot[i] *
-                                          dvzdx_plus_dvxdz_store_t[i] *
+                                          dvzdx_plus_dvxdz_store_1_t[i] *
                                           (DW_DTYPE)step_ratio;
                   }
 
@@ -1902,7 +2103,7 @@ __declspec(dllexport)
 
                   if (mu_requires_grad_t) {
                     grad_mu_zy_shot[i] += sigmayz_shot[i] *
-                                          dvzdy_plus_dvydz_store_t[i] *
+                                          dvzdy_plus_dvydz_store_1_t[i] *
                                           (DW_DTYPE)step_ratio;
                   }
 
@@ -1958,6 +2159,19 @@ __declspec(dllexport)
             n_receivers_p_per_shot);
       }
     }
+#if DW_NDIM >= 3
+    CLOSE_FILE(dvzdbuoyancy)
+    CLOSE_FILE(dvzdz)
+    CLOSE_FILE(dvzdx_plus_dvxdz)
+    CLOSE_FILE(dvzdy_plus_dvydz)
+#endif
+#if DW_NDIM >= 2
+    CLOSE_FILE(dvydbuoyancy)
+    CLOSE_FILE(dvydy)
+    CLOSE_FILE(dvydx_plus_dvxdy)
+#endif
+    CLOSE_FILE(dvxdbuoyancy)
+    CLOSE_FILE(dvxdx)
   }
 #ifdef _OPENMP
   if (lamb_requires_grad && !lamb_batched && n_threads > 1) {

@@ -571,6 +571,9 @@ def run_scalarfunc(nt: int = 3) -> None:
             None,
             None,
             1,
+            "device",
+            ".",
+            False,
             *[
                 wfc,
                 wfp,
@@ -891,6 +894,113 @@ def test_gradcheck_only_wavefield_0_2d() -> None:
 def test_gradcheck_v_batched() -> None:
     """Test gradcheck using a different velocity for each shot."""
     run_gradcheck(propagator=scalarprop, c=torch.tensor([[[1500.0]], [[1600.0]]]))
+
+
+@pytest.mark.parametrize(
+    ("nx", "dx"),
+    [
+        ((5,), (5,)),
+        ((5, 3), (5, 5)),
+        ((5, 3, 3), (6, 6, 6)),
+    ],
+)
+def test_storage(
+    nx,
+    dx,
+    c=1500,
+    dc=100,
+    freq=25,
+    dt=0.005,
+    num_shots=2,
+    num_sources_per_shot=2,
+    num_receivers_per_shot=2,
+    num_scatter_receivers_per_shot=2,
+    propagator=scalarprop,
+    prop_kwargs=None,
+    device=None,
+    dtype=None,
+):
+    """Test gradients with different storage options."""
+    nx = torch.tensor(nx, dtype=torch.long)
+    dx = torch.tensor(dx, dtype=dtype)
+
+    torch.manual_seed(1)
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    if prop_kwargs is None:
+        prop_kwargs = {}
+    if "pml_width" not in prop_kwargs:
+        prop_kwargs["pml_width"] = 3
+
+    model = (
+        torch.ones(*nx, device=device, dtype=dtype) * c
+        + torch.randn(*nx, device=device, dtype=dtype) * dc
+    )
+
+    nt = int((2 * torch.norm(nx.float() * dx) / c + 0.35 + 2 / freq) / dt)
+    x_s = _set_coords(num_shots, num_sources_per_shot, nx.tolist())
+    x_r = _set_coords(num_shots, num_receivers_per_shot, nx.tolist(), "bottom")
+    sources = _set_sources(x_s, freq, dt, nt, dtype)
+
+    # Store uncompressed in device memory (default)
+    modeld = model.clone()
+    modeld.requires_grad_()
+    out = propagator(
+        modeld,
+        dx.tolist(),
+        dt,
+        sources["amplitude"],
+        sources["locations"],
+        x_r,
+        prop_kwargs=prop_kwargs,
+    )
+
+    loss = (out[-1] ** 2).sum()
+    (gd,) = torch.autograd.grad(loss, modeld, create_graph=True)
+    (g2d,) = torch.autograd.grad((gd**2).sum(), modeld)
+
+    modes = ["device", "disk", "none"]
+    if model.is_cuda:
+        modes.append("cpu")
+
+    atol_model = [2, 0.02, 2e-3]
+    atol_model2 = [0.03, 6e-6, 8e-8]
+
+    for mode in modes:
+        for compression in [False, True]:
+            if mode == "device" and not compression:  # Default
+                continue
+            modeli = model.clone()
+            modeli.requires_grad_()
+            prop_kwargs = dict(prop_kwargs)
+            prop_kwargs["storage_mode"] = mode
+            prop_kwargs["storage_compression"] = compression
+            out = propagator(
+                modeli,
+                dx.tolist(),
+                dt,
+                sources["amplitude"],
+                sources["locations"],
+                x_r,
+                prop_kwargs=prop_kwargs,
+            )
+
+            loss = (out[-1] ** 2).sum()
+            (gi,) = torch.autograd.grad(loss, modeli, create_graph=True)
+            (g2i,) = torch.autograd.grad((gi**2).sum(), modeli)
+
+            if mode != "none":
+                if compression:
+                    assert torch.allclose(gd, gi, atol=atol_model[len(nx) - 1])
+                    assert torch.allclose(g2d, g2i, atol=atol_model2[len(nx) - 1])
+                else:
+                    assert torch.allclose(
+                        gd, gi, atol=gd.detach().abs().max().item() * 1e-5
+                    )
+                    assert torch.allclose(
+                        g2d, g2i, atol=g2d.detach().abs().max().item() * 1e-5
+                    )
 
 
 def run_direct(

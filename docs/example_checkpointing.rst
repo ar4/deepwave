@@ -1,7 +1,7 @@
 Further reducing memory consumption with checkpointing
 ======================================================
 
-The best way to reduce memory requirements is to use batches of shots, as discussed in the :doc:`previous example <example_rtm>`. If you do not have enough memory to run even one shot at a time, however, then memory requirements can be further reduced, at the cost of increased computation (and code complexity), by using checkpointing.
+The best ways to reduce memory requirements are to :doc:`use batches of shots <example_rtm>`, or to :doc:`compress and/or store intermediate data on disk <example_storage>`. An alternative means of reducing memory requirements, at the cost of increased computation (and code complexity), is to use checkpointing.
 
 Calculating gradients with respect to the velocity model requires access to the forward wavefield, sampled at at least the Nyquist frequency, during backpropagation. Deepwave achieves this by storing snapshots of the forward wavefield in memory. Storing these snapshots is usually responsible for most of Deepwave's memory requirements.
 
@@ -87,6 +87,6 @@ The output is different to the previous example, but this is not because we used
 
 .. image:: example_checkpointing.jpg
 
-Checkpointing should probably only be considered if you do not have enough memory to run even one shot at a time, as otherwise it is likely to be more efficient to divide your input into batches that you run one at a time and accumulate the gradient over them, as we did in :doc:`the RTM example <example_rtm>`.
+Checkpointing should probably only be considered if you do not have enough memory to run backpropagation on even one shot at a time, as otherwise it is likely to be more efficient to divide your input into batches that you run one at a time and accumulate the gradient over them, as we did in :doc:`the RTM example <example_rtm>`. Even then, it might be preferable instead to :doc:`use compression or disk storage <example_storage>`.
 
 `Full example code <https://github.com/ar4/deepwave/blob/master/docs/example_checkpointing.py>`_

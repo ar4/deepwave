@@ -1,6 +1,4 @@
-# Lowering from 3.21 to 3.18 to support older systems like RHEL 8.
-# 3.18 is the minimum because of the use of the CUDA_ARCHITECTURES property.
-cmake_minimum_required(VERSION 3.18)
+cmake_minimum_required(VERSION 3.23)
 # If scikit-build-core sets SKBUILD_PROJECT_NAME / VERSION, prefer those.
 if(DEFINED SKBUILD_PROJECT_NAME)
     project(${SKBUILD_PROJECT_NAME} LANGUAGES C)
@@ -104,7 +102,6 @@ if(CMAKE_BUILD_TYPE MATCHES Release)
 endif()
 # --- End Compiler Feature Detection and Flags ---
 
-
 # --- Helper Macros for Object Libraries ---
 macro(add_deepwave_cpu_object_library BASENAME NDIM ACCURACY DTYPE)
     set(TARGET_NAME "${BASENAME}_${NDIM}_${ACCURACY}_${DTYPE}_obj")
@@ -165,31 +162,53 @@ if(OPENMP_CONFIGURED)
         target_link_libraries(${CPU_TARGET} PRIVATE Deepwave_OpenMP_Interface)
     endforeach()
 endif()
+
+# --- Storage and Simple Compression Library (CPU) ---
+add_library(storage_obj OBJECT src/deepwave/storage_utils.c src/deepwave/simple_compress.c)
+set_target_properties(storage_obj PROPERTIES POSITION_INDEPENDENT_CODE ON)
+if(C_RELEASE_FLAGS)
+    target_compile_options(storage_obj PRIVATE ${C_RELEASE_FLAGS})
+endif()
+
+if(HAVE_AVX2 AND C_AVX2_FLAG)
+    target_compile_options(storage_obj PRIVATE ${C_AVX2_FLAG})
+endif()
+list(APPEND DEEPWAVE_OBJECTS $<TARGET_OBJECTS:storage_obj>)
+
 # --- End CPU object libraries ---
 
 
 # --- CUDA object libraries ---
 if(CUDAToolkit_FOUND)
-    if(CMAKE_BUILD_TYPE MATCHES Release)
-        set(CUDA_RELEASE_OPTIONS --use_fast_math -O3 --restrict)
-    endif()
-    if(NOT WIN32)
-        # -fPIC is not a valid option for the MSVC compiler on Windows.
-	list(APPEND CMAKE_CUDA_FLAGS -Xcompiler=-fPIC)
-    endif()
-
-    foreach(NDIM ${NDIMS})
-        foreach(ACCURACY ${ACCURACIES})
-            foreach(DTYPE ${DTYPES})
-		add_deepwave_cuda_object_library(scalar ${NDIM} ${ACCURACY} ${DTYPE})
-		add_deepwave_cuda_object_library(scalar_born ${NDIM} ${ACCURACY} ${DTYPE})
-                add_deepwave_cuda_object_library(elastic ${NDIM} ${ACCURACY} ${DTYPE})
-            endforeach()
-        endforeach()
-    endforeach()
+	    if(CMAKE_BUILD_TYPE MATCHES Release)
+	        set(CUDA_RELEASE_OPTIONS --use_fast_math -O3 --restrict)
+	    endif()
+	    if(NOT WIN32)
+	        # -fPIC is not a valid option for the MSVC compiler on Windows.
+		list(APPEND CMAKE_CUDA_FLAGS -Xcompiler=-fPIC)
+	    endif()
+	
+	    foreach(NDIM ${NDIMS})
+	        foreach(ACCURACY ${ACCURACIES})
+	            foreach(DTYPE ${DTYPES})
+			add_deepwave_cuda_object_library(scalar ${NDIM} ${ACCURACY} ${DTYPE})
+			add_deepwave_cuda_object_library(scalar_born ${NDIM} ${ACCURACY} ${DTYPE})
+			add_deepwave_cuda_object_library(elastic ${NDIM} ${ACCURACY} ${DTYPE})
+	            endforeach()
+	        endforeach()
+	    endforeach()
+	
+	    # --- Storage and Simple Compression Library (CUDA) ---
+	    add_library(storage_cu_obj OBJECT src/deepwave/storage_utils.cu src/deepwave/simple_compress.cu)
+	    set_target_properties(storage_cu_obj PROPERTIES 
+	        POSITION_INDEPENDENT_CODE ON 
+	        CUDA_ARCHITECTURES all)
+	        if(CMAKE_BUILD_TYPE MATCHES Release)
+	            target_compile_options(storage_cu_obj PRIVATE ${CUDA_RELEASE_OPTIONS})
+	        endif()
+	    list(APPEND DEEPWAVE_OBJECTS $<TARGET_OBJECTS:storage_cu_obj>)
 endif()
 # --- End CUDA object libraries ---
-
 
 # --- Final Library Build ---
 add_library(deepwave_C SHARED ${DEEPWAVE_OBJECTS})

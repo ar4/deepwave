@@ -1,7 +1,7 @@
 Deepwave
 ========
 
-Deepwave offers PyTorch-integrated wave propagators, enabling efficient forward modelling and backpropagation for gradient calculation in inversion and optimisation tasks. It currently supports 2D standard and Born modelling of the scalar wave equation, alongside propagation with the elastic wave equation, optimised for both CPUs and GPUs.
+Deepwave offers PyTorch-integrated wave propagators, enabling efficient forward modelling and backpropagation for gradient calculation in inversion and optimisation tasks. It currently supports 1D, 2D, and 3D standard and Born modelling of the scalar wave equation, alongside propagation with the elastic wave equation, optimised for both CPUs and GPUs.
 
 Installation
 ------------

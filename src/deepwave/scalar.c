@@ -66,9 +66,11 @@
 #endif /* _OPENMP */
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
 
 #include "common_cpu.h"
 #include "regular_grid.h"
+#include "storage_utils.h"
 
 #define CAT_I(name, ndim, accuracy, dtype, device) \
   scalar_iso_##ndim##d_##accuracy##_##dtype##_##name##_##device
@@ -164,7 +166,8 @@ __declspec(dllexport)
 #if DW_NDIM >= 2
         DW_DTYPE *__restrict const zetay,
 #endif
-        DW_DTYPE *__restrict const zetax, DW_DTYPE *__restrict const dwdv,
+        DW_DTYPE *__restrict const zetax, DW_DTYPE *__restrict const w_store_1,
+        void *__restrict const w_store_2, void *__restrict const w_store_3,
         DW_DTYPE *__restrict const r,
 #if DW_NDIM >= 3
         DW_DTYPE const *__restrict const az,
@@ -181,6 +184,7 @@ __declspec(dllexport)
         DW_DTYPE const *__restrict const dbxdx,
         int64_t const *__restrict const sources_i,
         int64_t const *__restrict const receivers_i,
+        char const *__restrict const *__restrict const w_filenames_ptr,
 #if DW_NDIM >= 3
         DW_DTYPE const rdz,
 #endif
@@ -204,7 +208,10 @@ __declspec(dllexport)
 #endif
         int64_t const nx, int64_t const n_sources_per_shot,
         int64_t const n_receivers_per_shot, int64_t const step_ratio,
-        bool const v_requires_grad, bool const v_batched, int64_t const start_t,
+        int64_t const storage_mode, size_t const shot_bytes_uncomp,
+        size_t const shot_bytes_comp, bool const v_requires_grad,
+        bool const v_batched, bool const storage_compression,
+        int64_t const start_t,
 #if DW_NDIM >= 3
         int64_t const pml_z0,
 #endif
@@ -243,6 +250,12 @@ __declspec(dllexport)
 #endif
     DW_DTYPE *__restrict const zetax_t = zetax + shot_i;
     int64_t t;
+
+    FILE *fp_w = NULL;
+    if (storage_mode == STORAGE_DISK) {
+      if (v_requires_grad) fp_w = fopen(w_filenames_ptr[shot], "wb");
+    }
+
     for (t = start_t; t < start_t + nt; ++t) {
       DW_DTYPE *__restrict const wfc_t =
           (((t - start_t) & 1) ? wfp : wfc) + shot_i;
@@ -264,9 +277,18 @@ __declspec(dllexport)
           (((t - start_t) & 1) ? psixn : psix) + shot_i;
       DW_DTYPE *__restrict const psixn_t =
           (((t - start_t) & 1) ? psix : psixn) + shot_i;
-      DW_DTYPE *__restrict const dwdv_t =
-          dwdv + (t / step_ratio) * n_shots * n_grid_points +
-          shot * n_grid_points;
+      DW_DTYPE *__restrict const w_store_1_t =
+          w_store_1 + shot_i +
+          ((storage_mode == STORAGE_DEVICE && !storage_compression)
+               ? t / step_ratio * n_shots * n_grid_points
+               : 0);
+      void *__restrict const w_store_2_t =
+          (uint8_t *)w_store_2 +
+          (shot + ((storage_mode == STORAGE_DEVICE && storage_compression)
+                       ? t / step_ratio * n_shots
+                       : 0)) *
+              (int64_t)shot_bytes_comp;
+
       bool const v_requires_grad_t = v_requires_grad && ((t % step_ratio) == 0);
 #if DW_NDIM >= 3
       int pml_z;
@@ -365,10 +387,19 @@ __declspec(dllexport)
                   wfp_t[i] = v_shot[i] * v_shot[i] * dt2 * w_sum +
                              2 * wfc_t[i] - wfp_t[i];
                   if (v_requires_grad_t) {
-                    dwdv_t[i] = 2 * v_shot[i] * dt2 * w_sum;
+                    w_store_1_t[i] = 2 * v_shot[i] * dt2 * w_sum;
                   }
                 }
           }
+
+      if (v_requires_grad_t) {
+        int64_t step_idx = t / step_ratio;
+        storage_save_snapshot_cpu(
+            w_store_1_t, w_store_2_t, fp_w, storage_mode, storage_compression,
+            step_idx, shot_bytes_uncomp, shot_bytes_comp, n_grid_points,
+            sizeof(DW_DTYPE) == sizeof(double));
+      }
+
       add_to_wavefield(wfp_t, sources_i + si,
                        f + t * n_shots * n_sources_per_shot + si,
                        n_sources_per_shot);
@@ -376,6 +407,7 @@ __declspec(dllexport)
                             r + t * n_shots * n_receivers_per_shot + ri,
                             n_receivers_per_shot);
     }
+    if (fp_w) fclose(fp_w);
   }
 }
 
@@ -413,8 +445,8 @@ __declspec(dllexport)
 #if DW_NDIM >= 2
         DW_DTYPE *__restrict const zetayn,
 #endif
-        DW_DTYPE *__restrict const zetaxn,
-        DW_DTYPE const *__restrict const dwdv,
+        DW_DTYPE *__restrict const zetaxn, DW_DTYPE *__restrict const w_store_1,
+        void *__restrict const w_store_2, void *__restrict const w_store_3,
         DW_DTYPE *__restrict const grad_f, DW_DTYPE *__restrict const grad_v,
         DW_DTYPE *__restrict const grad_v_thread,
 #if DW_NDIM >= 3
@@ -432,6 +464,7 @@ __declspec(dllexport)
         DW_DTYPE const *__restrict const dbxdx,
         int64_t const *__restrict const sources_i,
         int64_t const *__restrict const receivers_i,
+        char const *__restrict const *__restrict const w_filenames_ptr,
 #if DW_NDIM >= 3
         DW_DTYPE const rdz,
 #endif
@@ -454,7 +487,9 @@ __declspec(dllexport)
 #endif
         int64_t const nx, int64_t const n_sources_per_shot,
         int64_t const n_receivers_per_shot, int64_t const step_ratio,
-        bool const v_requires_grad, bool const v_batched, int64_t start_t,
+        int64_t const storage_mode, size_t const shot_bytes_uncomp,
+        size_t const shot_bytes_comp, bool const v_requires_grad,
+        bool const v_batched, bool const storage_compression, int64_t start_t,
 #if DW_NDIM >= 3
         int64_t const pml_z0,
 #endif
@@ -494,6 +529,12 @@ __declspec(dllexport)
     DW_DTYPE const *__restrict const v2dt2_shot =
         v_batched ? v2dt2 + shot_i : v2dt2;
     int64_t t;
+
+    FILE *fp_w = NULL;
+    if (storage_mode == STORAGE_DISK) {
+      if (v_requires_grad) fp_w = fopen(w_filenames_ptr[shot], "rb");
+    }
+
     for (t = start_t - 1; t >= start_t - nt; --t) {
       DW_DTYPE *__restrict const wfc_t =
           (((start_t - 1 - t) & 1) ? wfp : wfc) + shot_i;
@@ -527,10 +568,28 @@ __declspec(dllexport)
           (((start_t - 1 - t) & 1) ? zetaxn : zetax) + shot_i;
       DW_DTYPE *__restrict const zetaxn_t =
           (((start_t - 1 - t) & 1) ? zetax : zetaxn) + shot_i;
-      DW_DTYPE const *__restrict const dwdv_t =
-          dwdv + (t / step_ratio) * n_shots * n_grid_points +
-          shot * n_grid_points;
+      DW_DTYPE *__restrict const w_store_1_t =
+          w_store_1 + shot_i +
+          ((storage_mode == STORAGE_DEVICE && !storage_compression)
+               ? t / step_ratio * n_shots * n_grid_points
+               : 0);
+      void *__restrict const w_store_2_t =
+          (uint8_t *)w_store_2 +
+          (shot + ((storage_mode == STORAGE_DEVICE && storage_compression)
+                       ? t / step_ratio * n_shots
+                       : 0)) *
+              (int64_t)shot_bytes_comp;
+
       bool const v_requires_grad_t = v_requires_grad && ((t % step_ratio) == 0);
+
+      if (v_requires_grad_t) {
+        int64_t step_idx = t / step_ratio;
+        storage_load_snapshot_cpu(
+            w_store_1_t, w_store_2_t, fp_w, storage_mode, storage_compression,
+            step_idx, shot_bytes_uncomp, shot_bytes_comp, n_grid_points,
+            sizeof(DW_DTYPE) == sizeof(double));
+      }
+
 #if DW_NDIM >= 3
       int pml_z;
 #endif
@@ -624,7 +683,7 @@ __declspec(dllexport)
 
                   if (v_requires_grad_t) {
                     grad_v_shot[i] +=
-                        wfc_t[i] * dwdv_t[i] * (DW_DTYPE)step_ratio;
+                        wfc_t[i] * w_store_1_t[i] * (DW_DTYPE)step_ratio;
                   }
                 }
           }
@@ -636,6 +695,7 @@ __declspec(dllexport)
                             grad_f + t * n_shots * n_sources_per_shot + si,
                             n_sources_per_shot);
     }
+    if (fp_w) fclose(fp_w);
   }
 #ifdef _OPENMP
   if (v_requires_grad && !v_batched && n_threads > 1) {
