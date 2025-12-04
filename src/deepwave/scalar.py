@@ -18,7 +18,7 @@ receivers).
 All outputs are differentiable with respect to float torch.Tensor inputs.
 """
 
-from typing import Any, List, Optional, Sequence, Tuple, Union, cast
+from typing import Any, List, Literal, Optional, Sequence, Tuple, Union, cast
 
 import torch
 
@@ -89,7 +89,7 @@ class Scalar(torch.nn.Module):
         forward_callback: Optional[deepwave.common.Callback] = None,
         backward_callback: Optional[deepwave.common.Callback] = None,
         callback_frequency: int = 1,
-        python_backend: Union[bool, str] = False,
+        python_backend: Union[Literal["eager", "jit", "compile"], bool] = False,
     ) -> List[torch.Tensor]:
         """Performs forward propagation/modelling.
 
@@ -157,7 +157,7 @@ def scalar(
     forward_callback: Optional[deepwave.common.Callback] = None,
     backward_callback: Optional[deepwave.common.Callback] = None,
     callback_frequency: int = 1,
-    python_backend: Union[bool, str] = False,
+    python_backend: Union[Literal["eager", "jit", "compile"], bool] = False
 ) -> List[torch.Tensor]:
     """Scalar wave propagation (functional interface).
 
@@ -1890,7 +1890,7 @@ def scalar_python(
 
 
 def scalar_func(
-    python_backend: Union[bool, str], *args: Any
+    python_backend: Union[Literal["eager", "jit", "compile"], bool], *args: Any
 ) -> Tuple[torch.Tensor, ...]:
     """Helper function to apply the ScalarForwardFunc.
 

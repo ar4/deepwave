@@ -11,7 +11,7 @@ wave simulations. The outputs are differentiable with respect to the
 material parameters (Lam'e parameters and buoyancy) and source amplitudes.
 """
 
-from typing import Any, List, Optional, Sequence, Tuple, Union, cast
+from typing import Any, List, Literal, Optional, Sequence, Tuple, Union, cast
 
 import torch
 
@@ -241,7 +241,7 @@ class Elastic(torch.nn.Module):
         forward_callback: Optional[deepwave.common.Callback] = None,
         backward_callback: Optional[deepwave.common.Callback] = None,
         callback_frequency: int = 1,
-        python_backend: Union[bool, str] = False,
+        python_backend: Union[Literal["eager", "jit", "compile"], bool] = False,
     ) -> Tuple[torch.Tensor, ...]:
         """Perform forward propagation/modelling.
 
@@ -371,7 +371,7 @@ def elastic(
     forward_callback: Optional[deepwave.common.Callback] = None,
     backward_callback: Optional[deepwave.common.Callback] = None,
     callback_frequency: int = 1,
-    python_backend: Union[bool, str] = False,
+    python_backend: Union[Literal["eager", "jit", "compile"], bool] = False
 ) -> Tuple[torch.Tensor, ...]:
     """Elastic wave propagation (functional interface).
 
@@ -2518,7 +2518,7 @@ _update_stresses_opt = update_stresses
 
 
 def elastic_func(
-    python_backend: Union[bool, str], *args: Any
+    python_backend: Union[Literal["eager", "jit", "compile"], bool] = False, *args: Any
 ) -> Tuple[torch.Tensor, ...]:
     """A helper function to apply the ElasticForwardFunc.
 
