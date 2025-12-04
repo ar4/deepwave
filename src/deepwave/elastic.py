@@ -371,7 +371,7 @@ def elastic(
     forward_callback: Optional[deepwave.common.Callback] = None,
     backward_callback: Optional[deepwave.common.Callback] = None,
     callback_frequency: int = 1,
-    python_backend: Union[Literal["eager", "jit", "compile"], bool] = False
+    python_backend: Union[Literal["eager", "jit", "compile"], bool] = False,
 ) -> Tuple[torch.Tensor, ...]:
     """Elastic wave propagation (functional interface).
 

@@ -157,7 +157,7 @@ def scalar(
     forward_callback: Optional[deepwave.common.Callback] = None,
     backward_callback: Optional[deepwave.common.Callback] = None,
     callback_frequency: int = 1,
-    python_backend: Union[Literal["eager", "jit", "compile"], bool] = False
+    python_backend: Union[Literal["eager", "jit", "compile"], bool] = False,
 ) -> List[torch.Tensor]:
     """Scalar wave propagation (functional interface).
 
