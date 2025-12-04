@@ -6,7 +6,7 @@ described in the scalar module, with the addition of a scattered
 wavefield that uses 2 / v * scatter * dt^2 * wavefield as the source term.
 """
 
-from typing import Any, List, Optional, Sequence, Tuple, Union, cast
+from typing import Any, List, Literal, Optional, Sequence, Tuple, Union, cast
 
 import torch
 
@@ -125,7 +125,7 @@ class ScalarBorn(torch.nn.Module):
         forward_callback: Optional[deepwave.common.Callback] = None,
         backward_callback: Optional[deepwave.common.Callback] = None,
         callback_frequency: int = 1,
-        python_backend: Union[bool, str] = False,
+        python_backend: Union[Literal["eager", "jit", "compile"], bool] = False,
     ) -> Tuple[torch.Tensor, ...]:
         """Perform forward propagation/modelling.
 
@@ -215,7 +215,7 @@ def scalar_born(
     forward_callback: Optional[deepwave.common.Callback] = None,
     backward_callback: Optional[deepwave.common.Callback] = None,
     callback_frequency: int = 1,
-    python_backend: Union[bool, str] = False,
+    python_backend: Union[Literal["eager", "jit", "compile"], bool] = False,
 ) -> Tuple[torch.Tensor, ...]:
     """Scalar Born wave propagation (functional interface).
 
@@ -1561,7 +1561,7 @@ def scalar_born_python(
 
 
 def scalar_born_func(
-    python_backend: Union[bool, str],
+    python_backend: Union[Literal["eager", "jit", "compile"], bool] = False,
     *args: Any,
 ) -> Tuple[torch.Tensor, ...]:
     """Helper function to apply the ScalarBornForwardFunc.
