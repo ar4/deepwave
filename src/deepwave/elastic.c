@@ -418,7 +418,7 @@ static inline void combine_grad_elastic(
 #ifdef _WIN32
 __declspec(dllexport)
 #endif
-    void FUNC(forward)(
+    int FUNC(forward)(
         DW_DTYPE const *__restrict const lamb,
         DW_DTYPE const *__restrict const mu,
 #if DW_NDIM >= 3
@@ -1261,12 +1261,13 @@ __declspec(dllexport)
     CLOSE_FILE(dvxdbuoyancy)
     CLOSE_FILE(dvxdx)
   }
+  return 0;
 }
 
 #ifdef _WIN32
 __declspec(dllexport)
 #endif
-    void FUNC(backward)(
+    int FUNC(backward)(
         DW_DTYPE const *__restrict const lamb,
         DW_DTYPE const *__restrict const mu,
 #if DW_NDIM >= 3
@@ -2227,4 +2228,5 @@ __declspec(dllexport)
                          nx);
   }
 #endif /* _OPENMP */
+  return 0;
 }

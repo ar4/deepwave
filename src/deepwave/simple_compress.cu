@@ -1,14 +1,14 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "common_gpu.h"
 #include "simple_compress.h"
 
 /* CUDA kernel for finding min/max per field */
 template <typename T>
-__launch_bounds__(256)
-__global__ void find_minmax_kernel(const T *input, T *minmax,
-                                   size_t n_elements_per_field,
-                                   size_t n_batch) {
+__launch_bounds__(256) __global__
+    void find_minmax_kernel(const T *input, T *minmax,
+                            size_t n_elements_per_field, size_t n_batch) {
   size_t b = blockIdx.x;
   if (b >= n_batch) return;
 
@@ -63,10 +63,9 @@ __global__ void find_minmax_kernel(const T *input, T *minmax,
 
 /* CUDA kernel for compression */
 template <typename T>
-__launch_bounds__(256)
-__global__ void compress_kernel(const T *input, uint8_t *output,
-                                const T *minmax, size_t n_elements_per_field,
-                                size_t n_batch) {
+__launch_bounds__(256) __global__
+    void compress_kernel(const T *input, uint8_t *output, const T *minmax,
+                         size_t n_elements_per_field, size_t n_batch) {
   size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
   size_t total = n_batch * n_elements_per_field;
 
@@ -84,10 +83,9 @@ __global__ void compress_kernel(const T *input, uint8_t *output,
 
 /* CUDA kernel for decompression */
 template <typename T>
-__launch_bounds__(256)
-__global__ void decompress_kernel(const uint8_t *input, T *output,
-                                  const T *minmax, size_t n_elements_per_field,
-                                  size_t n_batch) {
+__launch_bounds__(256) __global__
+    void decompress_kernel(const uint8_t *input, T *output, const T *minmax,
+                           size_t n_elements_per_field, size_t n_batch) {
   size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
   size_t total = n_batch * n_elements_per_field;
 
@@ -105,9 +103,9 @@ __global__ void decompress_kernel(const uint8_t *input, T *output,
 /* CUDA wrapper functions */
 extern "C" {
 
-static void simple_compress_cuda_float(const float *input, uint8_t *output,
-                                       size_t n_batch,
-                                       size_t n_elements_per_field) {
+static int simple_compress_cuda_float(const float *input, uint8_t *output,
+                                      size_t n_batch,
+                                      size_t n_elements_per_field) {
   float *minmax = (float *)output;
   uint8_t *compressed = output + 2 * n_batch * sizeof(float);
 
@@ -122,11 +120,13 @@ static void simple_compress_cuda_float(const float *input, uint8_t *output,
   size_t blocks = (total + threads - 1) / threads;
   compress_kernel<<<blocks, threads>>>(input, compressed, minmax,
                                        n_elements_per_field, n_batch);
+  CHECK_KERNEL_ERROR
+  return 0;
 }
 
-static void simple_compress_cuda_double(const double *input, uint8_t *output,
-                                        size_t n_batch,
-                                        size_t n_elements_per_field) {
+static int simple_compress_cuda_double(const double *input, uint8_t *output,
+                                       size_t n_batch,
+                                       size_t n_elements_per_field) {
   double *minmax = (double *)output;
   uint8_t *compressed = output + 2 * n_batch * sizeof(double);
 
@@ -141,11 +141,13 @@ static void simple_compress_cuda_double(const double *input, uint8_t *output,
   size_t blocks = (total + threads - 1) / threads;
   compress_kernel<<<blocks, threads>>>(input, compressed, minmax,
                                        n_elements_per_field, n_batch);
+  CHECK_KERNEL_ERROR
+  return 0;
 }
 
-static void simple_decompress_cuda_float(const uint8_t *input, float *output,
-                                         size_t n_batch,
-                                         size_t n_elements_per_field) {
+static int simple_decompress_cuda_float(const uint8_t *input, float *output,
+                                        size_t n_batch,
+                                        size_t n_elements_per_field) {
   const float *minmax = (const float *)input;
   const uint8_t *compressed = input + 2 * n_batch * sizeof(float);
 
@@ -155,11 +157,13 @@ static void simple_decompress_cuda_float(const uint8_t *input, float *output,
 
   decompress_kernel<<<blocks, threads>>>(compressed, output, minmax,
                                          n_elements_per_field, n_batch);
+  CHECK_KERNEL_ERROR
+  return 0;
 }
 
-static void simple_decompress_cuda_double(const uint8_t *input, double *output,
-                                          size_t n_batch,
-                                          size_t n_elements_per_field) {
+static int simple_decompress_cuda_double(const uint8_t *input, double *output,
+                                         size_t n_batch,
+                                         size_t n_elements_per_field) {
   const double *minmax = (const double *)input;
   const uint8_t *compressed = input + 2 * n_batch * sizeof(double);
 
@@ -169,28 +173,31 @@ static void simple_decompress_cuda_double(const uint8_t *input, double *output,
 
   decompress_kernel<<<blocks, threads>>>(compressed, output, minmax,
                                          n_elements_per_field, n_batch);
+  CHECK_KERNEL_ERROR
+  return 0;
 }
 
 /* Update the main compress/decompress functions to call CUDA versions */
-void simple_compress_cuda(const void *input, void *output, size_t n_batch,
-                          size_t n_elements_per_field, int is_double) {
+int simple_compress_cuda(const void *input, void *output, size_t n_batch,
+                         size_t n_elements_per_field, int is_double) {
   if (is_double) {
-    simple_compress_cuda_double((const double *)input, (uint8_t *)output,
-                                n_batch, n_elements_per_field);
+    return simple_compress_cuda_double((const double *)input, (uint8_t *)output,
+                                       n_batch, n_elements_per_field);
   } else {
-    simple_compress_cuda_float((const float *)input, (uint8_t *)output, n_batch,
-                               n_elements_per_field);
+    return simple_compress_cuda_float((const float *)input, (uint8_t *)output,
+                                      n_batch, n_elements_per_field);
   }
 }
 
-void simple_decompress_cuda(const void *input, void *output, size_t n_batch,
-                            size_t n_elements_per_field, int is_double) {
+int simple_decompress_cuda(const void *input, void *output, size_t n_batch,
+                           size_t n_elements_per_field, int is_double) {
   if (is_double) {
-    simple_decompress_cuda_double((const uint8_t *)input, (double *)output,
-                                  n_batch, n_elements_per_field);
+    return simple_decompress_cuda_double((const uint8_t *)input,
+                                         (double *)output, n_batch,
+                                         n_elements_per_field);
   } else {
-    simple_decompress_cuda_float((const uint8_t *)input, (float *)output,
-                                 n_batch, n_elements_per_field);
+    return simple_decompress_cuda_float((const uint8_t *)input, (float *)output,
+                                        n_batch, n_elements_per_field);
   }
 }
 

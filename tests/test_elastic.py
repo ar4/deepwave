@@ -1408,6 +1408,8 @@ def test_gradcheck_zeros_in_properties():
 
 
 @pytest.mark.parametrize(("lamb_requires_grad"), [True, False])
+@pytest.mark.parametrize(("mu_requires_grad"), [True, False])
+@pytest.mark.parametrize(("buoyancy_requires_grad"), [True, False])
 @pytest.mark.parametrize(("num_shots"), [1, 2])
 @pytest.mark.parametrize(
     ("nx", "dx"),
@@ -1419,6 +1421,8 @@ def test_gradcheck_zeros_in_properties():
 )
 def test_storage(
     lamb_requires_grad,
+    mu_requires_grad,
+    buoyancy_requires_grad,
     num_shots,
     nx,
     dx,
@@ -1439,6 +1443,8 @@ def test_storage(
     nt=None,
 ):
     """Test forward and backward propagation when a source and receiver are unused."""
+    if not lamb_requires_grad and not mu_requires_grad and not buoyancy_requires_grad:
+        return
     nx = torch.tensor(nx, dtype=torch.long)
     dx = torch.tensor(dx, dtype=dtype)
     ndim = len(nx)
@@ -1521,9 +1527,9 @@ def test_storage(
     lambd = lamb.clone()
     lambd.requires_grad_(lamb_requires_grad)
     mud = mu.clone()
-    mud.requires_grad_()
+    mud.requires_grad_(mu_requires_grad)
     buoyancyd = buoyancy.clone()
-    buoyancyd.requires_grad_()
+    buoyancyd.requires_grad_(buoyancy_requires_grad)
     out = propagator(
         lambd,
         mud,
@@ -1562,9 +1568,9 @@ def test_storage(
             lambi = lamb.clone()
             lambi.requires_grad_(lamb_requires_grad)
             mui = mu.clone()
-            mui.requires_grad_()
+            mui.requires_grad_(mu_requires_grad)
             buoyancyi = buoyancy.clone()
-            buoyancyi.requires_grad_()
+            buoyancyi.requires_grad_(buoyancy_requires_grad)
             prop_kwargs = dict(prop_kwargs)
             prop_kwargs["storage_mode"] = mode
             prop_kwargs["storage_compression"] = compression
@@ -1600,18 +1606,20 @@ def test_storage(
                             atol=atol_lamb[len(nx) - 1]
                             * lambd.grad.detach().abs().max().item(),
                         )
-                    assert torch.allclose(
-                        mud.grad,
-                        mui.grad,
-                        atol=atol_mu[len(nx) - 1]
-                        * mud.grad.detach().abs().max().item(),
-                    )
-                    assert torch.allclose(
-                        buoyancyd.grad,
-                        buoyancyi.grad,
-                        atol=atol_buoyancy[len(nx) - 1]
-                        * buoyancyd.grad.detach().abs().max().item(),
-                    )
+                    if mu_requires_grad:
+                        assert torch.allclose(
+                            mud.grad,
+                            mui.grad,
+                            atol=atol_mu[len(nx) - 1]
+                            * mud.grad.detach().abs().max().item(),
+                        )
+                    if buoyancy_requires_grad:
+                        assert torch.allclose(
+                            buoyancyd.grad,
+                            buoyancyi.grad,
+                            atol=atol_buoyancy[len(nx) - 1]
+                            * buoyancyd.grad.detach().abs().max().item(),
+                        )
                 else:
                     if lamb_requires_grad:
                         assert torch.allclose(
@@ -1619,16 +1627,18 @@ def test_storage(
                             lambi.grad,
                             atol=lambd.grad.detach().abs().max().item() * 1e-5,
                         )
-                    assert torch.allclose(
-                        mud.grad,
-                        mui.grad,
-                        atol=mud.grad.detach().abs().max().item() * 1e-5,
-                    )
-                    assert torch.allclose(
-                        buoyancyd.grad,
-                        buoyancyi.grad,
-                        atol=buoyancyd.grad.detach().abs().max().item() * 1e-5,
-                    )
+                    if mu_requires_grad:
+                        assert torch.allclose(
+                            mud.grad,
+                            mui.grad,
+                            atol=mud.grad.detach().abs().max().item() * 1e-5,
+                        )
+                    if buoyancy_requires_grad:
+                        assert torch.allclose(
+                            buoyancyd.grad,
+                            buoyancyi.grad,
+                            atol=buoyancyd.grad.detach().abs().max().item() * 1e-5,
+                        )
 
 
 def run_forward_lamb(

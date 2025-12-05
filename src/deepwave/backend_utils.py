@@ -504,7 +504,7 @@ def _assign_argtypes(
         try:
             func = getattr(dll, func_name)
             func.argtypes = argtypes
-            func.restype = None  # All C functions return void
+            func.restype = ctypes.c_int
         except AttributeError:
             continue
 

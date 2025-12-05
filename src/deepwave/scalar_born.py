@@ -6,7 +6,6 @@ described in the scalar module, with the addition of a scattered
 wavefield that uses 2 / v * scatter * dt^2 * wavefield as the source term.
 """
 
-import ctypes
 from typing import Any, List, Literal, Optional, Sequence, Tuple, Union, cast
 
 import torch
@@ -14,7 +13,6 @@ import torch
 import deepwave.backend_utils
 import deepwave.common
 import deepwave.regular_grid
-from deepwave.common import TemporaryStorage
 
 
 class ScalarBorn(torch.nn.Module):
@@ -641,13 +639,13 @@ class ScalarBornForwardFunc(torch.autograd.Function):
             storage_mode_str = "device"
 
         if storage_mode_str == "device":
-            storage_mode = 0
+            storage_mode = deepwave.common.StorageMode.DEVICE
         elif storage_mode_str == "cpu":
-            storage_mode = 1
+            storage_mode = deepwave.common.StorageMode.CPU
         elif storage_mode_str == "disk":
-            storage_mode = 2
+            storage_mode = deepwave.common.StorageMode.DISK
         elif storage_mode_str == "none":
-            storage_mode = 3
+            storage_mode = deepwave.common.StorageMode.NONE
         else:
             raise ValueError(
                 "storage_mode must be 'device', 'cpu', 'disk', or 'none', "
@@ -655,196 +653,39 @@ class ScalarBornForwardFunc(torch.autograd.Function):
             )
 
         ndim = len(grid_spacing)
+        is_cuda = v.is_cuda
+        model_shape = v.shape[-ndim:]
+        n_sources_per_shot = sources_i.numel() // n_shots
+        n_receivers_per_shot = receivers_i.numel() // n_shots
+        n_receiverssc_per_shot = receiverssc_i.numel() // n_shots
 
-        fd_pad = accuracy // 2
-        size_with_batch = (n_shots, *v.shape[-ndim:])
-        wavefields = tuple(
-            deepwave.common.create_or_pad(
-                wavefield,
-                fd_pad,
-                v.device,
-                v.dtype,
-                size_with_batch,
-            )
-            for wavefield in wavefields
+        # Storage allocation
+        storage_manager = deepwave.common.StorageManager(
+            model_shape,
+            dtype,
+            n_shots,
+            nt,
+            step_ratio,
+            storage_mode,
+            storage_compression,
+            storage_path,
+            device,
+            is_cuda,
         )
 
-        wfc, wfp, *pml_wavefields = wavefields[: 2 + 2 * ndim]
-        wfcsc, wfpsc, *pml_wavefields_sc = wavefields[2 + 2 * ndim :]
+        for requires_grad in [
+            v.requires_grad or scatter.requires_grad,
+            v.requires_grad,
+        ]:  # w_store and wsc_store
+            storage_manager.allocate(requires_grad)
+
+
         bg_wavefield_requires_grad = any(
             wavefield.requires_grad for wavefield in wavefields[: 2 + 2 * ndim]
         )
         wavefield_requires_grad = any(
             wavefield.requires_grad for wavefield in wavefields
         )
-        del wavefields
-        # The PML wavefields are ordered [psi, zeta] for each dimension
-        psi = list(pml_wavefields[:ndim])
-        zeta = list(pml_wavefields[ndim:])
-        psisc = list(pml_wavefields_sc[:ndim])
-        zetasc = list(pml_wavefields_sc[ndim:])
-        del pml_wavefields, pml_wavefields_sc
-
-        for i in range(ndim):
-            psi[i] = deepwave.common.zero_interior(psi[i], fd_pad, pml_width, i)
-            zeta[i] = deepwave.common.zero_interior(zeta[i], fd_pad, pml_width, i)
-            psisc[i] = deepwave.common.zero_interior(psisc[i], fd_pad, pml_width, i)
-            zetasc[i] = deepwave.common.zero_interior(zetasc[i], fd_pad, pml_width, i)
-
-        is_cuda = v.is_cuda
-        model_shape = v.shape[-ndim:]
-        n_sources_per_shot = sources_i.numel() // n_shots
-        n_receivers_per_shot = receivers_i.numel() // n_shots
-        n_receiverssc_per_shot = receiverssc_i.numel() // n_shots
-        psin = [torch.zeros_like(wf) for wf in psi]
-        psinsc = [torch.zeros_like(wf) for wf in psisc]
-        receiver_amplitudes = torch.empty(0, device=device, dtype=dtype)
-        receiver_amplitudessc = torch.empty(0, device=device, dtype=dtype)
-        pml_b = [
-            min(pml_width[2 * i] + 2 * fd_pad, model_shape[i] - fd_pad)
-            for i in range(ndim)
-        ]
-        pml_e = [
-            max(pml_b[i], model_shape[i] - pml_width[2 * i + 1] - 2 * fd_pad)
-            for i in range(ndim)
-        ]
-
-        v_batched = v.ndim == ndim + 1 and v.shape[0] > 1
-        scatter_batched = scatter.ndim == ndim + 1 and scatter.shape[0] > 1
-
-        # Storage allocation
-        shot_shape = model_shape
-        num_elements_per_shot = int(torch.prod(torch.tensor(shot_shape)).item())
-        dtype_size = 4 if dtype == torch.float32 else 8
-        shot_bytes_uncomp = num_elements_per_shot * dtype_size
-        shot_bytes_comp = 0
-        if storage_compression and storage_mode != 3:
-            # Round up to be a multiple of dtype_size to avoid alignment issues
-            shot_bytes_comp = (
-                (num_elements_per_shot + 2 * dtype_size + dtype_size - 1) // dtype_size
-            ) * dtype_size
-
-        w_stores = []
-        w_filenames = []
-        ctx.w_storage = []
-        w_filenames_arr: List[Any] = []
-        ctx.w_filenames_bytes = []
-        for requires_grad in [
-            v.requires_grad or scatter.requires_grad,
-            v.requires_grad,
-        ]:  # w_store and wsc_store
-            w_store_1 = torch.empty(0)
-            w_store_2 = torch.empty(0)
-            w_store_3 = torch.empty(0)
-            w_filenames_ptr = ctypes.cast(0, ctypes.c_void_p)
-            char_ptr_type = ctypes.POINTER(ctypes.c_char)
-            w_filenames_arr_tmp = (char_ptr_type * 0)()
-            if requires_grad and storage_mode != 3:
-                num_steps_stored = nt // step_ratio
-                if storage_mode == 0:  # Device
-                    if storage_compression:
-                        w_store_1 = torch.zeros(
-                            n_shots,
-                            *shot_shape,
-                            device=device,
-                            dtype=dtype,
-                        )
-                        w_store_2 = torch.zeros(
-                            num_steps_stored,
-                            n_shots,
-                            shot_bytes_comp // dtype_size,
-                            device=device,
-                            dtype=dtype,
-                        )
-                    else:
-                        w_store_1 = torch.zeros(
-                            num_steps_stored,
-                            n_shots,
-                            *shot_shape,
-                            device=device,
-                            dtype=dtype,
-                        )
-                elif storage_mode == 1:  # CPU
-                    w_store_1 = torch.zeros(
-                        n_shots,
-                        *shot_shape,
-                        device=device,
-                        dtype=dtype,
-                    )
-                    if storage_compression:
-                        w_store_2 = torch.zeros(
-                            n_shots,
-                            shot_bytes_comp // dtype_size,
-                            device=device,
-                            dtype=dtype,
-                        )
-                    w_store_3 = torch.zeros(
-                        num_steps_stored,
-                        n_shots,
-                        (shot_bytes_comp if storage_compression else shot_bytes_uncomp)
-                        // dtype_size,
-                        device="cpu",
-                        pin_memory=True,
-                        dtype=dtype,
-                    )
-                elif storage_mode == 2:  # Disk
-                    w_storage = TemporaryStorage(
-                        storage_path, 1 if is_cuda else n_shots
-                    )
-                    ctx.w_storage.append(w_storage)
-                    # Convert list of strings to list of bytes, then to ctypes
-                    w_filenames_list = [
-                        f.encode("utf-8") for f in w_storage.get_filenames()
-                    ]
-                    # We need to keep reference to these bytes so they aren't GC'd
-                    ctx.w_filenames_bytes.append(w_filenames_list)
-                    # Create ctypes array
-                    w_filenames_arr_tmp = (char_ptr_type * len(w_filenames_list))()
-                    for i, f in enumerate(w_filenames_list):
-                        w_filenames_arr_tmp[i] = ctypes.cast(
-                            ctypes.create_string_buffer(f), char_ptr_type
-                        )
-                    # We need to pass the address of the array
-                    w_filenames_ptr = ctypes.cast(w_filenames_arr_tmp, ctypes.c_void_p)
-
-                    w_store_1 = torch.zeros(
-                        n_shots,
-                        *shot_shape,
-                        device=device,
-                        dtype=dtype,
-                    )
-                    if storage_compression:
-                        w_store_2 = torch.zeros(
-                            n_shots,
-                            shot_bytes_comp // dtype_size,
-                            device=device,
-                            dtype=dtype,
-                        )
-                    if is_cuda:
-                        w_store_3 = torch.zeros(
-                            n_shots,
-                            (
-                                shot_bytes_comp
-                                if storage_compression
-                                else shot_bytes_uncomp
-                            )
-                            // dtype_size,
-                            device="cpu",
-                            pin_memory=True,
-                            dtype=dtype,
-                        )
-            w_stores.extend([w_store_1, w_store_2, w_store_3])
-            w_filenames.append(w_filenames_ptr)
-            w_filenames_arr.append(w_filenames_arr_tmp)
-        ctx.w_filenames_arr = w_filenames_arr
-
-        if receivers_i.numel() > 0:
-            receiver_amplitudes.resize_(nt, n_shots, n_receivers_per_shot)
-            receiver_amplitudes.fill_(0)
-        if receiverssc_i.numel() > 0:
-            receiver_amplitudessc.resize_(nt, n_shots, n_receiverssc_per_shot)
-            receiver_amplitudessc.fill_(0)
-
         if (
             v.requires_grad
             or scatter.requires_grad
@@ -858,7 +699,6 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                 sources_i,
                 receivers_i,
                 receiverssc_i,
-                *w_stores,
                 *pml_profiles,
             )
             ctx.grid_spacing = grid_spacing
@@ -877,10 +717,59 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                 or source_amplitudes.requires_grad
                 or bg_wavefield_requires_grad
             )
-            ctx.storage_mode = storage_mode
-            ctx.storage_compression = storage_compression
-            ctx.shot_bytes_uncomp = shot_bytes_uncomp
-            ctx.shot_bytes_comp = shot_bytes_comp
+            ctx.storage_manager = storage_manager
+
+        fd_pad = accuracy // 2
+        size_with_batch = (n_shots, *v.shape[-ndim:])
+        wavefields = tuple(
+            deepwave.common.create_or_pad(
+                wavefield,
+                fd_pad,
+                v.device,
+                v.dtype,
+                size_with_batch,
+            )
+            for wavefield in wavefields
+        )
+
+        wfc, wfp, *pml_wavefields = wavefields[: 2 + 2 * ndim]
+        wfcsc, wfpsc, *pml_wavefields_sc = wavefields[2 + 2 * ndim :]
+        del wavefields
+        # The PML wavefields are ordered [psi, zeta] for each dimension
+        psi = list(pml_wavefields[:ndim])
+        zeta = list(pml_wavefields[ndim:])
+        psisc = list(pml_wavefields_sc[:ndim])
+        zetasc = list(pml_wavefields_sc[ndim:])
+        del pml_wavefields, pml_wavefields_sc
+
+        for i in range(ndim):
+            psi[i] = deepwave.common.zero_interior(psi[i], fd_pad, pml_width, i)
+            zeta[i] = deepwave.common.zero_interior(zeta[i], fd_pad, pml_width, i)
+            psisc[i] = deepwave.common.zero_interior(psisc[i], fd_pad, pml_width, i)
+            zetasc[i] = deepwave.common.zero_interior(zetasc[i], fd_pad, pml_width, i)
+
+        psin = [torch.zeros_like(wf) for wf in psi]
+        psinsc = [torch.zeros_like(wf) for wf in psisc]
+        pml_b = [
+            min(pml_width[2 * i] + 2 * fd_pad, model_shape[i] - fd_pad)
+            for i in range(ndim)
+        ]
+        pml_e = [
+            max(pml_b[i], model_shape[i] - pml_width[2 * i + 1] - 2 * fd_pad)
+            for i in range(ndim)
+        ]
+
+        v_batched = v.ndim == ndim + 1 and v.shape[0] > 1
+        scatter_batched = scatter.ndim == ndim + 1 and scatter.shape[0] > 1
+
+        receiver_amplitudes = torch.empty(0, device=device, dtype=dtype)
+        receiver_amplitudessc = torch.empty(0, device=device, dtype=dtype)
+        if receivers_i.numel() > 0:
+            receiver_amplitudes.resize_(nt, n_shots, n_receivers_per_shot)
+            receiver_amplitudes.fill_(0)
+        if receiverssc_i.numel() > 0:
+            receiver_amplitudessc.resize_(nt, n_shots, n_receiverssc_per_shot)
+            receiver_amplitudessc.fill_(0)
 
         if is_cuda:
             aux = v.get_device()
@@ -936,52 +825,57 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                         )
                     )
                 step_nt = min(nt // step_ratio - step, callback_frequency)
-                forward(
-                    v.data_ptr(),
-                    scatter.data_ptr(),
-                    source_amplitudes.data_ptr(),
-                    source_amplitudessc.data_ptr(),
-                    wfc.data_ptr(),
-                    wfp.data_ptr(),
-                    *[field.data_ptr() for field in psi],
-                    *[field.data_ptr() for field in psin],
-                    *[field.data_ptr() for field in zeta],
-                    wfcsc.data_ptr(),
-                    wfpsc.data_ptr(),
-                    *[field.data_ptr() for field in psisc],
-                    *[field.data_ptr() for field in psinsc],
-                    *[field.data_ptr() for field in zetasc],
-                    *[w_store.data_ptr() for w_store in w_stores],
-                    receiver_amplitudes.data_ptr(),
-                    receiver_amplitudessc.data_ptr(),
-                    *[profile.data_ptr() for profile in pml_profiles],
-                    sources_i.data_ptr(),
-                    receivers_i.data_ptr(),
-                    receiverssc_i.data_ptr(),
-                    *w_filenames,
-                    *rdx,
-                    *rdx2,
-                    dt**2,
-                    step_nt * step_ratio,
-                    n_shots,
-                    *model_shape,
-                    n_sources_per_shot,
-                    n_receivers_per_shot,
-                    n_receiverssc_per_shot,
-                    step_ratio,
-                    storage_mode,
-                    shot_bytes_uncomp,
-                    shot_bytes_comp,
-                    v.requires_grad and storage_mode != 3,
-                    scatter.requires_grad and storage_mode != 3,
-                    v_batched,
-                    scatter_batched,
-                    storage_compression,
-                    step * step_ratio,
-                    *pml_b,
-                    *pml_e,
-                    aux,
-                )
+                if (
+                    forward(
+                        v.data_ptr(),
+                        scatter.data_ptr(),
+                        source_amplitudes.data_ptr(),
+                        source_amplitudessc.data_ptr(),
+                        wfc.data_ptr(),
+                        wfp.data_ptr(),
+                        *[field.data_ptr() for field in psi],
+                        *[field.data_ptr() for field in psin],
+                        *[field.data_ptr() for field in zeta],
+                        wfcsc.data_ptr(),
+                        wfpsc.data_ptr(),
+                        *[field.data_ptr() for field in psisc],
+                        *[field.data_ptr() for field in psinsc],
+                        *[field.data_ptr() for field in zetasc],
+                        *storage_manager.storage_ptrs,
+                        receiver_amplitudes.data_ptr(),
+                        receiver_amplitudessc.data_ptr(),
+                        *[profile.data_ptr() for profile in pml_profiles],
+                        sources_i.data_ptr(),
+                        receivers_i.data_ptr(),
+                        receiverssc_i.data_ptr(),
+                        *rdx,
+                        *rdx2,
+                        dt**2,
+                        step_nt * step_ratio,
+                        n_shots,
+                        *model_shape,
+                        n_sources_per_shot,
+                        n_receivers_per_shot,
+                        n_receiverssc_per_shot,
+                        step_ratio,
+                        storage_mode,
+                        storage_manager.shot_bytes_uncomp,
+                        storage_manager.shot_bytes_comp,
+                        v.requires_grad
+                        and storage_mode != deepwave.common.StorageMode.NONE,
+                        scatter.requires_grad
+                        and storage_mode != deepwave.common.StorageMode.NONE,
+                        v_batched,
+                        scatter_batched,
+                        storage_compression,
+                        step * step_ratio,
+                        *pml_b,
+                        *pml_e,
+                        aux,
+                    )
+                    != 0
+                ):
+                    raise RuntimeError("Compiled backend failed.")
                 if (step_nt * step_ratio) % 2 != 0:
                     wfc, wfp, psi, psin = (
                         wfp,
@@ -1037,12 +931,6 @@ class ScalarBornForwardFunc(torch.autograd.Function):
             sources_i,
             receivers_i,
             receiverssc_i,
-            w_store_1,
-            w_store_2,
-            w_store_3,
-            wsc_store_1,
-            wsc_store_2,
-            wsc_store_3,
             *pml_profiles,
         ) = ctx.saved_tensors
 
@@ -1077,18 +965,7 @@ class ScalarBornForwardFunc(torch.autograd.Function):
         n_receivers_per_shot = receivers_i.numel() // n_shots
         n_receiverssc_per_shot = receiverssc_i.numel() // n_shots
         fd_pad = accuracy // 2
-        storage_mode = ctx.storage_mode
-        storage_compression = ctx.storage_compression
-        shot_bytes_uncomp = ctx.shot_bytes_uncomp
-        shot_bytes_comp = ctx.shot_bytes_comp
-
-        w_filenames: List[Any] = [0, 0]
-
-        if storage_mode == 2:  # Disk
-            w_filenames = [
-                ctypes.cast(w_filenames_arr, ctypes.c_void_p)
-                for w_filenames_arr in ctx.w_filenames_arr
-            ]
+        storage_manager = ctx.storage_manager
 
         size_with_batch = (n_shots, *model_shape)
         grad_wavefields[2 + 2 * ndim :] = [
@@ -1181,7 +1058,12 @@ class ScalarBornForwardFunc(torch.autograd.Function):
 
         if is_cuda:
             aux = v.get_device()
-            if v.requires_grad and not v_batched and n_shots > 1 and storage_mode != 3:
+            if (
+                v.requires_grad
+                and not v_batched
+                and n_shots > 1
+                and storage_manager.storage_mode != deepwave.common.StorageMode.NONE
+            ):
                 grad_v_tmp.resize_(n_shots, *model_shape)
                 grad_v_tmp.fill_(0)
                 grad_v_tmp_ptr = grad_v_tmp.data_ptr()
@@ -1189,7 +1071,7 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                 scatter.requires_grad
                 and not scatter_batched
                 and n_shots > 1
-                and storage_mode != 3
+                and storage_manager.storage_mode != deepwave.common.StorageMode.NONE
             ):
                 grad_scatter_tmp.resize_(n_shots, *model_shape)
                 grad_scatter_tmp.fill_(0)
@@ -1204,7 +1086,7 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                 and not v_batched
                 and aux > 1
                 and deepwave.backend_utils.USE_OPENMP
-                and storage_mode != 3
+                and storage_manager.storage_mode != deepwave.common.StorageMode.NONE
             ):
                 grad_v_tmp.resize_(aux, *model_shape)
                 grad_v_tmp.fill_(0)
@@ -1214,7 +1096,7 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                 and not scatter_batched
                 and aux > 1
                 and deepwave.backend_utils.USE_OPENMP
-                and storage_mode != 3
+                and storage_manager.storage_mode != deepwave.common.StorageMode.NONE
             ):
                 grad_scatter_tmp.resize_(aux, *model_shape)
                 grad_scatter_tmp.fill_(0)
@@ -1253,64 +1135,66 @@ class ScalarBornForwardFunc(torch.autograd.Function):
             if non_sc:
                 for step in range(nt // step_ratio, 0, -callback_frequency):
                     step_nt = min(step, callback_frequency)
-                    backward(
-                        v.data_ptr(),
-                        scatter.data_ptr(),
-                        grad_r.data_ptr(),
-                        grad_rsc.data_ptr(),
-                        grad_wfc.data_ptr(),
-                        grad_wfp.data_ptr(),
-                        *[field.data_ptr() for field in grad_psi],
-                        *[field.data_ptr() for field in grad_psin],
-                        *[field.data_ptr() for field in grad_zeta],
-                        *[field.data_ptr() for field in grad_zetan],
-                        grad_wfcsc.data_ptr(),
-                        grad_wfpsc.data_ptr(),
-                        *[field.data_ptr() for field in grad_psisc],
-                        *[field.data_ptr() for field in grad_psinsc],
-                        *[field.data_ptr() for field in grad_zetasc],
-                        *[field.data_ptr() for field in grad_zetansc],
-                        w_store_1.data_ptr(),
-                        w_store_2.data_ptr(),
-                        w_store_3.data_ptr(),
-                        wsc_store_1.data_ptr(),
-                        wsc_store_2.data_ptr(),
-                        wsc_store_3.data_ptr(),
-                        grad_f.data_ptr(),
-                        grad_fsc.data_ptr(),
-                        grad_v.data_ptr(),
-                        grad_scatter.data_ptr(),
-                        grad_v_tmp_ptr,
-                        grad_scatter_tmp_ptr,
-                        *[profile.data_ptr() for profile in pml_profiles],
-                        sources_i.data_ptr(),
-                        receivers_i.data_ptr(),
-                        receiverssc_i.data_ptr(),
-                        *w_filenames,
-                        *rdx,
-                        *rdx2,
-                        dt**2,
-                        step_nt * step_ratio,
-                        n_shots,
-                        *model_shape,
-                        n_sources_per_shot * source_amplitudes_requires_grad,
-                        n_sources_per_shot * source_amplitudessc_requires_grad,
-                        n_receivers_per_shot,
-                        n_receiverssc_per_shot,
-                        step_ratio,
-                        storage_mode,
-                        shot_bytes_uncomp,
-                        shot_bytes_comp,
-                        v.requires_grad and storage_mode != 3,
-                        scatter.requires_grad and storage_mode != 3,
-                        v_batched,
-                        scatter_batched,
-                        storage_compression,
-                        step * step_ratio,
-                        *pml_b,
-                        *pml_e,
-                        aux,
-                    )
+                    if (
+                        backward(
+                            v.data_ptr(),
+                            scatter.data_ptr(),
+                            grad_r.data_ptr(),
+                            grad_rsc.data_ptr(),
+                            grad_wfc.data_ptr(),
+                            grad_wfp.data_ptr(),
+                            *[field.data_ptr() for field in grad_psi],
+                            *[field.data_ptr() for field in grad_psin],
+                            *[field.data_ptr() for field in grad_zeta],
+                            *[field.data_ptr() for field in grad_zetan],
+                            grad_wfcsc.data_ptr(),
+                            grad_wfpsc.data_ptr(),
+                            *[field.data_ptr() for field in grad_psisc],
+                            *[field.data_ptr() for field in grad_psinsc],
+                            *[field.data_ptr() for field in grad_zetasc],
+                            *[field.data_ptr() for field in grad_zetansc],
+                            *storage_manager.storage_ptrs,
+                            grad_f.data_ptr(),
+                            grad_fsc.data_ptr(),
+                            grad_v.data_ptr(),
+                            grad_scatter.data_ptr(),
+                            grad_v_tmp_ptr,
+                            grad_scatter_tmp_ptr,
+                            *[profile.data_ptr() for profile in pml_profiles],
+                            sources_i.data_ptr(),
+                            receivers_i.data_ptr(),
+                            receiverssc_i.data_ptr(),
+                            *rdx,
+                            *rdx2,
+                            dt**2,
+                            step_nt * step_ratio,
+                            n_shots,
+                            *model_shape,
+                            n_sources_per_shot * source_amplitudes_requires_grad,
+                            n_sources_per_shot * source_amplitudessc_requires_grad,
+                            n_receivers_per_shot,
+                            n_receiverssc_per_shot,
+                            step_ratio,
+                            storage_manager.storage_mode,
+                            storage_manager.shot_bytes_uncomp,
+                            storage_manager.shot_bytes_comp,
+                            v.requires_grad
+                            and storage_manager.storage_mode
+                            != deepwave.common.StorageMode.NONE,
+                            scatter.requires_grad
+                            and storage_manager.storage_mode
+                            != deepwave.common.StorageMode.NONE,
+                            v_batched,
+                            scatter_batched,
+                            storage_manager.storage_compression,
+                            step * step_ratio,
+                            *pml_b,
+                            *pml_e,
+                            aux,
+                        )
+                        != 0
+                    ):
+                        raise RuntimeError("Compiled backend failed.")
                     if (step_nt * step_ratio) % 2 != 0:
                         (
                             grad_wfc,
@@ -1376,46 +1260,49 @@ class ScalarBornForwardFunc(torch.autograd.Function):
             else:
                 for step in range(nt // step_ratio, 0, -callback_frequency):
                     step_nt = min(step, callback_frequency)
-                    backward_sc(
-                        v.data_ptr(),
-                        grad_rsc.data_ptr(),
-                        grad_wfcsc.data_ptr(),
-                        grad_wfpsc.data_ptr(),
-                        *[field.data_ptr() for field in grad_psisc],
-                        *[field.data_ptr() for field in grad_psinsc],
-                        *[field.data_ptr() for field in grad_zetasc],
-                        *[field.data_ptr() for field in grad_zetansc],
-                        w_store_1.data_ptr(),
-                        w_store_2.data_ptr(),
-                        w_store_3.data_ptr(),
-                        grad_fsc.data_ptr(),
-                        grad_scatter.data_ptr(),
-                        grad_scatter_tmp_ptr,
-                        *[profile.data_ptr() for profile in pml_profiles],
-                        sources_i.data_ptr(),
-                        receiverssc_i.data_ptr(),
-                        w_filenames[0],
-                        *rdx,
-                        *rdx2,
-                        dt**2,
-                        step_nt * step_ratio,
-                        n_shots,
-                        *model_shape,
-                        n_sources_per_shot * source_amplitudessc_requires_grad,
-                        n_receiverssc_per_shot,
-                        step_ratio,
-                        storage_mode,
-                        shot_bytes_uncomp,
-                        shot_bytes_comp,
-                        scatter.requires_grad and storage_mode != 3,
-                        v_batched,
-                        scatter_batched,
-                        storage_compression,
-                        step * step_ratio,
-                        *pml_b,
-                        *pml_e,
-                        aux,
-                    )
+                    if (
+                        backward_sc(
+                            v.data_ptr(),
+                            grad_rsc.data_ptr(),
+                            grad_wfcsc.data_ptr(),
+                            grad_wfpsc.data_ptr(),
+                            *[field.data_ptr() for field in grad_psisc],
+                            *[field.data_ptr() for field in grad_psinsc],
+                            *[field.data_ptr() for field in grad_zetasc],
+                            *[field.data_ptr() for field in grad_zetansc],
+                            *storage_manager.storage_ptrs[:4],  # Not scattered
+                            grad_fsc.data_ptr(),
+                            grad_scatter.data_ptr(),
+                            grad_scatter_tmp_ptr,
+                            *[profile.data_ptr() for profile in pml_profiles],
+                            sources_i.data_ptr(),
+                            receiverssc_i.data_ptr(),
+                            *rdx,
+                            *rdx2,
+                            dt**2,
+                            step_nt * step_ratio,
+                            n_shots,
+                            *model_shape,
+                            n_sources_per_shot * source_amplitudessc_requires_grad,
+                            n_receiverssc_per_shot,
+                            step_ratio,
+                            storage_manager.storage_mode,
+                            storage_manager.shot_bytes_uncomp,
+                            storage_manager.shot_bytes_comp,
+                            scatter.requires_grad
+                            and storage_manager.storage_mode
+                            != deepwave.common.StorageMode.NONE,
+                            v_batched,
+                            scatter_batched,
+                            storage_manager.storage_compression,
+                            step * step_ratio,
+                            *pml_b,
+                            *pml_e,
+                            aux,
+                        )
+                        != 0
+                    ):
+                        raise RuntimeError("Compiled backend failed.")
                     if (step_nt * step_ratio) % 2 != 0:
                         (
                             grad_wfcsc,

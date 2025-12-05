@@ -106,9 +106,6 @@
 #define PSIX_TERM(dz, dy, dx) \
   ((1 + bx[x + dx]) * V2DT2_WFC(0, 0, dx) + bx[x + dx] * ZETAX(0, 0, dx))
 
-#define gpuErrchk(ans) \
-  { gpuAssert((ans), __FILE__, __LINE__); }
-
 namespace {
 __constant__ DW_DTYPE dt2;
 #if DW_NDIM >= 3
@@ -137,10 +134,10 @@ __constant__ int64_t pml_x0;
 __constant__ int64_t pml_x1;
 __constant__ bool v_batched;
 
-__launch_bounds__(32)
-__global__ void add_sources(DW_DTYPE *__restrict const wf,
-                            DW_DTYPE const *__restrict const f,
-                            int64_t const *__restrict const sources_i) {
+__launch_bounds__(32) __global__
+    void add_sources(DW_DTYPE *__restrict const wf,
+                     DW_DTYPE const *__restrict const f,
+                     int64_t const *__restrict const sources_i) {
   int64_t source_idx = blockIdx.x * blockDim.x + threadIdx.x;
   int64_t shot_idx = blockIdx.y * blockDim.y + threadIdx.y;
   if (source_idx < n_sources_per_shot && shot_idx < n_shots) {
@@ -149,10 +146,10 @@ __global__ void add_sources(DW_DTYPE *__restrict const wf,
   }
 }
 
-__launch_bounds__(32)
-__global__ void record_receivers(DW_DTYPE *__restrict const r,
-                                 DW_DTYPE const *__restrict const wf,
-                                 int64_t const *__restrict receivers_i) {
+__launch_bounds__(32) __global__
+    void record_receivers(DW_DTYPE *__restrict const r,
+                          DW_DTYPE const *__restrict const wf,
+                          int64_t const *__restrict receivers_i) {
   int64_t receiver_idx = blockIdx.x * blockDim.x + threadIdx.x;
   int64_t shot_idx = blockIdx.y * blockDim.y + threadIdx.y;
   if (receiver_idx < n_receivers_per_shot && shot_idx < n_shots) {
@@ -162,9 +159,9 @@ __global__ void record_receivers(DW_DTYPE *__restrict const r,
 }
 
 #if DW_NDIM == 3
-__launch_bounds__(128)
-__global__ void combine_grad_v(DW_DTYPE *__restrict const grad_v,
-                               DW_DTYPE const *__restrict const grad_v_shot) {
+__launch_bounds__(128) __global__
+    void combine_grad_v(DW_DTYPE *__restrict const grad_v,
+                        DW_DTYPE const *__restrict const grad_v_shot) {
   int64_t x = blockIdx.x * blockDim.x + threadIdx.x + FD_PAD;
   int64_t y = blockIdx.y * blockDim.y + threadIdx.y + FD_PAD;
   int64_t z = blockIdx.z * blockDim.z + threadIdx.z + FD_PAD;
@@ -176,9 +173,9 @@ __global__ void combine_grad_v(DW_DTYPE *__restrict const grad_v,
   }
 }
 #elif DW_NDIM == 2
-__launch_bounds__(128)
-__global__ void combine_grad_v(DW_DTYPE *__restrict const grad_v,
-                               DW_DTYPE const *__restrict const grad_v_shot) {
+__launch_bounds__(128) __global__
+    void combine_grad_v(DW_DTYPE *__restrict const grad_v,
+                        DW_DTYPE const *__restrict const grad_v_shot) {
   int64_t x = blockIdx.x * blockDim.x + threadIdx.x + FD_PAD;
   int64_t y = blockIdx.y * blockDim.y + threadIdx.y + FD_PAD;
   if (y < ny - FD_PAD && x < nx - FD_PAD) {
@@ -189,9 +186,9 @@ __global__ void combine_grad_v(DW_DTYPE *__restrict const grad_v,
   }
 }
 #else /* DW_NDIM == 1 */
-__launch_bounds__(128)
-__global__ void combine_grad_v(DW_DTYPE *__restrict const grad_v,
-                               DW_DTYPE const *__restrict const grad_v_shot) {
+__launch_bounds__(128) __global__
+    void combine_grad_v(DW_DTYPE *__restrict const grad_v,
+                        DW_DTYPE const *__restrict const grad_v_shot) {
   int64_t x = blockIdx.x * blockDim.x + threadIdx.x + FD_PAD;
   if (x < nx - FD_PAD) {
     int64_t i = x;
@@ -202,30 +199,26 @@ __global__ void combine_grad_v(DW_DTYPE *__restrict const grad_v,
 }
 #endif
 
-__launch_bounds__(128)
-    __global__ void forward_kernel(
-        DW_DTYPE const *__restrict const v,
-        DW_DTYPE const *__restrict const wfc, DW_DTYPE *__restrict const wfp,
-        DW_DTYPE *__restrict const dwdv,
+__launch_bounds__(128) __global__ void forward_kernel(
+    DW_DTYPE const *__restrict const v, DW_DTYPE const *__restrict const wfc,
+    DW_DTYPE *__restrict const wfp, DW_DTYPE *__restrict const dwdv,
 #if DW_NDIM >= 3
-        /* z-dimension */
-        DW_DTYPE const *__restrict const psiz, DW_DTYPE *__restrict const psizn,
-        DW_DTYPE *__restrict const zetaz, DW_DTYPE const *__restrict const az,
-        DW_DTYPE const *__restrict const bz,
-        DW_DTYPE const *__restrict const dbzdz,
+    /* z-dimension */
+    DW_DTYPE const *__restrict const psiz, DW_DTYPE *__restrict const psizn,
+    DW_DTYPE *__restrict const zetaz, DW_DTYPE const *__restrict const az,
+    DW_DTYPE const *__restrict const bz, DW_DTYPE const *__restrict const dbzdz,
 #endif
 #if DW_NDIM >= 2
-        /* y-dimension */
-        DW_DTYPE const *__restrict const psiy, DW_DTYPE *__restrict const psiyn,
-        DW_DTYPE *__restrict const zetay, DW_DTYPE const *__restrict const ay,
-        DW_DTYPE const *__restrict const by,
-        DW_DTYPE const *__restrict const dbydy,
+    /* y-dimension */
+    DW_DTYPE const *__restrict const psiy, DW_DTYPE *__restrict const psiyn,
+    DW_DTYPE *__restrict const zetay, DW_DTYPE const *__restrict const ay,
+    DW_DTYPE const *__restrict const by, DW_DTYPE const *__restrict const dbydy,
 #endif
-        /* x-dimension */
-        DW_DTYPE const *__restrict const psix, DW_DTYPE *__restrict const psixn,
-        DW_DTYPE *__restrict const zetax, DW_DTYPE const *__restrict const ax,
-        DW_DTYPE const *__restrict const bx,
-        DW_DTYPE const *__restrict const dbxdx, bool const v_requires_grad) {
+    /* x-dimension */
+    DW_DTYPE const *__restrict const psix, DW_DTYPE *__restrict const psixn,
+    DW_DTYPE *__restrict const zetax, DW_DTYPE const *__restrict const ax,
+    DW_DTYPE const *__restrict const bx, DW_DTYPE const *__restrict const dbxdx,
+    bool const v_requires_grad) {
 #if DW_NDIM == 3
   int64_t x = blockIdx.x * blockDim.x + threadIdx.x + FD_PAD;
   int64_t y = blockIdx.y * blockDim.y + threadIdx.y + FD_PAD;
@@ -298,34 +291,29 @@ __launch_bounds__(128)
   }
 }
 
-__launch_bounds__(128)
-    __global__ void backward_kernel(
-        DW_DTYPE const *__restrict const v2dt2,
-        DW_DTYPE const *__restrict const wfc, DW_DTYPE *__restrict const wfp,
-        DW_DTYPE const *__restrict const dwdv,
-        DW_DTYPE *__restrict const grad_v,
+__launch_bounds__(128) __global__ void backward_kernel(
+    DW_DTYPE const *__restrict const v2dt2,
+    DW_DTYPE const *__restrict const wfc, DW_DTYPE *__restrict const wfp,
+    DW_DTYPE const *__restrict const dwdv, DW_DTYPE *__restrict const grad_v,
 #if DW_NDIM >= 3
-        /* z-dimension */
-        DW_DTYPE const *__restrict const psiz, DW_DTYPE *__restrict const psizn,
-        DW_DTYPE *__restrict const zetaz, DW_DTYPE *__restrict const zetazn,
-        DW_DTYPE const *__restrict const az,
-        DW_DTYPE const *__restrict const bz,
-        DW_DTYPE const *__restrict const dbzdz,
+    /* z-dimension */
+    DW_DTYPE const *__restrict const psiz, DW_DTYPE *__restrict const psizn,
+    DW_DTYPE *__restrict const zetaz, DW_DTYPE *__restrict const zetazn,
+    DW_DTYPE const *__restrict const az, DW_DTYPE const *__restrict const bz,
+    DW_DTYPE const *__restrict const dbzdz,
 #endif
 #if DW_NDIM >= 2
-        /* y-dimension */
-        DW_DTYPE const *__restrict const psiy, DW_DTYPE *__restrict const psiyn,
-        DW_DTYPE *__restrict const zetay, DW_DTYPE *__restrict const zetayn,
-        DW_DTYPE const *__restrict const ay,
-        DW_DTYPE const *__restrict const by,
-        DW_DTYPE const *__restrict const dbydy,
+    /* y-dimension */
+    DW_DTYPE const *__restrict const psiy, DW_DTYPE *__restrict const psiyn,
+    DW_DTYPE *__restrict const zetay, DW_DTYPE *__restrict const zetayn,
+    DW_DTYPE const *__restrict const ay, DW_DTYPE const *__restrict const by,
+    DW_DTYPE const *__restrict const dbydy,
 #endif
-        /* x-dimension */
-        DW_DTYPE const *__restrict const psix, DW_DTYPE *__restrict const psixn,
-        DW_DTYPE *__restrict const zetax, DW_DTYPE *__restrict const zetaxn,
-        DW_DTYPE const *__restrict const ax,
-        DW_DTYPE const *__restrict const bx,
-        DW_DTYPE const *__restrict const dbxdx, bool const v_requires_grad) {
+    /* x-dimension */
+    DW_DTYPE const *__restrict const psix, DW_DTYPE *__restrict const psixn,
+    DW_DTYPE *__restrict const zetax, DW_DTYPE *__restrict const zetaxn,
+    DW_DTYPE const *__restrict const ax, DW_DTYPE const *__restrict const bx,
+    DW_DTYPE const *__restrict const dbxdx, bool const v_requires_grad) {
 #if DW_NDIM == 3
   int64_t x = blockIdx.x * blockDim.x + threadIdx.x + FD_PAD;
   int64_t y = blockIdx.y * blockDim.y + threadIdx.y + FD_PAD;
@@ -391,20 +379,11 @@ __launch_bounds__(128)
   }
 }
 
-inline void gpuAssert(cudaError_t code, const char *file, int line,
-                      bool abort = true) {
-  if (code != cudaSuccess) {
-    fprintf(stderr, "GPUassert: %s %s %d\n", cudaGetErrorString(code), file,
-            line);
-    if (abort) exit(code);
-  }
-}
-
 inline unsigned int ceil_div(unsigned int numerator, unsigned int denominator) {
   return (numerator + denominator - 1) / denominator;
 }
 
-void set_config(
+int set_config(
 #if DW_NDIM >= 3
     /* z-dimension */
     DW_DTYPE const rdz_h, DW_DTYPE const rdz2_h, int64_t const nz_h,
@@ -450,6 +429,7 @@ void set_config(
   gpuErrchk(cudaMemcpyToSymbol(pml_x0, &pml_x0_h, sizeof(int64_t)));
   gpuErrchk(cudaMemcpyToSymbol(pml_x1, &pml_x1_h, sizeof(int64_t)));
   gpuErrchk(cudaMemcpyToSymbol(v_batched, &v_batched_h, sizeof(bool)));
+  return 0;
 }
 
 }  // namespace
@@ -458,7 +438,7 @@ extern "C"
 #ifdef _WIN32
     __declspec(dllexport)
 #endif
-        void FUNC(forward)(
+        int FUNC(forward)(
             DW_DTYPE const *__restrict const v,
             DW_DTYPE const *__restrict const f, DW_DTYPE *__restrict wfc,
             DW_DTYPE *__restrict wfp,
@@ -485,6 +465,7 @@ extern "C"
             DW_DTYPE *__restrict const zetax,
             DW_DTYPE *__restrict const w_store_1,
             void *__restrict const w_store_2, void *__restrict const w_store_3,
+            char const *__restrict const *__restrict const w_filenames_ptr,
             DW_DTYPE *__restrict const r,
 #if DW_NDIM >= 3
             DW_DTYPE const *__restrict const az,
@@ -501,7 +482,6 @@ extern "C"
             DW_DTYPE const *__restrict const dbxdx,
             int64_t const *__restrict const sources_i,
             int64_t const *__restrict const receivers_i,
-            char const *__restrict const *__restrict const w_filenames_ptr,
 #if DW_NDIM >= 3
             DW_DTYPE const rdz_h,
 #endif
@@ -581,15 +561,19 @@ extern "C"
 #endif
   int64_t t;
   gpuErrchk(cudaSetDevice(device));
-  set_config(
+  {
+    int err = set_config(
 #if DW_NDIM >= 3
-      rdz_h, rdz2_h, nz_h, pml_z0_h, pml_z1_h,
+        rdz_h, rdz2_h, nz_h, pml_z0_h, pml_z1_h,
 #endif
 #if DW_NDIM >= 2
-      rdy_h, rdy2_h, ny_h, pml_y0_h, pml_y1_h,
+        rdy_h, rdy2_h, ny_h, pml_y0_h, pml_y1_h,
 #endif
-      rdx_h, rdx2_h, nx_h, shot_numel_h, pml_x0_h, pml_x1_h, dt2_h, n_shots_h,
-      n_sources_per_shot_h, n_receivers_per_shot_h, step_ratio_h, v_batched_h);
+        rdx_h, rdx2_h, nx_h, shot_numel_h, pml_x0_h, pml_x1_h, dt2_h, n_shots_h,
+        n_sources_per_shot_h, n_receivers_per_shot_h, step_ratio_h,
+        v_batched_h);
+    if (err != 0) return err;
+  }
 
   FILE *fp_w = NULL;
   if (storage_mode == STORAGE_DISK) {
@@ -629,10 +613,11 @@ extern "C"
 
     if (store_w) {
       int64_t step_idx = t / step_ratio_h;
-      storage_save_snapshot_gpu(
-          w_store_1_t, w_store_2_t, w_store_3_t, fp_w, storage_mode,
-          storage_compression, step_idx, shot_bytes_uncomp, shot_bytes_comp,
-          n_shots_h, shot_numel_h, sizeof(DW_DTYPE) == sizeof(double));
+      if (storage_save_snapshot_gpu(
+              w_store_1_t, w_store_2_t, w_store_3_t, fp_w, storage_mode,
+              storage_compression, step_idx, shot_bytes_uncomp, shot_bytes_comp,
+              n_shots_h, shot_numel_h, sizeof(DW_DTYPE) == sizeof(double)) != 0)
+        return 1;
     }
 
     if (n_sources_per_shot_h > 0) {
@@ -655,13 +640,14 @@ extern "C"
     std::swap(psix, psixn);
   }
   if (fp_w) fclose(fp_w);
+  return 0;
 }
 
 extern "C"
 #ifdef _WIN32
     __declspec(dllexport)
 #endif
-        void FUNC(backward)(
+        int FUNC(backward)(
             DW_DTYPE const *__restrict const v2dt2,
             DW_DTYPE const *__restrict const grad_r, DW_DTYPE *__restrict wfc,
             DW_DTYPE *__restrict wfp,
@@ -694,6 +680,7 @@ extern "C"
 #endif
             DW_DTYPE *__restrict zetaxn, DW_DTYPE *__restrict const w_store_1,
             void *__restrict const w_store_2, void *__restrict const w_store_3,
+            char const *__restrict const *__restrict const w_filenames_ptr,
             DW_DTYPE *__restrict const grad_f,
             DW_DTYPE *__restrict const grad_v,
             DW_DTYPE *__restrict const grad_v_shot,
@@ -712,7 +699,6 @@ extern "C"
             DW_DTYPE const *__restrict const dbxdx,
             int64_t const *__restrict const sources_i,
             int64_t const *__restrict const receivers_i,
-            char const *__restrict const *__restrict const w_filenames_ptr,
 #if DW_NDIM >= 3
             DW_DTYPE const rdz_h,
 #endif
@@ -808,15 +794,19 @@ extern "C"
 #endif
   int64_t t;
   gpuErrchk(cudaSetDevice(device));
-  set_config(
+  {
+    int err = set_config(
 #if DW_NDIM >= 3
-      rdz_h, rdz2_h, nz_h, pml_z0_h, pml_z1_h,
+        rdz_h, rdz2_h, nz_h, pml_z0_h, pml_z1_h,
 #endif
 #if DW_NDIM >= 2
-      rdy_h, rdy2_h, ny_h, pml_y0_h, pml_y1_h,
+        rdy_h, rdy2_h, ny_h, pml_y0_h, pml_y1_h,
 #endif
-      rdx_h, rdx2_h, nx_h, shot_numel_h, pml_x0_h, pml_x1_h, 0, n_shots_h,
-      n_receivers_per_shot_h, n_sources_per_shot_h, step_ratio_h, v_batched_h);
+        rdx_h, rdx2_h, nx_h, shot_numel_h, pml_x0_h, pml_x1_h, 0, n_shots_h,
+        n_receivers_per_shot_h, n_sources_per_shot_h, step_ratio_h,
+        v_batched_h);
+    if (err != 0) return err;
+  }
 
   FILE *fp_w = NULL;
   if (storage_mode == STORAGE_DISK) {
@@ -845,10 +835,11 @@ extern "C"
 
     if (load_w) {
       int step_idx = t / step_ratio_h;
-      storage_load_snapshot_gpu(
-          w_store_1_t, w_store_2_t, w_store_3_t, fp_w, storage_mode,
-          storage_compression, step_idx, shot_bytes_uncomp, shot_bytes_comp,
-          n_shots_h, shot_numel_h, sizeof(DW_DTYPE) == sizeof(double));
+      if (storage_load_snapshot_gpu(
+              w_store_1_t, w_store_2_t, w_store_3_t, fp_w, storage_mode,
+              storage_compression, step_idx, shot_bytes_uncomp, shot_bytes_comp,
+              n_shots_h, shot_numel_h, sizeof(DW_DTYPE) == sizeof(double)) != 0)
+        return 1;
     }
 
     if (n_sources_per_shot_h > 0) {
@@ -888,4 +879,5 @@ extern "C"
     CHECK_KERNEL_ERROR
   }
   if (fp_w) fclose(fp_w);
+  return 0;
 }

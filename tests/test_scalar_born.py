@@ -1277,6 +1277,9 @@ def test_born_gradcheck_scatter_batched() -> None:
     )
 
 
+@pytest.mark.parametrize(("v_requires_grad"), [True, False])
+@pytest.mark.parametrize(("scatter_requires_grad"), [True, False])
+@pytest.mark.parametrize(("num_shots"), [1, 2])
 @pytest.mark.parametrize(
     ("nx", "dx"),
     [
@@ -1286,13 +1289,15 @@ def test_born_gradcheck_scatter_batched() -> None:
     ],
 )
 def test_storage(
+    v_requires_grad,
+    scatter_requires_grad,
+    num_shots,
     nx,
     dx,
     c=1500,
     dc=100,
     freq=25,
     dt=0.005,
-    num_shots=2,
     num_sources_per_shot=2,
     num_receivers_per_shot=2,
     num_scatter_receivers_per_shot=2,
@@ -1302,6 +1307,8 @@ def test_storage(
     dtype=None,
 ):
     """Test gradients with different storage options."""
+    if not v_requires_grad and not scatter_requires_grad:
+        return
     nx = torch.tensor(nx, dtype=torch.long)
     dx = torch.tensor(dx, dtype=dtype)
 
@@ -1333,9 +1340,9 @@ def test_storage(
 
     # Store uncompressed in device memory (default)
     modeld = model.clone()
-    modeld.requires_grad_()
+    modeld.requires_grad_(v_requires_grad)
     scatterd = scatter.clone()
-    scatterd.requires_grad_()
+    scatterd.requires_grad_(scatter_requires_grad)
     out = propagator(
         modeld,
         scatterd,
@@ -1362,9 +1369,9 @@ def test_storage(
             if mode == "device" and not compression:  # Default
                 continue
             modeli = model.clone()
-            modeli.requires_grad_()
+            modeli.requires_grad_(v_requires_grad)
             scatteri = scatter.clone()
-            scatteri.requires_grad_()
+            scatteri.requires_grad_(scatter_requires_grad)
             prop_kwargs = dict(prop_kwargs)
             prop_kwargs["storage_mode"] = mode
             prop_kwargs["storage_compression"] = compression
@@ -1384,23 +1391,27 @@ def test_storage(
 
             if mode != "none":
                 if compression:
-                    assert torch.allclose(
-                        modeld.grad, modeli.grad, atol=atol_model[len(nx) - 1]
-                    )
-                    assert torch.allclose(
-                        scatterd.grad, scatteri.grad, atol=atol_scatter[len(nx) - 1]
-                    )
+                    if v_requires_grad:
+                        assert torch.allclose(
+                            modeld.grad, modeli.grad, atol=atol_model[len(nx) - 1]
+                        )
+                    if scatter_requires_grad:
+                        assert torch.allclose(
+                            scatterd.grad, scatteri.grad, atol=atol_scatter[len(nx) - 1]
+                        )
                 else:
-                    assert torch.allclose(
-                        modeld.grad,
-                        modeli.grad,
-                        atol=modeld.grad.detach().abs().max().item() * 1e-5,
-                    )
-                    assert torch.allclose(
-                        scatterd.grad,
-                        scatteri.grad,
-                        atol=scatterd.grad.detach().abs().max().item() * 1e-5,
-                    )
+                    if v_requires_grad:
+                        assert torch.allclose(
+                            modeld.grad,
+                            modeli.grad,
+                            atol=modeld.grad.detach().abs().max().item() * 1e-5,
+                        )
+                    if scatter_requires_grad:
+                        assert torch.allclose(
+                            scatterd.grad,
+                            scatteri.grad,
+                            atol=scatterd.grad.detach().abs().max().item() * 1e-5,
+                        )
 
 
 def run_born_gradcheck(

@@ -143,7 +143,7 @@
 #ifdef _WIN32
 __declspec(dllexport)
 #endif
-    void FUNC(forward)(
+    int FUNC(forward)(
         DW_DTYPE const *__restrict const v, DW_DTYPE const *__restrict const f,
         DW_DTYPE *__restrict const wfc, DW_DTYPE *__restrict const wfp,
 #if DW_NDIM >= 3
@@ -168,6 +168,7 @@ __declspec(dllexport)
 #endif
         DW_DTYPE *__restrict const zetax, DW_DTYPE *__restrict const w_store_1,
         void *__restrict const w_store_2, void *__restrict const w_store_3,
+        char const *__restrict const *__restrict const w_filenames_ptr,
         DW_DTYPE *__restrict const r,
 #if DW_NDIM >= 3
         DW_DTYPE const *__restrict const az,
@@ -184,7 +185,6 @@ __declspec(dllexport)
         DW_DTYPE const *__restrict const dbxdx,
         int64_t const *__restrict const sources_i,
         int64_t const *__restrict const receivers_i,
-        char const *__restrict const *__restrict const w_filenames_ptr,
 #if DW_NDIM >= 3
         DW_DTYPE const rdz,
 #endif
@@ -409,12 +409,13 @@ __declspec(dllexport)
     }
     if (fp_w) fclose(fp_w);
   }
+  return 0;
 }
 
 #ifdef _WIN32
 __declspec(dllexport)
 #endif
-    void FUNC(backward)(
+    int FUNC(backward)(
         DW_DTYPE const *__restrict const v2dt2,
         DW_DTYPE const *__restrict const grad_r, DW_DTYPE *__restrict const wfc,
         DW_DTYPE *__restrict const wfp,
@@ -447,6 +448,7 @@ __declspec(dllexport)
 #endif
         DW_DTYPE *__restrict const zetaxn, DW_DTYPE *__restrict const w_store_1,
         void *__restrict const w_store_2, void *__restrict const w_store_3,
+        char const *__restrict const *__restrict const w_filenames_ptr,
         DW_DTYPE *__restrict const grad_f, DW_DTYPE *__restrict const grad_v,
         DW_DTYPE *__restrict const grad_v_thread,
 #if DW_NDIM >= 3
@@ -464,7 +466,6 @@ __declspec(dllexport)
         DW_DTYPE const *__restrict const dbxdx,
         int64_t const *__restrict const sources_i,
         int64_t const *__restrict const receivers_i,
-        char const *__restrict const *__restrict const w_filenames_ptr,
 #if DW_NDIM >= 3
         DW_DTYPE const rdz,
 #endif
@@ -702,4 +703,5 @@ __declspec(dllexport)
     combine_grad(grad_v, grad_v_thread, n_threads, n_grid_points);
   }
 #endif /* _OPENMP */
+  return 0;
 }

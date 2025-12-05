@@ -26,7 +26,7 @@ Homepage = "https://github.com/ar4/deepwave"
 [tool.scikit-build]
 wheel.py-api = "py3"
 cmake.version = ">=3.18"
-#cmake.build-type = "Debug"
+cmake.build-type = "Debug"
 
 [tool.cibuildwheel]
 # Only build for one python version, as the wheel is python-independent

@@ -18,7 +18,6 @@ receivers).
 All outputs are differentiable with respect to float torch.Tensor inputs.
 """
 
-import ctypes
 from typing import Any, List, Literal, Optional, Sequence, Tuple, Union, cast
 
 import torch
@@ -26,7 +25,6 @@ import torch
 import deepwave.backend_utils
 import deepwave.common
 import deepwave.regular_grid
-from deepwave.common import TemporaryStorage
 
 
 class Scalar(torch.nn.Module):
@@ -620,7 +618,7 @@ class ScalarForwardFunc(torch.autograd.Function):
             backward_callback: The backward callback.
             callback_frequency: The callback frequency.
             storage_mode_str: Storage mode ("device", "cpu", "disk", "none").
-            storage_path: Path for disk storage.
+            storage_path: Path to the directory for disk storage.
             storage_compression: Whether to use compression.
             wavefields_tuple: List of wavefields (current, previous, PML).
 
@@ -645,13 +643,13 @@ class ScalarForwardFunc(torch.autograd.Function):
             storage_mode_str = "device"
 
         if storage_mode_str == "device":
-            storage_mode = 0
+            storage_mode = deepwave.common.StorageMode.DEVICE
         elif storage_mode_str == "cpu":
-            storage_mode = 1
+            storage_mode = deepwave.common.StorageMode.CPU
         elif storage_mode_str == "disk":
-            storage_mode = 2
+            storage_mode = deepwave.common.StorageMode.DISK
         elif storage_mode_str == "none":
-            storage_mode = 3
+            storage_mode = deepwave.common.StorageMode.NONE
         else:
             raise ValueError(
                 "storage_mode must be 'device', 'cpu', 'disk', or 'none', "
@@ -666,111 +664,19 @@ class ScalarForwardFunc(torch.autograd.Function):
         n_receivers_per_shot = receivers_i.numel() // n_shots
 
         # Storage allocation
-        shot_shape = model_shape
-        num_elements_per_shot = int(torch.prod(torch.tensor(shot_shape)).item())
-        dtype_size = 4 if dtype == torch.float32 else 8
-        shot_bytes_uncomp = num_elements_per_shot * dtype_size
-        shot_bytes_comp = 0
-        if storage_compression and storage_mode != 3:
-            shot_bytes_comp = (
-                (num_elements_per_shot + 2 * dtype_size + dtype_size - 1) // dtype_size
-            ) * dtype_size
-
-        w_store_1 = torch.empty(0)
-        w_store_2 = torch.empty(0)
-        w_store_3 = torch.empty(0)
-        w_filenames_ptr = ctypes.cast(0, ctypes.c_void_p)
-        char_ptr_type = ctypes.POINTER(ctypes.c_char)
-        w_filenames_arr_tmp = (char_ptr_type * 0)()
-        ctx.w_storage = None
-        ctx.w_filenames_bytes = None
-        ctx.w_filenames_arr = None
-
-        if v.requires_grad and storage_mode != 3:
-            num_steps_stored = nt // step_ratio
-            if storage_mode == 0:  # Device
-                if storage_compression:
-                    w_store_1 = torch.zeros(
-                        n_shots,
-                        *shot_shape,
-                        device=device,
-                        dtype=dtype,
-                    )
-                    w_store_2 = torch.zeros(
-                        num_steps_stored,
-                        n_shots,
-                        shot_bytes_comp // dtype_size,
-                        device=device,
-                        dtype=dtype,
-                    )
-                else:
-                    w_store_1 = torch.zeros(
-                        num_steps_stored,
-                        n_shots,
-                        *shot_shape,
-                        device=device,
-                        dtype=dtype,
-                    )
-            elif storage_mode == 1:  # CPU
-                w_store_1 = torch.zeros(
-                    n_shots,
-                    *shot_shape,
-                    device=device,
-                    dtype=dtype,
-                )
-                if storage_compression:
-                    w_store_2 = torch.zeros(
-                        n_shots,
-                        shot_bytes_comp // dtype_size,
-                        device=device,
-                        dtype=dtype,
-                    )
-                w_store_3 = torch.zeros(
-                    num_steps_stored,
-                    n_shots,
-                    (shot_bytes_comp if storage_compression else shot_bytes_uncomp)
-                    // dtype_size,
-                    device="cpu",
-                    pin_memory=True,
-                    dtype=dtype,
-                )
-            elif storage_mode == 2:  # Disk
-                w_storage = TemporaryStorage(storage_path, 1 if is_cuda else n_shots)
-                ctx.w_storage = w_storage
-                w_filenames_list = [
-                    f.encode("utf-8") for f in w_storage.get_filenames()
-                ]
-                ctx.w_filenames_bytes = w_filenames_list
-                w_filenames_arr_tmp = (char_ptr_type * len(w_filenames_list))()
-                for i, f in enumerate(w_filenames_list):
-                    w_filenames_arr_tmp[i] = ctypes.cast(
-                        ctypes.create_string_buffer(f), char_ptr_type
-                    )
-                w_filenames_ptr = ctypes.cast(w_filenames_arr_tmp, ctypes.c_void_p)
-                ctx.w_filenames_arr = w_filenames_arr_tmp
-
-                w_store_1 = torch.zeros(
-                    n_shots,
-                    *shot_shape,
-                    device=device,
-                    dtype=dtype,
-                )
-                if storage_compression:
-                    w_store_2 = torch.zeros(
-                        n_shots,
-                        shot_bytes_comp // dtype_size,
-                        device=device,
-                        dtype=dtype,
-                    )
-                if is_cuda:
-                    w_store_3 = torch.zeros(
-                        n_shots,
-                        (shot_bytes_comp if storage_compression else shot_bytes_uncomp)
-                        // dtype_size,
-                        device="cpu",
-                        pin_memory=True,
-                        dtype=dtype,
-                    )
+        storage_manager = deepwave.common.StorageManager(
+            model_shape,
+            dtype,
+            n_shots,
+            nt,
+            step_ratio,
+            storage_mode,
+            storage_compression,
+            storage_path,
+            device,
+            is_cuda,
+        )
+        storage_manager.allocate(v.requires_grad)
 
         # If any of the input Tensors require gradients, a backward pass (and
         # possibly a double backward pass) may be performed. Save the Tensors
@@ -788,9 +694,6 @@ class ScalarForwardFunc(torch.autograd.Function):
                 receivers_i,
                 source_amplitudes,
                 *wavefields,
-                w_store_1,
-                w_store_2,
-                w_store_3,
                 *pml_profiles,
             )
             ctx.grid_spacing = grid_spacing
@@ -803,10 +706,7 @@ class ScalarForwardFunc(torch.autograd.Function):
             ctx.source_amplitudes_requires_grad = source_amplitudes.requires_grad
             ctx.backward_callback = backward_callback
             ctx.callback_frequency = callback_frequency
-            ctx.storage_mode = storage_mode
-            ctx.storage_compression = storage_compression
-            ctx.shot_bytes_uncomp = shot_bytes_uncomp
-            ctx.shot_bytes_comp = shot_bytes_comp
+            ctx.storage_manager = storage_manager
 
         # The finite difference (FD) stencil has a radius of `accuracy // 2`.
         # To avoid special boundary handling, the wavefields are padded with
@@ -849,10 +749,6 @@ class ScalarForwardFunc(torch.autograd.Function):
         # points, so they cannot be updated in-place.
         psin = [torch.zeros_like(wf) for wf in psi]
 
-        # `receiver_amplitudes` will store the recorded data at receiver
-        # locations.
-        receiver_amplitudes = torch.empty(0, device=device, dtype=dtype)
-
         # The computational domain is divided into regions for performance,
         # and the boundaries of these regions are calculated here. The PML
         # update involves spatial derivatives of PML variables and profiles,
@@ -873,6 +769,10 @@ class ScalarForwardFunc(torch.autograd.Function):
         # Check if a different velocity model is provided for each shot (i.e.,
         # if the batch dimension of `v` is greater than 1).
         v_batched = v.ndim == ndim + 1 and v.shape[0] > 1
+
+        # `receiver_amplitudes` will store the recorded data at receiver
+        # locations.
+        receiver_amplitudes = torch.empty(0, device=device, dtype=dtype)
 
         # If `v` requires gradients, allocate memory for `dwdv`. This tensor
         # stores a partial result for use in the backward pass. The gradient
@@ -946,42 +846,43 @@ class ScalarForwardFunc(torch.autograd.Function):
                 step_nt = min(nt // step_ratio - step, callback_frequency)
                 # Call the C/CUDA backend function to perform the wave
                 # propagation.
-                forward(
-                    v.data_ptr(),
-                    source_amplitudes.data_ptr(),
-                    wfc.data_ptr(),
-                    wfp.data_ptr(),
-                    *[field.data_ptr() for field in psi],
-                    *[field.data_ptr() for field in psin],
-                    *[field.data_ptr() for field in zeta],
-                    w_store_1.data_ptr(),
-                    w_store_2.data_ptr(),
-                    w_store_3.data_ptr(),
-                    receiver_amplitudes.data_ptr(),
-                    *[profile.data_ptr() for profile in pml_profiles],
-                    sources_i.data_ptr(),
-                    receivers_i.data_ptr(),
-                    w_filenames_ptr,
-                    *rdx,
-                    *rdx2,
-                    dt**2,
-                    step_nt * step_ratio,
-                    n_shots,
-                    *model_shape,
-                    n_sources_per_shot,
-                    n_receivers_per_shot,
-                    step_ratio,
-                    storage_mode,
-                    shot_bytes_uncomp,
-                    shot_bytes_comp,
-                    v.requires_grad and storage_mode != 3,
-                    v_batched,
-                    storage_compression,
-                    step * step_ratio,
-                    *pml_b,
-                    *pml_e,
-                    aux,
-                )
+                if (
+                    forward(
+                        v.data_ptr(),
+                        source_amplitudes.data_ptr(),
+                        wfc.data_ptr(),
+                        wfp.data_ptr(),
+                        *[field.data_ptr() for field in psi],
+                        *[field.data_ptr() for field in psin],
+                        *[field.data_ptr() for field in zeta],
+                        *storage_manager.storage_ptrs,
+                        receiver_amplitudes.data_ptr(),
+                        *[profile.data_ptr() for profile in pml_profiles],
+                        sources_i.data_ptr(),
+                        receivers_i.data_ptr(),
+                        *rdx,
+                        *rdx2,
+                        dt**2,
+                        step_nt * step_ratio,
+                        n_shots,
+                        *model_shape,
+                        n_sources_per_shot,
+                        n_receivers_per_shot,
+                        step_ratio,
+                        storage_mode,
+                        storage_manager.shot_bytes_uncomp,
+                        storage_manager.shot_bytes_comp,
+                        v.requires_grad and storage_mode != 3,
+                        v_batched,
+                        storage_compression,
+                        step * step_ratio,
+                        *pml_b,
+                        *pml_e,
+                        aux,
+                    )
+                    != 0
+                ):
+                    raise RuntimeError("Compiled backend failed.")
                 # The backend uses ping-pong buffering for the wavefields and
                 # PML variables. If an odd number of time steps were performed
                 # in the chunk, the pointers to the current and previous time
@@ -1025,8 +926,7 @@ class ScalarForwardFunc(torch.autograd.Function):
         del args
         v, sources_i, receivers_i, source_amplitudes = ctx.saved_tensors[:4]
         wavefields = ctx.saved_tensors[4 : 6 + 2 * ndim]
-        w_stores = ctx.saved_tensors[6 + 2 * ndim : 9 + 2 * ndim]
-        pml_profiles = ctx.saved_tensors[9 + 2 * ndim : 9 + 5 * ndim]
+        pml_profiles = ctx.saved_tensors[6 + 2 * ndim : 6 + 5 * ndim]
 
         grid_spacing = ctx.grid_spacing
         dt = ctx.dt
@@ -1043,7 +943,7 @@ class ScalarForwardFunc(torch.autograd.Function):
             pml_profiles,
             sources_i,
             receivers_i,
-            *w_stores,
+            ctx.storage_manager,
             source_amplitudes,
             grid_spacing,
             dt,
@@ -1055,11 +955,6 @@ class ScalarForwardFunc(torch.autograd.Function):
             source_amplitudes_requires_grad,
             ctx.backward_callback,
             ctx.callback_frequency,
-            ctx.storage_mode,
-            ctx.storage_compression,
-            ctx.shot_bytes_uncomp,
-            ctx.shot_bytes_comp,
-            ctx.w_filenames_arr,
             *grad_wavefields,
             *wavefields,
         )
@@ -1102,9 +997,7 @@ class ScalarBackwardFunc(torch.autograd.Function):
         pml_profiles: List[torch.Tensor],
         sources_i: torch.Tensor,
         receivers_i: torch.Tensor,
-        w_store_1: torch.Tensor,
-        w_store_2: torch.Tensor,
-        w_store_3: torch.Tensor,
+        storage_manager: deepwave.common.StorageManager,
         source_amplitudes: torch.Tensor,
         grid_spacing: Sequence[float],
         dt: float,
@@ -1116,11 +1009,6 @@ class ScalarBackwardFunc(torch.autograd.Function):
         source_amplitudes_requires_grad: bool,
         backward_callback: Optional[deepwave.common.Callback],
         callback_frequency: int,
-        storage_mode: int,
-        storage_compression: bool,
-        shot_bytes_uncomp: int,
-        shot_bytes_comp: int,
-        w_filenames_arr: Any,
         *wavefields_tuple: torch.Tensor,
     ) -> Tuple[torch.Tensor, ...]:
         """Performs the backward propagation of the scalar wave equation.
@@ -1135,9 +1023,7 @@ class ScalarBackwardFunc(torch.autograd.Function):
             pml_profiles: List of PML profiles.
             sources_i: 1D indices of source locations.
             receivers_i: 1D indices of receiver locations.
-            w_store_1: Storage for model gradient calculation.
-            w_store_2: Storage for model gradient calculation.
-            w_store_3: Storage for model gradient calculation.
+            storage_manager: The storage manager.
             source_amplitudes: The source amplitudes tensor.
             grid_spacing: Grid spacing for each spatial dimension.
             dt: Time step interval.
@@ -1149,11 +1035,6 @@ class ScalarBackwardFunc(torch.autograd.Function):
             source_amplitudes_requires_grad: If source amplitudes need grads.
             backward_callback: The backward callback.
             callback_frequency: The callback frequency.
-            storage_mode: Storage mode.
-            storage_compression: Whether to use compression.
-            shot_bytes_uncomp: Uncompressed size of a shot.
-            shot_bytes_comp: Compressed size of a shot.
-            w_filenames_arr: Filenames for disk storage.
             wavefields_tuple: Gradients of the loss with respect to the
                 output wavefields from the forward pass, followed by
                 initial wavefields (current, previous, PML) from forward pass.
@@ -1184,10 +1065,9 @@ class ScalarBackwardFunc(torch.autograd.Function):
         ctx.accuracy = accuracy
         ctx.pml_width = pml_width
         ctx.source_amplitudes_requires_grad = source_amplitudes_requires_grad
-        ctx.storage_mode = storage_mode
-        ctx.storage_compression = storage_compression
-        ctx.shot_bytes_uncomp = shot_bytes_uncomp
-        ctx.shot_bytes_comp = shot_bytes_comp
+        ctx.storage_mode = storage_manager.storage_mode
+        ctx.storage_path = storage_manager.storage_path
+        ctx.storage_compression = storage_manager.storage_compression
 
         v = v.contiguous()
         sources_i = sources_i.contiguous()
@@ -1197,11 +1077,6 @@ class ScalarBackwardFunc(torch.autograd.Function):
         grad_wavefields = [p.contiguous() for p in grad_wavefields]
         pml_profiles = [p.contiguous() for p in pml_profiles]
         grad_r = grad_r.contiguous()
-        # w_store_* are likely already contiguous if created by torch.zeros
-
-        w_filenames_ptr = ctypes.cast(0, ctypes.c_void_p)
-        if storage_mode == 2:
-            w_filenames_ptr = ctypes.cast(w_filenames_arr, ctypes.c_void_p)
 
         device = v.device
         dtype = v.dtype
@@ -1282,7 +1157,12 @@ class ScalarBackwardFunc(torch.autograd.Function):
         # its own model and memory space).
         if is_cuda:
             aux = v.get_device()
-            if v.requires_grad and not v_batched and n_shots > 1 and storage_mode != 3:
+            if (
+                v.requires_grad
+                and not v_batched
+                and n_shots > 1
+                and storage_manager.storage_mode != deepwave.common.StorageMode.NONE
+            ):
                 grad_v_tmp.resize_(n_shots, *model_shape)
                 grad_v_tmp.fill_(0)
                 grad_v_tmp_ptr = grad_v_tmp.data_ptr()
@@ -1296,7 +1176,7 @@ class ScalarBackwardFunc(torch.autograd.Function):
                 and not v_batched
                 and aux > 1
                 and deepwave.backend_utils.USE_OPENMP
-                and storage_mode != 3
+                and storage_manager.storage_mode != deepwave.common.StorageMode.NONE
             ):
                 grad_v_tmp.resize_(aux, *model_shape)
                 grad_v_tmp.fill_(0)
@@ -1334,44 +1214,47 @@ class ScalarBackwardFunc(torch.autograd.Function):
         if grad_wfc.numel() > 0 and nt > 0:
             for step in range(nt // step_ratio, 0, -callback_frequency):
                 step_nt = min(step, callback_frequency)
-                backward(
-                    v2dt2.data_ptr(),
-                    grad_r.data_ptr(),
-                    grad_wfc.data_ptr(),
-                    grad_wfp.data_ptr(),
-                    *[field.data_ptr() for field in grad_psi],
-                    *[field.data_ptr() for field in grad_psin],
-                    *[field.data_ptr() for field in grad_zeta],
-                    *[field.data_ptr() for field in grad_zetan],
-                    w_store_1.data_ptr(),
-                    w_store_2.data_ptr(),
-                    w_store_3.data_ptr(),
-                    grad_f.data_ptr(),
-                    grad_v.data_ptr(),
-                    grad_v_tmp_ptr,
-                    *[profile.data_ptr() for profile in pml_profiles],
-                    sources_i.data_ptr(),
-                    receivers_i.data_ptr(),
-                    w_filenames_ptr,
-                    *rdx,
-                    *rdx2,
-                    step_nt * step_ratio,
-                    n_shots,
-                    *model_shape,
-                    n_sources_per_shot * source_amplitudes_requires_grad,
-                    n_receivers_per_shot,
-                    step_ratio,
-                    storage_mode,
-                    shot_bytes_uncomp,
-                    shot_bytes_comp,
-                    v.requires_grad and storage_mode != 3,
-                    v_batched,
-                    storage_compression,
-                    step * step_ratio,
-                    *pml_b,
-                    *pml_e,
-                    aux,
-                )
+                if (
+                    backward(
+                        v2dt2.data_ptr(),
+                        grad_r.data_ptr(),
+                        grad_wfc.data_ptr(),
+                        grad_wfp.data_ptr(),
+                        *[field.data_ptr() for field in grad_psi],
+                        *[field.data_ptr() for field in grad_psin],
+                        *[field.data_ptr() for field in grad_zeta],
+                        *[field.data_ptr() for field in grad_zetan],
+                        *storage_manager.storage_ptrs,
+                        grad_f.data_ptr(),
+                        grad_v.data_ptr(),
+                        grad_v_tmp_ptr,
+                        *[profile.data_ptr() for profile in pml_profiles],
+                        sources_i.data_ptr(),
+                        receivers_i.data_ptr(),
+                        *rdx,
+                        *rdx2,
+                        step_nt * step_ratio,
+                        n_shots,
+                        *model_shape,
+                        n_sources_per_shot * source_amplitudes_requires_grad,
+                        n_receivers_per_shot,
+                        step_ratio,
+                        storage_manager.storage_mode,
+                        storage_manager.shot_bytes_uncomp,
+                        storage_manager.shot_bytes_comp,
+                        v.requires_grad
+                        and storage_manager.storage_mode
+                        != deepwave.common.StorageMode.NONE,
+                        v_batched,
+                        storage_manager.storage_compression,
+                        step * step_ratio,
+                        *pml_b,
+                        *pml_e,
+                        aux,
+                    )
+                    != 0
+                ):
+                    raise RuntimeError("Compiled backend failed.")
                 if (step_nt * step_ratio) % 2 != 0:
                     grad_wfc, grad_wfp = grad_wfp, grad_wfc
                     grad_psi, grad_psin = grad_psin, grad_psi
@@ -1502,9 +1385,8 @@ class ScalarBackwardFunc(torch.autograd.Function):
         pml_width = ctx.pml_width
         source_amplitudes_requires_grad = ctx.source_amplitudes_requires_grad
         storage_mode = ctx.storage_mode
+        storage_path = ctx.storage_path
         storage_compression = ctx.storage_compression
-        shot_bytes_uncomp = ctx.shot_bytes_uncomp
-        shot_bytes_comp = ctx.shot_bytes_comp
 
         # If no gradient is provided for a given input (e.g. `ggv`), it means
         # we are not interested in the second derivative with respect to that
@@ -1602,108 +1484,20 @@ class ScalarBackwardFunc(torch.autograd.Function):
         ggv_batched = ggv.ndim == ndim + 1 and ggv.shape[0] > 1
 
         # Storage allocation
-        dtype_size = 4 if dtype == torch.float32 else 8
-        w_stores = []
-        w_filenames = []
-        w_storage = []
-        w_filenames_arr: List[Any] = []
-        w_filenames_bytes = []
+        storage_manager = deepwave.common.StorageManager(
+            model_shape,
+            dtype,
+            n_shots,
+            nt,
+            step_ratio,
+            storage_mode,
+            storage_compression,
+            storage_path,
+            device,
+            is_cuda,
+        )
         for requires_grad in [v.requires_grad, v.requires_grad]:
-            w_store_1 = torch.empty(0)
-            w_store_2 = torch.empty(0)
-            w_store_3 = torch.empty(0)
-            w_filenames_ptr = ctypes.cast(0, ctypes.c_void_p)
-            char_ptr_type = ctypes.POINTER(ctypes.c_char)
-            w_filenames_arr_tmp = (char_ptr_type * 0)()
-            if requires_grad and storage_mode != 3:
-                num_steps_stored = nt // step_ratio
-                if storage_mode == 0:  # Device
-                    if storage_compression:
-                        w_store_1 = torch.zeros(
-                            n_shots,
-                            *model_shape,
-                            device=device,
-                            dtype=dtype,
-                        )
-                        w_store_2 = torch.zeros(
-                            num_steps_stored,
-                            n_shots,
-                            shot_bytes_comp // dtype_size,
-                            device=device,
-                            dtype=dtype,
-                        )
-                    else:
-                        w_store_1 = torch.zeros(
-                            num_steps_stored,
-                            n_shots,
-                            *model_shape,
-                            device=device,
-                            dtype=dtype,
-                        )
-                elif storage_mode == 1:  # CPU
-                    w_store_1 = torch.zeros(
-                        n_shots,
-                        *model_shape,
-                        device=device,
-                        dtype=dtype,
-                    )
-                    if storage_compression:
-                        w_store_2 = torch.zeros(
-                            n_shots,
-                            shot_bytes_comp // dtype_size,
-                            device=device,
-                            dtype=dtype,
-                        )
-                    w_store_3 = torch.zeros(
-                        num_steps_stored,
-                        n_shots,
-                        (shot_bytes_comp if storage_compression else shot_bytes_uncomp)
-                        // dtype_size,
-                        device="cpu",
-                        pin_memory=True,
-                        dtype=dtype,
-                    )
-                elif storage_mode == 2:  # Disk
-                    ws = TemporaryStorage(".", 1 if is_cuda else n_shots)
-                    w_storage.append(ws)
-                    w_filenames_list = [f.encode("utf-8") for f in ws.get_filenames()]
-                    w_filenames_bytes.append(w_filenames_list)
-                    w_filenames_arr_tmp = (char_ptr_type * len(w_filenames_list))()
-                    for i, f in enumerate(w_filenames_list):
-                        w_filenames_arr_tmp[i] = ctypes.cast(
-                            ctypes.create_string_buffer(f), char_ptr_type
-                        )
-                    w_filenames_ptr = ctypes.cast(w_filenames_arr_tmp, ctypes.c_void_p)
-
-                    w_store_1 = torch.zeros(
-                        n_shots,
-                        *model_shape,
-                        device=device,
-                        dtype=dtype,
-                    )
-                    if storage_compression:
-                        w_store_2 = torch.zeros(
-                            n_shots,
-                            shot_bytes_comp // dtype_size,
-                            device=device,
-                            dtype=dtype,
-                        )
-                    if is_cuda:
-                        w_store_3 = torch.zeros(
-                            n_shots,
-                            (
-                                shot_bytes_comp
-                                if storage_compression
-                                else shot_bytes_uncomp
-                            )
-                            // dtype_size,
-                            device="cpu",
-                            pin_memory=True,
-                            dtype=dtype,
-                        )
-            w_stores.extend([w_store_1, w_store_2, w_store_3])
-            w_filenames.append(w_filenames_ptr)
-            w_filenames_arr.append(w_filenames_arr_tmp)
+            storage_manager.allocate(requires_grad)
 
         if fwd_receivers_i.numel() > 0:
             receiver_amplitudes.resize_(nt, n_shots, n_receivers_per_shot)
@@ -1730,8 +1524,10 @@ class ScalarBackwardFunc(torch.autograd.Function):
         rdx = [1 / dx for dx in grid_spacing]
         rdx2 = [1 / dx**2 for dx in grid_spacing]
 
-        if wfc.numel() > 0 and nt > 0:
-            forward(
+        if (
+            wfc.numel() > 0
+            and nt > 0
+            and forward(
                 v.data_ptr(),
                 ggv.data_ptr(),
                 source_amplitudes.data_ptr(),
@@ -1746,14 +1542,13 @@ class ScalarBackwardFunc(torch.autograd.Function):
                 *[field.data_ptr() for field in gradgrad_psi],
                 *[field.data_ptr() for field in gradgrad_psin],
                 *[field.data_ptr() for field in gradgrad_zeta],
-                *[w_store.data_ptr() for w_store in w_stores],
+                *storage_manager.storage_ptrs,
                 receiver_amplitudes.data_ptr(),
                 ggreceiver_amplitudes.data_ptr(),
                 *[profile.data_ptr() for profile in pml_profiles],
                 fwd_sources_i.data_ptr(),
                 fwd_receivers_i.data_ptr(),
                 fwd_ggreceivers_i.data_ptr(),
-                *w_filenames,
                 *rdx,
                 *rdx2,
                 dt**2,
@@ -1764,19 +1559,23 @@ class ScalarBackwardFunc(torch.autograd.Function):
                 n_receivers_per_shot,
                 n_ggreceivers_per_shot,
                 step_ratio,
-                storage_mode,
-                shot_bytes_uncomp,
-                shot_bytes_comp,
-                v.requires_grad and storage_mode != 3,
+                storage_manager.storage_mode,
+                storage_manager.shot_bytes_uncomp,
+                storage_manager.shot_bytes_comp,
+                v.requires_grad
+                and storage_manager.storage_mode != deepwave.common.StorageMode.NONE,
                 False,
                 v_batched,
                 ggv_batched,
-                storage_compression,
+                storage_manager.storage_compression,
                 0,
                 *pml_b,
                 *pml_e,
                 aux,
             )
+            != 0
+        ):
+            raise RuntimeError("Compiled backend failed.")
 
         # Step 2: Backward pass
 
@@ -1874,7 +1673,12 @@ class ScalarBackwardFunc(torch.autograd.Function):
 
         if is_cuda:
             aux = v.get_device()
-            if v.requires_grad and not v_batched and n_shots > 1 and storage_mode != 3:
+            if (
+                v.requires_grad
+                and not v_batched
+                and n_shots > 1
+                and storage_manager.storage_mode != deepwave.common.StorageMode.NONE
+            ):
                 grad_v_tmp.resize_(n_shots, *model_shape)
                 grad_v_tmp.fill_(0)
                 grad_v_tmp_ptr = grad_v_tmp.data_ptr()
@@ -1888,7 +1692,7 @@ class ScalarBackwardFunc(torch.autograd.Function):
                 and not v_batched
                 and aux > 1
                 and deepwave.backend_utils.USE_OPENMP
-                and storage_mode != 3
+                and storage_manager.storage_mode != deepwave.common.StorageMode.NONE
             ):
                 grad_v_tmp.resize_(aux, *model_shape)
                 grad_v_tmp.fill_(0)
@@ -1908,8 +1712,11 @@ class ScalarBackwardFunc(torch.autograd.Function):
 
         grad_wfp = -grad_wfp
 
-        if wfc.numel() > 0 and nt > 0 and v.requires_grad:
-            backward(
+        if (
+            wfc.numel() > 0
+            and nt > 0
+            and v.requires_grad
+            and backward(
                 v.data_ptr(),
                 ggv.data_ptr(),
                 torch.empty(0).data_ptr(),
@@ -1926,7 +1733,7 @@ class ScalarBackwardFunc(torch.autograd.Function):
                 *[field.data_ptr() for field in grad_psin],
                 *[field.data_ptr() for field in grad_zeta],
                 *[field.data_ptr() for field in grad_zetan],
-                *[w_store.data_ptr() for w_store in w_stores],
+                *storage_manager.storage_ptrs,
                 grad_f.data_ptr(),
                 grad_gf.data_ptr(),
                 grad_v.data_ptr(),
@@ -1937,7 +1744,6 @@ class ScalarBackwardFunc(torch.autograd.Function):
                 bwd_sources_i.data_ptr(),
                 bwd_receivers_i.data_ptr(),
                 bwd_greceivers_i.data_ptr(),
-                *w_filenames,
                 *rdx,
                 *rdx2,
                 dt**2,
@@ -1949,19 +1755,23 @@ class ScalarBackwardFunc(torch.autograd.Function):
                 n_receivers_per_shot,
                 n_greceivers_per_shot,
                 step_ratio,
-                storage_mode,
-                shot_bytes_uncomp,
-                shot_bytes_comp,
-                v.requires_grad and storage_mode != 3,
+                storage_manager.storage_mode,
+                storage_manager.shot_bytes_uncomp,
+                storage_manager.shot_bytes_comp,
+                v.requires_grad
+                and storage_manager.storage_mode != deepwave.common.StorageMode.NONE,
                 False,
                 v_batched,
                 ggv_batched,
-                storage_compression,
+                storage_manager.storage_compression,
                 nt,
                 *pml_b,
                 *pml_e,
                 aux,
             )
+            != 0
+        ):
+            raise RuntimeError("Compiled backend failed.")
 
         s = (
             slice(None),
@@ -1975,14 +1785,7 @@ class ScalarBackwardFunc(torch.autograd.Function):
                 None,
                 None,
                 None,
-                None,
-                None,
                 grad_f,
-                None,
-                None,
-                None,
-                None,
-                None,
                 None,
                 None,
                 None,
@@ -2009,14 +1812,7 @@ class ScalarBackwardFunc(torch.autograd.Function):
             None,
             None,
             None,
-            None,
-            None,
             grad_f,
-            None,
-            None,
-            None,
-            None,
-            None,
             None,
             None,
             None,

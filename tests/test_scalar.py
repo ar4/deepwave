@@ -896,6 +896,7 @@ def test_gradcheck_v_batched() -> None:
     run_gradcheck(propagator=scalarprop, c=torch.tensor([[[1500.0]], [[1600.0]]]))
 
 
+@pytest.mark.parametrize(("num_shots"), [1, 2])
 @pytest.mark.parametrize(
     ("nx", "dx"),
     [
@@ -905,13 +906,13 @@ def test_gradcheck_v_batched() -> None:
     ],
 )
 def test_storage(
+    num_shots,
     nx,
     dx,
     c=1500,
     dc=100,
     freq=25,
     dt=0.005,
-    num_shots=2,
     num_sources_per_shot=2,
     num_receivers_per_shot=2,
     num_scatter_receivers_per_shot=2,

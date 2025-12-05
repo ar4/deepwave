@@ -11,7 +11,6 @@ wave simulations. The outputs are differentiable with respect to the
 material parameters (Lam'e parameters and buoyancy) and source amplitudes.
 """
 
-import ctypes
 from typing import Any, List, Literal, Optional, Sequence, Tuple, Union, cast
 
 import torch
@@ -19,7 +18,6 @@ import torch
 import deepwave.backend_utils
 import deepwave.common
 import deepwave.staggered_grid
-from deepwave.common import TemporaryStorage
 
 
 def prepare_parameters(mu: torch.Tensor, buoyancy: torch.Tensor) -> List[torch.Tensor]:
@@ -1236,79 +1234,45 @@ class ElasticForwardFunc(torch.autograd.Function):
 
         device = models[0].device
         dtype = models[0].dtype
-        is_cuda = models[0].is_cuda
-
         if str(device) == "cpu" and storage_mode_str == "cpu":
             storage_mode_str = "device"
 
         if storage_mode_str == "device":
-            storage_mode = 0
+            storage_mode = deepwave.common.StorageMode.DEVICE
         elif storage_mode_str == "cpu":
-            storage_mode = 1
+            storage_mode = deepwave.common.StorageMode.CPU
         elif storage_mode_str == "disk":
-            storage_mode = 2
+            storage_mode = deepwave.common.StorageMode.DISK
         elif storage_mode_str == "none":
-            storage_mode = 3
+            storage_mode = deepwave.common.StorageMode.NONE
         else:
             raise ValueError(
                 "storage_mode must be 'device', 'cpu', 'disk', or 'none', "
                 f"but got {storage_mode_str}"
             )
 
+        is_cuda = models[0].is_cuda
+        model_shape = models[0].shape[-ndim:]
         n_sources_per_shot = [locs.numel() // n_shots for locs in sources_i]
         n_receivers_per_shot = [locs.numel() // n_shots for locs in receivers_i]
 
-        receiver_amplitudes: List[torch.Tensor] = [
-            torch.empty(0, device=device, dtype=dtype) for _ in range(ndim + 1)
-        ]
-
-        fd_pad = accuracy // 2
-        fd_pad_list = [fd_pad, fd_pad - 1] * ndim
-        size_with_batch = (n_shots, *models[0].shape[-ndim:])
-        wavefields = [
-            deepwave.common.create_or_pad(
-                wavefield,
-                fd_pad_list,
-                device,
-                dtype,
-                size_with_batch,
-            )
-            for wavefield in wavefields
-        ]
-
-        zero_edges_and_interiors(wavefields, ndim, fd_pad, fd_pad_list, pml_width)
-
-        model_shape = models[0].shape[-ndim:]
-        pml_b = [pml_width[2 * i] + fd_pad for i in range(ndim)]
-        pml_e = [
-            max(pml_b[i], model_shape[i] - pml_width[2 * i + 1] - (fd_pad - 1))
-            for i in range(ndim)
-        ]
-
-        lamb_batched = models[0].ndim == ndim + 1 and models[0].shape[0] > 1
-        mu_batched = models[1].ndim == ndim + 1 and models[1].shape[0] > 1
-        buoyancy_batched = models[-1].ndim == ndim + 1 and models[-1].shape[0] > 1
+        # Storage allocation for backward_storage variables
+        storage_manager = deepwave.common.StorageManager(
+            model_shape,
+            dtype,
+            n_shots,
+            nt,
+            step_ratio,
+            storage_mode,
+            storage_compression,
+            storage_path,
+            device,
+            is_cuda,
+        )
 
         lamb_requires_grad = models[0].requires_grad
         mu_requires_grad = models[1].requires_grad
         buoyancy_requires_grad = models[-1].requires_grad
-
-        # Storage allocation for backward_storage variables
-        shot_shape = model_shape
-        num_elements_per_shot = int(torch.prod(torch.tensor(shot_shape)).item())
-        dtype_size = 4 if dtype == torch.float32 else 8
-        shot_bytes_uncomp = num_elements_per_shot * dtype_size
-        shot_bytes_comp = 0
-        if storage_compression and storage_mode != 3:
-            shot_bytes_comp = (
-                (num_elements_per_shot + 2 * dtype_size + dtype_size - 1) // dtype_size
-            ) * dtype_size
-
-        backward_storage_tensors = []
-        ctx.backward_storage_objects = []  # Keep TemporaryStorage objects alive
-        ctx.backward_storage_filename_arrays = []  # Keep ctypes arrays alive
-
-        char_ptr_type = ctypes.POINTER(ctypes.c_char)
 
         # Define which storage variables are relevant based on ndim
         storage_vars_info = []
@@ -1331,123 +1295,8 @@ class ElasticForwardFunc(torch.autograd.Function):
         )
 
         # Create storage buffers and file arrays
-        backward_storage_ptrs = []
         for _name, requires_grad_cond in storage_vars_info:
-            store_1 = torch.empty(0)
-            store_2 = torch.empty(0)
-            store_3 = torch.empty(0)
-            filenames_arr = (char_ptr_type * 0)()
-
-            if requires_grad_cond and storage_mode != 3:  # STORAGE_NONE
-                num_steps_stored = nt // step_ratio
-                if storage_mode == 0:  # STORAGE_DEVICE
-                    if storage_compression:
-                        store_1 = torch.zeros(
-                            n_shots,
-                            *shot_shape,
-                            device=device,
-                            dtype=dtype,
-                        )
-                        store_2 = torch.zeros(
-                            num_steps_stored,
-                            n_shots,
-                            shot_bytes_comp // dtype_size,
-                            device=device,
-                            dtype=dtype,
-                        )
-                    else:
-                        store_1 = torch.zeros(
-                            num_steps_stored,
-                            n_shots,
-                            *shot_shape,
-                            device=device,
-                            dtype=dtype,
-                        )
-                elif storage_mode == 1:  # STORAGE_CPU
-                    store_1 = torch.zeros(
-                        n_shots,
-                        *shot_shape,
-                        device=device,
-                        dtype=dtype,
-                    )
-                    if storage_compression:
-                        store_2 = torch.zeros(
-                            n_shots,
-                            shot_bytes_comp // dtype_size,
-                            device=device,
-                            dtype=dtype,
-                        )
-                    store_3 = torch.zeros(
-                        num_steps_stored,
-                        n_shots,
-                        (shot_bytes_comp if storage_compression else shot_bytes_uncomp)
-                        // dtype_size,
-                        device="cpu",
-                        pin_memory=True,
-                        dtype=dtype,
-                    )
-                elif storage_mode == 2:  # STORAGE_DISK
-                    storage_obj = TemporaryStorage(
-                        storage_path, 1 if is_cuda else n_shots
-                    )
-                    ctx.backward_storage_objects.append(storage_obj)
-                    filenames_list = [
-                        f.encode("utf-8") for f in storage_obj.get_filenames()
-                    ]
-                    filenames_arr = (char_ptr_type * len(filenames_list))()
-                    for i_file, f_name in enumerate(filenames_list):
-                        filenames_arr[i_file] = ctypes.cast(
-                            ctypes.create_string_buffer(f_name), char_ptr_type
-                        )
-
-                    store_1 = torch.zeros(
-                        n_shots,
-                        *shot_shape,
-                        device=device,
-                        dtype=dtype,
-                    )
-                    if storage_compression:
-                        store_2 = torch.zeros(
-                            n_shots,
-                            shot_bytes_comp // dtype_size,
-                            device=device,
-                            dtype=dtype,
-                        )
-                    if is_cuda:
-                        store_3 = torch.zeros(
-                            n_shots,
-                            (
-                                shot_bytes_comp
-                                if storage_compression
-                                else shot_bytes_uncomp
-                            )
-                            // dtype_size,
-                            device="cpu",
-                            pin_memory=True,
-                            dtype=dtype,
-                        )
-
-            backward_storage_tensors.extend([store_1, store_2, store_3])
-            ctx.backward_storage_filename_arrays.append(filenames_arr)
-
-            # Prepare pointers for the C/CUDA call
-            filenames_ptr = (
-                ctypes.cast(filenames_arr, ctypes.c_void_p) if storage_mode == 2 else 0
-            )
-
-            backward_storage_ptrs.extend(
-                [
-                    store_1.data_ptr() if store_1.numel() > 0 else 0,
-                    store_2.data_ptr() if store_2.numel() > 0 else 0,
-                    store_3.data_ptr() if store_3.numel() > 0 else 0,
-                    filenames_ptr,
-                ]
-            )
-
-        for i, loc in enumerate(receivers_i):
-            if loc.numel() > 0:
-                receiver_amplitudes[i].resize_(nt, n_shots, n_receivers_per_shot[i])
-                receiver_amplitudes[i].fill_(0)
+            storage_manager.allocate(requires_grad_cond)
 
         if (
             lamb_requires_grad
@@ -1462,7 +1311,6 @@ class ElasticForwardFunc(torch.autograd.Function):
                 *receivers_i,
                 *source_amplitudes,
                 *pml_profiles,
-                *backward_storage_tensors,
             )
             ctx.grid_spacing = grid_spacing
             ctx.dt = dt
@@ -1476,10 +1324,42 @@ class ElasticForwardFunc(torch.autograd.Function):
             ]
             ctx.backward_callback = backward_callback
             ctx.callback_frequency = callback_frequency
-            ctx.storage_mode = storage_mode
-            ctx.storage_compression = storage_compression
-            ctx.shot_bytes_uncomp = shot_bytes_uncomp
-            ctx.shot_bytes_comp = shot_bytes_comp
+            ctx.storage_manager = storage_manager
+
+        fd_pad = accuracy // 2
+        fd_pad_list = [fd_pad, fd_pad - 1] * ndim
+        size_with_batch = (n_shots, *models[0].shape[-ndim:])
+        wavefields = [
+            deepwave.common.create_or_pad(
+                wavefield,
+                fd_pad_list,
+                device,
+                dtype,
+                size_with_batch,
+            )
+            for wavefield in wavefields
+        ]
+
+        zero_edges_and_interiors(wavefields, ndim, fd_pad, fd_pad_list, pml_width)
+
+        pml_b = [pml_width[2 * i] + fd_pad for i in range(ndim)]
+        pml_e = [
+            max(pml_b[i], model_shape[i] - pml_width[2 * i + 1] - (fd_pad - 1))
+            for i in range(ndim)
+        ]
+
+        lamb_batched = models[0].ndim == ndim + 1 and models[0].shape[0] > 1
+        mu_batched = models[1].ndim == ndim + 1 and models[1].shape[0] > 1
+        buoyancy_batched = models[-1].ndim == ndim + 1 and models[-1].shape[0] > 1
+
+        receiver_amplitudes: List[torch.Tensor] = [
+            torch.empty(0, device=device, dtype=dtype) for _ in range(ndim + 1)
+        ]
+
+        for i, loc in enumerate(receivers_i):
+            if loc.numel() > 0:
+                receiver_amplitudes[i].resize_(nt, n_shots, n_receivers_per_shot[i])
+                receiver_amplitudes[i].fill_(0)
 
         if is_cuda:
             aux = models[0].get_device()
@@ -1577,41 +1457,48 @@ class ElasticForwardFunc(torch.autograd.Function):
                     )
                 step_nt = min(nt // step_ratio - step, callback_frequency)
 
-                # Prepare all storage pointers for the C/CUDA call
-                storage_ptrs = backward_storage_ptrs
-
-                forward(
-                    *[model.data_ptr() for model in models],
-                    *[amp.data_ptr() for amp in source_amplitudes],
-                    *[field.data_ptr() for field in wavefields],
-                    *storage_ptrs,  # Expanded storage arguments
-                    *[amp.data_ptr() for amp in receiver_amplitudes],
-                    *[profile.data_ptr() for profile in pml_profiles],
-                    *[locs.data_ptr() for locs in sources_i],
-                    *[locs.data_ptr() for locs in receivers_i],
-                    *rdx,
-                    dt,
-                    step_nt * step_ratio,
-                    n_shots,
-                    *model_shape,
-                    *n_sources_per_shot,
-                    *n_receivers_per_shot,
-                    step_ratio,
-                    storage_mode,
-                    shot_bytes_uncomp,
-                    shot_bytes_comp,
-                    lamb_requires_grad and storage_mode != 3,
-                    mu_requires_grad and storage_mode != 3,
-                    buoyancy_requires_grad and storage_mode != 3,
-                    lamb_batched,
-                    mu_batched,
-                    buoyancy_batched,
-                    storage_compression,
-                    step * step_ratio,
-                    *pml_b,
-                    *pml_e,
-                    aux,
-                )
+                if (
+                    forward(
+                        *[model.data_ptr() for model in models],
+                        *[amp.data_ptr() for amp in source_amplitudes],
+                        *[field.data_ptr() for field in wavefields],
+                        *storage_manager.storage_ptrs,
+                        *[amp.data_ptr() for amp in receiver_amplitudes],
+                        *[profile.data_ptr() for profile in pml_profiles],
+                        *[locs.data_ptr() for locs in sources_i],
+                        *[locs.data_ptr() for locs in receivers_i],
+                        *rdx,
+                        dt,
+                        step_nt * step_ratio,
+                        n_shots,
+                        *model_shape,
+                        *n_sources_per_shot,
+                        *n_receivers_per_shot,
+                        step_ratio,
+                        storage_manager.storage_mode,
+                        storage_manager.shot_bytes_uncomp,
+                        storage_manager.shot_bytes_comp,
+                        lamb_requires_grad
+                        and storage_manager.storage_mode
+                        != deepwave.common.StorageMode.NONE,
+                        mu_requires_grad
+                        and storage_manager.storage_mode
+                        != deepwave.common.StorageMode.NONE,
+                        buoyancy_requires_grad
+                        and storage_manager.storage_mode
+                        != deepwave.common.StorageMode.NONE,
+                        lamb_batched,
+                        mu_batched,
+                        buoyancy_batched,
+                        storage_manager.storage_compression,
+                        step * step_ratio,
+                        *pml_b,
+                        *pml_e,
+                        aux,
+                    )
+                    != 0
+                ):
+                    raise RuntimeError("Compiled backend failed.")
 
         s = (
             slice(None),
@@ -1656,7 +1543,6 @@ class ElasticForwardFunc(torch.autograd.Function):
         # receivers_i: 4 (3D), 3 (2D), 2 (1D)
         # source_amplitudes: 4 (3D), 3 (2D), 2 (1D)
         # pml_profiles: 12 (3D), 8 (2D), 4 (1D)
-        # backward_storage: 9 (3D), 5 (2D), 2 (1D)
 
         num_models = 0
         num_sources_i = 0
@@ -1694,48 +1580,9 @@ class ElasticForwardFunc(torch.autograd.Function):
         pml_profiles = saved_tensors[:num_pml_profiles]
         del saved_tensors[:num_pml_profiles]
 
-        # Reconstruct storage variables info
         lamb_requires_grad = models[0].requires_grad
         mu_requires_grad = models[1].requires_grad
         buoyancy_requires_grad = models[-1].requires_grad
-
-        storage_vars_info = []
-        if ndim >= 3:
-            storage_vars_info.append(("dvzdbuoyancy", buoyancy_requires_grad))
-            storage_vars_info.append(
-                ("dvzdz_store", lamb_requires_grad or mu_requires_grad)
-            )
-            storage_vars_info.append(("dvzdx_plus_dvxdz_store", mu_requires_grad))
-            storage_vars_info.append(("dvzdy_plus_dvydz_store", mu_requires_grad))
-        if ndim >= 2:
-            storage_vars_info.append(("dvydbuoyancy", buoyancy_requires_grad))
-            storage_vars_info.append(
-                ("dvydy_store", lamb_requires_grad or mu_requires_grad)
-            )
-            storage_vars_info.append(("dvydx_plus_dvxdy_store", mu_requires_grad))
-        storage_vars_info.append(("dvxdbuoyancy", buoyancy_requires_grad))
-        storage_vars_info.append(
-            ("dvxdx_store", lamb_requires_grad or mu_requires_grad)
-        )
-
-        # Retrieve storage tensors
-        # We know exactly how many there are: 3 * len(storage_vars_info)
-        num_storage_tensors = 3 * len(storage_vars_info)
-        storage_tensors = saved_tensors[:num_storage_tensors]
-        del saved_tensors[:num_storage_tensors]
-
-        storage_ptrs = []
-        for i in range(len(storage_vars_info)):
-            s1, s2, s3 = storage_tensors[i * 3 : (i + 1) * 3]
-
-            p1 = s1.data_ptr() if s1.numel() > 0 else 0
-            p2 = s2.data_ptr() if s2.numel() > 0 else 0
-            p3 = s3.data_ptr() if s3.numel() > 0 else 0
-
-            arr = ctx.backward_storage_filename_arrays[i]
-            pf = ctypes.cast(arr, ctypes.c_void_p) if ctx.storage_mode == 2 else 0
-
-            storage_ptrs.extend([p1, p2, p3, pf])
 
         grad_r = [grad.contiguous() for grad in grad_r]
         models = [model.contiguous() for model in models]
@@ -1753,6 +1600,7 @@ class ElasticForwardFunc(torch.autograd.Function):
         source_amplitudes_requires_grad = ctx.source_amplitudes_requires_grad
         backward_callback = ctx.backward_callback
         callback_frequency = ctx.callback_frequency
+        storage_manager = ctx.storage_manager
         device = models[0].device
         dtype = models[0].dtype
         is_cuda = models[0].is_cuda
@@ -1825,7 +1673,7 @@ class ElasticForwardFunc(torch.autograd.Function):
                     model.requires_grad
                     and not batched
                     and n_shots > 1
-                    and ctx.storage_mode != 3
+                    and storage_manager.storage_mode != deepwave.common.StorageMode.NONE
                 ):
                     grad_models_tmp[i].resize_(n_shots, *model_shape)
                     grad_models_tmp[i].fill_(0)
@@ -1842,7 +1690,7 @@ class ElasticForwardFunc(torch.autograd.Function):
                     and not batched
                     and aux > 1
                     and deepwave.backend_utils.USE_OPENMP
-                    and ctx.storage_mode != 3
+                    and storage_manager.storage_mode != deepwave.common.StorageMode.NONE
                 ):
                     grad_models_tmp[i].resize_(n_shots, *model_shape)
                     grad_models_tmp[i].fill_(0)
@@ -1923,44 +1771,54 @@ class ElasticForwardFunc(torch.autograd.Function):
         if grad_wavefields[0].numel() > 0 and nt > 0:
             for step in range(nt // step_ratio, 0, -callback_frequency):
                 step_nt = min(step, callback_frequency)
-                backward(
-                    *[model.data_ptr() for model in models],
-                    *[amp.data_ptr() for amp in grad_r],
-                    *[field.data_ptr() for field in grad_wavefields],
-                    *[field.data_ptr() for field in aux_wavefields],
-                    *storage_ptrs,  # Expanded storage arguments
-                    *[amp.data_ptr() for amp in grad_f],
-                    *[model.data_ptr() for model in grad_models],
-                    *grad_models_tmp_ptr,
-                    *[profile.data_ptr() for profile in pml_profiles],
-                    *[locs.data_ptr() for locs in sources_i],
-                    *[locs.data_ptr() for locs in receivers_i],
-                    *rdx,
-                    dt,
-                    step_nt * step_ratio,
-                    n_shots,
-                    *model_shape,
-                    *[
-                        n_sources_per_shot[i] * source_amplitudes_requires_grad[i]
-                        for i in range(len(n_sources_per_shot))
-                    ],
-                    *n_receivers_per_shot,
-                    step_ratio,
-                    ctx.storage_mode,
-                    ctx.shot_bytes_uncomp,
-                    ctx.shot_bytes_comp,
-                    lamb_requires_grad and ctx.storage_mode != 3,
-                    mu_requires_grad and ctx.storage_mode != 3,
-                    buoyancy_requires_grad and ctx.storage_mode != 3,
-                    lamb_batched,
-                    mu_batched,
-                    buoyancy_batched,
-                    ctx.storage_compression,
-                    step * step_ratio,
-                    *pml_b,
-                    *pml_e,
-                    aux,
-                )
+                if (
+                    backward(
+                        *[model.data_ptr() for model in models],
+                        *[amp.data_ptr() for amp in grad_r],
+                        *[field.data_ptr() for field in grad_wavefields],
+                        *[field.data_ptr() for field in aux_wavefields],
+                        *storage_manager.storage_ptrs,
+                        *[amp.data_ptr() for amp in grad_f],
+                        *[model.data_ptr() for model in grad_models],
+                        *grad_models_tmp_ptr,
+                        *[profile.data_ptr() for profile in pml_profiles],
+                        *[locs.data_ptr() for locs in sources_i],
+                        *[locs.data_ptr() for locs in receivers_i],
+                        *rdx,
+                        dt,
+                        step_nt * step_ratio,
+                        n_shots,
+                        *model_shape,
+                        *[
+                            n_sources_per_shot[i] * source_amplitudes_requires_grad[i]
+                            for i in range(len(n_sources_per_shot))
+                        ],
+                        *n_receivers_per_shot,
+                        step_ratio,
+                        storage_manager.storage_mode,
+                        storage_manager.shot_bytes_uncomp,
+                        storage_manager.shot_bytes_comp,
+                        lamb_requires_grad
+                        and storage_manager.storage_mode
+                        != deepwave.common.StorageMode.NONE,
+                        mu_requires_grad
+                        and storage_manager.storage_mode
+                        != deepwave.common.StorageMode.NONE,
+                        buoyancy_requires_grad
+                        and storage_manager.storage_mode
+                        != deepwave.common.StorageMode.NONE,
+                        lamb_batched,
+                        mu_batched,
+                        buoyancy_batched,
+                        storage_manager.storage_compression,
+                        step * step_ratio,
+                        *pml_b,
+                        *pml_e,
+                        aux,
+                    )
+                    != 0
+                ):
+                    raise RuntimeError("Compiled backend failed.")
                 if (step_nt * step_ratio) % 2 != 0:
                     if ndim == 3:
                         (

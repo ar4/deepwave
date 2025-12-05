@@ -6,11 +6,13 @@ PML setup, and data preparation for wave propagation simulations.
 """
 
 import contextlib
+import ctypes
 import math
 import os
 import shutil
 import warnings
 from collections import abc
+from enum import IntEnum
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
@@ -24,11 +26,240 @@ from typing import (
 )
 from uuid import uuid4
 
+import torch
+import torch.fft
+
 if TYPE_CHECKING:
     from types import EllipsisType
 
-import torch
-import torch.fft
+
+class StorageMode(IntEnum):
+    """Storage modes for intermediate wavefields."""
+
+    DEVICE = 0
+    CPU = 1
+    DISK = 2
+    NONE = 3
+
+
+class TemporaryStorage:
+    """Manages temporary files for disk storage.
+
+    Creates a unique subdirectory for each instantiation to prevent collisions.
+    """
+
+    def __init__(self, base_path: str, num_files: int) -> None:
+        """Initialise the temporary storage.
+
+        Args:
+            base_path: The base path for the temporary directory.
+            num_files: The number of files to create.
+        """
+        self.base_dir = Path(base_path) / f"deepwave_tmp_{os.getpid()}_{uuid4().hex}"
+        self.base_dir.mkdir(parents=True, exist_ok=True)
+        self.filenames: List[bytes] = []
+
+        for i in range(num_files):
+            self.filenames.append(str(self.base_dir / f"shot_{i}.bin").encode("utf-8"))
+
+        self.filenames_ptr = (ctypes.c_char_p * len(self.filenames))(*self.filenames)
+
+    def get_filenames_ptr(self) -> ctypes.Array[ctypes.c_char_p]:
+        """Return a pointer to the array of filenames."""
+        return self.filenames_ptr
+
+    def close(self) -> None:
+        """Close the storage and remove the temporary directory."""
+        if self.base_dir.exists():
+            with contextlib.suppress(OSError):
+                shutil.rmtree(self.base_dir)
+
+    def __del__(self) -> None:
+        """Destructor to ensure cleanup."""
+        self.close()
+
+
+class IntermediateStorage:
+    """Stores pointers to wavefield storage for a single allocation."""
+
+    def __init__(
+        self,
+        store_1: torch.Tensor,
+        store_2: torch.Tensor,
+        store_3: torch.Tensor,
+        temporary_storage: Optional[TemporaryStorage],
+    ) -> None:
+        """Store the intermediate storage information."""
+        self.store_1 = store_1
+        self.store_2 = store_2
+        self.store_3 = store_3
+        self.temporary_storage = temporary_storage
+
+    def get_ptrs(self) -> Tuple[int, int, int, ctypes.Array[ctypes.c_char_p]]:
+        """Return pointers to the storage and filenames array."""
+        return (
+            self.store_1.data_ptr(),
+            self.store_2.data_ptr(),
+            self.store_3.data_ptr(),
+            self.temporary_storage.get_filenames_ptr()
+            if self.temporary_storage is not None
+            else (ctypes.c_char_p * 0)(),
+        )
+
+
+class StorageManager:
+    """Manages temporary storage for wave propagation."""
+
+    def __init__(
+        self,
+        shot_shape: Tuple[int, ...],
+        dtype: torch.dtype,
+        n_shots: int,
+        nt: int,
+        step_ratio: int,
+        storage_mode: int,
+        storage_compression: bool,
+        storage_path: str,
+        device: torch.device,
+        is_cuda: bool,
+    ) -> None:
+        """Initialise the StorageManager.
+
+        Args:
+            shot_shape: The spatial shape of a single shot's wavefield.
+            dtype: The data type of the stored wavefields.
+            n_shots: The number of shots being simulated.
+            nt: The total number of time steps.
+            step_ratio: The ratio between the user time step and the internal time step.
+            storage_mode: The mode of storage (0: device, 1: CPU, 2: Disk, 3: None).
+            storage_compression: Whether to apply compression when storing to disk.
+            storage_path: The path to the directory for disk storage.
+            device: The PyTorch device for computation.
+            is_cuda: Whether the device is a CUDA device.
+        """
+        self.shot_shape = shot_shape
+        self.dtype = dtype
+        self.n_shots = n_shots
+        self.nt = nt
+        self.step_ratio = step_ratio
+        self.storage_mode = storage_mode
+        self.storage_compression = storage_compression
+        self.storage_path = storage_path
+        self.device = device
+        self.is_cuda = is_cuda
+
+        self.dtype_size = 4 if dtype == torch.float32 else 8
+        self.num_elements_per_shot = int(torch.prod(torch.tensor(shot_shape)).item())
+        self.shot_bytes_uncomp = self.num_elements_per_shot * self.dtype_size
+        self.shot_bytes_comp = 0
+        if storage_compression and storage_mode != StorageMode.NONE:
+            self.shot_bytes_comp = (
+                (self.num_elements_per_shot + 2 * self.dtype_size + self.dtype_size - 1)
+                // self.dtype_size
+            ) * self.dtype_size
+
+        self.storages: List[IntermediateStorage] = []
+        self.storage_ptrs: List[Union[int, ctypes.Array[ctypes.c_char_p]]] = []
+
+    def allocate(self, requires_grad: bool) -> None:
+        """Allocates storage tensors and handles disk storage if needed."""
+        store_1 = torch.empty(0)
+        store_2 = torch.empty(0)
+        store_3 = torch.empty(0)
+        temporary_storage: Optional[TemporaryStorage] = None
+
+        if requires_grad and self.storage_mode != StorageMode.NONE:
+            num_steps_stored = self.nt // self.step_ratio
+
+            if self.storage_mode == StorageMode.DEVICE:  # Device
+                if self.storage_compression:
+                    store_1 = torch.zeros(
+                        self.n_shots,
+                        *self.shot_shape,
+                        device=self.device,
+                        dtype=self.dtype,
+                    )
+                    store_2 = torch.zeros(
+                        num_steps_stored,
+                        self.n_shots,
+                        self.shot_bytes_comp // self.dtype_size,
+                        device=self.device,
+                        dtype=self.dtype,
+                    )
+                else:
+                    store_1 = torch.zeros(
+                        num_steps_stored,
+                        self.n_shots,
+                        *self.shot_shape,
+                        device=self.device,
+                        dtype=self.dtype,
+                    )
+
+            elif self.storage_mode == StorageMode.CPU:  # CPU
+                store_1 = torch.zeros(
+                    self.n_shots,
+                    *self.shot_shape,
+                    device=self.device,
+                    dtype=self.dtype,
+                )
+                if self.storage_compression:
+                    store_2 = torch.zeros(
+                        self.n_shots,
+                        self.shot_bytes_comp // self.dtype_size,
+                        device=self.device,
+                        dtype=self.dtype,
+                    )
+
+                size_3 = (
+                    self.shot_bytes_comp
+                    if self.storage_compression
+                    else self.shot_bytes_uncomp
+                ) // self.dtype_size
+                store_3 = torch.zeros(
+                    num_steps_stored,
+                    self.n_shots,
+                    size_3,
+                    device="cpu",
+                    pin_memory=True,
+                    dtype=self.dtype,
+                )
+
+            elif self.storage_mode == StorageMode.DISK:  # Disk
+                temporary_storage = TemporaryStorage(
+                    self.storage_path, 1 if self.is_cuda else self.n_shots
+                )
+
+                store_1 = torch.zeros(
+                    self.n_shots,
+                    *self.shot_shape,
+                    device=self.device,
+                    dtype=self.dtype,
+                )
+                if self.storage_compression:
+                    store_2 = torch.zeros(
+                        self.n_shots,
+                        self.shot_bytes_comp // self.dtype_size,
+                        device=self.device,
+                        dtype=self.dtype,
+                    )
+
+                if self.is_cuda:
+                    size_3 = (
+                        self.shot_bytes_comp
+                        if self.storage_compression
+                        else self.shot_bytes_uncomp
+                    ) // self.dtype_size
+                    store_3 = torch.zeros(
+                        self.n_shots,
+                        size_3,
+                        device="cpu",
+                        pin_memory=True,
+                        dtype=self.dtype,
+                    )
+
+        storage = IntermediateStorage(store_1, store_2, store_3, temporary_storage)
+        self.storages.append(storage)
+        self.storage_ptrs.extend(storage.get_ptrs())
 
 
 class CallbackState:
@@ -2463,38 +2694,3 @@ def get_ndim(
             "initial wavefield."
         )
     return ndim
-
-
-class TemporaryStorage:
-    """Manages temporary files for disk storage.
-
-    Creates a unique subdirectory for each instantiation to prevent collisions.
-    """
-
-    def __init__(self, base_path: str, num_files: int) -> None:
-        """Initialise the temporary storage.
-
-        Args:
-            base_path: The base path for the temporary directory.
-            num_files: The number of files to create.
-        """
-        self.base_dir = Path(base_path) / f"deepwave_tmp_{os.getpid()}_{uuid4().hex}"
-        self.base_dir.mkdir(parents=True, exist_ok=True)
-        self.filenames: List[str] = []
-
-        for i in range(num_files):
-            self.filenames.append(str(self.base_dir / f"shot_{i}.bin"))
-
-    def get_filenames(self) -> List[str]:
-        """Return the list of filenames."""
-        return self.filenames
-
-    def close(self) -> None:
-        """Close the storage and remove the temporary directory."""
-        if self.base_dir.exists():
-            with contextlib.suppress(OSError):
-                shutil.rmtree(self.base_dir)
-
-    def __del__(self) -> None:
-        """Destructor to ensure cleanup."""
-        self.close()

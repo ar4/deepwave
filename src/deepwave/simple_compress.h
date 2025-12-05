@@ -21,8 +21,8 @@ extern "C" {
  */
 void simple_compress_cpu(const void *input, void *output,
                          size_t n_elements_per_field, int is_double);
-void simple_compress_cuda(const void *input, void *output, size_t n_batch,
-                          size_t n_elements_per_field, int is_double);
+int simple_compress_cuda(const void *input, void *output, size_t n_batch,
+                         size_t n_elements_per_field, int is_double);
 
 /* Decompress a batch of wavefields from 8 bits per sample
  *
@@ -35,8 +35,8 @@ void simple_compress_cuda(const void *input, void *output, size_t n_batch,
  */
 void simple_decompress_cpu(const void *input, void *output,
                            size_t n_elements_per_field, int is_double);
-void simple_decompress_cuda(const void *input, void *output, size_t n_batch,
-                            size_t n_elements_per_field, int is_double);
+int simple_decompress_cuda(const void *input, void *output, size_t n_batch,
+                           size_t n_elements_per_field, int is_double);
 
 #ifdef __cplusplus
 }

@@ -160,7 +160,7 @@
 #ifdef _WIN32
 __declspec(dllexport)
 #endif
-    void FUNC(forward)(
+    int FUNC(forward)(
         DW_DTYPE const *__restrict const v,
         DW_DTYPE const *__restrict const scatter,
         DW_DTYPE const *__restrict const f,
@@ -211,8 +211,10 @@ __declspec(dllexport)
         DW_DTYPE *__restrict const zetaxsc,
         DW_DTYPE *__restrict const w_store_1, void *__restrict const w_store_2,
         void *__restrict const w_store_3,
+        char const *__restrict const *__restrict const w_filenames_ptr,
         DW_DTYPE *__restrict const wsc_store_1,
         void *__restrict const wsc_store_2, void *__restrict const wsc_store_3,
+        char const *__restrict const *__restrict const wsc_filenames_ptr,
         DW_DTYPE *__restrict const r, DW_DTYPE *__restrict const rsc,
 #if DW_NDIM >= 3
         DW_DTYPE const *__restrict const az,
@@ -230,8 +232,6 @@ __declspec(dllexport)
         int64_t const *__restrict const sources_i,
         int64_t const *__restrict const receivers_i,
         int64_t const *__restrict const receiverssc_i,
-        char const *__restrict const *__restrict const w_filenames_ptr,
-        char const *__restrict const *__restrict const wsc_filenames_ptr,
 #if DW_NDIM >= 3
         DW_DTYPE const rdz,
 #endif
@@ -543,12 +543,13 @@ __declspec(dllexport)
     if (fp_w) fclose(fp_w);
     if (fp_wsc) fclose(fp_wsc);
   }
+  return 0;
 }
 
 #ifdef _WIN32
 __declspec(dllexport)
 #endif
-    void FUNC(backward)(
+    int FUNC(backward)(
         DW_DTYPE const *__restrict const v,
         DW_DTYPE const *__restrict const scatter,
         DW_DTYPE const *__restrict const grad_r,
@@ -613,8 +614,10 @@ __declspec(dllexport)
         DW_DTYPE *__restrict const zetaxnsc,
         DW_DTYPE *__restrict const w_store_1, void *__restrict const w_store_2,
         void *__restrict const w_store_3,
+        char const *__restrict const *__restrict const w_filenames_ptr,
         DW_DTYPE *__restrict const wsc_store_1,
         void *__restrict const wsc_store_2, void *__restrict const wsc_store_3,
+        char const *__restrict const *__restrict const wsc_filenames_ptr,
         DW_DTYPE *__restrict const grad_f, DW_DTYPE *__restrict const grad_fsc,
         DW_DTYPE *__restrict const grad_v,
         DW_DTYPE *__restrict const grad_scatter,
@@ -636,8 +639,6 @@ __declspec(dllexport)
         int64_t const *__restrict const sources_i,
         int64_t const *__restrict const receivers_i,
         int64_t const *__restrict const receiverssc_i,
-        char const *__restrict const *__restrict const w_filenames_ptr,
-        char const *__restrict const *__restrict const wsc_filenames_ptr,
 #if DW_NDIM >= 3
         DW_DTYPE const rdz,
 #endif
@@ -982,12 +983,13 @@ __declspec(dllexport)
     combine_grad(grad_scatter, grad_scatter_thread, n_threads, n_grid_points);
   }
 #endif /* _OPENMP */
+  return 0;
 }
 
 #ifdef _WIN32
 __declspec(dllexport)
 #endif
-    void FUNC(backward_sc)(
+    int FUNC(backward_sc)(
         DW_DTYPE const *__restrict const v,
         DW_DTYPE const *__restrict const grad_rsc,
         DW_DTYPE *__restrict const wfcsc, DW_DTYPE *__restrict const wfpsc,
@@ -1020,7 +1022,9 @@ __declspec(dllexport)
 #endif
         DW_DTYPE *__restrict const zetaxnsc,
         DW_DTYPE *__restrict const w_store_1, void *__restrict const w_store_2,
-        void *__restrict const w_store_3, DW_DTYPE *__restrict const grad_fsc,
+        void *__restrict const w_store_3,
+        char const *__restrict const *__restrict const w_filenames_ptr,
+        DW_DTYPE *__restrict const grad_fsc,
         DW_DTYPE *__restrict const grad_scatter,
         DW_DTYPE *__restrict const grad_scatter_thread,
 #if DW_NDIM >= 3
@@ -1038,7 +1042,6 @@ __declspec(dllexport)
         DW_DTYPE const *__restrict const dbxdx,
         int64_t const *__restrict const sources_i,
         int64_t const *__restrict const receiverssc_i,
-        char const *__restrict const *__restrict const w_filenames_ptr,
 #if DW_NDIM >= 3
         DW_DTYPE const rdz,
 #endif
@@ -1283,4 +1286,5 @@ __declspec(dllexport)
     combine_grad(grad_scatter, grad_scatter_thread, n_threads, n_grid_points);
   }
 #endif /* _OPENMP */
+  return 0;
 }
