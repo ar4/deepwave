@@ -57,10 +57,10 @@ downsample Function
 
 .. autofunction:: deepwave.common.downsample
 
-cfl_condition Function
+cfl_condition_n Function
 ----------------------
 
-.. autofunction:: deepwave.common.cfl_condition
+.. autofunction:: deepwave.common.cfl_condition_n
 
 vpvsrho_to_lambmubuoyancy Function
 ----------------------------------
