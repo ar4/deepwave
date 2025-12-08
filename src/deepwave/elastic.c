@@ -699,7 +699,7 @@ __declspec(dllexport)
 #define OPEN_FILE_WRITE(name, grad_cond)                 \
   FILE *fp_##name = NULL;                                \
   if (storage_mode == STORAGE_DISK && (grad_cond)) {     \
-    fp_##name = fopen(name##_filenames_ptr[shot], "wb"); \
+    fp_##name = fopen(name##_filenames_ptr[shot], "ab"); \
   }
 
 #if DW_NDIM >= 3

@@ -431,6 +431,66 @@ def get_elastic_backward_template(ndim: int) -> List[Any]:
     return args
 
 
+def get_acoustic_forward_template(ndim: int) -> List[Any]:
+    """Returns the argtype template for the acoustic forward propagator."""
+    if not 1 <= ndim <= 3:
+        raise ValueError("ndim must be 1, 2, or 3")
+    # Based on src/deepwave/acoustic.c
+    args: List[Any] = []
+    args += [c_void_p] * (1 + ndim)  # k, buoyancy
+    args += [c_void_p] * (1 + ndim)  # f
+    args += [c_void_p] * (1 + 3 * ndim)  # p, v, phi, psi
+    args += [c_void_p] * 4  # k_store_1, k_store_2, k_store_3, k_filenames
+    args += [c_void_p] * (4 * ndim)  # b_store...
+    args += [c_void_p] * (1 + ndim)  # receiver_amplitudes
+    args += [c_void_p] * (4 * ndim)  # a, b, ah, bh
+    args += [c_void_p] * (1 + ndim)  # sources_i
+    args += [c_void_p] * (1 + ndim)  # receivers_i
+    args += [FLOAT_TYPE] * (ndim + 1)  # rdx, dt
+    args += [c_int64] * 2  # nt, n_shots
+    args += [c_int64] * ndim  # n
+    args += [c_int64] * (1 + ndim)  # n_sources_per_shot
+    args += [c_int64] * (1 + ndim)  # n_receivers_per_shot
+    args += [c_int64] * 2  # step_ratio, storage_mode
+    args += [c_size_t] * 2  # shot_bytes_uncomp, shot_bytes_comp
+    args += [c_bool] * 5  # k_req_grad, b_req_grad, k_batched, b_batched, compress
+    args += [c_int64]  # start_t
+    args += [c_int64] * (2 * ndim)  # pml
+    args += [c_int64]  # n_threads
+    return args
+
+
+def get_acoustic_backward_template(ndim: int) -> List[Any]:
+    """Returns the argtype template for the acoustic backward propagator."""
+    if not 1 <= ndim <= 3:
+        raise ValueError("ndim must be 1, 2, or 3")
+    # Based on src/deepwave/acoustic.c
+    args: List[Any] = []
+    args += [c_void_p] * (1 + ndim)  # k, buoyancy
+    args += [c_void_p] * (1 + ndim)  # grad_r
+    args += [c_void_p] * (1 + 3 * ndim)  # p, v, phi, psi
+    args += [c_void_p] * (ndim)  # psin
+    args += [c_void_p] * 4  # k_store
+    args += [c_void_p] * (4 * ndim)  # b_store
+    args += [c_void_p] * (1 + ndim)  # grad_f
+    args += [c_void_p] * (2 + 2 * ndim)  # grad_k, grad_b, grad_k_thread, grad_b_thread
+    args += [c_void_p] * (4 * ndim)  # a, b, ah, bh
+    args += [c_void_p] * (1 + ndim)  # sources_i
+    args += [c_void_p] * (1 + ndim)  # receivers_i
+    args += [FLOAT_TYPE] * (ndim + 1)  # rdx, dt
+    args += [c_int64] * 2  # nt, n_shots
+    args += [c_int64] * ndim  # n
+    args += [c_int64] * (1 + ndim)  # n_sources_per_shot
+    args += [c_int64] * (1 + ndim)  # n_receivers_per_shot
+    args += [c_int64] * 2  # step_ratio, storage_mode
+    args += [c_size_t] * 2  # shot_bytes_uncomp, shot_bytes_comp
+    args += [c_bool] * 5  # k_req_grad, b_req_grad, k_batched, b_batched, compress
+    args += [c_int64]  # start_t
+    args += [c_int64] * (2 * ndim)  # pml
+    args += [c_int64]  # n_threads
+    return args
+
+
 # A dictionary to hold all the template generator functions
 templates: dict[str, Callable[[int], List[Any]]] = {
     "scalar_forward": get_scalar_forward_template,
@@ -440,6 +500,8 @@ templates: dict[str, Callable[[int], List[Any]]] = {
     "scalar_born_backward_sc": get_scalar_born_backward_sc_template,
     "elastic_forward": get_elastic_forward_template,
     "elastic_backward": get_elastic_backward_template,
+    "acoustic_forward": get_acoustic_forward_template,
+    "acoustic_backward": get_acoustic_backward_template,
 }
 
 
@@ -589,4 +651,10 @@ for current_ndim in [1, 2, 3]:
             )
             _assign_argtypes(
                 "elastic", current_ndim, current_accuracy, current_dtype, "backward"
+            )
+            _assign_argtypes(
+                "acoustic", current_ndim, current_accuracy, current_dtype, "forward"
+            )
+            _assign_argtypes(
+                "acoustic", current_ndim, current_accuracy, current_dtype, "backward"
             )

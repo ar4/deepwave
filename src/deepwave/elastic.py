@@ -1864,7 +1864,7 @@ class ElasticForwardFunc(torch.autograd.Function):
                     backward_callback(
                         deepwave.common.CallbackState(
                             dt,
-                            step - 1,
+                            step - step_nt,
                             callback_wavefields,
                             callback_models,
                             callback_grad_models,

@@ -1452,6 +1452,8 @@ def test_storage(
     torch.manual_seed(1)
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if dtype is None:
+        dtype = torch.double
 
     if prop_kwargs is None:
         prop_kwargs = {}
@@ -2062,7 +2064,7 @@ def run_gradcheck(
         )
         out = propagator(*inputs)
         if only_receivers_out:
-            out = out[-3:]
+            out = out[-ndim - 1 :]
         if len(out_idxs) == 0:
             for i, o in enumerate(out):
                 if o.requires_grad:

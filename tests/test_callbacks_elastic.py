@@ -63,7 +63,7 @@ def test_elastic_callback_call_count(python_backend) -> None:
     assert forward_counter.count == nt / 2
 
     if not python_backend:
-        out[-1].sum().backward()
+        out[-2].sum().backward()
         assert backward_counter.count == nt / 2
         lamb.grad.zero_()
         mu.grad.zero_()
@@ -88,8 +88,74 @@ def test_elastic_callback_call_count(python_backend) -> None:
     assert forward_counter.count == (nt + 2) // 3
 
     if not python_backend:
-        out[-1].sum().backward()
+        out[-2].sum().backward()
         assert backward_counter.count == (nt + 2) // 3
+
+
+def test_elastic_storage_mode() -> None:
+    """Check that the storage mode does not affect the gradient."""
+    lamb = torch.ones(10, 10) * 2200
+    mu = torch.ones(10, 10) * 1000
+    buoyancy = torch.ones(10, 10) * 1 / 2200
+    lamb.requires_grad_()
+    mu.requires_grad_()
+    buoyancy.requires_grad_()
+    dx = 5.0
+    dt = 0.004
+    nt = 20
+    source_amplitudes_y = torch.zeros(1, 1, nt)
+    source_amplitudes_y[0, 0, 5] = 1
+    source_locations_y = torch.zeros(1, 1, 2, dtype=torch.long)
+    source_locations_y[0, 0, 0] = 5
+    source_locations_y[0, 0, 1] = 5
+    receiver_locations_y = torch.zeros(1, 1, 2, dtype=torch.long)
+    receiver_locations_y[0, 0, 0] = 5
+    receiver_locations_y[0, 0, 1] = 5
+
+    def noop(state: deepwave.common.CallbackState) -> None:
+        pass
+
+    out1 = deepwave.elastic(
+        lamb,
+        mu,
+        buoyancy,
+        dx,
+        dt,
+        source_amplitudes_y=source_amplitudes_y,
+        source_locations_y=source_locations_y,
+        receiver_locations_y=receiver_locations_y,
+        forward_callback=noop,
+        backward_callback=noop,
+    )
+    out1[-2].sum().backward()
+    grad1_lamb = lamb.grad.clone()
+    grad1_mu = mu.grad.clone()
+    grad1_buoyancy = buoyancy.grad.clone()
+    lamb.grad.zero_()
+    mu.grad.zero_()
+    buoyancy.grad.zero_()
+
+    out2 = deepwave.elastic(
+        lamb,
+        mu,
+        buoyancy,
+        dx,
+        dt,
+        source_amplitudes_y=source_amplitudes_y,
+        source_locations_y=source_locations_y,
+        receiver_locations_y=receiver_locations_y,
+        storage_mode="disk",
+        forward_callback=noop,
+        backward_callback=noop,
+    )
+    out2[-2].sum().backward()
+    grad2_lamb = lamb.grad.clone()
+    grad2_mu = mu.grad.clone()
+    grad2_buoyancy = buoyancy.grad.clone()
+
+    assert torch.allclose(grad1_lamb, grad2_lamb)
+    assert torch.allclose(grad1_mu, grad2_mu)
+    assert torch.allclose(grad1_buoyancy, grad2_buoyancy)
 
 
 @pytest.mark.parametrize(
@@ -297,7 +363,7 @@ def test_elastic_callback_gradient_modification() -> None:
         source_locations_y=source_locations_y,
         receiver_locations_y=receiver_locations_y,
     )
-    out[-1].sum().backward()
+    out[-2].sum().backward()
     grad1 = mu.grad.clone()
     lamb.grad.zero_()
     mu.grad.zero_()
@@ -314,7 +380,7 @@ def test_elastic_callback_gradient_modification() -> None:
         backward_callback=modifier,
         callback_frequency=20,
     )
-    out[-1].sum().backward()
+    out[-2].sum().backward()
     grad2 = mu.grad.clone()
     assert torch.allclose(grad1 * 2, grad2)
 
@@ -457,7 +523,7 @@ def test_elastic_backward_callback_only_call_count() -> None:
         backward_callback=backward_counter,
         callback_frequency=2,
     )
-    out[-1].sum().backward()
+    out[-2].sum().backward()
     assert backward_counter.count == nt / 2
 
     # Test with a frequency that does not divide nt evenly
@@ -477,5 +543,5 @@ def test_elastic_backward_callback_only_call_count() -> None:
         backward_callback=backward_counter,
         callback_frequency=3,
     )
-    out[-1].sum().backward()
+    out[-2].sum().backward()
     assert backward_counter.count == (nt + 2) // 3

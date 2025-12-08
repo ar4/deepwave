@@ -577,7 +577,7 @@ extern "C"
 
   FILE *fp_w = NULL;
   if (storage_mode == STORAGE_DISK) {
-    if (v_requires_grad) fp_w = fopen(w_filenames_ptr[0], "wb");
+    if (v_requires_grad) fp_w = fopen(w_filenames_ptr[0], "ab");
   }
 
   for (t = start_t; t < start_t + nt; ++t) {

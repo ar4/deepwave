@@ -2014,7 +2014,7 @@ extern "C"
 #define OPEN_FILE(name, grad_cond)                    \
   FILE *fp_##name = NULL;                             \
   if (storage_mode == STORAGE_DISK && (grad_cond)) {  \
-    fp_##name = fopen(name##_filenames_ptr[0], "wb"); \
+    fp_##name = fopen(name##_filenames_ptr[0], "ab"); \
   }
 
 #if DW_NDIM >= 3

@@ -1261,10 +1261,10 @@ class ScalarBackwardFunc(torch.autograd.Function):
                     grad_zeta, grad_zetan = grad_zetan, grad_zeta
 
                 if backward_callback is not None:
-                    # The time step index is `step - 1` because the callback is
+                    # The time step index is `step - step_nt` because the callback is
                     # executed *after* the calculations for the current
                     # backward step are complete, so the state reflects that
-                    # of time step index `step - 1`.
+                    # of time step index `step - step_nt`.
                     callback_wavefields = {
                         "wavefield_0": grad_wfc,
                         "wavefield_m1": grad_wfp,
@@ -1279,7 +1279,7 @@ class ScalarBackwardFunc(torch.autograd.Function):
                     backward_callback(
                         deepwave.common.CallbackState(
                             dt,
-                            step - 1,
+                            step - step_nt,
                             callback_wavefields,
                             {"v": v},
                             {"v": grad_v},

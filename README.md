@@ -12,12 +12,12 @@ To install it, I recommend first installing PyTorch using the instructions on th
 [The documentation](https://ausargeo.com/deepwave) contains examples and instructions on how to install and use Deepwave. You might also like to watch [a video summary of Deepwave](https://www.youtube.com/watch?v=rTVEV-EHl98).
 
 ## Features
-- Supports the 1D, 2D, and 3D constant density acoustic / scalar wave equation (regular and Born modelling) and elastic wave equation
+- Supports the 1D, 2D, and 3D constant density acoustic / scalar wave equation (regular and Born modelling), variable density acoustic, and elastic wave equation
 - Runs on CPUs and appropriate GPUs
 - The gradient of all outputs (final wavefields and receiver data) can be calculated with respect to the model parameters (wavespeed, scattering potential, etc.), initial wavefields, and source amplitudes
 - Uses the [Pasalic and McGarry](https://doi.org/10.1190/1.3513453) PML for accurate absorbing boundaries in the scalar wave propagator
 - Uses [C-PML](https://doi.org/10.3970/cmes.2008.037.274) with the [improved vacuum method](https://doi.org/10.1190/geo2011-0067.1) free-surface method for the elastic wave propagator
-- The PML width for each edge can be set independently, allowing a free surface (no PML) on any side
+- The PML width for each edge can be set independently, allowing a reflective surface (no PML) on any side
 - Finite difference accuracy can be set by the user
 - A region of the model around the sources and receivers currently being propagated can be automatically extracted to avoid the unnecessary computation of propagation in distant parts of the model
 - Double backpropagation through the regular scalar propagator, including [calculating the Hessian](https://ausargeo.com/deepwave/example_hessian)
@@ -65,7 +65,7 @@ If you would like to cite Deepwave, I suggest:
   month        = dec,
   year         = 2025,
   publisher    = {Zenodo},
-  version      = {v0.0.24},
+  version      = {v0.0.25},
   doi          = {10.5281/zenodo.3829886},
   url          = {https://doi.org/10.5281/zenodo.3829886}
 }

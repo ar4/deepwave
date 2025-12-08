@@ -679,7 +679,6 @@ class ScalarBornForwardFunc(torch.autograd.Function):
         ]:  # w_store and wsc_store
             storage_manager.allocate(requires_grad)
 
-
         bg_wavefield_requires_grad = any(
             wavefield.requires_grad for wavefield in wavefields[: 2 + 2 * ndim]
         )
@@ -1249,7 +1248,7 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                         backward_callback(
                             deepwave.common.CallbackState(
                                 dt,
-                                step - 1,
+                                step - step_nt,
                                 callback_wavefields,
                                 {"v": v, "scatter": scatter},
                                 {"v": grad_v, "scatter": grad_scatter},
@@ -1334,7 +1333,7 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                         backward_callback(
                             deepwave.common.CallbackState(
                                 dt,
-                                step - 1,
+                                step - step_nt,
                                 callback_wavefields,
                                 {"v": v, "scatter": scatter},
                                 {"scatter": grad_scatter},

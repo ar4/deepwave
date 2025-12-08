@@ -311,8 +311,8 @@ __declspec(dllexport)
     FILE *fp_wsc = NULL;
     if (storage_mode == STORAGE_DISK) {
       if (v_requires_grad || scatter_requires_grad)
-        fp_w = fopen(w_filenames_ptr[shot], "wb");
-      if (v_requires_grad) fp_wsc = fopen(wsc_filenames_ptr[shot], "wb");
+        fp_w = fopen(w_filenames_ptr[shot], "ab");
+      if (v_requires_grad) fp_wsc = fopen(wsc_filenames_ptr[shot], "ab");
     }
 
     for (t = start_t; t < start_t + nt; ++t) {

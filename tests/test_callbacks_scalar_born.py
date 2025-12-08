@@ -349,6 +349,64 @@ def test_scalar_born_callback_equivalence() -> None:
     assert torch.allclose(grad1_scatter, grad2_scatter)
 
 
+def test_scalar_born_storage_mode() -> None:
+    """Check that the storage mode does not affect the gradient."""
+    v = torch.ones(10, 10) * 1500
+    scatter = torch.ones(10, 10)
+    v.requires_grad_()
+    scatter.requires_grad_()
+    dx = 5.0
+    dt = 0.004
+    nt = 20
+    source_amplitudes = torch.zeros(1, 1, nt)
+    source_amplitudes[0, 0, 5] = 1
+    source_locations = torch.zeros(1, 1, 2, dtype=torch.long)
+    source_locations[0, 0, 0] = 5
+    source_locations[0, 0, 1] = 5
+    receiver_locations = torch.zeros(1, 1, 2, dtype=torch.long)
+    receiver_locations[0, 0, 0] = 5
+    receiver_locations[0, 0, 1] = 5
+
+    def noop(state: deepwave.common.CallbackState) -> None:
+        pass
+
+    out1 = deepwave.scalar_born(
+        v,
+        scatter,
+        dx,
+        dt,
+        source_amplitudes=source_amplitudes,
+        source_locations=source_locations,
+        receiver_locations=receiver_locations,
+        forward_callback=noop,
+        backward_callback=noop,
+    )
+    out1[-1].sum().backward()
+    grad1_v = v.grad.clone()
+    grad1_scatter = scatter.grad.clone()
+    v.grad.zero_()
+    scatter.grad.zero_()
+
+    out2 = deepwave.scalar_born(
+        v,
+        scatter,
+        dx,
+        dt,
+        source_amplitudes=source_amplitudes,
+        source_locations=source_locations,
+        receiver_locations=receiver_locations,
+        storage_mode="disk",
+        forward_callback=noop,
+        backward_callback=noop,
+    )
+    out2[-1].sum().backward()
+    grad2_v = v.grad.clone()
+    grad2_scatter = scatter.grad.clone()
+
+    assert torch.allclose(grad1_v, grad2_v)
+    assert torch.allclose(grad1_scatter, grad2_scatter)
+
+
 def test_scalar_born_backward_callback_only_call_count() -> None:
     """Check that the backward callback is called the correct number of times.
 

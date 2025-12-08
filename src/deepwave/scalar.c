@@ -253,7 +253,7 @@ __declspec(dllexport)
 
     FILE *fp_w = NULL;
     if (storage_mode == STORAGE_DISK) {
-      if (v_requires_grad) fp_w = fopen(w_filenames_ptr[shot], "wb");
+      if (v_requires_grad) fp_w = fopen(w_filenames_ptr[shot], "ab");
     }
 
     for (t = start_t; t < start_t + nt; ++t) {

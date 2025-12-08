@@ -1,7 +1,8 @@
 """Wave propagation modules for PyTorch.
 
 Provides forward modelling and backpropagation of the scalar wave
-equation (regular and Born), and elastic wave equation.
+equation (regular and Born), variable-density acoustic wave equation,
+and elastic wave equation.
 It can thus be used to generate synthetic data, and to perform
 FWI and LSRTM.
 
@@ -14,10 +15,12 @@ CUDA.
 
 __all__ = [
     "IGNORE_LOCATION",
+    "Acoustic",
     "Elastic",
     "Scalar",
     "ScalarBorn",
     "_version",
+    "acoustic",
     "backend_utils",
     "elastic",
     "location_interpolation",
@@ -27,6 +30,7 @@ __all__ = [
 ]
 
 # These imports are for exposing the public API
+from deepwave.acoustic import Acoustic, acoustic
 from deepwave.elastic import Elastic, elastic
 from deepwave.scalar import Scalar, scalar
 from deepwave.scalar_born import ScalarBorn, scalar_born

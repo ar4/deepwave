@@ -11,7 +11,7 @@ We derive the constant density acoustic wave equation (a scalar wave equation) b
 .. math::
     :label: newtons_2nd_law
 
-    -\nabla P + \mathbf{f} = \rho_0\ddot{\mathbf{u}}
+    -\nabla P + \mathbf{s} = \rho_0\ddot{\mathbf{u}}
 
 and
 
@@ -23,7 +23,7 @@ and
 where:
 
 *   :math:`P` is pressure.
-*   :math:`\mathbf{f}` is an external force per unit area (in 2D) or per unit volume (in 3D).
+*   :math:`\mathbf{s}` is an external force per unit area (in 2D) or per unit volume (in 3D).
 *   :math:`\mathbf{u}` is particle displacement.
 *   :math:`\rho` is the total density.
 *   :math:`\rho_0` is the constant background density.
@@ -33,7 +33,7 @@ By applying the divergence operator to :eq:`newtons_2nd_law` and the time deriva
 .. math::
     :label: p_rho_wave_equation
 
-    -\nabla^2 P + \nabla\cdot\mathbf{f} = -\ddot{\rho}.
+    -\nabla^2 P + \nabla\cdot\mathbf{s} = -\ddot{\rho}.
 
 Assuming pressure and density are proportional, with a constant of proportionality :math:`c^2` (where :math:`c` is the wave speed):
 
@@ -47,7 +47,7 @@ Substituting this relationship into :eq:`p_rho_wave_equation` and rearranging th
 .. math::
     :label: constant_density_acoustic_wave_equation
 
-    \nabla^2 P -\frac{1}{c^2}\ddot{P} = \nabla\cdot\mathbf{f}.
+    \nabla^2 P -\frac{1}{c^2}\ddot{P} = \nabla\cdot\mathbf{s}.
 
 Implementation
 --------------

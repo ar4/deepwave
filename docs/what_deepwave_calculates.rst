@@ -26,4 +26,5 @@ More detailed information specific to each propagator is provided on the followi
 .. toctree::
     scalar
     scalar_born
+    acoustic
     elastic
