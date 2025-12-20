@@ -25,6 +25,17 @@ ScalarBorn Function
 
 .. autofunction:: deepwave.scalar_born
 
+Acoustic Class
+--------------
+
+.. autoclass:: deepwave.Acoustic
+    :members:
+
+Acoustic Function
+-----------------
+
+.. autofunction:: deepwave.acoustic
+
 Elastic Class
 -------------
 
