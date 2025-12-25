@@ -770,8 +770,10 @@ class ScalarBornForwardFunc(torch.autograd.Function):
             receiver_amplitudessc.resize_(nt, n_shots, n_receiverssc_per_shot)
             receiver_amplitudessc.fill_(0)
 
+        stream = 0
         if is_cuda:
             aux = v.get_device()
+            stream = torch.cuda.current_stream(aux)
         elif deepwave.backend_utils.USE_OPENMP:
             aux = min(n_shots, torch.get_num_threads())
         else:
@@ -871,6 +873,7 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                         *pml_b,
                         *pml_e,
                         aux,
+                        stream,
                     )
                     != 0
                 ):
@@ -1055,8 +1058,10 @@ class ScalarBornForwardFunc(torch.autograd.Function):
             grad_fsc.resize_(nt, n_shots, n_sources_per_shot)
             grad_fsc.fill_(0)
 
+        stream = 0
         if is_cuda:
             aux = v.get_device()
+            stream = torch.cuda.current_stream(aux)
             if (
                 v.requires_grad
                 and not v_batched
@@ -1190,6 +1195,7 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                             *pml_b,
                             *pml_e,
                             aux,
+                            stream,
                         )
                         != 0
                     ):
@@ -1269,7 +1275,7 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                             *[field.data_ptr() for field in grad_psinsc],
                             *[field.data_ptr() for field in grad_zetasc],
                             *[field.data_ptr() for field in grad_zetansc],
-                            *storage_manager.storage_ptrs[:4],  # Not scattered
+                            *storage_manager.storage_ptrs[:5],  # Not scattered
                             grad_fsc.data_ptr(),
                             grad_scatter.data_ptr(),
                             grad_scatter_tmp_ptr,
@@ -1298,6 +1304,7 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                             *pml_b,
                             *pml_e,
                             aux,
+                            stream,
                         )
                         != 0
                     ):

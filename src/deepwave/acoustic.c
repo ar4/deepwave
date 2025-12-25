@@ -150,22 +150,26 @@ __declspec(dllexport)
 #endif
         DW_DTYPE *__restrict const psi_x,
         DW_DTYPE *__restrict const k_grad_store_1,
+        DW_DTYPE *__restrict const k_grad_store_1b,
         void *__restrict const k_grad_store_2,
         void *__restrict const k_grad_store_3,
         char const *__restrict const *__restrict const k_grad_filenames_ptr,
 #if DW_NDIM >= 3
         DW_DTYPE *__restrict const bz_grad_store_1,
+        DW_DTYPE *__restrict const bz_grad_store_1b,
         void *__restrict const bz_grad_store_2,
         void *__restrict const bz_grad_store_3,
         char const *__restrict const *__restrict const bz_grad_filenames_ptr,
 #endif
 #if DW_NDIM >= 2
         DW_DTYPE *__restrict const by_grad_store_1,
+        DW_DTYPE *__restrict const by_grad_store_1b,
         void *__restrict const by_grad_store_2,
         void *__restrict const by_grad_store_3,
         char const *__restrict const *__restrict const by_grad_filenames_ptr,
 #endif
         DW_DTYPE *__restrict const bx_grad_store_1,
+        DW_DTYPE *__restrict const bx_grad_store_1b,
         void *__restrict const bx_grad_store_2,
         void *__restrict const bx_grad_store_3,
         char const *__restrict const *__restrict const bx_grad_filenames_ptr,
@@ -256,7 +260,7 @@ __declspec(dllexport)
 #if DW_NDIM >= 2
         int64_t const pml_y1,
 #endif
-        int64_t const pml_x1, int64_t const n_threads) {
+        int64_t const pml_x1, int64_t const n_threads, void *unused) {
 
 #if DW_NDIM >= 3
   int64_t const pml_bounds_z[] = {FD_PAD, pml_z0, pml_z1, nz - FD_PAD + 1};
@@ -694,22 +698,26 @@ __declspec(dllexport)
         DW_DTYPE *__restrict const psi_xn,
 
         DW_DTYPE *__restrict const k_grad_store_1,
+        DW_DTYPE *__restrict const k_grad_store_1b,
         void *__restrict const k_grad_store_2,
         void *__restrict const k_grad_store_3,
         char const *__restrict const *__restrict const k_grad_filenames_ptr,
 #if DW_NDIM >= 3
         DW_DTYPE *__restrict const bz_grad_store_1,
+        DW_DTYPE *__restrict const bz_grad_store_1b,
         void *__restrict const bz_grad_store_2,
         void *__restrict const bz_grad_store_3,
         char const *__restrict const *__restrict const bz_grad_filenames_ptr,
 #endif
 #if DW_NDIM >= 2
         DW_DTYPE *__restrict const by_grad_store_1,
+        DW_DTYPE *__restrict const by_grad_store_1b,
         void *__restrict const by_grad_store_2,
         void *__restrict const by_grad_store_3,
         char const *__restrict const *__restrict const by_grad_filenames_ptr,
 #endif
         DW_DTYPE *__restrict const bx_grad_store_1,
+        DW_DTYPE *__restrict const bx_grad_store_1b,
         void *__restrict const bx_grad_store_2,
         void *__restrict const bx_grad_store_3,
         char const *__restrict const *__restrict const bx_grad_filenames_ptr,
@@ -815,7 +823,7 @@ __declspec(dllexport)
 #if DW_NDIM >= 2
         int64_t const pml_y1,
 #endif
-        int64_t const pml_x1, int64_t const n_threads) {
+        int64_t const pml_x1, int64_t const n_threads, void *unused) {
 
 #if DW_NDIM >= 3
   int64_t const pml_bounds_z[] = {FD_PAD, pml_z0, pml_z1, nz - FD_PAD + 1};

@@ -466,20 +466,24 @@ __declspec(dllexport)
         DW_DTYPE *__restrict const m_vxx, DW_DTYPE *__restrict const m_sigmaxxx,
 #if DW_NDIM >= 3
         DW_DTYPE *__restrict const dvzdbuoyancy_store_1,
+        DW_DTYPE *__restrict const dvzdbuoyancy_store_1b,
         void *__restrict const dvzdbuoyancy_store_2,
         void *__restrict const dvzdbuoyancy_store_3,
         char const *__restrict const
             *__restrict const dvzdbuoyancy_filenames_ptr,
         DW_DTYPE *__restrict const dvzdz_store_1,
+        DW_DTYPE *__restrict const dvzdz_store_1b,
         void *__restrict const dvzdz_store_2,
         void *__restrict const dvzdz_store_3,
         char const *__restrict const *__restrict const dvzdz_filenames_ptr,
         DW_DTYPE *__restrict const dvzdx_plus_dvxdz_store_1,
+        DW_DTYPE *__restrict const dvzdx_plus_dvxdz_store_1b,
         void *__restrict const dvzdx_plus_dvxdz_store_2,
         void *__restrict const dvzdx_plus_dvxdz_store_3,
         char const *__restrict const
             *__restrict const dvzdx_plus_dvxdz_filenames_ptr,
         DW_DTYPE *__restrict const dvzdy_plus_dvydz_store_1,
+        DW_DTYPE *__restrict const dvzdy_plus_dvydz_store_1b,
         void *__restrict const dvzdy_plus_dvydz_store_2,
         void *__restrict const dvzdy_plus_dvydz_store_3,
         char const *__restrict const
@@ -487,26 +491,31 @@ __declspec(dllexport)
 #endif
 #if DW_NDIM >= 2
         DW_DTYPE *__restrict const dvydbuoyancy_store_1,
+        DW_DTYPE *__restrict const dvydbuoyancy_store_1b,
         void *__restrict const dvydbuoyancy_store_2,
         void *__restrict const dvydbuoyancy_store_3,
         char const *__restrict const
             *__restrict const dvydbuoyancy_filenames_ptr,
         DW_DTYPE *__restrict const dvydy_store_1,
+        DW_DTYPE *__restrict const dvydy_store_1b,
         void *__restrict const dvydy_store_2,
         void *__restrict const dvydy_store_3,
         char const *__restrict const *__restrict const dvydy_filenames_ptr,
         DW_DTYPE *__restrict const dvydx_plus_dvxdy_store_1,
+        DW_DTYPE *__restrict const dvydx_plus_dvxdy_store_1b,
         void *__restrict const dvydx_plus_dvxdy_store_2,
         void *__restrict const dvydx_plus_dvxdy_store_3,
         char const *__restrict const
             *__restrict const dvydx_plus_dvxdy_filenames_ptr,
 #endif
         DW_DTYPE *__restrict const dvxdbuoyancy_store_1,
+        DW_DTYPE *__restrict const dvxdbuoyancy_store_1b,
         void *__restrict const dvxdbuoyancy_store_2,
         void *__restrict const dvxdbuoyancy_store_3,
         char const *__restrict const
             *__restrict const dvxdbuoyancy_filenames_ptr,
         DW_DTYPE *__restrict const dvxdx_store_1,
+        DW_DTYPE *__restrict const dvxdx_store_1b,
         void *__restrict const dvxdx_store_2,
         void *__restrict const dvxdx_store_3,
         char const *__restrict const *__restrict const dvxdx_filenames_ptr,
@@ -597,7 +606,7 @@ __declspec(dllexport)
 #if DW_NDIM >= 2
         int64_t const pml_y1,
 #endif
-        int64_t const pml_x1, int64_t const n_threads) {
+        int64_t const pml_x1, int64_t const n_threads, void *unused) {
 #if DW_NDIM >= 3
   int64_t const pml_bounds_z[] = {FD_PAD, pml_z0, pml_z1, nz - FD_PAD + 1};
   int64_t const pml_bounds_zh[] = {FD_PAD, pml_z0, MAX(pml_z0, pml_z1 - 1),
@@ -1328,20 +1337,24 @@ __declspec(dllexport)
         DW_DTYPE *__restrict const m_sigmaxxxn,
 #if DW_NDIM >= 3
         DW_DTYPE *__restrict const dvzdbuoyancy_store_1,
+        DW_DTYPE *__restrict const dvzdbuoyancy_store_1b,
         void *__restrict const dvzdbuoyancy_store_2,
         void *__restrict const dvzdbuoyancy_store_3,
         char const *__restrict const
             *__restrict const dvzdbuoyancy_filenames_ptr,
         DW_DTYPE *__restrict const dvzdz_store_1,
+        DW_DTYPE *__restrict const dvzdz_store_1b,
         void *__restrict const dvzdz_store_2,
         void *__restrict const dvzdz_store_3,
         char const *__restrict const *__restrict const dvzdz_filenames_ptr,
         DW_DTYPE *__restrict const dvzdx_plus_dvxdz_store_1,
+        DW_DTYPE *__restrict const dvzdx_plus_dvxdz_store_1b,
         void *__restrict const dvzdx_plus_dvxdz_store_2,
         void *__restrict const dvzdx_plus_dvxdz_store_3,
         char const *__restrict const
             *__restrict const dvzdx_plus_dvxdz_filenames_ptr,
         DW_DTYPE *__restrict const dvzdy_plus_dvydz_store_1,
+        DW_DTYPE *__restrict const dvzdy_plus_dvydz_store_1b,
         void *__restrict const dvzdy_plus_dvydz_store_2,
         void *__restrict const dvzdy_plus_dvydz_store_3,
         char const *__restrict const
@@ -1349,26 +1362,31 @@ __declspec(dllexport)
 #endif
 #if DW_NDIM >= 2
         DW_DTYPE *__restrict const dvydbuoyancy_store_1,
+        DW_DTYPE *__restrict const dvydbuoyancy_store_1b,
         void *__restrict const dvydbuoyancy_store_2,
         void *__restrict const dvydbuoyancy_store_3,
         char const *__restrict const
             *__restrict const dvydbuoyancy_filenames_ptr,
         DW_DTYPE *__restrict const dvydy_store_1,
+        DW_DTYPE *__restrict const dvydy_store_1b,
         void *__restrict const dvydy_store_2,
         void *__restrict const dvydy_store_3,
         char const *__restrict const *__restrict const dvydy_filenames_ptr,
         DW_DTYPE *__restrict const dvydx_plus_dvxdy_store_1,
+        DW_DTYPE *__restrict const dvydx_plus_dvxdy_store_1b,
         void *__restrict const dvydx_plus_dvxdy_store_2,
         void *__restrict const dvydx_plus_dvxdy_store_3,
         char const *__restrict const
             *__restrict const dvydx_plus_dvxdy_filenames_ptr,
 #endif
         DW_DTYPE *__restrict const dvxdbuoyancy_store_1,
+        DW_DTYPE *__restrict const dvxdbuoyancy_store_1b,
         void *__restrict const dvxdbuoyancy_store_2,
         void *__restrict const dvxdbuoyancy_store_3,
         char const *__restrict const
             *__restrict const dvxdbuoyancy_filenames_ptr,
         DW_DTYPE *__restrict const dvxdx_store_1,
+        DW_DTYPE *__restrict const dvxdx_store_1b,
         void *__restrict const dvxdx_store_2,
         void *__restrict const dvxdx_store_3,
         char const *__restrict const *__restrict const dvxdx_filenames_ptr,
@@ -1492,7 +1510,7 @@ __declspec(dllexport)
 #if DW_NDIM >= 2
         int64_t const pml_y1,
 #endif
-        int64_t const pml_x1, int64_t const n_threads) {
+        int64_t const pml_x1, int64_t const n_threads, void *unused) {
 #if DW_NDIM >= 3
   int64_t const pml_bounds_z[] = {FD_PAD, pml_z0, pml_z1, nz - FD_PAD + 1};
   int64_t const pml_bounds_zh[] = {FD_PAD, pml_z0, MAX(pml_z0, pml_z1 - 1),

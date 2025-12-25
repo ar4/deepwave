@@ -44,11 +44,11 @@ def get_scalar_forward_template(ndim: int) -> List[Any]:
     args += [c_void_p] * ndim  # psi
     args += [c_void_p] * ndim  # psin
     args += [c_void_p] * ndim  # zeta
-    args += [c_void_p] * 3  # w_store_1, w_store_2, w_store_3
+    args += [c_void_p] * 4  # w_store_1a, w_store_1b, w_store_2, w_store_3
+    args += [c_void_p]  # w_filenames_ptr
     args += [c_void_p]  # r
     args += [c_void_p] * (3 * ndim)  # a, b, dbdx
     args += [c_void_p] * 2  # sources_i, receivers_i
-    args += [c_void_p]  # w_filenames_ptr
     args += [FLOAT_TYPE] * ndim  # rd
     args += [FLOAT_TYPE] * ndim  # rd2
     args += [FLOAT_TYPE]  # dt2
@@ -61,6 +61,7 @@ def get_scalar_forward_template(ndim: int) -> List[Any]:
     args += [c_int64]  # start_t
     args += [c_int64] * (2 * ndim)  # pml
     args += [c_int64]  # n_threads
+    args += [c_void_p]  # stream
     return args
 
 
@@ -75,11 +76,11 @@ def get_scalar_backward_template(ndim: int) -> List[Any]:
     args += [c_void_p] * ndim  # psin
     args += [c_void_p] * ndim  # zeta
     args += [c_void_p] * ndim  # zetan
-    args += [c_void_p] * 3  # w_store_1, w_store_2, w_store_3
+    args += [c_void_p] * 4  # w_store_1a, w_store_1b, w_store_2, w_store_3
+    args += [c_void_p]  # w_filenames_ptr
     args += [c_void_p] * 3  # grad_f, grad_v, grad_v_thread
     args += [c_void_p] * (3 * ndim)  # a, b, dbdx
     args += [c_void_p] * 2  # sources_i, receivers_i
-    args += [c_void_p]  # w_filenames_ptr
     args += [FLOAT_TYPE] * ndim  # rd
     args += [FLOAT_TYPE] * ndim  # rd2
     args += [c_int64] * 2  # nt, n_shots
@@ -91,6 +92,7 @@ def get_scalar_backward_template(ndim: int) -> List[Any]:
     args += [c_int64]  # start_t
     args += [c_int64] * (2 * ndim)  # pml
     args += [c_int64]  # n_threads
+    args += [c_void_p]  # stream
     return args
 
 
@@ -109,12 +111,13 @@ def get_scalar_born_forward_template(ndim: int) -> List[Any]:
     args += [c_void_p] * ndim  # psiysc, psixsc...
     args += [c_void_p] * ndim  # psiynsc, psixnsc...
     args += [c_void_p] * ndim  # zetaysc, zetaxsc...
-    args += [c_void_p] * 3  # w_store_1, w_store_2, w_store_3
-    args += [c_void_p] * 3  # wsc_store_1, wsc_store_2, wsc_store_3
+    args += [c_void_p] * 4  # w_store_1a, w_store_1b, w_store_2, w_store_3
+    args += [c_void_p]  # w_filenames
+    args += [c_void_p] * 4  # wsc_store_1a, w_store_1b, wsc_store_2, wsc_store_3
+    args += [c_void_p]  #sc w_filenames
     args += [c_void_p] * 2  # r, rsc
     args += [c_void_p] * (3 * ndim)  # a, b, dbdx
     args += [c_void_p] * 3  # sources_i, receivers_i, receiverssc_i
-    args += [c_void_p] * 2  # w_filenames, wsc_filenames
     args += [FLOAT_TYPE] * ndim  # rdy, rdx...
     args += [FLOAT_TYPE] * ndim  # rdy2, rdx2...
     args += [FLOAT_TYPE]  # dt2
@@ -133,6 +136,7 @@ def get_scalar_born_forward_template(ndim: int) -> List[Any]:
     args += [c_int64]  # start_t
     args += [c_int64] * (2 * ndim)  # pml
     args += [c_int64]  # n_threads
+    args += [c_void_p]  # stream
     return args
 
 
@@ -153,14 +157,15 @@ def get_scalar_born_backward_template(ndim: int) -> List[Any]:
     args += [c_void_p] * ndim  # psinsc
     args += [c_void_p] * ndim  # zetasc
     args += [c_void_p] * ndim  # zetansc
-    args += [c_void_p] * 3  # w_store_1, w_store_2, w_store_3
-    args += [c_void_p] * 3  # wsc_store_1, wsc_store_2, wsc_store_3
+    args += [c_void_p] * 4  # w_store_1a, w_store_1b, w_store_2, w_store_3
+    args += [c_void_p]  # w_filenames
+    args += [c_void_p] * 4  # wsc_store_1a, w_store_1b, wsc_store_2, wsc_store_3
+    args += [c_void_p]  # wsc_filenames
     args += [
         c_void_p
     ] * 6  # grad_f, grad_fsc, grad_v, grad_scatter, grad_v_thread, grad_scatter_thread
     args += [c_void_p] * (3 * ndim)  # a, b, dbdx
     args += [c_void_p] * 3  # sources_i, receivers_i, receiverssc_i
-    args += [c_void_p] * 2  # w_filenames, wsc_filenames
     args += [FLOAT_TYPE] * ndim  # rd
     args += [FLOAT_TYPE] * ndim  # rd2
     args += [FLOAT_TYPE]  # dt2
@@ -178,6 +183,7 @@ def get_scalar_born_backward_template(ndim: int) -> List[Any]:
     args += [c_int64]  # start_t
     args += [c_int64] * (2 * ndim)  # pml
     args += [c_int64]  # n_threads
+    args += [c_void_p]  # stream
     return args
 
 
@@ -193,11 +199,11 @@ def get_scalar_born_backward_sc_template(ndim: int) -> List[Any]:
     args += [c_void_p] * ndim  # psinsc
     args += [c_void_p] * ndim  # zetasc
     args += [c_void_p] * ndim  # zetansc
-    args += [c_void_p] * 3  # w_store_1, w_store_2, w_store_3
+    args += [c_void_p] * 4  # w_store_1a, w_store_1b, w_store_2, w_store_3
+    args += [c_void_p] * 1  # w_filenames
     args += [c_void_p] * 3  # grad_fsc, grad_scatter, grad_scatter_thread
     args += [c_void_p] * (3 * ndim)  # a, b, dbdx
     args += [c_void_p] * 2  # sources_i, receiverssc_i
-    args += [c_void_p] * 1  # w_filenames
     args += [FLOAT_TYPE] * ndim  # rd
     args += [FLOAT_TYPE] * ndim  # rd2
     args += [FLOAT_TYPE]  # dt2
@@ -213,6 +219,7 @@ def get_scalar_born_backward_sc_template(ndim: int) -> List[Any]:
     args += [c_int64]  # start_t
     args += [c_int64] * (2 * ndim)  # pml
     args += [c_int64]  # n_threads
+    args += [c_void_p]  # stream
     return args
 
 
@@ -246,10 +253,10 @@ def get_elastic_forward_template(ndim: int) -> List[Any]:
 
     # backward storage
     if ndim == 3:
-        args += [c_void_p] * 4 * 4
+        args += [c_void_p] * 4 * 5
     if ndim >= 2:
-        args += [c_void_p] * 3 * 4
-    args += [c_void_p] * 2 * 4
+        args += [c_void_p] * 3 * 5
+    args += [c_void_p] * 2 * 5
 
     # recorded data
     if ndim == 3:
@@ -304,6 +311,7 @@ def get_elastic_forward_template(ndim: int) -> List[Any]:
 
     # aux
     args += [c_int64]
+    args += [c_void_p]  # stream
 
     return args
 
@@ -345,10 +353,10 @@ def get_elastic_backward_template(ndim: int) -> List[Any]:
 
     # backward storage
     if ndim == 3:
-        args += [c_void_p] * 4 * 4
+        args += [c_void_p] * 4 * 5
     if ndim >= 2:
-        args += [c_void_p] * 3 * 4
-    args += [c_void_p] * 2 * 4
+        args += [c_void_p] * 3 * 5
+    args += [c_void_p] * 2 * 5
 
     # grad_f
     if ndim == 3:
@@ -427,6 +435,7 @@ def get_elastic_backward_template(ndim: int) -> List[Any]:
 
     # aux
     args += [c_int64]
+    args += [c_void_p]  # stream
 
     return args
 
@@ -440,8 +449,8 @@ def get_acoustic_forward_template(ndim: int) -> List[Any]:
     args += [c_void_p] * (1 + ndim)  # k, buoyancy
     args += [c_void_p] * (1 + ndim)  # f
     args += [c_void_p] * (1 + 3 * ndim)  # p, v, phi, psi
-    args += [c_void_p] * 4  # k_store_1, k_store_2, k_store_3, k_filenames
-    args += [c_void_p] * (4 * ndim)  # b_store...
+    args += [c_void_p] * 5  # k_store_1a, k_store_1b, k_store_2, k_store_3, k_filenames
+    args += [c_void_p] * (5 * ndim)  # b_store...
     args += [c_void_p] * (1 + ndim)  # receiver_amplitudes
     args += [c_void_p] * (4 * ndim)  # a, b, ah, bh
     args += [c_void_p] * (1 + ndim)  # sources_i
@@ -457,6 +466,7 @@ def get_acoustic_forward_template(ndim: int) -> List[Any]:
     args += [c_int64]  # start_t
     args += [c_int64] * (2 * ndim)  # pml
     args += [c_int64]  # n_threads
+    args += [c_void_p]  # stream
     return args
 
 
@@ -470,8 +480,8 @@ def get_acoustic_backward_template(ndim: int) -> List[Any]:
     args += [c_void_p] * (1 + ndim)  # grad_r
     args += [c_void_p] * (1 + 3 * ndim)  # p, v, phi, psi
     args += [c_void_p] * (ndim)  # psin
-    args += [c_void_p] * 4  # k_store
-    args += [c_void_p] * (4 * ndim)  # b_store
+    args += [c_void_p] * 5  # k_store
+    args += [c_void_p] * (5 * ndim)  # b_store
     args += [c_void_p] * (1 + ndim)  # grad_f
     args += [c_void_p] * (2 + 2 * ndim)  # grad_k, grad_b, grad_k_thread, grad_b_thread
     args += [c_void_p] * (4 * ndim)  # a, b, ah, bh
@@ -488,6 +498,7 @@ def get_acoustic_backward_template(ndim: int) -> List[Any]:
     args += [c_int64]  # start_t
     args += [c_int64] * (2 * ndim)  # pml
     args += [c_int64]  # n_threads
+    args += [c_void_p]  # stream
     return args
 
 

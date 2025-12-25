@@ -379,10 +379,6 @@ __launch_bounds__(128) __global__ void backward_kernel(
   }
 }
 
-inline unsigned int ceil_div(unsigned int numerator, unsigned int denominator) {
-  return (numerator + denominator - 1) / denominator;
-}
-
 int set_config(
 #if DW_NDIM >= 3
     /* z-dimension */
@@ -463,7 +459,8 @@ extern "C"
             DW_DTYPE *__restrict const zetay,
 #endif
             DW_DTYPE *__restrict const zetax,
-            DW_DTYPE *__restrict const w_store_1,
+            DW_DTYPE *__restrict const w_store_1a,
+            DW_DTYPE *__restrict const w_store_1b,
             void *__restrict const w_store_2, void *__restrict const w_store_3,
             char const *__restrict const *__restrict const w_filenames_ptr,
             DW_DTYPE *__restrict const r,
@@ -522,7 +519,7 @@ extern "C"
 #if DW_NDIM >= 2
             int64_t const pml_y1_h,
 #endif
-            int64_t const pml_x1_h, int64_t const device) {
+            int64_t const pml_x1_h, int64_t const device, cudaStream_t stream_compute) {
 #if DW_NDIM == 3
   dim3 dimBlock(32, 4, 1);
   unsigned int gridx = ceil_div(nx_h - 2 * FD_PAD, dimBlock.x);
@@ -574,59 +571,99 @@ extern "C"
         v_batched_h);
     if (err != 0) return err;
   }
+  bool const use_double_buffering =
+    ((storage_mode == STORAGE_DEVICE && storage_compression) ||
+    storage_mode == STORAGE_CPU) && v_requires_grad;
 
-  FILE *fp_w = NULL;
+  ScopedStream stream_storage;
+  ScopedEvent event_storage_done_a, event_storage_done_b, event_compute_done_a,
+      event_compute_done_b;
+  cudaEvent_t event_storage_done;
+  if (use_double_buffering) {
+    gpuErrchk(
+        cudaStreamCreateWithFlags(&stream_storage, cudaStreamNonBlocking));
+    gpuErrchk(cudaEventCreate(&event_storage_done_a));
+    gpuErrchk(cudaEventCreate(&event_storage_done_b));
+    gpuErrchk(cudaEventCreate(&event_compute_done_a));
+    gpuErrchk(cudaEventCreate(&event_compute_done_b));
+    gpuErrchk(cudaEventRecord(event_storage_done_a, stream_storage));
+    gpuErrchk(cudaEventRecord(event_storage_done_b, stream_storage));
+    event_storage_done = event_storage_done_a;
+  }
+
+  ScopedFile fp_w;
   if (storage_mode == STORAGE_DISK) {
-    if (v_requires_grad) fp_w = fopen(w_filenames_ptr[0], "ab");
+    if (v_requires_grad) fp_w.open(w_filenames_ptr[0], "ab");
   }
 
   for (t = start_t; t < start_t + nt; ++t) {
     bool const store_step = ((t % step_ratio_h) == 0);
     bool const store_w = store_step && v_requires_grad;
-    DW_DTYPE *__restrict const w_store_1_t =
-        w_store_1 + (storage_mode == STORAGE_DEVICE && !storage_compression
-                         ? (t / step_ratio_h) * shot_numel_h * n_shots_h
-                         : 0);
-    void *__restrict const w_store_2_t =
-        (uint8_t *)w_store_2 +
-        (storage_mode == STORAGE_DEVICE && storage_compression
-             ? (t / step_ratio_h) * shot_bytes_comp * n_shots_h
-             : 0);
-    void *__restrict const w_store_3_t =
-        (uint8_t *)w_store_3 +
-        (storage_mode == STORAGE_CPU
-             ? (t / step_ratio_h) *
-                   (storage_compression ? shot_bytes_comp : shot_bytes_uncomp) *
-                   n_shots_h
-             : 0);
+    int64_t step_idx = t / step_ratio_h;
+    DW_DTYPE *w_store_1_t =
+        w_store_1a + (storage_mode == STORAGE_DEVICE && !storage_compression
+                          ? step_idx * shot_numel_h * n_shots_h
+                          : 0);
+    cudaEvent_t event_compute_done = event_compute_done_a;
+    event_storage_done = event_storage_done_a;
 
-    forward_kernel<<<dimGrid, dimBlock>>>(v, wfc, wfp, w_store_1_t,
+    if (store_w && use_double_buffering) {
+      if (step_idx % 2 != 0) {
+        w_store_1_t = w_store_1b;
+        event_compute_done = event_compute_done_b;
+        event_storage_done = event_storage_done_b;
+      }
+      gpuErrchk(cudaStreamWaitEvent(stream_compute, event_storage_done, 0));
+    }
+
+    forward_kernel<<<dimGrid, dimBlock, 0, stream_compute>>>(
+        v, wfc, wfp, w_store_1_t,
 #if DW_NDIM >= 3
-                                          psiz, psizn, zetaz, az, bz, dbzdz,
+        psiz, psizn, zetaz, az, bz, dbzdz,
 #endif
 #if DW_NDIM >= 2
-                                          psiy, psiyn, zetay, ay, by, dbydy,
+        psiy, psiyn, zetay, ay, by, dbydy,
 #endif
-                                          psix, psixn, zetax, ax, bx, dbxdx,
-                                          store_w);
+        psix, psixn, zetax, ax, bx, dbxdx, store_w);
     CHECK_KERNEL_ERROR
 
     if (store_w) {
-      int64_t step_idx = t / step_ratio_h;
+      void *w_store_2_t =
+          (uint8_t *)w_store_2 +
+          (storage_mode == STORAGE_DEVICE && storage_compression
+               ? step_idx * shot_bytes_comp * n_shots_h
+               : 0);
+      void *w_store_3_t =
+          (uint8_t *)w_store_3 +
+          (storage_mode == STORAGE_CPU
+               ? step_idx *
+                     (storage_compression ? shot_bytes_comp
+                                          : shot_bytes_uncomp) *
+                     n_shots_h
+               : 0);
+      if (use_double_buffering) {
+        gpuErrchk(cudaEventRecord(event_compute_done, stream_compute));
+        gpuErrchk(cudaStreamWaitEvent(stream_storage, event_compute_done, 0));
+      }
       if (storage_save_snapshot_gpu(
               w_store_1_t, w_store_2_t, w_store_3_t, fp_w, storage_mode,
               storage_compression, step_idx, shot_bytes_uncomp, shot_bytes_comp,
-              n_shots_h, shot_numel_h, sizeof(DW_DTYPE) == sizeof(double)) != 0)
+              n_shots_h, shot_numel_h, sizeof(DW_DTYPE) == sizeof(double),
+              use_double_buffering ? stream_storage : stream_compute) != 0)
         return 1;
+      if (use_double_buffering) {
+        gpuErrchk(cudaEventRecord(event_storage_done, stream_storage));
+      }
     }
 
     if (n_sources_per_shot_h > 0) {
-      add_sources<<<dimGrid_sources, dimBlock_sources>>>(
+      add_sources<<<dimGrid_sources, dimBlock_sources, 0, stream_compute>>>(
           wfp, f + t * n_shots_h * n_sources_per_shot_h, sources_i);
       CHECK_KERNEL_ERROR
     }
     if (n_receivers_per_shot_h > 0) {
-      record_receivers<<<dimGrid_receivers, dimBlock_receivers>>>(
+      record_receivers<<<dimGrid_receivers, dimBlock_receivers, 0,
+                          stream_compute>>>(
           r + t * n_shots_h * n_receivers_per_shot_h, wfc, receivers_i);
       CHECK_KERNEL_ERROR
     }
@@ -639,7 +676,10 @@ extern "C"
     std::swap(wfc, wfp);
     std::swap(psix, psixn);
   }
-  if (fp_w) fclose(fp_w);
+  if (use_double_buffering) {
+    gpuErrchk(cudaStreamWaitEvent(stream_compute, event_storage_done, 0));
+  }
+  
   return 0;
 }
 
@@ -678,7 +718,9 @@ extern "C"
 #if DW_NDIM >= 2
             DW_DTYPE *__restrict zetayn,
 #endif
-            DW_DTYPE *__restrict zetaxn, DW_DTYPE *__restrict const w_store_1,
+            DW_DTYPE *__restrict zetaxn,
+            DW_DTYPE *__restrict const w_store_1a,
+            DW_DTYPE *__restrict const w_store_1b,
             void *__restrict const w_store_2, void *__restrict const w_store_3,
             char const *__restrict const *__restrict const w_filenames_ptr,
             DW_DTYPE *__restrict const grad_f,
@@ -738,7 +780,7 @@ extern "C"
 #if DW_NDIM >= 2
             int64_t const pml_y1_h,
 #endif
-            int64_t const pml_x1_h, int64_t const device) {
+            int64_t const pml_x1_h, int64_t const device, cudaStream_t stream_compute) {
 #if DW_NDIM == 3
   dim3 dimBlock(32, 4, 1);
   unsigned int gridx = ceil_div(nx_h - 2 * FD_PAD, dimBlock.x);
@@ -808,46 +850,82 @@ extern "C"
     if (err != 0) return err;
   }
 
-  FILE *fp_w = NULL;
+  bool const use_double_buffering =
+    ((storage_mode == STORAGE_DEVICE && storage_compression) ||
+    storage_mode == STORAGE_CPU) && v_requires_grad;
+
+  ScopedStream stream_storage;
+  ScopedEvent event_storage_done_a, event_storage_done_b, event_compute_done_a,
+      event_compute_done_b;
+  if (use_double_buffering) {
+    gpuErrchk(
+        cudaStreamCreateWithFlags(&stream_storage, cudaStreamNonBlocking));
+    gpuErrchk(cudaEventCreate(&event_storage_done_a));
+    gpuErrchk(cudaEventCreate(&event_storage_done_b));
+    gpuErrchk(cudaEventCreate(&event_compute_done_a));
+    gpuErrchk(cudaEventCreate(&event_compute_done_b));
+    gpuErrchk(cudaEventRecord(event_compute_done_a, stream_compute));
+    gpuErrchk(cudaEventRecord(event_compute_done_b, stream_compute));
+  }
+
+  ScopedFile fp_w;
   if (storage_mode == STORAGE_DISK) {
-    if (v_requires_grad) fp_w = fopen(w_filenames_ptr[0], "rb");
+    if (v_requires_grad) fp_w.open(w_filenames_ptr[0], "rb");
   }
 
   for (t = start_t - 1; t >= start_t - nt; --t) {
     bool const load_step = (t % step_ratio_h) == 0;
     bool const load_w = load_step && v_requires_grad;
-    DW_DTYPE *__restrict const w_store_1_t =
-        w_store_1 + (storage_mode == STORAGE_DEVICE && !storage_compression
-                         ? (t / step_ratio_h) * shot_numel_h * n_shots_h
-                         : 0);
-    void *__restrict const w_store_2_t =
-        (uint8_t *)w_store_2 +
-        (storage_mode == STORAGE_DEVICE && storage_compression
-             ? (t / step_ratio_h) * shot_bytes_comp * n_shots_h
-             : 0);
-    void *__restrict const w_store_3_t =
-        (uint8_t *)w_store_3 +
-        (storage_mode == STORAGE_CPU
-             ? (t / step_ratio_h) *
-                   (storage_compression ? shot_bytes_comp : shot_bytes_uncomp) *
-                   n_shots_h
-             : 0);
+    int64_t step_idx = t / step_ratio_h;
+    DW_DTYPE *__restrict w_store_1_t =
+        w_store_1a + (storage_mode == STORAGE_DEVICE && !storage_compression
+                          ? step_idx * shot_numel_h * n_shots_h
+                          : 0);
+    cudaEvent_t event_storage_done = event_storage_done_a;
+    cudaEvent_t event_compute_done = event_compute_done_a;
 
-    if (load_w) {
-      int step_idx = t / step_ratio_h;
-      if (storage_load_snapshot_gpu(
-              w_store_1_t, w_store_2_t, w_store_3_t, fp_w, storage_mode,
-              storage_compression, step_idx, shot_bytes_uncomp, shot_bytes_comp,
-              n_shots_h, shot_numel_h, sizeof(DW_DTYPE) == sizeof(double)) != 0)
-        return 1;
+    if (load_w && use_double_buffering) {
+      if (step_idx % 2 != 0) {
+        w_store_1_t = w_store_1b;
+        event_storage_done = event_storage_done_b;
+        event_compute_done = event_compute_done_b;
+      }
+      gpuErrchk(cudaStreamWaitEvent(stream_storage, event_compute_done, 0));
     }
 
     if (n_sources_per_shot_h > 0) {
-      record_receivers<<<dimGrid_sources, dimBlock_sources>>>(
+      record_receivers<<<dimGrid_sources, dimBlock_sources, 0,
+                          stream_compute>>>(
           grad_f + t * n_shots_h * n_sources_per_shot_h, wfc, sources_i);
       CHECK_KERNEL_ERROR
     }
-    backward_kernel<<<dimGrid, dimBlock>>>(
+
+    if (load_w) {
+      void *w_store_2_t =
+          (uint8_t *)w_store_2 +
+          (storage_mode == STORAGE_DEVICE && storage_compression
+               ? step_idx * shot_bytes_comp * n_shots_h
+               : 0);
+      void *w_store_3_t =
+          (uint8_t *)w_store_3 +
+          (storage_mode == STORAGE_CPU
+               ? step_idx *
+                     (storage_compression ? shot_bytes_comp : shot_bytes_uncomp) *
+                     n_shots_h
+               : 0);
+      if (storage_load_snapshot_gpu(
+              w_store_1_t, w_store_2_t, w_store_3_t, fp_w, storage_mode,
+              storage_compression, step_idx, shot_bytes_uncomp, shot_bytes_comp,
+              n_shots_h, shot_numel_h, sizeof(DW_DTYPE) == sizeof(double),
+              use_double_buffering ? stream_storage : stream_compute) != 0)
+        return 1;
+      if (use_double_buffering) {
+        gpuErrchk(cudaEventRecord(event_storage_done, stream_storage));
+        gpuErrchk(cudaStreamWaitEvent(stream_compute, event_storage_done, 0));
+      }
+    }
+
+    backward_kernel<<<dimGrid, dimBlock, 0, stream_compute>>>(
         v2dt2, wfc, wfp, w_store_1_t, grad_v_shot,
 #if DW_NDIM >= 3
         psiz, psizn, zetaz, zetazn, az, bz, dbzdz,
@@ -857,8 +935,14 @@ extern "C"
 #endif
         psix, psixn, zetax, zetaxn, ax, bx, dbxdx, load_w);
     CHECK_KERNEL_ERROR
+
+    if (use_double_buffering) {
+      gpuErrchk(cudaEventRecord(event_compute_done, stream_compute));
+    }
+
     if (n_receivers_per_shot_h > 0) {
-      add_sources<<<dimGrid_receivers, dimBlock_receivers>>>(
+      add_sources<<<dimGrid_receivers, dimBlock_receivers, 0,
+                    stream_compute>>>(
           wfp, grad_r + t * n_shots_h * n_receivers_per_shot_h, receivers_i);
       CHECK_KERNEL_ERROR
     }
@@ -875,9 +959,9 @@ extern "C"
     std::swap(zetax, zetaxn);
   }
   if (v_requires_grad && !v_batched_h && n_shots_h > 1) {
-    combine_grad_v<<<dimGrid_combine, dimBlock_combine>>>(grad_v, grad_v_shot);
+    combine_grad_v<<<dimGrid_combine, dimBlock_combine, 0, stream_compute>>>(
+        grad_v, grad_v_shot);
     CHECK_KERNEL_ERROR
   }
-  if (fp_w) fclose(fp_w);
   return 0;
 }

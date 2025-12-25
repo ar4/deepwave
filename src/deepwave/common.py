@@ -84,21 +84,26 @@ class IntermediateStorage:
 
     def __init__(
         self,
-        store_1: torch.Tensor,
+        store_1a: torch.Tensor,
+        store_1b: torch.Tensor,
         store_2: torch.Tensor,
         store_3: torch.Tensor,
         temporary_storage: Optional[TemporaryStorage],
     ) -> None:
         """Store the intermediate storage information."""
-        self.store_1 = store_1
+        self.store_1a = store_1a
+        self.store_1b = store_1b
         self.store_2 = store_2
         self.store_3 = store_3
         self.temporary_storage = temporary_storage
 
-    def get_ptrs(self) -> Tuple[int, int, int, ctypes.Array[ctypes.c_char_p]]:
+    def get_ptrs(
+        self,
+    ) -> Tuple[int, int, int, int, int, int, ctypes.Array[ctypes.c_char_p]]:
         """Return pointers to the storage and filenames array."""
         return (
-            self.store_1.data_ptr(),
+            self.store_1a.data_ptr(),
+            self.store_1b.data_ptr(),
             self.store_2.data_ptr(),
             self.store_3.data_ptr(),
             self.temporary_storage.get_filenames_ptr()
@@ -163,7 +168,8 @@ class StorageManager:
 
     def allocate(self, requires_grad: bool) -> None:
         """Allocates storage tensors and handles disk storage if needed."""
-        store_1 = torch.empty(0)
+        store_1a = torch.empty(0)
+        store_1b = torch.empty(0)
         store_2 = torch.empty(0)
         store_3 = torch.empty(0)
         temporary_storage: Optional[TemporaryStorage] = None
@@ -173,7 +179,13 @@ class StorageManager:
 
             if self.storage_mode == StorageMode.DEVICE:  # Device
                 if self.storage_compression:
-                    store_1 = torch.zeros(
+                    store_1a = torch.zeros(
+                        self.n_shots,
+                        *self.shot_shape,
+                        device=self.device,
+                        dtype=self.dtype,
+                    )
+                    store_1b = torch.zeros(
                         self.n_shots,
                         *self.shot_shape,
                         device=self.device,
@@ -187,7 +199,7 @@ class StorageManager:
                         dtype=self.dtype,
                     )
                 else:
-                    store_1 = torch.zeros(
+                    store_1a = torch.zeros(
                         num_steps_stored,
                         self.n_shots,
                         *self.shot_shape,
@@ -196,7 +208,13 @@ class StorageManager:
                     )
 
             elif self.storage_mode == StorageMode.CPU:  # CPU
-                store_1 = torch.zeros(
+                store_1a = torch.zeros(
+                    self.n_shots,
+                    *self.shot_shape,
+                    device=self.device,
+                    dtype=self.dtype,
+                )
+                store_1b = torch.zeros(
                     self.n_shots,
                     *self.shot_shape,
                     device=self.device,
@@ -229,7 +247,7 @@ class StorageManager:
                     self.storage_path, 1 if self.is_cuda else self.n_shots
                 )
 
-                store_1 = torch.zeros(
+                store_1a = torch.zeros(
                     self.n_shots,
                     *self.shot_shape,
                     device=self.device,
@@ -257,7 +275,9 @@ class StorageManager:
                         dtype=self.dtype,
                     )
 
-        storage = IntermediateStorage(store_1, store_2, store_3, temporary_storage)
+        storage = IntermediateStorage(
+            store_1a, store_1b, store_2, store_3, temporary_storage
+        )
         self.storages.append(storage)
         self.storage_ptrs.extend(storage.get_ptrs())
 

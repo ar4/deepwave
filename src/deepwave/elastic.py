@@ -1361,8 +1361,10 @@ class ElasticForwardFunc(torch.autograd.Function):
                 receiver_amplitudes[i].resize_(nt, n_shots, n_receivers_per_shot[i])
                 receiver_amplitudes[i].fill_(0)
 
+        stream = 0
         if is_cuda:
             aux = models[0].get_device()
+            stream = torch.cuda.current_stream(aux)
         elif deepwave.backend_utils.USE_OPENMP:
             aux = min(n_shots, torch.get_num_threads())
         else:
@@ -1495,6 +1497,7 @@ class ElasticForwardFunc(torch.autograd.Function):
                         *pml_b,
                         *pml_e,
                         aux,
+                        stream,
                     )
                     != 0
                 ):
@@ -1665,8 +1668,10 @@ class ElasticForwardFunc(torch.autograd.Function):
                 grad_f[i].resize_(nt, n_shots, n_sources_per_shot[i])
                 grad_f[i].fill_(0)
 
+        stream = 0
         if is_cuda:
             aux = models[0].get_device()
+            stream = torch.cuda.current_stream(aux)
             for i, model in enumerate(models):
                 batched = model.ndim == ndim + 1 and model.shape[0] > 1
                 if (
@@ -1815,6 +1820,7 @@ class ElasticForwardFunc(torch.autograd.Function):
                         *pml_b,
                         *pml_e,
                         aux,
+                        stream,
                     )
                     != 0
                 ):

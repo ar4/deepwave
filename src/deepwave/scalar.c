@@ -167,6 +167,7 @@ __declspec(dllexport)
         DW_DTYPE *__restrict const zetay,
 #endif
         DW_DTYPE *__restrict const zetax, DW_DTYPE *__restrict const w_store_1,
+	DW_DTYPE *__restrict const w_store_1b,
         void *__restrict const w_store_2, void *__restrict const w_store_3,
         char const *__restrict const *__restrict const w_filenames_ptr,
         DW_DTYPE *__restrict const r,
@@ -225,7 +226,7 @@ __declspec(dllexport)
 #if DW_NDIM >= 2
         int64_t const pml_y1,
 #endif
-        int64_t const pml_x1, int64_t const n_threads) {
+        int64_t const pml_x1, int64_t const n_threads, void *unused) {
   int64_t shot;
 #ifdef _OPENMP
 #pragma omp parallel for num_threads(n_threads)
@@ -447,6 +448,7 @@ __declspec(dllexport)
         DW_DTYPE *__restrict const zetayn,
 #endif
         DW_DTYPE *__restrict const zetaxn, DW_DTYPE *__restrict const w_store_1,
+	DW_DTYPE *__restrict const w_store_1b,
         void *__restrict const w_store_2, void *__restrict const w_store_3,
         char const *__restrict const *__restrict const w_filenames_ptr,
         DW_DTYPE *__restrict const grad_f, DW_DTYPE *__restrict const grad_v,
@@ -504,7 +506,7 @@ __declspec(dllexport)
 #if DW_NDIM >= 2
         int64_t const pml_y1,
 #endif
-        int64_t const pml_x1, int64_t const n_threads) {
+        int64_t const pml_x1, int64_t const n_threads, void *unused) {
 #if DW_NDIM == 3
   int64_t const n_grid_points = nz * ny * nx;
 #elif DW_NDIM == 2

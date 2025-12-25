@@ -650,10 +650,6 @@ __launch_bounds__(128) __global__
   }
 }
 
-inline unsigned int ceil_div(unsigned int numerator, unsigned int denominator) {
-  return (numerator + denominator - 1) / denominator;
-}
-
 int set_config(
 #if DW_NDIM >= 3
     /* z-dimension */
@@ -741,26 +737,30 @@ extern "C"
             DW_DTYPE *__restrict__ const psi_y,
 #endif
             DW_DTYPE *__restrict__ const psi_x,
-            DW_DTYPE *__restrict__ const k_grad_store_1,
+            DW_DTYPE *__restrict__ const k_grad_store_1a,
+            DW_DTYPE *__restrict__ const k_grad_store_1b,
             void *__restrict__ const k_grad_store_2,
             void *__restrict__ const k_grad_store_3,
             char const *__restrict__ const
                 *__restrict__ const k_grad_filenames_ptr,
 #if DW_NDIM >= 3
-            DW_DTYPE *__restrict__ const bz_grad_store_1,
+            DW_DTYPE *__restrict__ const bz_grad_store_1a,
+            DW_DTYPE *__restrict__ const bz_grad_store_1b,
             void *__restrict__ const bz_grad_store_2,
             void *__restrict__ const bz_grad_store_3,
             char const *__restrict__ const
                 *__restrict__ const bz_grad_filenames_ptr,
 #endif
 #if DW_NDIM >= 2
-            DW_DTYPE *__restrict__ const by_grad_store_1,
+            DW_DTYPE *__restrict__ const by_grad_store_1a,
+            DW_DTYPE *__restrict__ const by_grad_store_1b,
             void *__restrict__ const by_grad_store_2,
             void *__restrict__ const by_grad_store_3,
             char const *__restrict__ const
                 *__restrict__ const by_grad_filenames_ptr,
 #endif
-            DW_DTYPE *__restrict__ const bx_grad_store_1,
+            DW_DTYPE *__restrict__ const bx_grad_store_1a,
+            DW_DTYPE *__restrict__ const bx_grad_store_1b,
             void *__restrict__ const bx_grad_store_2,
             void *__restrict__ const bx_grad_store_3,
             char const *__restrict__ const
@@ -853,7 +853,7 @@ extern "C"
 #if DW_NDIM >= 2
             int64_t const pml_y1_h,
 #endif
-            int64_t const pml_x1_h, int64_t const device) {
+            int64_t const pml_x1_h, int64_t const device, cudaStream_t stream_compute) {
 
 #if DW_NDIM == 3
   dim3 dimBlock(32, 4, 1);
@@ -897,9 +897,29 @@ extern "C"
   }
 
 #define OPEN_FILE_WRITE(name, grad_cond)              \
-  FILE *fp_##name = NULL;                             \
+  ScopedFile fp_##name;                             \
   if (storage_mode == STORAGE_DISK && (grad_cond)) {  \
-    fp_##name = fopen(name##_filenames_ptr[0], "ab"); \
+    fp_##name.open(name##_filenames_ptr[0], "ab"); \
+  }
+
+  bool const use_double_buffering =
+    ((storage_mode == STORAGE_DEVICE && storage_compression) ||
+    storage_mode == STORAGE_CPU) && (k_requires_grad || b_requires_grad);
+
+  ScopedStream stream_storage;
+  ScopedEvent event_storage_done_a, event_storage_done_b, event_compute_done_a,
+      event_compute_done_b;
+  cudaEvent_t event_storage_done;
+  if (use_double_buffering) {
+    gpuErrchk(
+        cudaStreamCreateWithFlags(&stream_storage, cudaStreamNonBlocking));
+    gpuErrchk(cudaEventCreate(&event_storage_done_a));
+    gpuErrchk(cudaEventCreate(&event_storage_done_b));
+    gpuErrchk(cudaEventCreate(&event_compute_done_a));
+    gpuErrchk(cudaEventCreate(&event_compute_done_b));
+    gpuErrchk(cudaEventRecord(event_storage_done_a, stream_storage));
+    gpuErrchk(cudaEventRecord(event_storage_done_b, stream_storage));
+    event_storage_done = event_storage_done_a;
   }
 
   OPEN_FILE_WRITE(k_grad, k_requires_grad)
@@ -912,9 +932,10 @@ extern "C"
   OPEN_FILE_WRITE(bx_grad, b_requires_grad)
 
   for (t = start_t; t < start_t + nt; ++t) {
+    int64_t step_idx = t / step_ratio_h;                                     
 #define SETUP_STORE_SAVE(name, grad_cond)                                    \
-  DW_DTYPE *__restrict const name##_store_1_t =                              \
-      name##_store_1 +                                                       \
+  DW_DTYPE *__restrict name##_store_1_t =                              \
+      name##_store_1a +                                                       \
       ((storage_mode == STORAGE_DEVICE && !storage_compression)              \
            ? (t / step_ratio_h) * n_shots_h * shot_numel_h                   \
            : 0);                                                             \
@@ -929,7 +950,12 @@ extern "C"
            ? (t / step_ratio_h) * n_shots_h *                                \
                  (storage_compression ? shot_bytes_comp : shot_bytes_uncomp) \
            : 0);                                                             \
-  bool const name##_cond = (grad_cond) && ((t % step_ratio_h) == 0);
+  bool const name##_cond = (grad_cond) && ((t % step_ratio_h) == 0); \
+    if ((grad_cond) && use_double_buffering) { \
+      if (step_idx % 2 != 0) { \
+        name##_store_1_t = name##_store_1b; \
+      } \
+    }
 
     SETUP_STORE_SAVE(k_grad, k_requires_grad)
 #if DW_NDIM >= 3
@@ -940,13 +966,23 @@ extern "C"
 #endif
     SETUP_STORE_SAVE(bx_grad, b_requires_grad)
 
+    cudaEvent_t event_compute_done = event_compute_done_a;
+    event_storage_done = event_storage_done_a;
+    if (use_double_buffering) {
+      if (step_idx % 2 != 0) {
+        event_compute_done = event_compute_done_b;
+        event_storage_done = event_storage_done_b;
+      }
+      gpuErrchk(cudaStreamWaitEvent(stream_compute, event_storage_done, 0));
+    }
+
     if (n_receivers_p_per_shot_h > 0) {
       dim3 dimBlock_receivers(32, 1, 1);
       unsigned int gridx_receivers =
           ceil_div(n_receivers_p_per_shot_h, dimBlock_receivers.x);
       unsigned int gridy_receivers = ceil_div(n_shots_h, dimBlock_receivers.y);
       dim3 dimGrid_receivers(gridx_receivers, gridy_receivers, 1);
-      record_receivers<<<dimGrid_receivers, dimBlock_receivers>>>(
+      record_receivers<<<dimGrid_receivers, dimBlock_receivers, 0, stream_compute>>>(
           r_p + t * n_shots_h * n_receivers_p_per_shot_h, p, receivers_i_p,
           n_receivers_p_per_shot_h);
       CHECK_KERNEL_ERROR
@@ -958,7 +994,7 @@ extern "C"
           ceil_div(n_receivers_vz_per_shot_h, dimBlock_receivers.x);
       unsigned int gridy_receivers = ceil_div(n_shots_h, dimBlock_receivers.y);
       dim3 dimGrid_receivers(gridx_receivers, gridy_receivers, 1);
-      record_receivers<<<dimGrid_receivers, dimBlock_receivers>>>(
+      record_receivers<<<dimGrid_receivers, dimBlock_receivers, 0, stream_compute>>>(
           r_vz + t * n_shots_h * n_receivers_vz_per_shot_h, vz, receivers_i_vz,
           n_receivers_vz_per_shot_h);
       CHECK_KERNEL_ERROR
@@ -971,7 +1007,7 @@ extern "C"
           ceil_div(n_receivers_vy_per_shot_h, dimBlock_receivers.x);
       unsigned int gridy_receivers = ceil_div(n_shots_h, dimBlock_receivers.y);
       dim3 dimGrid_receivers(gridx_receivers, gridy_receivers, 1);
-      record_receivers<<<dimGrid_receivers, dimBlock_receivers>>>(
+      record_receivers<<<dimGrid_receivers, dimBlock_receivers, 0, stream_compute>>>(
           r_vy + t * n_shots_h * n_receivers_vy_per_shot_h, vy, receivers_i_vy,
           n_receivers_vy_per_shot_h);
       CHECK_KERNEL_ERROR
@@ -983,13 +1019,13 @@ extern "C"
           ceil_div(n_receivers_vx_per_shot_h, dimBlock_receivers.x);
       unsigned int gridy_receivers = ceil_div(n_shots_h, dimBlock_receivers.y);
       dim3 dimGrid_receivers(gridx_receivers, gridy_receivers, 1);
-      record_receivers<<<dimGrid_receivers, dimBlock_receivers>>>(
+      record_receivers<<<dimGrid_receivers, dimBlock_receivers, 0, stream_compute>>>(
           r_vx + t * n_shots_h * n_receivers_vx_per_shot_h, vx, receivers_i_vx,
           n_receivers_vx_per_shot_h);
       CHECK_KERNEL_ERROR
     }
 
-    forward_kernel_v<<<dimGrid, dimBlock>>>(
+    forward_kernel_v<<<dimGrid, dimBlock, 0, stream_compute>>>(
         p,
 #if DW_NDIM >= 3
         vz,
@@ -1035,7 +1071,7 @@ extern "C"
           ceil_div(n_sources_vz_per_shot_h, dimBlock_sources.x);
       unsigned int gridy_sources = ceil_div(n_shots_h, dimBlock_sources.y);
       dim3 dimGrid_sources(gridx_sources, gridy_sources, 1);
-      add_sources<<<dimGrid_sources, dimBlock_sources>>>(
+      add_sources<<<dimGrid_sources, dimBlock_sources, 0, stream_compute>>>(
           vz, f_vz + t * n_shots_h * n_sources_vz_per_shot_h, sources_i_vz,
           n_sources_vz_per_shot_h);
       CHECK_KERNEL_ERROR
@@ -1048,7 +1084,7 @@ extern "C"
           ceil_div(n_sources_vy_per_shot_h, dimBlock_sources.x);
       unsigned int gridy_sources = ceil_div(n_shots_h, dimBlock_sources.y);
       dim3 dimGrid_sources(gridx_sources, gridy_sources, 1);
-      add_sources<<<dimGrid_sources, dimBlock_sources>>>(
+      add_sources<<<dimGrid_sources, dimBlock_sources, 0, stream_compute>>>(
           vy, f_vy + t * n_shots_h * n_sources_vy_per_shot_h, sources_i_vy,
           n_sources_vy_per_shot_h);
       CHECK_KERNEL_ERROR
@@ -1060,13 +1096,13 @@ extern "C"
           ceil_div(n_sources_vx_per_shot_h, dimBlock_sources.x);
       unsigned int gridy_sources = ceil_div(n_shots_h, dimBlock_sources.y);
       dim3 dimGrid_sources(gridx_sources, gridy_sources, 1);
-      add_sources<<<dimGrid_sources, dimBlock_sources>>>(
+      add_sources<<<dimGrid_sources, dimBlock_sources, 0, stream_compute>>>(
           vx, f_vx + t * n_shots_h * n_sources_vx_per_shot_h, sources_i_vx,
           n_sources_vx_per_shot_h);
       CHECK_KERNEL_ERROR
     }
 
-    forward_kernel_p<<<dimGrid, dimBlock>>>(p,
+    forward_kernel_p<<<dimGrid, dimBlock, 0, stream_compute>>>(p,
 #if DW_NDIM >= 3
                                             vz,
 #endif
@@ -1090,26 +1126,19 @@ extern "C"
                                             ax, bx, k_grad_cond);
     CHECK_KERNEL_ERROR
 
-    if (n_sources_p_per_shot_h > 0) {
-      dim3 dimBlock_sources(32, 1, 1);
-      unsigned int gridx_sources =
-          ceil_div(n_sources_p_per_shot_h, dimBlock_sources.x);
-      unsigned int gridy_sources = ceil_div(n_shots_h, dimBlock_sources.y);
-      dim3 dimGrid_sources(gridx_sources, gridy_sources, 1);
-      add_sources<<<dimGrid_sources, dimBlock_sources>>>(
-          p, f_p + t * n_shots_h * n_sources_p_per_shot_h, sources_i_p,
-          n_sources_p_per_shot_h);
-      CHECK_KERNEL_ERROR
+    if (use_double_buffering) {
+        gpuErrchk(cudaEventRecord(event_compute_done, stream_compute));
+        gpuErrchk(cudaStreamWaitEvent(stream_storage, event_compute_done, 0));
     }
 
 #define SAVE_SNAPSHOT(name)                                                  \
   if (name##_cond) {                                                         \
-    int64_t step_idx = t / step_ratio_h;                                     \
     if (storage_save_snapshot_gpu(                                           \
             name##_store_1_t, name##_store_2_t, name##_store_3_t, fp_##name, \
             storage_mode, storage_compression, step_idx, shot_bytes_uncomp,  \
             shot_bytes_comp, n_shots_h, shot_numel_h,                        \
-            sizeof(DW_DTYPE) == sizeof(double)) != 0)                        \
+            sizeof(DW_DTYPE) == sizeof(double), \
+              use_double_buffering ? stream_storage : stream_compute) != 0)                        \
       return 1;                                                              \
   }
 
@@ -1121,19 +1150,25 @@ extern "C"
     SAVE_SNAPSHOT(by_grad)
 #endif
     SAVE_SNAPSHOT(bx_grad)
+
+    if (use_double_buffering) {
+        gpuErrchk(cudaEventRecord(event_storage_done, stream_storage));
+      }
+
+    if (n_sources_p_per_shot_h > 0) {
+      dim3 dimBlock_sources(32, 1, 1);
+      unsigned int gridx_sources =
+          ceil_div(n_sources_p_per_shot_h, dimBlock_sources.x);
+      unsigned int gridy_sources = ceil_div(n_shots_h, dimBlock_sources.y);
+      dim3 dimGrid_sources(gridx_sources, gridy_sources, 1);
+      add_sources<<<dimGrid_sources, dimBlock_sources, 0, stream_compute>>>(
+          p, f_p + t * n_shots_h * n_sources_p_per_shot_h, sources_i_p,
+          n_sources_p_per_shot_h);
+      CHECK_KERNEL_ERROR
+    }
   }
 
-#define CLOSE_FILE(name) \
-  if (fp_##name) fclose(fp_##name);
-
-  CLOSE_FILE(k_grad)
-#if DW_NDIM >= 3
-  CLOSE_FILE(bz_grad)
-#endif
-#if DW_NDIM >= 2
-  CLOSE_FILE(by_grad)
-#endif
-  CLOSE_FILE(bx_grad)
+  if (use_double_buffering) gpuErrchk(cudaStreamWaitEvent(stream_compute, event_storage_done, 0));
   return 0;
 }
 
@@ -1188,26 +1223,30 @@ extern "C"
 #endif
             DW_DTYPE *__restrict__ psi_xn,
 
-            DW_DTYPE *__restrict__ const k_grad_store_1,
+            DW_DTYPE *__restrict__ const k_grad_store_1a,
+            DW_DTYPE *__restrict__ const k_grad_store_1b,
             void *__restrict__ const k_grad_store_2,
             void *__restrict__ const k_grad_store_3,
             char const *__restrict__ const
                 *__restrict__ const k_grad_filenames_ptr,
 #if DW_NDIM >= 3
-            DW_DTYPE *__restrict__ const bz_grad_store_1,
+            DW_DTYPE *__restrict__ const bz_grad_store_1a,
+            DW_DTYPE *__restrict__ const bz_grad_store_1b,
             void *__restrict__ const bz_grad_store_2,
             void *__restrict__ const bz_grad_store_3,
             char const *__restrict__ const
                 *__restrict__ const bz_grad_filenames_ptr,
 #endif
 #if DW_NDIM >= 2
-            DW_DTYPE *__restrict__ const by_grad_store_1,
+            DW_DTYPE *__restrict__ const by_grad_store_1a,
+            DW_DTYPE *__restrict__ const by_grad_store_1b,
             void *__restrict__ const by_grad_store_2,
             void *__restrict__ const by_grad_store_3,
             char const *__restrict__ const
                 *__restrict__ const by_grad_filenames_ptr,
 #endif
-            DW_DTYPE *__restrict__ const bx_grad_store_1,
+            DW_DTYPE *__restrict__ const bx_grad_store_1a,
+            DW_DTYPE *__restrict__ const bx_grad_store_1b,
             void *__restrict__ const bx_grad_store_2,
             void *__restrict__ const bx_grad_store_3,
             char const *__restrict__ const
@@ -1316,7 +1355,7 @@ extern "C"
 #if DW_NDIM >= 2
             int64_t const pml_y1_h,
 #endif
-            int64_t const pml_x1_h, int64_t const device) {
+            int64_t const pml_x1_h, int64_t const device, cudaStream_t stream_compute) {
 #if DW_NDIM == 3
   dim3 dimBlock(32, 4, 1);
   unsigned int gridx = ceil_div(nx_h - 2 * FD_PAD + 1, dimBlock.x);
@@ -1359,10 +1398,28 @@ extern "C"
     if (err != 0) return err;
   }
 
+  bool const use_double_buffering =
+    ((storage_mode == STORAGE_DEVICE && storage_compression) ||
+    storage_mode == STORAGE_CPU) && (k_requires_grad || b_requires_grad);
+
+  ScopedStream stream_storage;
+  ScopedEvent event_storage_done_a, event_storage_done_b, event_compute_done_a,
+      event_compute_done_b;
+  if (use_double_buffering) {
+    gpuErrchk(
+        cudaStreamCreateWithFlags(&stream_storage, cudaStreamNonBlocking));
+    gpuErrchk(cudaEventCreate(&event_storage_done_a));
+    gpuErrchk(cudaEventCreate(&event_storage_done_b));
+    gpuErrchk(cudaEventCreate(&event_compute_done_a));
+    gpuErrchk(cudaEventCreate(&event_compute_done_b));
+    gpuErrchk(cudaEventRecord(event_compute_done_a, stream_compute));
+    gpuErrchk(cudaEventRecord(event_compute_done_b, stream_compute));
+  }
+
 #define OPEN_FILE_READ(name, grad_cond)               \
-  FILE *fp_##name = NULL;                             \
+  ScopedFile fp_##name;                             \
   if (storage_mode == STORAGE_DISK && (grad_cond)) {  \
-    fp_##name = fopen(name##_filenames_ptr[0], "rb"); \
+    fp_##name.open(name##_filenames_ptr[0], "rb"); \
   }
 
   OPEN_FILE_READ(k_grad, k_requires_grad)
@@ -1375,9 +1432,10 @@ extern "C"
   OPEN_FILE_READ(bx_grad, b_requires_grad)
 
   for (t = start_t - 1; t >= start_t - nt; --t) {
+    int64_t step_idx = t / step_ratio_h;                                     
 #define SETUP_STORE_LOAD(name, grad_cond)                                    \
-  DW_DTYPE *__restrict__ const name##_store_1_t =                            \
-      name##_store_1 +                                                       \
+  DW_DTYPE *__restrict__ name##_store_1_t =                            \
+      name##_store_1a +                                                       \
       ((storage_mode == STORAGE_DEVICE && !storage_compression)              \
            ? (t / step_ratio_h) * n_shots_h * shot_numel_h                   \
            : 0);                                                             \
@@ -1394,14 +1452,27 @@ extern "C"
            : 0);                                                             \
   bool const name##_cond = (grad_cond) && ((t % step_ratio_h) == 0);         \
   if (name##_cond) {                                                         \
-    int64_t step_idx = t / step_ratio_h;                                     \
+    if (use_double_buffering && step_idx % 2 != 0) { \
+        name##_store_1_t = name##_store_1b; \
+    } \
     if (storage_load_snapshot_gpu(                                           \
             (void *)name##_store_1_t, name##_store_2_t, name##_store_3_t,    \
             fp_##name, storage_mode, storage_compression, step_idx,          \
             shot_bytes_uncomp, shot_bytes_comp, n_shots_h, shot_numel_h,     \
-            sizeof(DW_DTYPE) == sizeof(double)) != 0)                        \
+            sizeof(DW_DTYPE) == sizeof(double), \
+              use_double_buffering ? stream_storage : stream_compute) != 0)                        \
       return 1;                                                              \
   }
+
+    cudaEvent_t event_storage_done = event_storage_done_a;
+    cudaEvent_t event_compute_done = event_compute_done_a;
+    if (use_double_buffering) {
+      if (step_idx % 2 != 0) {
+        event_storage_done = event_storage_done_b;
+        event_compute_done = event_compute_done_b;
+      }
+      gpuErrchk(cudaStreamWaitEvent(stream_storage, event_compute_done, 0));
+    }
 
     SETUP_STORE_LOAD(k_grad, k_requires_grad)
 #if DW_NDIM >= 3
@@ -1412,19 +1483,24 @@ extern "C"
 #endif
     SETUP_STORE_LOAD(bx_grad, b_requires_grad)
 
+      if (use_double_buffering) {
+        gpuErrchk(cudaEventRecord(event_storage_done, stream_storage));
+        gpuErrchk(cudaStreamWaitEvent(stream_compute, event_storage_done, 0));
+      }
+
     if (n_sources_p_per_shot_h > 0) {
       dim3 dimBlock_receivers(32, 1, 1);
       unsigned int gridx_receivers =
           ceil_div(n_sources_p_per_shot_h, dimBlock_receivers.x);
       unsigned int gridy_receivers = ceil_div(n_shots_h, dimBlock_receivers.y);
       record_receivers<<<dim3(gridx_receivers, gridy_receivers, 1),
-                         dimBlock_receivers>>>(
+                         dimBlock_receivers, 0, stream_compute>>>(
           grad_f_p + t * n_shots_h * n_sources_p_per_shot_h, p, sources_i_p,
           n_sources_p_per_shot_h);
       CHECK_KERNEL_ERROR
     }
 
-    backward_kernel_v<<<dimGrid, dimBlock>>>(
+    backward_kernel_v<<<dimGrid, dimBlock, 0, stream_compute>>>(
         p,
 #if DW_NDIM >= 3
         vz,
@@ -1478,7 +1554,7 @@ extern "C"
           ceil_div(n_sources_vz_per_shot_h, dimBlock_receivers.x);
       unsigned int gridy_receivers = ceil_div(n_shots_h, dimBlock_receivers.y);
       record_receivers<<<dim3(gridx_receivers, gridy_receivers, 1),
-                         dimBlock_receivers>>>(
+                         dimBlock_receivers, 0, stream_compute>>>(
           grad_f_vz + t * n_shots_h * n_sources_vz_per_shot_h, vz, sources_i_vz,
           n_sources_vz_per_shot_h);
       CHECK_KERNEL_ERROR
@@ -1491,7 +1567,7 @@ extern "C"
           ceil_div(n_sources_vy_per_shot_h, dimBlock_receivers.x);
       unsigned int gridy_receivers = ceil_div(n_shots_h, dimBlock_receivers.y);
       record_receivers<<<dim3(gridx_receivers, gridy_receivers, 1),
-                         dimBlock_receivers>>>(
+                         dimBlock_receivers, 0, stream_compute>>>(
           grad_f_vy + t * n_shots_h * n_sources_vy_per_shot_h, vy, sources_i_vy,
           n_sources_vy_per_shot_h);
       CHECK_KERNEL_ERROR
@@ -1503,13 +1579,13 @@ extern "C"
           ceil_div(n_sources_vx_per_shot_h, dimBlock_receivers.x);
       unsigned int gridy_receivers = ceil_div(n_shots_h, dimBlock_receivers.y);
       record_receivers<<<dim3(gridx_receivers, gridy_receivers, 1),
-                         dimBlock_receivers>>>(
+                         dimBlock_receivers, 0, stream_compute>>>(
           grad_f_vx + t * n_shots_h * n_sources_vx_per_shot_h, vx, sources_i_vx,
           n_sources_vx_per_shot_h);
       CHECK_KERNEL_ERROR
     }
 
-    backward_kernel_p<<<dimGrid, dimBlock>>>(p,
+    backward_kernel_p<<<dimGrid, dimBlock, 0, stream_compute>>>(p,
 #if DW_NDIM >= 3
                                              vz,
 #endif
@@ -1548,13 +1624,17 @@ extern "C"
                                              ax, bxh, bx, k_grad_cond);
     CHECK_KERNEL_ERROR
 
+    if (use_double_buffering) {
+      gpuErrchk(cudaEventRecord(event_compute_done, stream_compute));
+    }
+
     // Inject adjoint source (grad_r) into P
     if (n_receivers_p_per_shot_h > 0) {
       dim3 dimBlock_sources(32, 1, 1);
       unsigned int gridx_sources =
           ceil_div(n_receivers_p_per_shot_h, dimBlock_sources.x);
       unsigned int gridy_sources = ceil_div(n_shots_h, dimBlock_sources.y);
-      add_sources<<<dim3(gridx_sources, gridy_sources, 1), dimBlock_sources>>>(
+      add_sources<<<dim3(gridx_sources, gridy_sources, 1), dimBlock_sources, 0, stream_compute>>>(
           p, grad_r_p + t * n_shots_h * n_receivers_p_per_shot_h, receivers_i_p,
           n_receivers_p_per_shot_h);
       CHECK_KERNEL_ERROR
@@ -1565,7 +1645,7 @@ extern "C"
       unsigned int gridx_sources =
           ceil_div(n_receivers_vz_per_shot_h, dimBlock_sources.x);
       unsigned int gridy_sources = ceil_div(n_shots_h, dimBlock_sources.y);
-      add_sources<<<dim3(gridx_sources, gridy_sources, 1), dimBlock_sources>>>(
+      add_sources<<<dim3(gridx_sources, gridy_sources, 1), dimBlock_sources, 0, stream_compute>>>(
           vz, grad_r_vz + t * n_shots_h * n_receivers_vz_per_shot_h,
           receivers_i_vz, n_receivers_vz_per_shot_h);
       CHECK_KERNEL_ERROR
@@ -1577,7 +1657,7 @@ extern "C"
       unsigned int gridx_sources =
           ceil_div(n_receivers_vy_per_shot_h, dimBlock_sources.x);
       unsigned int gridy_sources = ceil_div(n_shots_h, dimBlock_sources.y);
-      add_sources<<<dim3(gridx_sources, gridy_sources, 1), dimBlock_sources>>>(
+      add_sources<<<dim3(gridx_sources, gridy_sources, 1), dimBlock_sources, 0, stream_compute>>>(
           vy, grad_r_vy + t * n_shots_h * n_receivers_vy_per_shot_h,
           receivers_i_vy, n_receivers_vy_per_shot_h);
       CHECK_KERNEL_ERROR
@@ -1588,7 +1668,7 @@ extern "C"
       unsigned int gridx_sources =
           ceil_div(n_receivers_vx_per_shot_h, dimBlock_sources.x);
       unsigned int gridy_sources = ceil_div(n_shots_h, dimBlock_sources.y);
-      add_sources<<<dim3(gridx_sources, gridy_sources, 1), dimBlock_sources>>>(
+      add_sources<<<dim3(gridx_sources, gridy_sources, 1), dimBlock_sources, 0, stream_compute>>>(
           vx, grad_r_vx + t * n_shots_h * n_receivers_vx_per_shot_h,
           receivers_i_vx, n_receivers_vx_per_shot_h);
       CHECK_KERNEL_ERROR
@@ -1602,18 +1682,6 @@ extern "C"
 #endif
     std::swap(psi_x, psi_xn);
   }
-
-#define CLOSE_FILE(name) \
-  if (fp_##name) fclose(fp_##name);
-
-  CLOSE_FILE(k_grad)
-#if DW_NDIM >= 3
-  CLOSE_FILE(bz_grad)
-#endif
-#if DW_NDIM >= 2
-  CLOSE_FILE(by_grad)
-#endif
-  CLOSE_FILE(bx_grad)
 
 #if DW_NDIM == 3
   dim3 dimBlock_combine(32, 4, 1);
@@ -1634,23 +1702,23 @@ extern "C"
   dim3 dimGrid_combine(gridx_combine, gridy_combine, gridz_combine);
 
   if (k_requires_grad && !k_batched_h && n_shots_h > 1) {
-    combine_grad<<<dimGrid_combine, dimBlock_combine>>>(grad_k, grad_k_shot);
+    combine_grad<<<dimGrid_combine, dimBlock_combine, 0, stream_compute>>>(grad_k, grad_k_shot);
     CHECK_KERNEL_ERROR
   }
 #if DW_NDIM >= 3
   if (b_requires_grad && !b_batched_h && n_shots_h > 1) {
-    combine_grad<<<dimGrid_combine, dimBlock_combine>>>(grad_bz, grad_bz_shot);
+    combine_grad<<<dimGrid_combine, dimBlock_combine, 0, stream_compute>>>(grad_bz, grad_bz_shot);
     CHECK_KERNEL_ERROR
   }
 #endif
 #if DW_NDIM >= 2
   if (b_requires_grad && !b_batched_h && n_shots_h > 1) {
-    combine_grad<<<dimGrid_combine, dimBlock_combine>>>(grad_by, grad_by_shot);
+    combine_grad<<<dimGrid_combine, dimBlock_combine, 0, stream_compute>>>(grad_by, grad_by_shot);
     CHECK_KERNEL_ERROR
   }
 #endif
   if (b_requires_grad && !b_batched_h && n_shots_h > 1) {
-    combine_grad<<<dimGrid_combine, dimBlock_combine>>>(grad_bx, grad_bx_shot);
+    combine_grad<<<dimGrid_combine, dimBlock_combine, 0, stream_compute>>>(grad_bx, grad_bx_shot);
     CHECK_KERNEL_ERROR
   }
 

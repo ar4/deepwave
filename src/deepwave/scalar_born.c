@@ -209,10 +209,13 @@ __declspec(dllexport)
         DW_DTYPE *__restrict const zetaysc,
 #endif
         DW_DTYPE *__restrict const zetaxsc,
-        DW_DTYPE *__restrict const w_store_1, void *__restrict const w_store_2,
+        DW_DTYPE *__restrict const w_store_1,
+        DW_DTYPE *__restrict const w_store_1b,
+	void *__restrict const w_store_2,
         void *__restrict const w_store_3,
         char const *__restrict const *__restrict const w_filenames_ptr,
         DW_DTYPE *__restrict const wsc_store_1,
+        DW_DTYPE *__restrict const wsc_store_1b,
         void *__restrict const wsc_store_2, void *__restrict const wsc_store_3,
         char const *__restrict const *__restrict const wsc_filenames_ptr,
         DW_DTYPE *__restrict const r, DW_DTYPE *__restrict const rsc,
@@ -274,7 +277,7 @@ __declspec(dllexport)
 #if DW_NDIM >= 2
         int64_t const pml_y1,
 #endif
-        int64_t const pml_x1, int64_t const n_threads) {
+        int64_t const pml_x1, int64_t const n_threads, void* unused) {
   int64_t shot;
 
 #ifdef _OPENMP
@@ -612,10 +615,13 @@ __declspec(dllexport)
         DW_DTYPE *__restrict const zetaynsc,
 #endif
         DW_DTYPE *__restrict const zetaxnsc,
-        DW_DTYPE *__restrict const w_store_1, void *__restrict const w_store_2,
+        DW_DTYPE *__restrict const w_store_1,
+        DW_DTYPE *__restrict const w_store_1b,
+	void *__restrict const w_store_2,
         void *__restrict const w_store_3,
         char const *__restrict const *__restrict const w_filenames_ptr,
         DW_DTYPE *__restrict const wsc_store_1,
+        DW_DTYPE *__restrict const wsc_store_1b,
         void *__restrict const wsc_store_2, void *__restrict const wsc_store_3,
         char const *__restrict const *__restrict const wsc_filenames_ptr,
         DW_DTYPE *__restrict const grad_f, DW_DTYPE *__restrict const grad_fsc,
@@ -681,7 +687,7 @@ __declspec(dllexport)
 #if DW_NDIM >= 2
         int64_t const pml_y1,
 #endif
-        int64_t const pml_x1, int64_t const n_threads) {
+        int64_t const pml_x1, int64_t const n_threads, void *unused) {
 #if DW_NDIM == 3
   int64_t const n_grid_points = nz * ny * nx;
 #elif DW_NDIM == 2
@@ -1021,7 +1027,9 @@ __declspec(dllexport)
         DW_DTYPE *__restrict const zetaynsc,
 #endif
         DW_DTYPE *__restrict const zetaxnsc,
-        DW_DTYPE *__restrict const w_store_1, void *__restrict const w_store_2,
+        DW_DTYPE *__restrict const w_store_1,
+        DW_DTYPE *__restrict const w_store_1b,
+	void *__restrict const w_store_2,
         void *__restrict const w_store_3,
         char const *__restrict const *__restrict const w_filenames_ptr,
         DW_DTYPE *__restrict const grad_fsc,

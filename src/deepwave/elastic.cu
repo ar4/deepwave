@@ -1640,10 +1640,6 @@ __launch_bounds__(128) __global__ void backward_kernel_v(
   }
 }
 
-inline unsigned int ceil_div(unsigned int numerator, unsigned int denominator) {
-  return (numerator + denominator - 1) / denominator;
-}
-
 int set_config(DW_DTYPE const dt_h,
 #if DW_NDIM >= 3
                DW_DTYPE const rdz_h,
@@ -1809,48 +1805,57 @@ extern "C"
             DW_DTYPE *__restrict const m_vxx,
             DW_DTYPE *__restrict const m_sigmaxxx,
 #if DW_NDIM >= 3
-            DW_DTYPE *__restrict const dvzdbuoyancy_store_1,
+            DW_DTYPE *__restrict const dvzdbuoyancy_store_1a,
+            DW_DTYPE *__restrict const dvzdbuoyancy_store_1b,
             void *__restrict const dvzdbuoyancy_store_2,
             void *__restrict const dvzdbuoyancy_store_3,
             char const *__restrict const
                 *__restrict const dvzdbuoyancy_filenames_ptr,
-            DW_DTYPE *__restrict const dvzdz_store_1,
+            DW_DTYPE *__restrict const dvzdz_store_1a,
+            DW_DTYPE *__restrict const dvzdz_store_1b,
             void *__restrict const dvzdz_store_2,
             void *__restrict const dvzdz_store_3,
             char const *__restrict const *__restrict const dvzdz_filenames_ptr,
-            DW_DTYPE *__restrict const dvzdx_plus_dvxdz_store_1,
+            DW_DTYPE *__restrict const dvzdx_plus_dvxdz_store_1a,
+            DW_DTYPE *__restrict const dvzdx_plus_dvxdz_store_1b,
             void *__restrict const dvzdx_plus_dvxdz_store_2,
             void *__restrict const dvzdx_plus_dvxdz_store_3,
             char const *__restrict const
                 *__restrict const dvzdx_plus_dvxdz_filenames_ptr,
-            DW_DTYPE *__restrict const dvzdy_plus_dvydz_store_1,
+            DW_DTYPE *__restrict const dvzdy_plus_dvydz_store_1a,
+            DW_DTYPE *__restrict const dvzdy_plus_dvydz_store_1b,
             void *__restrict const dvzdy_plus_dvydz_store_2,
             void *__restrict const dvzdy_plus_dvydz_store_3,
             char const *__restrict const
                 *__restrict const dvzdy_plus_dvydz_filenames_ptr,
 #endif
 #if DW_NDIM >= 2
-            DW_DTYPE *__restrict const dvydbuoyancy_store_1,
+            DW_DTYPE *__restrict const dvydbuoyancy_store_1a,
+            DW_DTYPE *__restrict const dvydbuoyancy_store_1b,
             void *__restrict const dvydbuoyancy_store_2,
             void *__restrict const dvydbuoyancy_store_3,
             char const *__restrict const
                 *__restrict const dvydbuoyancy_filenames_ptr,
-            DW_DTYPE *__restrict const dvydy_store_1,
+            DW_DTYPE *__restrict const dvydy_store_1a,
+            DW_DTYPE *__restrict const dvydy_store_1b,
             void *__restrict const dvydy_store_2,
             void *__restrict const dvydy_store_3,
             char const *__restrict const *__restrict const dvydy_filenames_ptr,
-            DW_DTYPE *__restrict const dvydx_plus_dvxdy_store_1,
+            DW_DTYPE *__restrict const dvydx_plus_dvxdy_store_1a,
+            DW_DTYPE *__restrict const dvydx_plus_dvxdy_store_1b,
             void *__restrict const dvydx_plus_dvxdy_store_2,
             void *__restrict const dvydx_plus_dvxdy_store_3,
             char const *__restrict const
                 *__restrict const dvydx_plus_dvxdy_filenames_ptr,
 #endif
-            DW_DTYPE *__restrict const dvxdbuoyancy_store_1,
+            DW_DTYPE *__restrict const dvxdbuoyancy_store_1a,
+            DW_DTYPE *__restrict const dvxdbuoyancy_store_1b,
             void *__restrict const dvxdbuoyancy_store_2,
             void *__restrict const dvxdbuoyancy_store_3,
             char const *__restrict const
                 *__restrict const dvxdbuoyancy_filenames_ptr,
-            DW_DTYPE *__restrict const dvxdx_store_1,
+            DW_DTYPE *__restrict const dvxdx_store_1a,
+            DW_DTYPE *__restrict const dvxdx_store_1b,
             void *__restrict const dvxdx_store_2,
             void *__restrict const dvxdx_store_3,
             char const *__restrict const *__restrict const dvxdx_filenames_ptr,
@@ -1943,7 +1948,7 @@ extern "C"
 #if DW_NDIM >= 2
             int64_t const pml_y1_h,
 #endif
-            int64_t const pml_x1_h, int64_t const device) {
+            int64_t const pml_x1_h, int64_t const device, cudaStream_t stream_compute) {
 #if DW_NDIM == 3
   dim3 dimBlock(32, 4, 1);
   unsigned int gridx = ceil_div(nx_h - 2 * FD_PAD + 1, dimBlock.x);
@@ -2012,9 +2017,29 @@ extern "C"
 #endif
 
 #define OPEN_FILE(name, grad_cond)                    \
-  FILE *fp_##name = NULL;                             \
+  ScopedFile fp_##name;                             \
   if (storage_mode == STORAGE_DISK && (grad_cond)) {  \
-    fp_##name = fopen(name##_filenames_ptr[0], "ab"); \
+    fp_##name.open(name##_filenames_ptr[0], "ab"); \
+  }
+
+  bool const use_double_buffering =
+    ((storage_mode == STORAGE_DEVICE && storage_compression) ||
+    storage_mode == STORAGE_CPU) && (lamb_requires_grad || mu_requires_grad || buoyancy_requires_grad);
+
+  ScopedStream stream_storage;
+  ScopedEvent event_storage_done_a, event_storage_done_b, event_compute_done_a,
+      event_compute_done_b;
+  cudaEvent_t event_storage_done;
+  if (use_double_buffering) {
+    gpuErrchk(
+        cudaStreamCreateWithFlags(&stream_storage, cudaStreamNonBlocking));
+    gpuErrchk(cudaEventCreate(&event_storage_done_a));
+    gpuErrchk(cudaEventCreate(&event_storage_done_b));
+    gpuErrchk(cudaEventCreate(&event_compute_done_a));
+    gpuErrchk(cudaEventCreate(&event_compute_done_b));
+    gpuErrchk(cudaEventRecord(event_storage_done_a, stream_storage));
+    gpuErrchk(cudaEventRecord(event_storage_done_b, stream_storage));
+    event_storage_done = event_storage_done_a;
   }
 
 #if DW_NDIM >= 3
@@ -2032,9 +2057,10 @@ extern "C"
   OPEN_FILE(dvxdx, lamb_requires_grad || mu_requires_grad)
 
   for (t = start_t; t < start_t + nt; ++t) {
+    int64_t step_idx = t / step_ratio_h;                                     
 #define SETUP_STORE(name, grad_cond)                                         \
-  DW_DTYPE *__restrict const name##_store_1_t =                              \
-      name##_store_1 +                                                       \
+  DW_DTYPE *__restrict name##_store_1_t =                              \
+      name##_store_1a +                                                       \
       ((storage_mode == STORAGE_DEVICE && !storage_compression)              \
            ? (t / step_ratio_h) * n_shots_h * shot_numel                     \
            : 0);                                                             \
@@ -2049,7 +2075,12 @@ extern "C"
            ? (t / step_ratio_h) * n_shots_h *                                \
                  (storage_compression ? shot_bytes_comp : shot_bytes_uncomp) \
            : 0);                                                             \
-  bool const name##_cond = (grad_cond) && ((t % step_ratio_h) == 0);
+  bool const name##_cond = (grad_cond) && ((t % step_ratio_h) == 0); \
+    if ((grad_cond) && use_double_buffering) { \
+      if (step_idx % 2 != 0) { \
+        name##_store_1_t = name##_store_1b; \
+      } \
+    }
 
 #if DW_NDIM >= 3
     SETUP_STORE(dvzdbuoyancy, buoyancy_requires_grad)
@@ -2065,6 +2096,16 @@ extern "C"
     SETUP_STORE(dvxdbuoyancy, buoyancy_requires_grad)
     SETUP_STORE(dvxdx, lamb_requires_grad || mu_requires_grad)
 
+    cudaEvent_t event_compute_done = event_compute_done_a;
+    event_storage_done = event_storage_done_a;
+    if (use_double_buffering) {
+      if (step_idx % 2 != 0) {
+        event_compute_done = event_compute_done_b;
+        event_storage_done = event_storage_done_b;
+      }
+      gpuErrchk(cudaStreamWaitEvent(stream_compute, event_storage_done, 0));
+    }
+
 #if DW_NDIM >= 3
     if (n_receivers_z_per_shot_h > 0) {
       dim3 dimBlock_receivers(32, 1, 1);
@@ -2072,7 +2113,7 @@ extern "C"
           ceil_div(n_receivers_z_per_shot_h, dimBlock_receivers.x);
       unsigned int gridy_receivers = ceil_div(n_shots_h, dimBlock_receivers.y);
       dim3 dimGrid_receivers(gridx_receivers, gridy_receivers, 1);
-      record_receivers_z<<<dimGrid_receivers, dimBlock_receivers>>>(
+      record_receivers_z<<<dimGrid_receivers, dimBlock_receivers, 0, stream_compute>>>(
           r_z + t * n_shots_h * n_receivers_z_per_shot_h, vz, receivers_z_i);
       CHECK_KERNEL_ERROR
     }
@@ -2084,7 +2125,7 @@ extern "C"
           ceil_div(n_receivers_y_per_shot_h, dimBlock_receivers.x);
       unsigned int gridy_receivers = ceil_div(n_shots_h, dimBlock_receivers.y);
       dim3 dimGrid_receivers(gridx_receivers, gridy_receivers, 1);
-      record_receivers_y<<<dimGrid_receivers, dimBlock_receivers>>>(
+      record_receivers_y<<<dimGrid_receivers, dimBlock_receivers, 0, stream_compute>>>(
           r_y + t * n_shots_h * n_receivers_y_per_shot_h, vy, receivers_y_i);
       CHECK_KERNEL_ERROR
     }
@@ -2095,7 +2136,7 @@ extern "C"
           ceil_div(n_receivers_x_per_shot_h, dimBlock_receivers.x);
       unsigned int gridy_receivers = ceil_div(n_shots_h, dimBlock_receivers.y);
       dim3 dimGrid_receivers(gridx_receivers, gridy_receivers, 1);
-      record_receivers_x<<<dimGrid_receivers, dimBlock_receivers>>>(
+      record_receivers_x<<<dimGrid_receivers, dimBlock_receivers, 0, stream_compute>>>(
           r_x + t * n_shots_h * n_receivers_x_per_shot_h, vx, receivers_x_i);
       CHECK_KERNEL_ERROR
     }
@@ -2105,7 +2146,7 @@ extern "C"
           ceil_div(n_receivers_p_per_shot_h, dimBlock_receivers.x);
       unsigned int gridy_receivers = ceil_div(n_shots_h, dimBlock_receivers.y);
       dim3 dimGrid_receivers(gridx_receivers, gridy_receivers, 1);
-      record_pressure_receivers<<<dimGrid_receivers, dimBlock_receivers>>>(
+      record_pressure_receivers<<<dimGrid_receivers, dimBlock_receivers, 0, stream_compute>>>(
           r_p + t * n_shots_h * n_receivers_p_per_shot_h,
 #if DW_NDIM >= 3
           sigmazz,
@@ -2117,7 +2158,7 @@ extern "C"
       CHECK_KERNEL_ERROR
     }
 
-    forward_kernel_v<<<dimGrid, dimBlock>>>(
+    forward_kernel_v<<<dimGrid, dimBlock, 0, stream_compute>>>(
 #if DW_NDIM >= 3
         buoyancy_z,
 #endif
@@ -2169,7 +2210,7 @@ extern "C"
           ceil_div(n_sources_z_per_shot_h, dimBlock_sources.x);
       unsigned int gridy_sources = ceil_div(n_shots_h, dimBlock_sources.y);
       dim3 dimGrid_sources(gridx_sources, gridy_sources, 1);
-      add_sources_z<<<dimGrid_sources, dimBlock_sources>>>(
+      add_sources_z<<<dimGrid_sources, dimBlock_sources, 0, stream_compute>>>(
           vz, f_z + t * n_shots_h * n_sources_z_per_shot_h, sources_z_i);
       CHECK_KERNEL_ERROR
     }
@@ -2181,7 +2222,7 @@ extern "C"
           ceil_div(n_sources_y_per_shot_h, dimBlock_sources.x);
       unsigned int gridy_sources = ceil_div(n_shots_h, dimBlock_sources.y);
       dim3 dimGrid_sources(gridx_sources, gridy_sources, 1);
-      add_sources_y<<<dimGrid_sources, dimBlock_sources>>>(
+      add_sources_y<<<dimGrid_sources, dimBlock_sources, 0, stream_compute>>>(
           vy, f_y + t * n_shots_h * n_sources_y_per_shot_h, sources_y_i);
       CHECK_KERNEL_ERROR
     }
@@ -2192,12 +2233,12 @@ extern "C"
           ceil_div(n_sources_x_per_shot_h, dimBlock_sources.x);
       unsigned int gridy_sources = ceil_div(n_shots_h, dimBlock_sources.y);
       dim3 dimGrid_sources(gridx_sources, gridy_sources, 1);
-      add_sources_x<<<dimGrid_sources, dimBlock_sources>>>(
+      add_sources_x<<<dimGrid_sources, dimBlock_sources, 0, stream_compute>>>(
           vx, f_x + t * n_shots_h * n_sources_x_per_shot_h, sources_x_i);
       CHECK_KERNEL_ERROR
     }
 
-    forward_kernel_sigma<<<dimGrid, dimBlock>>>(
+    forward_kernel_sigma<<<dimGrid, dimBlock, 0, stream_compute>>>(
         lamb, mu,
 #if DW_NDIM >= 3
         mu_zy, mu_zx,
@@ -2243,31 +2284,19 @@ extern "C"
         mu_requires_grad && ((t % step_ratio_h) == 0));
     CHECK_KERNEL_ERROR
 
-    if (n_sources_p_per_shot_h > 0) {
-      dim3 dimBlock_sources(32, 1, 1);
-      unsigned int gridx_sources =
-          ceil_div(n_sources_p_per_shot_h, dimBlock_sources.x);
-      unsigned int gridy_sources = ceil_div(n_shots_h, dimBlock_sources.y);
-      dim3 dimGrid_sources(gridx_sources, gridy_sources, 1);
-      add_sources_p<<<dimGrid_sources, dimBlock_sources>>>(
-#if DW_NDIM >= 3
-          sigmazz,
-#endif
-#if DW_NDIM >= 2
-          sigmayy,
-#endif
-          sigmaxx, f_p + t * n_shots_h * n_sources_p_per_shot_h, sources_p_i);
-      CHECK_KERNEL_ERROR
+    if (use_double_buffering) {
+        gpuErrchk(cudaEventRecord(event_compute_done, stream_compute));
+        gpuErrchk(cudaStreamWaitEvent(stream_storage, event_compute_done, 0));
     }
 
 #define SAVE_SNAPSHOT(name)                                                  \
   if (name##_cond) {                                                         \
-    int64_t step_idx = t / step_ratio_h;                                     \
     if (storage_save_snapshot_gpu(                                           \
             name##_store_1_t, name##_store_2_t, name##_store_3_t, fp_##name, \
             storage_mode, storage_compression, step_idx, shot_bytes_uncomp,  \
             shot_bytes_comp, n_shots_h, shot_numel,                          \
-            sizeof(DW_DTYPE) == sizeof(double)) != 0)                        \
+            sizeof(DW_DTYPE) == sizeof(double), \
+              use_double_buffering ? stream_storage : stream_compute) != 0)                        \
       return 1;                                                              \
   }
 
@@ -2284,24 +2313,30 @@ extern "C"
 #endif
     SAVE_SNAPSHOT(dvxdbuoyancy)
     SAVE_SNAPSHOT(dvxdx)
-  }
 
-#define CLOSE_FILE(name) \
-  if (fp_##name) fclose(fp_##name);
+    if (use_double_buffering) {
+        gpuErrchk(cudaEventRecord(event_storage_done, stream_storage));
+      }
 
+    if (n_sources_p_per_shot_h > 0) {
+      dim3 dimBlock_sources(32, 1, 1);
+      unsigned int gridx_sources =
+          ceil_div(n_sources_p_per_shot_h, dimBlock_sources.x);
+      unsigned int gridy_sources = ceil_div(n_shots_h, dimBlock_sources.y);
+      dim3 dimGrid_sources(gridx_sources, gridy_sources, 1);
+      add_sources_p<<<dimGrid_sources, dimBlock_sources, 0, stream_compute>>>(
 #if DW_NDIM >= 3
-  CLOSE_FILE(dvzdbuoyancy)
-  CLOSE_FILE(dvzdz)
-  CLOSE_FILE(dvzdx_plus_dvxdz)
-  CLOSE_FILE(dvzdy_plus_dvydz)
+          sigmazz,
 #endif
 #if DW_NDIM >= 2
-  CLOSE_FILE(dvydbuoyancy)
-  CLOSE_FILE(dvydy)
-  CLOSE_FILE(dvydx_plus_dvxdy)
+          sigmayy,
 #endif
-  CLOSE_FILE(dvxdbuoyancy)
-  CLOSE_FILE(dvxdx)
+          sigmaxx, f_p + t * n_shots_h * n_sources_p_per_shot_h, sources_p_i);
+      CHECK_KERNEL_ERROR
+    }
+  }
+
+  if (use_double_buffering) gpuErrchk(cudaStreamWaitEvent(stream_compute, event_storage_done, 0));
   return 0;
 }
 
@@ -2364,48 +2399,57 @@ extern "C"
 #endif
             DW_DTYPE *__restrict m_sigmaxxxn,
 #if DW_NDIM >= 3
-            DW_DTYPE *__restrict const dvzdbuoyancy_store_1,
+            DW_DTYPE *__restrict const dvzdbuoyancy_store_1a,
+            DW_DTYPE *__restrict const dvzdbuoyancy_store_1b,
             void *__restrict const dvzdbuoyancy_store_2,
             void *__restrict const dvzdbuoyancy_store_3,
             char const *__restrict const
                 *__restrict const dvzdbuoyancy_filenames_ptr,
-            DW_DTYPE *__restrict const dvzdz_store_1,
+            DW_DTYPE *__restrict const dvzdz_store_1a,
+            DW_DTYPE *__restrict const dvzdz_store_1b,
             void *__restrict const dvzdz_store_2,
             void *__restrict const dvzdz_store_3,
             char const *__restrict const *__restrict const dvzdz_filenames_ptr,
-            DW_DTYPE *__restrict const dvzdx_plus_dvxdz_store_1,
+            DW_DTYPE *__restrict const dvzdx_plus_dvxdz_store_1a,
+            DW_DTYPE *__restrict const dvzdx_plus_dvxdz_store_1b,
             void *__restrict const dvzdx_plus_dvxdz_store_2,
             void *__restrict const dvzdx_plus_dvxdz_store_3,
             char const *__restrict const
                 *__restrict const dvzdx_plus_dvxdz_filenames_ptr,
-            DW_DTYPE *__restrict const dvzdy_plus_dvydz_store_1,
+            DW_DTYPE *__restrict const dvzdy_plus_dvydz_store_1a,
+            DW_DTYPE *__restrict const dvzdy_plus_dvydz_store_1b,
             void *__restrict const dvzdy_plus_dvydz_store_2,
             void *__restrict const dvzdy_plus_dvydz_store_3,
             char const *__restrict const
                 *__restrict const dvzdy_plus_dvydz_filenames_ptr,
 #endif
 #if DW_NDIM >= 2
-            DW_DTYPE *__restrict const dvydbuoyancy_store_1,
+            DW_DTYPE *__restrict const dvydbuoyancy_store_1a,
+            DW_DTYPE *__restrict const dvydbuoyancy_store_1b,
             void *__restrict const dvydbuoyancy_store_2,
             void *__restrict const dvydbuoyancy_store_3,
             char const *__restrict const
                 *__restrict const dvydbuoyancy_filenames_ptr,
-            DW_DTYPE *__restrict const dvydy_store_1,
+            DW_DTYPE *__restrict const dvydy_store_1a,
+            DW_DTYPE *__restrict const dvydy_store_1b,
             void *__restrict const dvydy_store_2,
             void *__restrict const dvydy_store_3,
             char const *__restrict const *__restrict const dvydy_filenames_ptr,
-            DW_DTYPE *__restrict const dvydx_plus_dvxdy_store_1,
+            DW_DTYPE *__restrict const dvydx_plus_dvxdy_store_1a,
+            DW_DTYPE *__restrict const dvydx_plus_dvxdy_store_1b,
             void *__restrict const dvydx_plus_dvxdy_store_2,
             void *__restrict const dvydx_plus_dvxdy_store_3,
             char const *__restrict const
                 *__restrict const dvydx_plus_dvxdy_filenames_ptr,
 #endif
-            DW_DTYPE *__restrict const dvxdbuoyancy_store_1,
+            DW_DTYPE *__restrict const dvxdbuoyancy_store_1a,
+            DW_DTYPE *__restrict const dvxdbuoyancy_store_1b,
             void *__restrict const dvxdbuoyancy_store_2,
             void *__restrict const dvxdbuoyancy_store_3,
             char const *__restrict const
                 *__restrict const dvxdbuoyancy_filenames_ptr,
-            DW_DTYPE *__restrict const dvxdx_store_1,
+            DW_DTYPE *__restrict const dvxdx_store_1a,
+            DW_DTYPE *__restrict const dvxdx_store_1b,
             void *__restrict const dvxdx_store_2,
             void *__restrict const dvxdx_store_3,
             char const *__restrict const *__restrict const dvxdx_filenames_ptr,
@@ -2531,7 +2575,7 @@ extern "C"
 #if DW_NDIM >= 2
             int64_t const pml_y1_h,
 #endif
-            int64_t const pml_x1_h, int64_t const device) {
+            int64_t const pml_x1_h, int64_t const device, cudaStream_t stream_compute) {
 #if DW_NDIM == 3
   dim3 dimBlock(32, 4, 1);
   unsigned int gridx = ceil_div(nx_h - 2 * FD_PAD + 1, dimBlock.x);
@@ -2592,9 +2636,27 @@ extern "C"
   int64_t t;
 
 #define OPEN_FILE_READ(name, grad_cond)               \
-  FILE *fp_##name = NULL;                             \
+  ScopedFile fp_##name;                             \
   if (storage_mode == STORAGE_DISK && (grad_cond)) {  \
-    fp_##name = fopen(name##_filenames_ptr[0], "rb"); \
+    fp_##name.open(name##_filenames_ptr[0], "rb"); \
+  }
+
+  bool const use_double_buffering =
+    ((storage_mode == STORAGE_DEVICE && storage_compression) ||
+    storage_mode == STORAGE_CPU) && (lamb_requires_grad || mu_requires_grad || buoyancy_requires_grad);
+
+  ScopedStream stream_storage;
+  ScopedEvent event_storage_done_a, event_storage_done_b, event_compute_done_a,
+      event_compute_done_b;
+  if (use_double_buffering) {
+    gpuErrchk(
+        cudaStreamCreateWithFlags(&stream_storage, cudaStreamNonBlocking));
+    gpuErrchk(cudaEventCreate(&event_storage_done_a));
+    gpuErrchk(cudaEventCreate(&event_storage_done_b));
+    gpuErrchk(cudaEventCreate(&event_compute_done_a));
+    gpuErrchk(cudaEventCreate(&event_compute_done_b));
+    gpuErrchk(cudaEventRecord(event_compute_done_a, stream_compute));
+    gpuErrchk(cudaEventRecord(event_compute_done_b, stream_compute));
   }
 
 #if DW_NDIM >= 3
@@ -2612,6 +2674,7 @@ extern "C"
   OPEN_FILE_READ(dvxdx, lamb_requires_grad || mu_requires_grad)
 
   for (t = start_t - 1; t >= start_t - nt; --t) {
+    int64_t step_idx = t / step_ratio_h;                                     
 #if DW_NDIM == 3
     int64_t const shot_numel = nz_h * ny_h * nx_h;
 #elif DW_NDIM == 2
@@ -2621,8 +2684,8 @@ extern "C"
 #endif
 
 #define SETUP_STORE_LOAD(name, grad_cond)                                    \
-  DW_DTYPE const *__restrict const name##_store_1_t =                        \
-      name##_store_1 +                                                       \
+  DW_DTYPE const *__restrict name##_store_1_t =                        \
+      name##_store_1a +                                                       \
       ((storage_mode == STORAGE_DEVICE && !storage_compression)              \
            ? (t / step_ratio_h) * n_shots_h * shot_numel                     \
            : 0);                                                             \
@@ -2639,14 +2702,27 @@ extern "C"
            : 0);                                                             \
   bool const name##_cond = (grad_cond) && ((t % step_ratio_h) == 0);         \
   if (name##_cond) {                                                         \
-    int64_t step_idx = t / step_ratio_h;                                     \
+    if (use_double_buffering && step_idx % 2 != 0) { \
+        name##_store_1_t = name##_store_1b; \
+    } \
     if (storage_load_snapshot_gpu(                                           \
             (void *)name##_store_1_t, name##_store_2_t, name##_store_3_t,    \
             fp_##name, storage_mode, storage_compression, step_idx,          \
             shot_bytes_uncomp, shot_bytes_comp, n_shots_h, shot_numel,       \
-            sizeof(DW_DTYPE) == sizeof(double)) != 0)                        \
+            sizeof(DW_DTYPE) == sizeof(double), \
+              use_double_buffering ? stream_storage : stream_compute) != 0)                        \
       return 1;                                                              \
   }
+
+    cudaEvent_t event_storage_done = event_storage_done_a;
+    cudaEvent_t event_compute_done = event_compute_done_a;
+    if (use_double_buffering) {
+      if (step_idx % 2 != 0) {
+        event_storage_done = event_storage_done_b;
+        event_compute_done = event_compute_done_b;
+      }
+      gpuErrchk(cudaStreamWaitEvent(stream_storage, event_compute_done, 0));
+    }
 
 #if DW_NDIM >= 3
     SETUP_STORE_LOAD(dvzdbuoyancy, buoyancy_requires_grad)
@@ -2662,13 +2738,18 @@ extern "C"
     SETUP_STORE_LOAD(dvxdbuoyancy, buoyancy_requires_grad)
     SETUP_STORE_LOAD(dvxdx, lamb_requires_grad || mu_requires_grad)
 
+      if (use_double_buffering) {
+        gpuErrchk(cudaEventRecord(event_storage_done, stream_storage));
+        gpuErrchk(cudaStreamWaitEvent(stream_compute, event_storage_done, 0));
+      }
+
     if (n_sources_p_per_shot_h > 0) {
       dim3 dimBlock_sources(32, 1, 1);
       unsigned int gridx_sources =
           ceil_div(n_sources_p_per_shot_h, dimBlock_sources.x);
       unsigned int gridy_sources = ceil_div(n_shots_h, dimBlock_sources.y);
       dim3 dimGrid_sources(gridx_sources, gridy_sources, 1);
-      record_adjoint_pressure_receivers<<<dimGrid_sources, dimBlock_sources>>>(
+      record_adjoint_pressure_receivers<<<dimGrid_sources, dimBlock_sources, 0, stream_compute>>>(
           grad_f_p + t * n_shots_h * n_sources_p_per_shot_h,
 #if DW_NDIM >= 3
           sigmazz,
@@ -2680,7 +2761,7 @@ extern "C"
       CHECK_KERNEL_ERROR
     }
 
-    backward_kernel_sigma<<<dimGrid, dimBlock>>>(
+    backward_kernel_sigma<<<dimGrid, dimBlock, 0, stream_compute>>>(
         lamb, mu,
 #if DW_NDIM >= 3
         mu_zy, mu_zx,
@@ -2760,7 +2841,7 @@ extern "C"
           ceil_div(n_sources_z_per_shot_h, dimBlock_sources.x);
       unsigned int gridy_sources = ceil_div(n_shots_h, dimBlock_sources.y);
       dim3 dimGrid_sources(gridx_sources, gridy_sources, 1);
-      record_adjoint_receivers_z<<<dimGrid_sources, dimBlock_sources>>>(
+      record_adjoint_receivers_z<<<dimGrid_sources, dimBlock_sources, 0, stream_compute>>>(
           grad_f_z + t * n_shots_h * n_sources_z_per_shot_h, vz, sources_z_i);
       CHECK_KERNEL_ERROR
     }
@@ -2772,7 +2853,7 @@ extern "C"
           ceil_div(n_sources_y_per_shot_h, dimBlock_sources.x);
       unsigned int gridy_sources = ceil_div(n_shots_h, dimBlock_sources.y);
       dim3 dimGrid_sources(gridx_sources, gridy_sources, 1);
-      record_adjoint_receivers_y<<<dimGrid_sources, dimBlock_sources>>>(
+      record_adjoint_receivers_y<<<dimGrid_sources, dimBlock_sources, 0, stream_compute>>>(
           grad_f_y + t * n_shots_h * n_sources_y_per_shot_h, vy, sources_y_i);
       CHECK_KERNEL_ERROR
     }
@@ -2783,12 +2864,12 @@ extern "C"
           ceil_div(n_sources_x_per_shot_h, dimBlock_sources.x);
       unsigned int gridy_sources = ceil_div(n_shots_h, dimBlock_sources.y);
       dim3 dimGrid_sources(gridx_sources, gridy_sources, 1);
-      record_adjoint_receivers_x<<<dimGrid_sources, dimBlock_sources>>>(
+      record_adjoint_receivers_x<<<dimGrid_sources, dimBlock_sources, 0, stream_compute>>>(
           grad_f_x + t * n_shots_h * n_sources_x_per_shot_h, vx, sources_x_i);
       CHECK_KERNEL_ERROR
     }
 
-    backward_kernel_v<<<dimGrid, dimBlock>>>(
+    backward_kernel_v<<<dimGrid, dimBlock, 0, stream_compute>>>(
         lamb, mu,
 #if DW_NDIM >= 3
         mu_zy, mu_zx,
@@ -2853,6 +2934,10 @@ extern "C"
         ax, axh, bx, bxh, lamb_requires_grad && ((t % step_ratio_h) == 0),
         mu_requires_grad && ((t % step_ratio_h) == 0));
     CHECK_KERNEL_ERROR
+
+    if (use_double_buffering) {
+      gpuErrchk(cudaEventRecord(event_compute_done, stream_compute));
+    }
 #if DW_NDIM >= 3
     if (n_receivers_z_per_shot_h > 0) {
       dim3 dimBlock_receivers(32, 1, 1);
@@ -2860,7 +2945,7 @@ extern "C"
           ceil_div(n_receivers_z_per_shot_h, dimBlock_receivers.x);
       unsigned int gridy_receivers = ceil_div(n_shots_h, dimBlock_receivers.y);
       dim3 dimGrid_receivers(gridx_receivers, gridy_receivers, 1);
-      add_adjoint_sources_z<<<dimGrid_receivers, dimBlock_receivers>>>(
+      add_adjoint_sources_z<<<dimGrid_receivers, dimBlock_receivers, 0, stream_compute>>>(
           vz, grad_r_z + t * n_shots_h * n_receivers_z_per_shot_h,
           receivers_z_i);
       CHECK_KERNEL_ERROR
@@ -2873,7 +2958,7 @@ extern "C"
           ceil_div(n_receivers_y_per_shot_h, dimBlock_receivers.x);
       unsigned int gridy_receivers = ceil_div(n_shots_h, dimBlock_receivers.y);
       dim3 dimGrid_receivers(gridx_receivers, gridy_receivers, 1);
-      add_adjoint_sources_y<<<dimGrid_receivers, dimBlock_receivers>>>(
+      add_adjoint_sources_y<<<dimGrid_receivers, dimBlock_receivers, 0, stream_compute>>>(
           vy, grad_r_y + t * n_shots_h * n_receivers_y_per_shot_h,
           receivers_y_i);
       CHECK_KERNEL_ERROR
@@ -2885,7 +2970,7 @@ extern "C"
           ceil_div(n_receivers_x_per_shot_h, dimBlock_receivers.x);
       unsigned int gridy_receivers = ceil_div(n_shots_h, dimBlock_receivers.y);
       dim3 dimGrid_receivers(gridx_receivers, gridy_receivers, 1);
-      add_adjoint_sources_x<<<dimGrid_receivers, dimBlock_receivers>>>(
+      add_adjoint_sources_x<<<dimGrid_receivers, dimBlock_receivers, 0, stream_compute>>>(
           vx, grad_r_x + t * n_shots_h * n_receivers_x_per_shot_h,
           receivers_x_i);
       CHECK_KERNEL_ERROR
@@ -2896,7 +2981,7 @@ extern "C"
           ceil_div(n_receivers_p_per_shot_h, dimBlock_receivers.x);
       unsigned int gridy_receivers = ceil_div(n_shots_h, dimBlock_receivers.y);
       dim3 dimGrid_receivers(gridx_receivers, gridy_receivers, 1);
-      add_adjoint_pressure_sources<<<dimGrid_receivers, dimBlock_receivers>>>(
+      add_adjoint_pressure_sources<<<dimGrid_receivers, dimBlock_receivers, 0, stream_compute>>>(
 #if DW_NDIM >= 3
           sigmazz,
 #endif
@@ -2923,20 +3008,6 @@ extern "C"
     std::swap(m_sigmaxxx, m_sigmaxxxn);
   }
 
-#if DW_NDIM >= 3
-  CLOSE_FILE(dvzdbuoyancy)
-  CLOSE_FILE(dvzdz)
-  CLOSE_FILE(dvzdx_plus_dvxdz)
-  CLOSE_FILE(dvzdy_plus_dvydz)
-#endif
-#if DW_NDIM >= 2
-  CLOSE_FILE(dvydbuoyancy)
-  CLOSE_FILE(dvydy)
-  CLOSE_FILE(dvydx_plus_dvxdy)
-#endif
-  CLOSE_FILE(dvxdbuoyancy)
-  CLOSE_FILE(dvxdx)
-
 #if DW_NDIM == 3
   dim3 dimBlock_combine(32, 4, 1);
   unsigned int gridx_combine = ceil_div(nx_h, dimBlock_combine.x);
@@ -2956,39 +3027,39 @@ extern "C"
   dim3 dimGrid_combine(gridx_combine, gridy_combine, gridz_combine);
 
   if (lamb_requires_grad && !lamb_batched_h && n_shots_h > 1) {
-    combine_grad<<<dimGrid_combine, dimBlock_combine>>>(grad_lamb,
+    combine_grad<<<dimGrid_combine, dimBlock_combine, 0, stream_compute>>>(grad_lamb,
                                                         grad_lamb_shot);
     CHECK_KERNEL_ERROR
   }
   if (mu_requires_grad && !mu_batched_h && n_shots_h > 1) {
-    combine_grad<<<dimGrid_combine, dimBlock_combine>>>(grad_mu, grad_mu_shot);
+    combine_grad<<<dimGrid_combine, dimBlock_combine, 0, stream_compute>>>(grad_mu, grad_mu_shot);
     CHECK_KERNEL_ERROR
 #if DW_NDIM >= 3
-    combine_grad<<<dimGrid_combine, dimBlock_combine>>>(grad_mu_zy,
+    combine_grad<<<dimGrid_combine, dimBlock_combine, 0, stream_compute>>>(grad_mu_zy,
                                                         grad_mu_zy_shot);
     CHECK_KERNEL_ERROR
-    combine_grad<<<dimGrid_combine, dimBlock_combine>>>(grad_mu_zx,
+    combine_grad<<<dimGrid_combine, dimBlock_combine, 0, stream_compute>>>(grad_mu_zx,
                                                         grad_mu_zx_shot);
     CHECK_KERNEL_ERROR
 #endif
 #if DW_NDIM >= 2
-    combine_grad<<<dimGrid_combine, dimBlock_combine>>>(grad_mu_yx,
+    combine_grad<<<dimGrid_combine, dimBlock_combine, 0, stream_compute>>>(grad_mu_yx,
                                                         grad_mu_yx_shot);
     CHECK_KERNEL_ERROR
 #endif
   }
   if (buoyancy_requires_grad && !buoyancy_batched_h && n_shots_h > 1) {
 #if DW_NDIM >= 3
-    combine_grad<<<dimGrid_combine, dimBlock_combine>>>(grad_buoyancy_z,
+    combine_grad<<<dimGrid_combine, dimBlock_combine, 0, stream_compute>>>(grad_buoyancy_z,
                                                         grad_buoyancy_z_shot);
     CHECK_KERNEL_ERROR
 #endif
 #if DW_NDIM >= 2
-    combine_grad<<<dimGrid_combine, dimBlock_combine>>>(grad_buoyancy_y,
+    combine_grad<<<dimGrid_combine, dimBlock_combine, 0, stream_compute>>>(grad_buoyancy_y,
                                                         grad_buoyancy_y_shot);
     CHECK_KERNEL_ERROR
 #endif
-    combine_grad<<<dimGrid_combine, dimBlock_combine>>>(grad_buoyancy_x,
+    combine_grad<<<dimGrid_combine, dimBlock_combine, 0, stream_compute>>>(grad_buoyancy_x,
                                                         grad_buoyancy_x_shot);
     CHECK_KERNEL_ERROR
   }

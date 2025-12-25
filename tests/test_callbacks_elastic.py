@@ -15,21 +15,22 @@ import deepwave
 )
 def test_elastic_callback_call_count(python_backend) -> None:
     """Check that the callbacks are called the correct number of times."""
-    lamb = torch.ones(10, 10) * 2200
-    mu = torch.ones(10, 10) * 1000
-    buoyancy = torch.ones(10, 10) * 1 / 2200
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    lamb = torch.ones(10, 10, device=device) * 2200
+    mu = torch.ones(10, 10, device=device) * 1000
+    buoyancy = torch.ones(10, 10, device=device) * 1 / 2200
     lamb.requires_grad_()
     mu.requires_grad_()
     buoyancy.requires_grad_()
     dx = 5.0
     dt = 0.004
     nt = 20
-    source_amplitudes_y = torch.zeros(1, 1, nt)
+    source_amplitudes_y = torch.zeros(1, 1, nt, device=device)
     source_amplitudes_y[0, 0, 5] = 1
-    source_locations_y = torch.zeros(1, 1, 2, dtype=torch.long)
+    source_locations_y = torch.zeros(1, 1, 2, dtype=torch.long, device=device)
     source_locations_y[0, 0, 0] = 5
     source_locations_y[0, 0, 1] = 5
-    receiver_locations_y = torch.zeros(1, 1, 2, dtype=torch.long)
+    receiver_locations_y = torch.zeros(1, 1, 2, dtype=torch.long, device=device)
     receiver_locations_y[0, 0, 0] = 5
     receiver_locations_y[0, 0, 1] = 5
 
@@ -94,21 +95,22 @@ def test_elastic_callback_call_count(python_backend) -> None:
 
 def test_elastic_storage_mode() -> None:
     """Check that the storage mode does not affect the gradient."""
-    lamb = torch.ones(10, 10) * 2200
-    mu = torch.ones(10, 10) * 1000
-    buoyancy = torch.ones(10, 10) * 1 / 2200
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    lamb = torch.ones(10, 10, device=device) * 2200
+    mu = torch.ones(10, 10, device=device) * 1000
+    buoyancy = torch.ones(10, 10, device=device) * 1 / 2200
     lamb.requires_grad_()
     mu.requires_grad_()
     buoyancy.requires_grad_()
     dx = 5.0
     dt = 0.004
     nt = 20
-    source_amplitudes_y = torch.zeros(1, 1, nt)
+    source_amplitudes_y = torch.zeros(1, 1, nt, device=device)
     source_amplitudes_y[0, 0, 5] = 1
-    source_locations_y = torch.zeros(1, 1, 2, dtype=torch.long)
+    source_locations_y = torch.zeros(1, 1, 2, dtype=torch.long, device=device)
     source_locations_y[0, 0, 0] = 5
     source_locations_y[0, 0, 1] = 5
-    receiver_locations_y = torch.zeros(1, 1, 2, dtype=torch.long)
+    receiver_locations_y = torch.zeros(1, 1, 2, dtype=torch.long, device=device)
     receiver_locations_y[0, 0, 0] = 5
     receiver_locations_y[0, 0, 1] = 5
 

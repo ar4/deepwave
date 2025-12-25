@@ -854,8 +854,10 @@ class AcousticForwardFunc(torch.autograd.Function):
                 receiver_amplitudes[i].resize_(nt, n_shots, n_per_shot)
                 receiver_amplitudes[i].fill_(0)
 
+        stream = 0
         if is_cuda:
             aux = models[0].get_device()
+            stream = torch.cuda.current_stream(aux)
         elif deepwave.backend_utils.USE_OPENMP:
             aux = min(n_shots, torch.get_num_threads())
         else:
@@ -955,6 +957,7 @@ class AcousticForwardFunc(torch.autograd.Function):
                         *pml_b,
                         *pml_e,
                         aux,
+                        stream,
                     )
                     != 0
                 ):
@@ -1065,8 +1068,10 @@ class AcousticForwardFunc(torch.autograd.Function):
 
         model_batched = [m.ndim == ndim + 1 and m.shape[0] > 1 for m in models[:2]]
 
+        stream = 0
         if is_cuda:
             aux = models[0].get_device()
+            stream = torch.cuda.current_stream(aux)
             for i, model in enumerate(models):
                 if (
                     model.requires_grad
@@ -1175,6 +1180,7 @@ class AcousticForwardFunc(torch.autograd.Function):
                         *pml_b,
                         *pml_e,
                         aux,
+                        stream,
                     )
                     != 0
                 ):

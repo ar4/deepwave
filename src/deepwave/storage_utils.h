@@ -26,7 +26,7 @@ int storage_save_snapshot_gpu(void* store_1, void* store_2, void* store_3,
                               bool use_compression, int64_t step_idx,
                               size_t shot_bytes_uncomp, size_t shot_bytes_comp,
                               size_t n_shots, size_t n_elements_per_shot,
-                              int is_double);
+                              int is_double, void* stream);
 
 void storage_load_snapshot_cpu(void* store_1, void* store_2, FILE* fp,
                                int64_t storage_mode, bool use_compression,
@@ -39,7 +39,7 @@ int storage_load_snapshot_gpu(void* store_1, void* store_2, void* store_3,
                               bool use_compression, int step_idx,
                               size_t shot_bytes_uncomp, size_t shot_bytes_comp,
                               size_t n_shots, size_t n_elements_per_shot,
-                              int is_double);
+                              int is_double, void* stream);
 
 #ifdef __cplusplus
 }

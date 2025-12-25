@@ -84,17 +84,18 @@ def test_scalar_callback_call_count(python_backend) -> None:
 
 def test_scalar_storage_mode() -> None:
     """Check that the storage mode does not affect the gradient."""
-    v = torch.ones(10, 10) * 1500
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    v = torch.ones(10, 10, device=device) * 1500
     v.requires_grad_()
     dx = 5.0
     dt = 0.004
     nt = 20
-    source_amplitudes = torch.zeros(1, 1, nt)
+    source_amplitudes = torch.zeros(1, 1, nt, device=device)
     source_amplitudes[0, 0, 5] = 1
-    source_locations = torch.zeros(1, 1, 2, dtype=torch.long)
+    source_locations = torch.zeros(1, 1, 2, dtype=torch.long, device=device)
     source_locations[0, 0, 0] = 5
     source_locations[0, 0, 1] = 5
-    receiver_locations = torch.zeros(1, 1, 2, dtype=torch.long)
+    receiver_locations = torch.zeros(1, 1, 2, dtype=torch.long, device=device)
     receiver_locations[0, 0, 0] = 5
     receiver_locations[0, 0, 1] = 5
 

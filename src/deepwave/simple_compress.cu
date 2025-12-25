@@ -105,49 +105,52 @@ extern "C" {
 
 static int simple_compress_cuda_float(const float *input, uint8_t *output,
                                       size_t n_batch,
-                                      size_t n_elements_per_field) {
+                                      size_t n_elements_per_field,
+                                      cudaStream_t stream) {
   float *minmax = (float *)output;
   uint8_t *compressed = output + 2 * n_batch * sizeof(float);
 
   /* Find min/max for each field */
   size_t threads = 256;
   size_t shared_mem = 2 * threads * sizeof(float);
-  find_minmax_kernel<<<n_batch, threads, shared_mem>>>(
+  find_minmax_kernel<<<n_batch, threads, shared_mem, stream>>>(
       input, minmax, n_elements_per_field, n_batch);
 
   /* Compress */
   size_t total = n_batch * n_elements_per_field;
   size_t blocks = (total + threads - 1) / threads;
-  compress_kernel<<<blocks, threads>>>(input, compressed, minmax,
-                                       n_elements_per_field, n_batch);
+  compress_kernel<<<blocks, threads, 0, stream>>>(input, compressed, minmax,
+                                                  n_elements_per_field, n_batch);
   CHECK_KERNEL_ERROR
   return 0;
 }
 
 static int simple_compress_cuda_double(const double *input, uint8_t *output,
                                        size_t n_batch,
-                                       size_t n_elements_per_field) {
+                                       size_t n_elements_per_field,
+                                       cudaStream_t stream) {
   double *minmax = (double *)output;
   uint8_t *compressed = output + 2 * n_batch * sizeof(double);
 
   /* Find min/max for each field */
   size_t threads = 256;
   size_t shared_mem = 2 * threads * sizeof(double);
-  find_minmax_kernel<<<n_batch, threads, shared_mem>>>(
+  find_minmax_kernel<<<n_batch, threads, shared_mem, stream>>>(
       input, minmax, n_elements_per_field, n_batch);
 
   /* Compress */
   size_t total = n_batch * n_elements_per_field;
   size_t blocks = (total + threads - 1) / threads;
-  compress_kernel<<<blocks, threads>>>(input, compressed, minmax,
-                                       n_elements_per_field, n_batch);
+  compress_kernel<<<blocks, threads, 0, stream>>>(input, compressed, minmax,
+                                                  n_elements_per_field, n_batch);
   CHECK_KERNEL_ERROR
   return 0;
 }
 
 static int simple_decompress_cuda_float(const uint8_t *input, float *output,
                                         size_t n_batch,
-                                        size_t n_elements_per_field) {
+                                        size_t n_elements_per_field,
+                                        cudaStream_t stream) {
   const float *minmax = (const float *)input;
   const uint8_t *compressed = input + 2 * n_batch * sizeof(float);
 
@@ -155,15 +158,16 @@ static int simple_decompress_cuda_float(const uint8_t *input, float *output,
   size_t total = n_batch * n_elements_per_field;
   size_t blocks = (total + threads - 1) / threads;
 
-  decompress_kernel<<<blocks, threads>>>(compressed, output, minmax,
-                                         n_elements_per_field, n_batch);
+  decompress_kernel<<<blocks, threads, 0, stream>>>(
+      compressed, output, minmax, n_elements_per_field, n_batch);
   CHECK_KERNEL_ERROR
   return 0;
 }
 
 static int simple_decompress_cuda_double(const uint8_t *input, double *output,
                                          size_t n_batch,
-                                         size_t n_elements_per_field) {
+                                         size_t n_elements_per_field,
+                                         cudaStream_t stream) {
   const double *minmax = (const double *)input;
   const uint8_t *compressed = input + 2 * n_batch * sizeof(double);
 
@@ -171,33 +175,39 @@ static int simple_decompress_cuda_double(const uint8_t *input, double *output,
   size_t total = n_batch * n_elements_per_field;
   size_t blocks = (total + threads - 1) / threads;
 
-  decompress_kernel<<<blocks, threads>>>(compressed, output, minmax,
-                                         n_elements_per_field, n_batch);
+  decompress_kernel<<<blocks, threads, 0, stream>>>(
+      compressed, output, minmax, n_elements_per_field, n_batch);
   CHECK_KERNEL_ERROR
   return 0;
 }
 
 /* Update the main compress/decompress functions to call CUDA versions */
 int simple_compress_cuda(const void *input, void *output, size_t n_batch,
-                         size_t n_elements_per_field, int is_double) {
+                         size_t n_elements_per_field, int is_double,
+                         void *stream) {
   if (is_double) {
     return simple_compress_cuda_double((const double *)input, (uint8_t *)output,
-                                       n_batch, n_elements_per_field);
+                                       n_batch, n_elements_per_field,
+                                       (cudaStream_t)stream);
   } else {
     return simple_compress_cuda_float((const float *)input, (uint8_t *)output,
-                                      n_batch, n_elements_per_field);
+                                      n_batch, n_elements_per_field,
+                                      (cudaStream_t)stream);
   }
 }
 
 int simple_decompress_cuda(const void *input, void *output, size_t n_batch,
-                           size_t n_elements_per_field, int is_double) {
+                           size_t n_elements_per_field, int is_double,
+                           void *stream) {
   if (is_double) {
     return simple_decompress_cuda_double((const uint8_t *)input,
                                          (double *)output, n_batch,
-                                         n_elements_per_field);
+                                         n_elements_per_field,
+                                         (cudaStream_t)stream);
   } else {
     return simple_decompress_cuda_float((const uint8_t *)input, (float *)output,
-                                        n_batch, n_elements_per_field);
+                                        n_batch, n_elements_per_field,
+                                        (cudaStream_t)stream);
   }
 }
 

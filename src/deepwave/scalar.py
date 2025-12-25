@@ -788,8 +788,10 @@ class ScalarForwardFunc(torch.autograd.Function):
         # The `aux` variable has different meanings depending on the backend.
         # On GPU, it is the device ID. On CPU, it is the number of threads to
         # use.
+        stream = 0
         if is_cuda:
             aux = v.get_device()
+            stream = torch.cuda.current_stream(aux)
         elif deepwave.backend_utils.USE_OPENMP:
             aux = min(n_shots, torch.get_num_threads())
         else:
@@ -879,6 +881,7 @@ class ScalarForwardFunc(torch.autograd.Function):
                         *pml_b,
                         *pml_e,
                         aux,
+                        stream,
                     )
                     != 0
                 ):
@@ -1155,8 +1158,10 @@ class ScalarBackwardFunc(torch.autograd.Function):
         # threads on a non-batched model), otherwise it points directly to
         # `grad_v` (e.g., for single-threaded execution or when each shot has
         # its own model and memory space).
+        stream = 0
         if is_cuda:
             aux = v.get_device()
+            stream = torch.cuda.current_stream(aux)
             if (
                 v.requires_grad
                 and not v_batched
@@ -1251,6 +1256,7 @@ class ScalarBackwardFunc(torch.autograd.Function):
                         *pml_b,
                         *pml_e,
                         aux,
+                        stream,
                     )
                     != 0
                 ):
@@ -1506,8 +1512,10 @@ class ScalarBackwardFunc(torch.autograd.Function):
             ggreceiver_amplitudes.resize_(nt, n_shots, n_ggreceivers_per_shot)
             ggreceiver_amplitudes.fill_(0)
 
+        stream = 0
         if is_cuda:
             aux = v.get_device()
+            stream = torch.cuda.current_stream(aux)
         elif deepwave.backend_utils.USE_OPENMP:
             aux = min(n_shots, torch.get_num_threads())
         else:
@@ -1572,6 +1580,7 @@ class ScalarBackwardFunc(torch.autograd.Function):
                 *pml_b,
                 *pml_e,
                 aux,
+                stream,
             )
             != 0
         ):
@@ -1671,8 +1680,10 @@ class ScalarBackwardFunc(torch.autograd.Function):
             grad_f.resize_(nt, n_shots, n_sources_per_shot)
             grad_f.fill_(0)
 
+        stream = 0
         if is_cuda:
             aux = v.get_device()
+            stream = torch.cuda.current_stream(aux)
             if (
                 v.requires_grad
                 and not v_batched
@@ -1768,6 +1779,7 @@ class ScalarBackwardFunc(torch.autograd.Function):
                 *pml_b,
                 *pml_e,
                 aux,
+                stream,
             )
             != 0
         ):

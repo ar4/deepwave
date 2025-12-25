@@ -27,7 +27,7 @@ def test_get_argtypes_scalar_forward_float():
         for t in argtypes
     )
     assert argtypes.count(ctypes.c_float) == 5  # Based on scalar_forward_template
-    assert argtypes.count(ctypes.c_void_p) == 23
+    assert argtypes.count(ctypes.c_void_p) == 25
     assert argtypes.count(ctypes.c_int64) == 14
     assert argtypes.count(ctypes.c_bool) == 3
     assert argtypes.count(ctypes.c_size_t) == 2
@@ -49,7 +49,7 @@ def test_get_argtypes_elastic_backward_double():
         for t in argtypes
     )
     assert argtypes.count(ctypes.c_double) == 3  # Based on elastic_backward_template
-    assert argtypes.count(ctypes.c_void_p) == 72
+    assert argtypes.count(ctypes.c_void_p) == 78
     assert argtypes.count(ctypes.c_int64) == 18
     assert argtypes.count(ctypes.c_bool) == 7
     assert argtypes.count(ctypes.c_size_t) == 2
