@@ -108,6 +108,14 @@
 #define SET_I int64_t const i = x
 #endif
 
+static inline int64_t get_grad_idx(
+    int64_t const *__restrict const gradient_mask_indices, int64_t i) {
+  if (gradient_mask_indices == NULL) {
+    return i;
+  }
+  return gradient_mask_indices[i];
+}
+
 #ifdef _WIN32
 __declspec(dllexport)
 #endif
@@ -473,8 +481,7 @@ __declspec(dllexport)
 
                   if (b_requires_grad_t) {
                     int64_t const grad_idx =
-                        gradient_mask_indices == NULL ? i
-                                                       : gradient_mask_indices[i];
+                        get_grad_idx(gradient_mask_indices, i);
                     if (grad_idx >= 0) {
                       bz_grad_store_1_t[grad_idx] = term_z;
                     }
@@ -501,8 +508,7 @@ __declspec(dllexport)
 
                   if (b_requires_grad_t) {
                     int64_t const grad_idx =
-                        gradient_mask_indices == NULL ? i
-                                                       : gradient_mask_indices[i];
+                        get_grad_idx(gradient_mask_indices, i);
                     if (grad_idx >= 0) {
                       by_grad_store_1_t[grad_idx] = term_y;
                     }
@@ -530,8 +536,7 @@ __declspec(dllexport)
 
                   if (b_requires_grad_t) {
                     int64_t const grad_idx =
-                        gradient_mask_indices == NULL ? i
-                                                       : gradient_mask_indices[i];
+                        get_grad_idx(gradient_mask_indices, i);
                     if (grad_idx >= 0) {
                       bx_grad_store_1_t[grad_idx] = term_x;
                     }
@@ -618,8 +623,7 @@ __declspec(dllexport)
 
                   if (k_requires_grad_t) {
                     int64_t const grad_idx =
-                        gradient_mask_indices == NULL ? i
-                                                       : gradient_mask_indices[i];
+                        get_grad_idx(gradient_mask_indices, i);
                     if (grad_idx >= 0) {
                       k_grad_store_1_t[grad_idx] = div_v;
                     }
@@ -1066,8 +1070,7 @@ __declspec(dllexport)
 
                   if (b_requires_grad_t) {
                     int64_t const grad_idx =
-                        gradient_mask_indices == NULL ? i
-                                                       : gradient_mask_indices[i];
+                        get_grad_idx(gradient_mask_indices, i);
                     if (grad_idx >= 0) {
                       grad_bz_shot[i] -=
                           dt * vz_shot[i] *
@@ -1094,8 +1097,7 @@ __declspec(dllexport)
 
                   if (b_requires_grad_t) {
                     int64_t const grad_idx =
-                        gradient_mask_indices == NULL ? i
-                                                       : gradient_mask_indices[i];
+                        get_grad_idx(gradient_mask_indices, i);
                     if (grad_idx >= 0) {
                       grad_by_shot[i] -=
                           dt * vy_shot[i] *
@@ -1123,8 +1125,7 @@ __declspec(dllexport)
 
                   if (b_requires_grad_t) {
                     int64_t const grad_idx =
-                        gradient_mask_indices == NULL ? i
-                                                       : gradient_mask_indices[i];
+                        get_grad_idx(gradient_mask_indices, i);
                     if (grad_idx >= 0) {
                       grad_bx_shot[i] -=
                           dt * vx_shot[i] *
@@ -1207,8 +1208,7 @@ __declspec(dllexport)
 
                   if (k_requires_grad_t) {
                     int64_t const grad_idx =
-                        gradient_mask_indices == NULL ? i
-                                                       : gradient_mask_indices[i];
+                        get_grad_idx(gradient_mask_indices, i);
                     if (grad_idx >= 0) {
                       grad_k_shot[i] -=
                           dt * p_shot[i] *
