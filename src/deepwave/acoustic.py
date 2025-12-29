@@ -854,7 +854,7 @@ class AcousticForwardFunc(torch.autograd.Function):
                 receiver_amplitudes[i].resize_(nt, n_shots, n_per_shot)
                 receiver_amplitudes[i].fill_(0)
 
-        stream = 0
+        stream: Union[int, torch.Stream] = 0
         if is_cuda:
             aux = models[0].get_device()
             stream = torch.cuda.current_stream(aux)
@@ -1068,7 +1068,7 @@ class AcousticForwardFunc(torch.autograd.Function):
 
         model_batched = [m.ndim == ndim + 1 and m.shape[0] > 1 for m in models[:2]]
 
-        stream = 0
+        stream: Union[int, torch.Stream] = 0
         if is_cuda:
             aux = models[0].get_device()
             stream = torch.cuda.current_stream(aux)

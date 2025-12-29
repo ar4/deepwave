@@ -99,7 +99,7 @@ class IntermediateStorage:
 
     def get_ptrs(
         self,
-    ) -> Tuple[int, int, int, int, int, int, ctypes.Array[ctypes.c_char_p]]:
+    ) -> Tuple[int, int, int, int, ctypes.Array[ctypes.c_char_p]]:
         """Return pointers to the storage and filenames array."""
         return (
             self.store_1a.data_ptr(),

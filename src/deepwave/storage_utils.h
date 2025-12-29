@@ -15,13 +15,13 @@
 extern "C" {
 #endif
 
-void storage_save_snapshot_cpu(void* store_1, void* store_2, FILE* fp,
+void storage_save_snapshot_cpu(void const* store_1, void* store_2, FILE* fp,
                                int64_t storage_mode, bool use_compression,
                                int64_t step_idx, size_t step_bytes_uncomp,
                                size_t step_bytes_comp, size_t n_elements,
                                int is_double);
 
-int storage_save_snapshot_gpu(void* store_1, void* store_2, void* store_3,
+int storage_save_snapshot_gpu(void const* store_1, void* store_2, void* store_3,
                               FILE* fp, int64_t storage_mode,
                               bool use_compression, int64_t step_idx,
                               size_t shot_bytes_uncomp, size_t shot_bytes_comp,

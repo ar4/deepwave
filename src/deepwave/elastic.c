@@ -341,13 +341,14 @@ static inline void add_pressure(
 
 static inline void record_pressure(
 #if DW_NDIM >= 3
-    DW_DTYPE const *__restrict sigmazz,
+    DW_DTYPE const *__restrict const sigmazz,
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE const *__restrict sigmayy,
+    DW_DTYPE const *__restrict const sigmayy,
 #endif
-    DW_DTYPE const *__restrict sigmaxx, int64_t const *__restrict locations,
-    DW_DTYPE *__restrict amplitudes, int64_t n) {
+    DW_DTYPE const *__restrict const sigmaxx,
+    int64_t const *__restrict const locations,
+    DW_DTYPE *__restrict const amplitudes, int64_t n) {
   int64_t i;
 #pragma omp simd
   for (i = 0; i < n; ++i) {
@@ -1231,7 +1232,7 @@ __declspec(dllexport)
 
 #define SAVE_SNAPSHOT(name, grad_cond)                                     \
   if (grad_cond) {                                                         \
-    int64_t step_idx = t / step_ratio;                                     \
+    int64_t const step_idx = t / step_ratio;                               \
     storage_save_snapshot_cpu(                                             \
         name##_store_1_t, name##_store_2_t, fp_##name, storage_mode,       \
         storage_compression, step_idx, shot_bytes_uncomp, shot_bytes_comp, \
@@ -1656,7 +1657,7 @@ __declspec(dllexport)
                    : 0)) *                                                   \
           (int64_t)shot_bytes_comp;                                          \
   if ((grad_cond) && ((t % step_ratio) == 0)) {                              \
-    int64_t step_idx = t / step_ratio;                                       \
+    int64_t const step_idx = t / step_ratio;                                 \
     storage_load_snapshot_cpu(                                               \
         (void *)name##_store_1_t, name##_store_2_t, fp_##name, storage_mode, \
         storage_compression, step_idx, shot_bytes_uncomp, shot_bytes_comp,   \

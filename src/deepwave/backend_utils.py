@@ -114,7 +114,7 @@ def get_scalar_born_forward_template(ndim: int) -> List[Any]:
     args += [c_void_p] * 4  # w_store_1a, w_store_1b, w_store_2, w_store_3
     args += [c_void_p]  # w_filenames
     args += [c_void_p] * 4  # wsc_store_1a, w_store_1b, wsc_store_2, wsc_store_3
-    args += [c_void_p]  #sc w_filenames
+    args += [c_void_p]  # sc w_filenames
     args += [c_void_p] * 2  # r, rsc
     args += [c_void_p] * (3 * ndim)  # a, b, dbdx
     args += [c_void_p] * 3  # sources_i, receivers_i, receiverssc_i

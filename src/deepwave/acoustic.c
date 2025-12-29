@@ -615,7 +615,7 @@ __declspec(dllexport)
       // Save snapshots
 #define SAVE_SNAPSHOT(name, grad_cond)                                     \
   if (grad_cond) {                                                         \
-    int64_t step_idx = t / step_ratio;                                     \
+    int64_t const step_idx = t / step_ratio;                               \
     storage_save_snapshot_cpu(                                             \
         name##_store_1_t, name##_store_2_t, fp_##name, storage_mode,       \
         storage_compression, step_idx, shot_bytes_uncomp, shot_bytes_comp, \
@@ -952,7 +952,7 @@ __declspec(dllexport)
                    : 0)) *                                                   \
           (int64_t)shot_bytes_comp;                                          \
   if ((grad_cond) && ((t % step_ratio) == 0)) {                              \
-    int64_t step_idx = t / step_ratio;                                       \
+    int64_t const step_idx = t / step_ratio;                                 \
     storage_load_snapshot_cpu(                                               \
         (void *)name##_store_1_t, name##_store_2_t, fp_##name, storage_mode, \
         storage_compression, step_idx, shot_bytes_uncomp, shot_bytes_comp,   \

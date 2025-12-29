@@ -210,8 +210,7 @@ __declspec(dllexport)
 #endif
         DW_DTYPE *__restrict const zetaxsc,
         DW_DTYPE *__restrict const w_store_1,
-        DW_DTYPE *__restrict const w_store_1b,
-	void *__restrict const w_store_2,
+        DW_DTYPE *__restrict const w_store_1b, void *__restrict const w_store_2,
         void *__restrict const w_store_3,
         char const *__restrict const *__restrict const w_filenames_ptr,
         DW_DTYPE *__restrict const wsc_store_1,
@@ -277,7 +276,7 @@ __declspec(dllexport)
 #if DW_NDIM >= 2
         int64_t const pml_y1,
 #endif
-        int64_t const pml_x1, int64_t const n_threads, void* unused) {
+        int64_t const pml_x1, int64_t const n_threads, void *unused) {
   int64_t shot;
 
 #ifdef _OPENMP
@@ -515,14 +514,14 @@ __declspec(dllexport)
 
       // Save Snapshots
       if (v_or_scatter_requires_grad_t) {
-        int64_t step_idx = t / step_ratio;
+        int64_t const step_idx = t / step_ratio;
         storage_save_snapshot_cpu(
             w_store_1_t, w_store_2_t, fp_w, storage_mode, storage_compression,
             step_idx, shot_bytes_uncomp, shot_bytes_comp, n_grid_points,
             sizeof(DW_DTYPE) == sizeof(double));
       }
       if (v_requires_grad_t) {
-        int64_t step_idx = t / step_ratio;
+        int64_t const step_idx = t / step_ratio;
         storage_save_snapshot_cpu(
             wsc_store_1_t, wsc_store_2_t, fp_wsc, storage_mode,
             storage_compression, step_idx, shot_bytes_uncomp, shot_bytes_comp,
@@ -616,8 +615,7 @@ __declspec(dllexport)
 #endif
         DW_DTYPE *__restrict const zetaxnsc,
         DW_DTYPE *__restrict const w_store_1,
-        DW_DTYPE *__restrict const w_store_1b,
-	void *__restrict const w_store_2,
+        DW_DTYPE *__restrict const w_store_1b, void *__restrict const w_store_2,
         void *__restrict const w_store_3,
         char const *__restrict const *__restrict const w_filenames_ptr,
         DW_DTYPE *__restrict const wsc_store_1,
@@ -826,7 +824,7 @@ __declspec(dllexport)
           scatter_requires_grad && ((t % step_ratio) == 0);
 
       if (v_requires_grad_t || scatter_requires_grad_t) {
-        int64_t step_idx = t / step_ratio;
+        int64_t const step_idx = t / step_ratio;
         storage_load_snapshot_cpu(
             w_store_1_t, w_store_2_t, fp_w, storage_mode, storage_compression,
             step_idx, shot_bytes_uncomp, shot_bytes_comp, n_grid_points,
@@ -834,7 +832,7 @@ __declspec(dllexport)
       }
 
       if (v_requires_grad_t) {
-        int64_t step_idx = t / step_ratio;
+        int64_t const step_idx = t / step_ratio;
         storage_load_snapshot_cpu(
             wsc_store_1_t, wsc_store_2_t, fp_wsc, storage_mode,
             storage_compression, step_idx, shot_bytes_uncomp, shot_bytes_comp,
@@ -1028,8 +1026,7 @@ __declspec(dllexport)
 #endif
         DW_DTYPE *__restrict const zetaxnsc,
         DW_DTYPE *__restrict const w_store_1,
-        DW_DTYPE *__restrict const w_store_1b,
-	void *__restrict const w_store_2,
+        DW_DTYPE *__restrict const w_store_1b, void *__restrict const w_store_2,
         void *__restrict const w_store_3,
         char const *__restrict const *__restrict const w_filenames_ptr,
         DW_DTYPE *__restrict const grad_fsc,
@@ -1180,7 +1177,7 @@ __declspec(dllexport)
           scatter_requires_grad && ((t % step_ratio) == 0);
 
       if (scatter_requires_grad_t) {
-        int64_t step_idx = t / step_ratio;
+        int64_t const step_idx = t / step_ratio;
         storage_load_snapshot_cpu(
             w_store_1_t, w_store_2_t, fp_w, storage_mode, storage_compression,
             step_idx, shot_bytes_uncomp, shot_bytes_comp, n_grid_points,

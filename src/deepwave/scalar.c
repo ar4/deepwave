@@ -167,8 +167,8 @@ __declspec(dllexport)
         DW_DTYPE *__restrict const zetay,
 #endif
         DW_DTYPE *__restrict const zetax, DW_DTYPE *__restrict const w_store_1,
-	DW_DTYPE *__restrict const w_store_1b,
-        void *__restrict const w_store_2, void *__restrict const w_store_3,
+        DW_DTYPE *__restrict const w_store_1b, void *__restrict const w_store_2,
+        void *__restrict const w_store_3,
         char const *__restrict const *__restrict const w_filenames_ptr,
         DW_DTYPE *__restrict const r,
 #if DW_NDIM >= 3
@@ -394,7 +394,7 @@ __declspec(dllexport)
           }
 
       if (v_requires_grad_t) {
-        int64_t step_idx = t / step_ratio;
+        int64_t const step_idx = t / step_ratio;
         storage_save_snapshot_cpu(
             w_store_1_t, w_store_2_t, fp_w, storage_mode, storage_compression,
             step_idx, shot_bytes_uncomp, shot_bytes_comp, n_grid_points,
@@ -448,8 +448,8 @@ __declspec(dllexport)
         DW_DTYPE *__restrict const zetayn,
 #endif
         DW_DTYPE *__restrict const zetaxn, DW_DTYPE *__restrict const w_store_1,
-	DW_DTYPE *__restrict const w_store_1b,
-        void *__restrict const w_store_2, void *__restrict const w_store_3,
+        DW_DTYPE *__restrict const w_store_1b, void *__restrict const w_store_2,
+        void *__restrict const w_store_3,
         char const *__restrict const *__restrict const w_filenames_ptr,
         DW_DTYPE *__restrict const grad_f, DW_DTYPE *__restrict const grad_v,
         DW_DTYPE *__restrict const grad_v_thread,
@@ -586,7 +586,7 @@ __declspec(dllexport)
       bool const v_requires_grad_t = v_requires_grad && ((t % step_ratio) == 0);
 
       if (v_requires_grad_t) {
-        int64_t step_idx = t / step_ratio;
+        int64_t const step_idx = t / step_ratio;
         storage_load_snapshot_cpu(
             w_store_1_t, w_store_2_t, fp_w, storage_mode, storage_compression,
             step_idx, shot_bytes_uncomp, shot_bytes_comp, n_grid_points,

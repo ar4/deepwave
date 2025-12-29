@@ -220,10 +220,10 @@ __launch_bounds__(32) __global__
                           DW_DTYPE const *__restrict const f,
                           DW_DTYPE const *__restrict const fsc,
                           int64_t const *__restrict const sources_i) {
-  int64_t source_idx = blockIdx.x * blockDim.x + threadIdx.x;
-  int64_t shot_idx = blockIdx.y * blockDim.y + threadIdx.y;
+  int64_t const source_idx = blockIdx.x * blockDim.x + threadIdx.x;
+  int64_t const shot_idx = blockIdx.y * blockDim.y + threadIdx.y;
   if (source_idx < n_sources_per_shot && shot_idx < n_shots) {
-    int64_t k = shot_idx * n_sources_per_shot + source_idx;
+    int64_t const k = shot_idx * n_sources_per_shot + source_idx;
     if (0 <= sources_i[k]) {
       wf[shot_idx * shot_numel + sources_i[k]] += f[k];
       wfsc[shot_idx * shot_numel + sources_i[k]] += fsc[k];
@@ -235,10 +235,10 @@ __launch_bounds__(32) __global__
     void add_adjoint_sources(DW_DTYPE *__restrict const wf,
                              DW_DTYPE const *__restrict const f,
                              int64_t const *__restrict const sources_i) {
-  int64_t source_idx = blockIdx.x * blockDim.x + threadIdx.x;
-  int64_t shot_idx = blockIdx.y * blockDim.y + threadIdx.y;
+  int64_t const source_idx = blockIdx.x * blockDim.x + threadIdx.x;
+  int64_t const shot_idx = blockIdx.y * blockDim.y + threadIdx.y;
   if (source_idx < n_receivers_per_shot && shot_idx < n_shots) {
-    int64_t k = shot_idx * n_receivers_per_shot + source_idx;
+    int64_t const k = shot_idx * n_receivers_per_shot + source_idx;
     if (0 <= sources_i[k]) wf[shot_idx * shot_numel + sources_i[k]] += f[k];
   }
 }
@@ -247,10 +247,10 @@ __launch_bounds__(32) __global__
     void add_adjoint_sourcessc(DW_DTYPE *__restrict const wf,
                                DW_DTYPE const *__restrict const f,
                                int64_t const *__restrict const sources_i) {
-  int64_t source_idx = blockIdx.x * blockDim.x + threadIdx.x;
-  int64_t shot_idx = blockIdx.y * blockDim.y + threadIdx.y;
+  int64_t const source_idx = blockIdx.x * blockDim.x + threadIdx.x;
+  int64_t const shot_idx = blockIdx.y * blockDim.y + threadIdx.y;
   if (source_idx < n_receiverssc_per_shot && shot_idx < n_shots) {
-    int64_t k = shot_idx * n_receiverssc_per_shot + source_idx;
+    int64_t const k = shot_idx * n_receiverssc_per_shot + source_idx;
     if (0 <= sources_i[k]) wf[shot_idx * shot_numel + sources_i[k]] += f[k];
   }
 }
@@ -259,10 +259,10 @@ __launch_bounds__(32) __global__
     void record_receivers(DW_DTYPE *__restrict const r,
                           DW_DTYPE const *__restrict const wf,
                           int64_t const *__restrict receivers_i) {
-  int64_t receiver_idx = blockIdx.x * blockDim.x + threadIdx.x;
-  int64_t shot_idx = blockIdx.y * blockDim.y + threadIdx.y;
+  int64_t const receiver_idx = blockIdx.x * blockDim.x + threadIdx.x;
+  int64_t const shot_idx = blockIdx.y * blockDim.y + threadIdx.y;
   if (receiver_idx < n_receivers_per_shot && shot_idx < n_shots) {
-    int64_t k = shot_idx * n_receivers_per_shot + receiver_idx;
+    int64_t const k = shot_idx * n_receivers_per_shot + receiver_idx;
     if (0 <= receivers_i[k]) r[k] = wf[shot_idx * shot_numel + receivers_i[k]];
   }
 }
@@ -272,10 +272,10 @@ __launch_bounds__(32) __global__
     void record_receiverssc(DW_DTYPE *__restrict const r,
                             DW_DTYPE const *__restrict const wf,
                             int64_t const *__restrict receivers_i) {
-  int64_t receiver_idx = blockIdx.x * blockDim.x + threadIdx.x;
-  int64_t shot_idx = blockIdx.y * blockDim.y + threadIdx.y;
+  int64_t const receiver_idx = blockIdx.x * blockDim.x + threadIdx.x;
+  int64_t const shot_idx = blockIdx.y * blockDim.y + threadIdx.y;
   if (receiver_idx < n_receiverssc_per_shot && shot_idx < n_shots) {
-    int64_t k = shot_idx * n_receiverssc_per_shot + receiver_idx;
+    int64_t const k = shot_idx * n_receiverssc_per_shot + receiver_idx;
     if (0 <= receivers_i[k]) r[k] = wf[shot_idx * shot_numel + receivers_i[k]];
   }
 }
@@ -286,10 +286,10 @@ __launch_bounds__(32) __global__
     void record_adjoint_receivers(DW_DTYPE *__restrict const r,
                                   DW_DTYPE const *__restrict const wf,
                                   int64_t const *__restrict receivers_i) {
-  int64_t receiver_idx = blockIdx.x * blockDim.x + threadIdx.x;
-  int64_t shot_idx = blockIdx.y * blockDim.y + threadIdx.y;
+  int64_t const receiver_idx = blockIdx.x * blockDim.x + threadIdx.x;
+  int64_t const shot_idx = blockIdx.y * blockDim.y + threadIdx.y;
   if (receiver_idx < n_sources_per_shot && shot_idx < n_shots) {
-    int64_t k = shot_idx * n_sources_per_shot + receiver_idx;
+    int64_t const k = shot_idx * n_sources_per_shot + receiver_idx;
     if (0 <= receivers_i[k]) r[k] = wf[shot_idx * shot_numel + receivers_i[k]];
   }
 }
@@ -298,10 +298,10 @@ __launch_bounds__(32) __global__
     void record_adjoint_receiverssc(DW_DTYPE *__restrict const rsc,
                                     DW_DTYPE const *__restrict const wfsc,
                                     int64_t const *__restrict receivers_i) {
-  int64_t receiver_idx = blockIdx.x * blockDim.x + threadIdx.x;
-  int64_t shot_idx = blockIdx.y * blockDim.y + threadIdx.y;
+  int64_t const receiver_idx = blockIdx.x * blockDim.x + threadIdx.x;
+  int64_t const shot_idx = blockIdx.y * blockDim.y + threadIdx.y;
   if (receiver_idx < n_sourcessc_per_shot && shot_idx < n_shots) {
-    int64_t k = shot_idx * n_sourcessc_per_shot + receiver_idx;
+    int64_t const k = shot_idx * n_sourcessc_per_shot + receiver_idx;
     if (0 <= receivers_i[k])
       rsc[k] = wfsc[shot_idx * shot_numel + receivers_i[k]];
   }
@@ -312,28 +312,28 @@ __launch_bounds__(128) __global__
     void combine_grad(DW_DTYPE *__restrict const grad,
                       DW_DTYPE const *__restrict const grad_shot) {
 #if DW_NDIM == 3
-  int64_t x = blockIdx.x * blockDim.x + threadIdx.x + FD_PAD;
-  int64_t y = blockIdx.y * blockDim.y + threadIdx.y + FD_PAD;
-  int64_t z = blockIdx.z * blockDim.z + threadIdx.z + FD_PAD;
+  int64_t const x = blockIdx.x * blockDim.x + threadIdx.x + FD_PAD;
+  int64_t const y = blockIdx.y * blockDim.y + threadIdx.y + FD_PAD;
+  int64_t const z = blockIdx.z * blockDim.z + threadIdx.z + FD_PAD;
   if (z < nz - FD_PAD && y < ny - FD_PAD && x < nx - FD_PAD) {
-    int64_t i = z * ny * nx + y * nx + x;
+    int64_t const i = z * ny * nx + y * nx + x;
     for (int64_t shot_idx = 0; shot_idx < n_shots; ++shot_idx) {
       grad[i] += grad_shot[shot_idx * shot_numel + i];
     }
   }
 #elif DW_NDIM == 2
-  int64_t x = blockIdx.x * blockDim.x + threadIdx.x + FD_PAD;
-  int64_t y = blockIdx.y * blockDim.y + threadIdx.y + FD_PAD;
+  int64_t const x = blockIdx.x * blockDim.x + threadIdx.x + FD_PAD;
+  int64_t const y = blockIdx.y * blockDim.y + threadIdx.y + FD_PAD;
   if (y < ny - FD_PAD && x < nx - FD_PAD) {
-    int64_t i = y * nx + x;
+    int64_t const i = y * nx + x;
     for (int64_t shot_idx = 0; shot_idx < n_shots; ++shot_idx) {
       grad[i] += grad_shot[shot_idx * shot_numel + i];
     }
   }
 #else /* DW_NDIM == 1 */
-  int64_t x = blockIdx.x * blockDim.x + threadIdx.x + FD_PAD;
+  int64_t const x = blockIdx.x * blockDim.x + threadIdx.x + FD_PAD;
   if (x < nx - FD_PAD) {
-    int64_t i = x;
+    int64_t const i = x;
     for (int64_t shot_idx = 0; shot_idx < n_shots; ++shot_idx) {
       grad[i] += grad_shot[shot_idx * shot_numel + i];
     }
@@ -396,25 +396,25 @@ __launch_bounds__(128) __global__ void forward_kernel(
     DW_DTYPE const *__restrict const dbxdx, bool const store_w,
     bool const store_wsc) {
 #if DW_NDIM == 3
-  int64_t x = blockIdx.x * blockDim.x + threadIdx.x + FD_PAD;
-  int64_t y = blockIdx.y * blockDim.y + threadIdx.y + FD_PAD;
-  int64_t z = blockIdx.z * blockDim.z + threadIdx.z + FD_PAD;
+  int64_t const x = blockIdx.x * blockDim.x + threadIdx.x + FD_PAD;
+  int64_t const y = blockIdx.y * blockDim.y + threadIdx.y + FD_PAD;
+  int64_t const z = blockIdx.z * blockDim.z + threadIdx.z + FD_PAD;
   if (z < nz - FD_PAD && y < ny - FD_PAD && x < nx - FD_PAD) {
+    int64_t const j = z * ny * nx + y * nx + x;
     for (int64_t shot_idx = 0; shot_idx < n_shots; ++shot_idx) {
-      int64_t j = z * ny * nx + y * nx + x;
 #elif DW_NDIM == 2
-  int64_t x = blockIdx.x * blockDim.x + threadIdx.x + FD_PAD;
-  int64_t y = blockIdx.y * blockDim.y + threadIdx.y + FD_PAD;
-  int64_t shot_idx = blockIdx.z * blockDim.z + threadIdx.z;
+  int64_t const x = blockIdx.x * blockDim.x + threadIdx.x + FD_PAD;
+  int64_t const y = blockIdx.y * blockDim.y + threadIdx.y + FD_PAD;
+  int64_t const shot_idx = blockIdx.z * blockDim.z + threadIdx.z;
   if (y < ny - FD_PAD && x < nx - FD_PAD && shot_idx < n_shots) {
-    int64_t j = y * nx + x;
+    int64_t const j = y * nx + x;
 #else /* DW_NDIM == 1 */
-  int64_t x = blockIdx.x * blockDim.x + threadIdx.x + FD_PAD;
-  int64_t shot_idx = blockIdx.y * blockDim.y + threadIdx.y;
+  int64_t const x = blockIdx.x * blockDim.x + threadIdx.x + FD_PAD;
+  int64_t const shot_idx = blockIdx.y * blockDim.y + threadIdx.y;
   if (x < nx - FD_PAD && shot_idx < n_shots) {
-    int64_t j = x;
+    int64_t const j = x;
 #endif
-      int64_t i = shot_idx * shot_numel + j;
+      int64_t const i = shot_idx * shot_numel + j;
       // Select velocity and scatter arrays for this shot (batched or shared)
       DW_DTYPE const *__restrict const v_shot =
           v_batched ? v + shot_idx * shot_numel : v;
@@ -423,7 +423,7 @@ __launch_bounds__(128) __global__ void forward_kernel(
       DW_DTYPE w_sum = 0, wsc_sum = 0;
 
 #if DW_NDIM >= 3
-      bool pml_z = z < pml_z0 || z >= pml_z1;
+      bool const pml_z = z < pml_z0 || z >= pml_z1;
       if (!pml_z) {
         w_sum += DIFFZ2(WFC);
         wsc_sum += DIFFZ2(WFCSC);
@@ -443,7 +443,7 @@ __launch_bounds__(128) __global__ void forward_kernel(
       }
 #endif
 #if DW_NDIM >= 2
-      bool pml_y = y < pml_y0 || y >= pml_y1;
+      bool const pml_y = y < pml_y0 || y >= pml_y1;
       if (!pml_y) {
         // Central region: standard finite difference for y-derivative
         w_sum += DIFFY2(WFC);
@@ -464,7 +464,7 @@ __launch_bounds__(128) __global__ void forward_kernel(
         zetaysc[i] = by[y] * tmpysc + ay[y] * zetaysc[i];
       }
 #endif
-      bool pml_x = x < pml_x0 || x >= pml_x1;
+      bool const pml_x = x < pml_x0 || x >= pml_x1;
       if (!pml_x) {
         // Central region: standard finite difference for x-derivative
         w_sum += DIFFX2(WFC);
@@ -547,37 +547,37 @@ __launch_bounds__(128) __global__ void backward_kernel(
     DW_DTYPE const *__restrict const dbxdx, bool const v_requires_grad,
     bool const scatter_requires_grad) {
 #if DW_NDIM == 3
-  int64_t x = blockIdx.x * blockDim.x + threadIdx.x + FD_PAD;
-  int64_t y = blockIdx.y * blockDim.y + threadIdx.y + FD_PAD;
-  int64_t z = blockIdx.z * blockDim.z + threadIdx.z + FD_PAD;
+  int64_t const x = blockIdx.x * blockDim.x + threadIdx.x + FD_PAD;
+  int64_t const y = blockIdx.y * blockDim.y + threadIdx.y + FD_PAD;
+  int64_t const z = blockIdx.z * blockDim.z + threadIdx.z + FD_PAD;
   if (z < nz - FD_PAD && y < ny - FD_PAD && x < nx - FD_PAD) {
+    int64_t const j = z * ny * nx + y * nx + x;
     for (int64_t shot_idx = 0; shot_idx < n_shots; ++shot_idx) {
-      int64_t j = z * ny * nx + y * nx + x;
 #elif DW_NDIM == 2
-  int64_t x = blockIdx.x * blockDim.x + threadIdx.x + FD_PAD;
-  int64_t y = blockIdx.y * blockDim.y + threadIdx.y + FD_PAD;
-  int64_t shot_idx = blockIdx.z * blockDim.z + threadIdx.z;
+  int64_t const x = blockIdx.x * blockDim.x + threadIdx.x + FD_PAD;
+  int64_t const y = blockIdx.y * blockDim.y + threadIdx.y + FD_PAD;
+  int64_t const shot_idx = blockIdx.z * blockDim.z + threadIdx.z;
   if (y < ny - FD_PAD && x < nx - FD_PAD && shot_idx < n_shots) {
-    int64_t j = y * nx + x;
+    int64_t const j = y * nx + x;
 #else /* DW_NDIM == 1 */
-  int64_t x = blockIdx.x * blockDim.x + threadIdx.x + FD_PAD;
-  int64_t shot_idx = blockIdx.y * blockDim.y + threadIdx.y;
+  int64_t const x = blockIdx.x * blockDim.x + threadIdx.x + FD_PAD;
+  int64_t const shot_idx = blockIdx.y * blockDim.y + threadIdx.y;
   if (x < nx - FD_PAD && shot_idx < n_shots) {
-    int64_t j = x;
+    int64_t const j = x;
 #endif
-      int64_t i = shot_idx * shot_numel + j;
+      int64_t const i = shot_idx * shot_numel + j;
       // Select velocity and scatter arrays for this shot (batched or shared)
       DW_DTYPE const *__restrict const v_shot =
           v_batched ? v + shot_idx * shot_numel : v;
       DW_DTYPE const *__restrict const scatter_shot =
           scatter_batched ? scatter + shot_idx * shot_numel : scatter;
 #if DW_NDIM >= 3
-      bool pml_z = z < pml_z0 || z >= pml_z1;
+      bool const pml_z = z < pml_z0 || z >= pml_z1;
 #endif
 #if DW_NDIM >= 2
-      bool pml_y = y < pml_y0 || y >= pml_y1;
+      bool const pml_y = y < pml_y0 || y >= pml_y1;
 #endif
-      bool pml_x = x < pml_x0 || x >= pml_x1;
+      bool const pml_x = x < pml_x0 || x >= pml_x1;
       // Update background and scattered wavefields for next time step
       // (adjoint/backward)
       DW_DTYPE w_sum = 0, wsc_sum = 0;
@@ -680,35 +680,35 @@ __launch_bounds__(128) __global__ void backward_kernel_sc(
     DW_DTYPE const *__restrict const ax, DW_DTYPE const *__restrict const bx,
     DW_DTYPE const *__restrict const dbxdx, bool const scatter_requires_grad) {
 #if DW_NDIM == 3
-  int64_t x = blockIdx.x * blockDim.x + threadIdx.x + FD_PAD;
-  int64_t y = blockIdx.y * blockDim.y + threadIdx.y + FD_PAD;
-  int64_t z = blockIdx.z * blockDim.z + threadIdx.z + FD_PAD;
+  int64_t const x = blockIdx.x * blockDim.x + threadIdx.x + FD_PAD;
+  int64_t const y = blockIdx.y * blockDim.y + threadIdx.y + FD_PAD;
+  int64_t const z = blockIdx.z * blockDim.z + threadIdx.z + FD_PAD;
   if (z < nz - FD_PAD && y < ny - FD_PAD && x < nx - FD_PAD) {
+    int64_t const j = z * ny * nx + y * nx + x;
     for (int64_t shot_idx = 0; shot_idx < n_shots; ++shot_idx) {
-      int64_t j = z * ny * nx + y * nx + x;
 #elif DW_NDIM == 2
-  int64_t x = blockIdx.x * blockDim.x + threadIdx.x + FD_PAD;
-  int64_t y = blockIdx.y * blockDim.y + threadIdx.y + FD_PAD;
-  int64_t shot_idx = blockIdx.z * blockDim.z + threadIdx.z;
+  int64_t const x = blockIdx.x * blockDim.x + threadIdx.x + FD_PAD;
+  int64_t const y = blockIdx.y * blockDim.y + threadIdx.y + FD_PAD;
+  int64_t const shot_idx = blockIdx.z * blockDim.z + threadIdx.z;
   if (y < ny - FD_PAD && x < nx - FD_PAD && shot_idx < n_shots) {
-    int64_t j = y * nx + x;
+    int64_t const j = y * nx + x;
 #else /* DW_NDIM == 1 */
-  int64_t x = blockIdx.x * blockDim.x + threadIdx.x + FD_PAD;
-  int64_t shot_idx = blockIdx.y * blockDim.y + threadIdx.y;
+  int64_t const x = blockIdx.x * blockDim.x + threadIdx.x + FD_PAD;
+  int64_t const shot_idx = blockIdx.y * blockDim.y + threadIdx.y;
   if (x < nx - FD_PAD && shot_idx < n_shots) {
-    int64_t j = x;
+    int64_t const j = x;
 #endif
-      int64_t i = shot_idx * shot_numel + j;
+      int64_t const i = shot_idx * shot_numel + j;
       // Select velocity array for this shot (batched or shared)
       DW_DTYPE const *__restrict const v_shot =
           v_batched ? v + shot_idx * shot_numel : v;
 #if DW_NDIM >= 3
-      bool pml_z = z < pml_z0 || z >= pml_z1;
+      bool const pml_z = z < pml_z0 || z >= pml_z1;
 #endif
 #if DW_NDIM >= 2
-      bool pml_y = y < pml_y0 || y >= pml_y1;
+      bool const pml_y = y < pml_y0 || y >= pml_y1;
 #endif
-      bool pml_x = x < pml_x0 || x >= pml_x1;
+      bool const pml_x = x < pml_x0 || x >= pml_x1;
       // Update scattered wavefield for next time step (adjoint/backward)
       DW_DTYPE wsc_sum = 0;
 #if DW_NDIM >= 3
@@ -935,46 +935,50 @@ extern "C"
 #if DW_NDIM >= 2
             int64_t const pml_y1_h,
 #endif
-            int64_t const pml_x1_h, int64_t const device, cudaStream_t stream_compute) {
+            int64_t const pml_x1_h, int64_t const device,
+            cudaStream_t stream_compute) {
   // --- CUDA kernel launch configuration ---
 #if DW_NDIM == 3
-  dim3 dimBlock(32, 4, 1);
-  unsigned int gridx = ceil_div(nx_h - 2 * FD_PAD, dimBlock.x);
-  unsigned int gridy = ceil_div(ny_h - 2 * FD_PAD, dimBlock.y);
-  unsigned int gridz = ceil_div(nz_h - 2 * FD_PAD, dimBlock.z);
+  dim3 const dimBlock(32, 4, 1);
+  unsigned int const gridx = ceil_div(nx_h - 2 * FD_PAD, dimBlock.x);
+  unsigned int const gridy = ceil_div(ny_h - 2 * FD_PAD, dimBlock.y);
+  unsigned int const gridz = ceil_div(nz_h - 2 * FD_PAD, dimBlock.z);
 #elif DW_NDIM == 2
-  dim3 dimBlock(32, 4, 1);
-  unsigned int gridx = ceil_div(nx_h - 2 * FD_PAD, dimBlock.x);
-  unsigned int gridy = ceil_div(ny_h - 2 * FD_PAD, dimBlock.y);
-  unsigned int gridz = ceil_div(n_shots_h, dimBlock.z);
+  dim3 const dimBlock(32, 4, 1);
+  unsigned int const gridx = ceil_div(nx_h - 2 * FD_PAD, dimBlock.x);
+  unsigned int const gridy = ceil_div(ny_h - 2 * FD_PAD, dimBlock.y);
+  unsigned int const gridz = ceil_div(n_shots_h, dimBlock.z);
 #else /* DW_NDIM == 1 */
-  dim3 dimBlock(128, 1, 1);
-  unsigned int gridx = ceil_div(nx_h - 2 * FD_PAD, dimBlock.x);
-  unsigned int gridy = ceil_div(n_shots_h, dimBlock.y);
-  unsigned int gridz = 1;
+  dim3 const dimBlock(128, 1, 1);
+  unsigned int const gridx = ceil_div(nx_h - 2 * FD_PAD, dimBlock.x);
+  unsigned int const gridy = ceil_div(n_shots_h, dimBlock.y);
+  unsigned int const gridz = 1;
 #endif
-  dim3 dimGrid(gridx, gridy, gridz);
+  dim3 const dimGrid(gridx, gridy, gridz);
 
   // For source and receiver operations
-  dim3 dimBlock_sources(32, 1, 1);
-  unsigned int gridx_sources =
+  dim3 const dimBlock_sources(32, 1, 1);
+  unsigned int const gridx_sources =
       ceil_div(n_sources_per_shot_h, dimBlock_sources.x);
-  unsigned int gridy_sources = ceil_div(n_shots_h, dimBlock_sources.y);
-  unsigned int gridz_sources = 1;
-  dim3 dimGrid_sources(gridx_sources, gridy_sources, gridz_sources);
-  dim3 dimBlock_receivers(32, 1, 1);
-  unsigned int gridx_receivers =
+  unsigned int const gridy_sources = ceil_div(n_shots_h, dimBlock_sources.y);
+  unsigned int const gridz_sources = 1;
+  dim3 const dimGrid_sources(gridx_sources, gridy_sources, gridz_sources);
+  dim3 const dimBlock_receivers(32, 1, 1);
+  unsigned int const gridx_receivers =
       ceil_div(n_receivers_per_shot_h, dimBlock_receivers.x);
-  unsigned int gridy_receivers = ceil_div(n_shots_h, dimBlock_receivers.y);
-  unsigned int gridz_receivers = 1;
-  dim3 dimGrid_receivers(gridx_receivers, gridy_receivers, gridz_receivers);
-  dim3 dimBlock_receiverssc(32, 1, 1);
-  unsigned int gridx_receiverssc =
+  unsigned int const gridy_receivers =
+      ceil_div(n_shots_h, dimBlock_receivers.y);
+  unsigned int const gridz_receivers = 1;
+  dim3 const dimGrid_receivers(gridx_receivers, gridy_receivers,
+                               gridz_receivers);
+  dim3 const dimBlock_receiverssc(32, 1, 1);
+  unsigned int const gridx_receiverssc =
       ceil_div(n_receiverssc_per_shot_h, dimBlock_receiverssc.x);
-  unsigned int gridy_receiverssc = ceil_div(n_shots_h, dimBlock_receiverssc.y);
-  unsigned int gridz_receiverssc = 1;
-  dim3 dimGrid_receiverssc(gridx_receiverssc, gridy_receiverssc,
-                           gridz_receiverssc);
+  unsigned int const gridy_receiverssc =
+      ceil_div(n_shots_h, dimBlock_receiverssc.y);
+  unsigned int const gridz_receiverssc = 1;
+  dim3 const dimGrid_receiverssc(gridx_receiverssc, gridy_receiverssc,
+                                 gridz_receiverssc);
 
 #if DW_NDIM == 3
   int64_t const shot_numel_h = nz_h * ny_h * nx_h;
@@ -1001,8 +1005,9 @@ extern "C"
   }
 
   bool const use_double_buffering =
-    ((storage_mode == STORAGE_DEVICE && storage_compression) ||
-    storage_mode == STORAGE_CPU) && (v_requires_grad || scatter_requires_grad);
+      ((storage_mode == STORAGE_DEVICE && storage_compression) ||
+       storage_mode == STORAGE_CPU) &&
+      (v_requires_grad || scatter_requires_grad);
 
   ScopedStream stream_storage;
   ScopedEvent event_storage_done_a, event_storage_done_b, event_compute_done_a,
@@ -1031,22 +1036,22 @@ extern "C"
     if (v_requires_grad) fp_wsc.open(wsc_filenames_ptr[0], "ab");
   }
 
-
   // --- Time-stepping loop for forward propagation ---
   // Alternates between wfc/wfp and wfp/wfc for memory efficiency
   for (t = start_t; t < start_t + nt; ++t) {
-    bool store_step = ((t % step_ratio_h) == 0);
-    bool store_w = store_step && (v_requires_grad || scatter_requires_grad);
-    bool store_wsc = store_step && v_requires_grad;
-    int64_t step_idx = t / step_ratio_h;
+    bool const store_step = ((t % step_ratio_h) == 0);
+    bool const store_w =
+        store_step && (v_requires_grad || scatter_requires_grad);
+    bool const store_wsc = store_step && v_requires_grad;
+    int64_t const step_idx = t / step_ratio_h;
     DW_DTYPE *__restrict w_store_1_t =
         w_store_1a + (storage_mode == STORAGE_DEVICE && !storage_compression
-                         ? (t / step_ratio_h) * shot_numel_h * n_shots_h
-                         : 0);
+                          ? (t / step_ratio_h) * shot_numel_h * n_shots_h
+                          : 0);
     DW_DTYPE *__restrict wsc_store_1_t =
         wsc_store_1a + (storage_mode == STORAGE_DEVICE && !storage_compression
-                           ? (t / step_ratio_h) * shot_numel_h * n_shots_h
-                           : 0);
+                            ? (t / step_ratio_h) * shot_numel_h * n_shots_h
+                            : 0);
     cudaEvent_t event_compute_done = event_compute_done_a;
     event_storage_done = event_storage_done_a;
 
@@ -1092,34 +1097,34 @@ extern "C"
                    n_shots_h
              : 0);
 
-    forward_kernel<<<dimGrid, dimBlock, 0, stream_compute>>>(v, scatter, wfc, wfp,
+    forward_kernel<<<dimGrid, dimBlock, 0, stream_compute>>>(
+        v, scatter, wfc, wfp,
 #if DW_NDIM >= 3
-                                          psiz, psizn, zetaz,
+        psiz, psizn, zetaz,
 #endif
 #if DW_NDIM >= 2
-                                          psiy, psiyn, zetay,
+        psiy, psiyn, zetay,
 #endif
-                                          psix, psixn, zetax, wfcsc, wfpsc,
+        psix, psixn, zetax, wfcsc, wfpsc,
 #if DW_NDIM >= 3
-                                          psizsc, psiznsc, zetazsc,
+        psizsc, psiznsc, zetazsc,
 #endif
 #if DW_NDIM >= 2
-                                          psiysc, psiynsc, zetaysc,
+        psiysc, psiynsc, zetaysc,
 #endif
-                                          psixsc, psixnsc, zetaxsc, w_store_1_t,
-                                          wsc_store_1_t,
+        psixsc, psixnsc, zetaxsc, w_store_1_t, wsc_store_1_t,
 #if DW_NDIM >= 3
-                                          az, bz, dbzdz,
+        az, bz, dbzdz,
 #endif
 #if DW_NDIM >= 2
-                                          ay, by, dbydy,
+        ay, by, dbydy,
 #endif
-                                          ax, bx, dbxdx, store_w, store_wsc);
+        ax, bx, dbxdx, store_w, store_wsc);
     CHECK_KERNEL_ERROR
 
     if ((store_w || store_wsc) && use_double_buffering) {
-        gpuErrchk(cudaEventRecord(event_compute_done, stream_compute));
-        gpuErrchk(cudaStreamWaitEvent(stream_storage, event_compute_done, 0));
+      gpuErrchk(cudaEventRecord(event_compute_done, stream_compute));
+      gpuErrchk(cudaStreamWaitEvent(stream_storage, event_compute_done, 0));
     }
 
     if (store_w) {
@@ -1140,25 +1145,28 @@ extern "C"
     }
 
     if ((store_w || store_wsc) && use_double_buffering) {
-        gpuErrchk(cudaEventRecord(event_storage_done, stream_storage));
-      }
+      gpuErrchk(cudaEventRecord(event_storage_done, stream_storage));
+    }
 
     // Add sources to both background and scattered wavefields
     if (n_sources_per_shot_h > 0) {
-      add_sources_both<<<dimGrid_sources, dimBlock_sources, 0, stream_compute>>>(
+      add_sources_both<<<dimGrid_sources, dimBlock_sources, 0,
+                         stream_compute>>>(
           wfp, wfpsc, f + t * n_shots_h * n_sources_per_shot_h,
           fsc + t * n_shots_h * n_sources_per_shot_h, sources_i);
       CHECK_KERNEL_ERROR
     }
     // Record background wavefield at receiver locations
     if (n_receivers_per_shot_h > 0) {
-      record_receivers<<<dimGrid_receivers, dimBlock_receivers, 0, stream_compute>>>(
+      record_receivers<<<dimGrid_receivers, dimBlock_receivers, 0,
+                         stream_compute>>>(
           r + t * n_shots_h * n_receivers_per_shot_h, wfc, receivers_i);
       CHECK_KERNEL_ERROR
     }
     // Record scattered wavefield at receiver locations
     if (n_receiverssc_per_shot_h > 0) {
-      record_receiverssc<<<dimGrid_receiverssc, dimBlock_receiverssc, 0, stream_compute>>>(
+      record_receiverssc<<<dimGrid_receiverssc, dimBlock_receiverssc, 0,
+                           stream_compute>>>(
           rsc + t * n_shots_h * n_receiverssc_per_shot_h, wfcsc, receiverssc_i);
       CHECK_KERNEL_ERROR
     }
@@ -1176,7 +1184,8 @@ extern "C"
     std::swap(psixsc, psixnsc);
   }
 
-  if (use_double_buffering) gpuErrchk(cudaStreamWaitEvent(stream_compute, event_storage_done, 0));
+  if (use_double_buffering)
+    gpuErrchk(cudaStreamWaitEvent(stream_compute, event_storage_done, 0));
   return 0;
 }
 
@@ -1263,8 +1272,8 @@ extern "C"
             DW_DTYPE *__restrict zetaynsc,
 #endif
             DW_DTYPE *__restrict zetaxnsc,
-	    DW_DTYPE *__restrict const w_store_1a,
-	    DW_DTYPE *__restrict const w_store_1b,
+            DW_DTYPE *__restrict const w_store_1a,
+            DW_DTYPE *__restrict const w_store_1b,
             void *__restrict const w_store_2, void *__restrict const w_store_3,
             char const *__restrict const *__restrict const w_filenames_ptr,
             DW_DTYPE *__restrict const wsc_store_1a,
@@ -1337,69 +1346,81 @@ extern "C"
 #if DW_NDIM >= 2
             int64_t const pml_y1_h,
 #endif
-            int64_t const pml_x1_h, int64_t const device, cudaStream_t stream_compute) {
+            int64_t const pml_x1_h, int64_t const device,
+            cudaStream_t stream_compute) {
 #if DW_NDIM == 3
-  dim3 dimBlock(32, 4, 1);
-  unsigned int gridx = ceil_div(nx_h - 2 * FD_PAD, dimBlock.x);
-  unsigned int gridy = ceil_div(ny_h - 2 * FD_PAD, dimBlock.y);
-  unsigned int gridz = ceil_div(nz_h - 2 * FD_PAD, dimBlock.z);
+  dim3 const dimBlock(32, 4, 1);
+  unsigned int const gridx = ceil_div(nx_h - 2 * FD_PAD, dimBlock.x);
+  unsigned int const gridy = ceil_div(ny_h - 2 * FD_PAD, dimBlock.y);
+  unsigned int const gridz = ceil_div(nz_h - 2 * FD_PAD, dimBlock.z);
 #elif DW_NDIM == 2
-  dim3 dimBlock(32, 4, 1);
-  unsigned int gridx = ceil_div(nx_h - 2 * FD_PAD, dimBlock.x);
-  unsigned int gridy = ceil_div(ny_h - 2 * FD_PAD, dimBlock.y);
-  unsigned int gridz = ceil_div(n_shots_h, dimBlock.z);
+  dim3 const dimBlock(32, 4, 1);
+  unsigned int const gridx = ceil_div(nx_h - 2 * FD_PAD, dimBlock.x);
+  unsigned int const gridy = ceil_div(ny_h - 2 * FD_PAD, dimBlock.y);
+  unsigned int const gridz = ceil_div(n_shots_h, dimBlock.z);
 #else /* DW_NDIM == 1 */
-  dim3 dimBlock(128, 1, 1);
-  unsigned int gridx = ceil_div(nx_h - 2 * FD_PAD, dimBlock.x);
-  unsigned int gridy = ceil_div(n_shots_h, dimBlock.y);
-  unsigned int gridz = 1;
+  dim3 const dimBlock(128, 1, 1);
+  unsigned int const gridx = ceil_div(nx_h - 2 * FD_PAD, dimBlock.x);
+  unsigned int const gridy = ceil_div(n_shots_h, dimBlock.y);
+  unsigned int const gridz = 1;
 #endif
-  dim3 dimGrid(gridx, gridy, gridz);
+  dim3 const dimGrid(gridx, gridy, gridz);
 
   // For source and receiver operations
-  dim3 dimBlock_sources(32, 1, 1);
-  unsigned int gridx_sources =
+  dim3 const dimBlock_sources(32, 1, 1);
+  unsigned int const gridx_sources =
       ceil_div(n_sources_per_shot_h, dimBlock_sources.x);
-  unsigned int gridy_sources = ceil_div(n_shots_h, dimBlock_sources.y);
-  unsigned int gridz_sources = 1;
-  dim3 dimGrid_sources(gridx_sources, gridy_sources, gridz_sources);
-  dim3 dimBlock_sourcessc(32, 1, 1);
-  unsigned int gridx_sourcessc =
+  unsigned int const gridy_sources = ceil_div(n_shots_h, dimBlock_sources.y);
+  unsigned int const gridz_sources = 1;
+  dim3 const dimGrid_sources(gridx_sources, gridy_sources, gridz_sources);
+  dim3 const dimBlock_sourcessc(32, 1, 1);
+  unsigned int const gridx_sourcessc =
       ceil_div(n_sourcessc_per_shot_h, dimBlock_sourcessc.x);
-  unsigned int gridy_sourcessc = ceil_div(n_shots_h, dimBlock_sourcessc.y);
-  unsigned int gridz_sourcessc = 1;
-  dim3 dimGrid_sourcessc(gridx_sourcessc, gridy_sourcessc, gridz_sourcessc);
-  dim3 dimBlock_receivers(32, 1, 1);
-  unsigned int gridx_receivers =
+  unsigned int const gridy_sourcessc =
+      ceil_div(n_shots_h, dimBlock_sourcessc.y);
+  unsigned int const gridz_sourcessc = 1;
+  dim3 const dimGrid_sourcessc(gridx_sourcessc, gridy_sourcessc,
+                               gridz_sourcessc);
+  dim3 const dimBlock_receivers(32, 1, 1);
+  unsigned int const gridx_receivers =
       ceil_div(n_receivers_per_shot_h, dimBlock_receivers.x);
-  unsigned int gridy_receivers = ceil_div(n_shots_h, dimBlock_receivers.y);
-  unsigned int gridz_receivers = 1;
-  dim3 dimGrid_receivers(gridx_receivers, gridy_receivers, gridz_receivers);
-  dim3 dimBlock_receiverssc(32, 1, 1);
-  unsigned int gridx_receiverssc =
+  unsigned int const gridy_receivers =
+      ceil_div(n_shots_h, dimBlock_receivers.y);
+  unsigned int const gridz_receivers = 1;
+  dim3 const dimGrid_receivers(gridx_receivers, gridy_receivers,
+                               gridz_receivers);
+  dim3 const dimBlock_receiverssc(32, 1, 1);
+  unsigned int const gridx_receiverssc =
       ceil_div(n_receiverssc_per_shot_h, dimBlock_receiverssc.x);
-  unsigned int gridy_receiverssc = ceil_div(n_shots_h, dimBlock_receiverssc.y);
-  unsigned int gridz_receiverssc = 1;
-  dim3 dimGrid_receiverssc(gridx_receiverssc, gridy_receiverssc,
-                           gridz_receiverssc);
+  unsigned int const gridy_receiverssc =
+      ceil_div(n_shots_h, dimBlock_receiverssc.y);
+  unsigned int const gridz_receiverssc = 1;
+  dim3 const dimGrid_receiverssc(gridx_receiverssc, gridy_receiverssc,
+                                 gridz_receiverssc);
 
 #if DW_NDIM == 3
-  dim3 dimBlock_combine(32, 4, 1);
-  unsigned int gridx_combine = ceil_div(nx_h - 2 * FD_PAD, dimBlock_combine.x);
-  unsigned int gridy_combine = ceil_div(ny_h - 2 * FD_PAD, dimBlock_combine.y);
-  unsigned int gridz_combine = ceil_div(nz_h - 2 * FD_PAD, dimBlock_combine.z);
+  dim3 const dimBlock_combine(32, 4, 1);
+  unsigned int const gridx_combine =
+      ceil_div(nx_h - 2 * FD_PAD, dimBlock_combine.x);
+  unsigned int const gridy_combine =
+      ceil_div(ny_h - 2 * FD_PAD, dimBlock_combine.y);
+  unsigned int const gridz_combine =
+      ceil_div(nz_h - 2 * FD_PAD, dimBlock_combine.z);
 #elif DW_NDIM == 2
-  dim3 dimBlock_combine(32, 4, 1);
-  unsigned int gridx_combine = ceil_div(nx_h - 2 * FD_PAD, dimBlock_combine.x);
-  unsigned int gridy_combine = ceil_div(ny_h - 2 * FD_PAD, dimBlock_combine.y);
-  unsigned int gridz_combine = 1;
+  dim3 const dimBlock_combine(32, 4, 1);
+  unsigned int const gridx_combine =
+      ceil_div(nx_h - 2 * FD_PAD, dimBlock_combine.x);
+  unsigned int const gridy_combine =
+      ceil_div(ny_h - 2 * FD_PAD, dimBlock_combine.y);
+  unsigned int const gridz_combine = 1;
 #else /* DW_NDIM == 1 */
-  dim3 dimBlock_combine(128, 1, 1);
-  unsigned int gridx_combine = ceil_div(nx_h - 2 * FD_PAD, dimBlock_combine.x);
-  unsigned int gridy_combine = 1;
-  unsigned int gridz_combine = 1;
+  dim3 const dimBlock_combine(128, 1, 1);
+  unsigned int const gridx_combine =
+      ceil_div(nx_h - 2 * FD_PAD, dimBlock_combine.x);
+  unsigned int const gridy_combine = 1;
+  unsigned int const gridz_combine = 1;
 #endif
-  dim3 dimGrid_combine(gridx_combine, gridy_combine, gridz_combine);
+  dim3 const dimGrid_combine(gridx_combine, gridy_combine, gridz_combine);
 
 #if DW_NDIM == 3
   int64_t const shot_numel_h = nz_h * ny_h * nx_h;
@@ -1427,8 +1448,9 @@ extern "C"
   }
 
   bool const use_double_buffering =
-    ((storage_mode == STORAGE_DEVICE && storage_compression) ||
-    storage_mode == STORAGE_CPU) && (v_requires_grad || scatter_requires_grad);
+      ((storage_mode == STORAGE_DEVICE && storage_compression) ||
+       storage_mode == STORAGE_CPU) &&
+      (v_requires_grad || scatter_requires_grad);
 
   ScopedStream stream_storage;
   ScopedEvent event_storage_done_a, event_storage_done_b, event_compute_done_a,
@@ -1458,15 +1480,15 @@ extern "C"
     bool const load_step = (t % step_ratio_h) == 0;
     bool const load_w = load_step && (v_requires_grad || scatter_requires_grad);
     bool const load_wsc = load_step && v_requires_grad;
-    int step_idx = t / step_ratio_h;
+    int const step_idx = t / step_ratio_h;
     DW_DTYPE *__restrict w_store_1_t =
         w_store_1a + (storage_mode == STORAGE_DEVICE && !storage_compression
-                         ? (t / step_ratio_h) * shot_numel_h * n_shots_h
-                         : 0);
+                          ? (t / step_ratio_h) * shot_numel_h * n_shots_h
+                          : 0);
     DW_DTYPE *__restrict wsc_store_1_t =
         wsc_store_1a + (storage_mode == STORAGE_DEVICE && !storage_compression
-                           ? (t / step_ratio_h) * shot_numel_h * n_shots_h
-                           : 0);
+                            ? (t / step_ratio_h) * shot_numel_h * n_shots_h
+                            : 0);
     void *__restrict const w_store_2_t =
         (uint8_t *)w_store_2 +
         (storage_mode == STORAGE_DEVICE && storage_compression
@@ -1502,9 +1524,9 @@ extern "C"
     }
 
     if (load_w) {
-    if (use_double_buffering && step_idx % 2 != 0) {
+      if (use_double_buffering && step_idx % 2 != 0) {
         w_store_1_t = w_store_1b;
-    }
+      }
       if (storage_load_snapshot_gpu(
               w_store_1_t, w_store_2_t, w_store_3_t, fp_w, storage_mode,
               storage_compression, step_idx, shot_bytes_uncomp, shot_bytes_comp,
@@ -1514,9 +1536,9 @@ extern "C"
     }
 
     if (load_wsc) {
-    if (use_double_buffering && step_idx % 2 != 0) {
+      if (use_double_buffering && step_idx % 2 != 0) {
         wsc_store_1_t = wsc_store_1b;
-    }
+      }
       if (storage_load_snapshot_gpu(
               wsc_store_1_t, wsc_store_2_t, wsc_store_3_t, fp_wsc, storage_mode,
               storage_compression, step_idx, shot_bytes_uncomp, shot_bytes_comp,
@@ -1524,19 +1546,21 @@ extern "C"
               use_double_buffering ? stream_storage : stream_compute) != 0)
         return 1;
     }
-      if (use_double_buffering) {
-        gpuErrchk(cudaEventRecord(event_storage_done, stream_storage));
-        gpuErrchk(cudaStreamWaitEvent(stream_compute, event_storage_done, 0));
-      }
+    if (use_double_buffering) {
+      gpuErrchk(cudaEventRecord(event_storage_done, stream_storage));
+      gpuErrchk(cudaStreamWaitEvent(stream_compute, event_storage_done, 0));
+    }
 
     // Record source gradients for background and scattered fields
     if (n_sources_per_shot_h > 0) {
-      record_adjoint_receivers<<<dimGrid_sources, dimBlock_sources, 0, stream_compute>>>(
+      record_adjoint_receivers<<<dimGrid_sources, dimBlock_sources, 0,
+                                 stream_compute>>>(
           grad_f + t * n_shots_h * n_sources_per_shot_h, wfc, sources_i);
       CHECK_KERNEL_ERROR
     }
     if (n_sourcessc_per_shot_h > 0) {
-      record_adjoint_receiverssc<<<dimGrid_sourcessc, dimBlock_sourcessc, 0, stream_compute>>>(
+      record_adjoint_receiverssc<<<dimGrid_sourcessc, dimBlock_sourcessc, 0,
+                                   stream_compute>>>(
           grad_fsc + t * n_shots_h * n_sourcessc_per_shot_h, wfcsc, sources_i);
       CHECK_KERNEL_ERROR
     }
@@ -1574,12 +1598,14 @@ extern "C"
 
     // Add receiver gradients as adjoint sources
     if (n_receivers_per_shot_h > 0) {
-      add_adjoint_sources<<<dimGrid_receivers, dimBlock_receivers, 0, stream_compute>>>(
+      add_adjoint_sources<<<dimGrid_receivers, dimBlock_receivers, 0,
+                            stream_compute>>>(
           wfp, grad_r + t * n_shots_h * n_receivers_per_shot_h, receivers_i);
       CHECK_KERNEL_ERROR
     }
     if (n_receiverssc_per_shot_h > 0) {
-      add_adjoint_sourcessc<<<dimGrid_receiverssc, dimBlock_receiverssc, 0, stream_compute>>>(
+      add_adjoint_sourcessc<<<dimGrid_receiverssc, dimBlock_receiverssc, 0,
+                              stream_compute>>>(
           wfpsc, grad_rsc + t * n_shots_h * n_receiverssc_per_shot_h,
           receiverssc_i);
       CHECK_KERNEL_ERROR
@@ -1605,12 +1631,13 @@ extern "C"
   }
   // Reduce per-shot gradients to a single array if needed
   if (v_requires_grad && !v_batched_h && n_shots_h > 1) {
-    combine_grad<<<dimGrid_combine, dimBlock_combine, 0, stream_compute>>>(grad_v, grad_v_shot);
+    combine_grad<<<dimGrid_combine, dimBlock_combine, 0, stream_compute>>>(
+        grad_v, grad_v_shot);
     CHECK_KERNEL_ERROR
   }
   if (scatter_requires_grad && !scatter_batched_h && n_shots_h > 1) {
-    combine_grad<<<dimGrid_combine, dimBlock_combine, 0, stream_compute>>>(grad_scatter,
-                                                        grad_scatter_shot);
+    combine_grad<<<dimGrid_combine, dimBlock_combine, 0, stream_compute>>>(
+        grad_scatter, grad_scatter_shot);
     CHECK_KERNEL_ERROR
   }
 
@@ -1661,8 +1688,8 @@ extern "C"
             DW_DTYPE *__restrict zetaynsc,
 #endif
             DW_DTYPE *__restrict zetaxnsc,
-	    DW_DTYPE *__restrict const w_store_1a,
-	    DW_DTYPE *__restrict const w_store_1b,
+            DW_DTYPE *__restrict const w_store_1a,
+            DW_DTYPE *__restrict const w_store_1b,
             void *__restrict const w_store_2, void *__restrict const w_store_3,
             char const *__restrict const *__restrict const w_filenames_ptr,
             DW_DTYPE *__restrict const grad_fsc,
@@ -1723,56 +1750,66 @@ extern "C"
 #if DW_NDIM >= 2
             int64_t const pml_y1_h,
 #endif
-            int64_t const pml_x1_h, int64_t const device, cudaStream_t stream_compute) {
+            int64_t const pml_x1_h, int64_t const device,
+            cudaStream_t stream_compute) {
 #if DW_NDIM == 3
-  dim3 dimBlock(32, 4, 1);
-  unsigned int gridx = ceil_div(nx_h - 2 * FD_PAD, dimBlock.x);
-  unsigned int gridy = ceil_div(ny_h - 2 * FD_PAD, dimBlock.y);
-  unsigned int gridz = ceil_div(nz_h - 2 * FD_PAD, dimBlock.z);
+  dim3 const dimBlock(32, 4, 1);
+  unsigned int const gridx = ceil_div(nx_h - 2 * FD_PAD, dimBlock.x);
+  unsigned int const gridy = ceil_div(ny_h - 2 * FD_PAD, dimBlock.y);
+  unsigned int const gridz = ceil_div(nz_h - 2 * FD_PAD, dimBlock.z);
 #elif DW_NDIM == 2
-  dim3 dimBlock(32, 4, 1);
-  unsigned int gridx = ceil_div(nx_h - 2 * FD_PAD, dimBlock.x);
-  unsigned int gridy = ceil_div(ny_h - 2 * FD_PAD, dimBlock.y);
-  unsigned int gridz = ceil_div(n_shots_h, dimBlock.z);
+  dim3 const dimBlock(32, 4, 1);
+  unsigned int const gridx = ceil_div(nx_h - 2 * FD_PAD, dimBlock.x);
+  unsigned int const gridy = ceil_div(ny_h - 2 * FD_PAD, dimBlock.y);
+  unsigned int const gridz = ceil_div(n_shots_h, dimBlock.z);
 #else /* DW_NDIM == 1 */
-  dim3 dimBlock(128, 1, 1);
-  unsigned int gridx = ceil_div(nx_h - 2 * FD_PAD, dimBlock.x);
-  unsigned int gridy = ceil_div(n_shots_h, dimBlock.y);
-  unsigned int gridz = 1;
+  dim3 const dimBlock(128, 1, 1);
+  unsigned int const gridx = ceil_div(nx_h - 2 * FD_PAD, dimBlock.x);
+  unsigned int const gridy = ceil_div(n_shots_h, dimBlock.y);
+  unsigned int const gridz = 1;
 #endif
-  dim3 dimGrid(gridx, gridy, gridz);
+  dim3 const dimGrid(gridx, gridy, gridz);
 
-  dim3 dimBlock_sourcessc(32, 1, 1);
-  unsigned int gridx_sourcessc =
+  dim3 const dimBlock_sourcessc(32, 1, 1);
+  unsigned int const gridx_sourcessc =
       ceil_div(n_sourcessc_per_shot_h, dimBlock_sourcessc.x);
-  unsigned int gridy_sourcessc = ceil_div(n_shots_h, dimBlock_sourcessc.y);
-  unsigned int gridz_sourcessc = 1;
-  dim3 dimGrid_sourcessc(gridx_sourcessc, gridy_sourcessc, gridz_sourcessc);
-  dim3 dimBlock_receiverssc(32, 1, 1);
-  unsigned int gridx_receiverssc =
+  unsigned int const gridy_sourcessc =
+      ceil_div(n_shots_h, dimBlock_sourcessc.y);
+  unsigned int const gridz_sourcessc = 1;
+  dim3 const dimGrid_sourcessc(gridx_sourcessc, gridy_sourcessc,
+                               gridz_sourcessc);
+  dim3 const dimBlock_receiverssc(32, 1, 1);
+  unsigned int const gridx_receiverssc =
       ceil_div(n_receiverssc_per_shot_h, dimBlock_receiverssc.x);
-  unsigned int gridy_receiverssc = ceil_div(n_shots_h, dimBlock_receiverssc.y);
-  unsigned int gridz_receiverssc = 1;
-  dim3 dimGrid_receiverssc(gridx_receiverssc, gridy_receiverssc,
-                           gridz_receiverssc);
+  unsigned int const gridy_receiverssc =
+      ceil_div(n_shots_h, dimBlock_receiverssc.y);
+  unsigned int const gridz_receiverssc = 1;
+  dim3 const dimGrid_receiverssc(gridx_receiverssc, gridy_receiverssc,
+                                 gridz_receiverssc);
 
 #if DW_NDIM == 3
-  dim3 dimBlock_combine(32, 4, 1);
-  unsigned int gridx_combine = ceil_div(nx_h - 2 * FD_PAD, dimBlock_combine.x);
-  unsigned int gridy_combine = ceil_div(ny_h - 2 * FD_PAD, dimBlock_combine.y);
-  unsigned int gridz_combine = ceil_div(nz_h - 2 * FD_PAD, dimBlock_combine.z);
+  dim3 const dimBlock_combine(32, 4, 1);
+  unsigned int const gridx_combine =
+      ceil_div(nx_h - 2 * FD_PAD, dimBlock_combine.x);
+  unsigned int const gridy_combine =
+      ceil_div(ny_h - 2 * FD_PAD, dimBlock_combine.y);
+  unsigned int const gridz_combine =
+      ceil_div(nz_h - 2 * FD_PAD, dimBlock_combine.z);
 #elif DW_NDIM == 2
-  dim3 dimBlock_combine(32, 4, 1);
-  unsigned int gridx_combine = ceil_div(nx_h - 2 * FD_PAD, dimBlock_combine.x);
-  unsigned int gridy_combine = ceil_div(ny_h - 2 * FD_PAD, dimBlock_combine.y);
-  unsigned int gridz_combine = 1;
+  dim3 const dimBlock_combine(32, 4, 1);
+  unsigned int const gridx_combine =
+      ceil_div(nx_h - 2 * FD_PAD, dimBlock_combine.x);
+  unsigned int const gridy_combine =
+      ceil_div(ny_h - 2 * FD_PAD, dimBlock_combine.y);
+  unsigned int const gridz_combine = 1;
 #else /* DW_NDIM == 1 */
-  dim3 dimBlock_combine(128, 1, 1);
-  unsigned int gridx_combine = ceil_div(nx_h - 2 * FD_PAD, dimBlock_combine.x);
-  unsigned int gridy_combine = 1;
-  unsigned int gridz_combine = 1;
+  dim3 const dimBlock_combine(128, 1, 1);
+  unsigned int const gridx_combine =
+      ceil_div(nx_h - 2 * FD_PAD, dimBlock_combine.x);
+  unsigned int const gridy_combine = 1;
+  unsigned int const gridz_combine = 1;
 #endif
-  dim3 dimGrid_combine(gridx_combine, gridy_combine, gridz_combine);
+  dim3 const dimGrid_combine(gridx_combine, gridy_combine, gridz_combine);
 
 #if DW_NDIM == 3
   int64_t const shot_numel_h = nz_h * ny_h * nx_h;
@@ -1800,8 +1837,9 @@ extern "C"
   }
 
   bool const use_double_buffering =
-    ((storage_mode == STORAGE_DEVICE && storage_compression) ||
-    storage_mode == STORAGE_CPU) && scatter_requires_grad;
+      ((storage_mode == STORAGE_DEVICE && storage_compression) ||
+       storage_mode == STORAGE_CPU) &&
+      scatter_requires_grad;
 
   ScopedStream stream_storage;
   ScopedEvent event_storage_done_a, event_storage_done_b, event_compute_done_a,
@@ -1825,13 +1863,13 @@ extern "C"
   // --- Time-reversed loop for adjoint propagation (scattered field only)
   // ---
   for (t = start_t - 1; t >= start_t - nt; --t) {
-    bool load_step = ((t % step_ratio_h) == 0);
-    bool load_w = load_step && scatter_requires_grad;
-    int step_idx = t / step_ratio_h;
+    bool const load_step = ((t % step_ratio_h) == 0);
+    bool const load_w = load_step && scatter_requires_grad;
+    int const step_idx = t / step_ratio_h;
     DW_DTYPE *__restrict w_store_1_t =
         w_store_1a + (storage_mode == STORAGE_DEVICE && !storage_compression
-                         ? (t / step_ratio_h) * shot_numel_h * n_shots_h
-                         : 0);
+                          ? (t / step_ratio_h) * shot_numel_h * n_shots_h
+                          : 0);
     void *__restrict const w_store_2_t =
         (uint8_t *)w_store_2 +
         (storage_mode == STORAGE_DEVICE && storage_compression
@@ -1859,7 +1897,8 @@ extern "C"
 
     // Record source gradients for scattered field
     if (n_sourcessc_per_shot_h > 0) {
-      record_adjoint_receiverssc<<<dimGrid_sourcessc, dimBlock_sourcessc, 0, stream_compute>>>(
+      record_adjoint_receiverssc<<<dimGrid_sourcessc, dimBlock_sourcessc, 0,
+                                   stream_compute>>>(
           grad_fsc + t * n_shots_h * n_sourcessc_per_shot_h, wfcsc, sources_i);
       CHECK_KERNEL_ERROR
     }
@@ -1902,7 +1941,8 @@ extern "C"
 
     // Add receiver gradients as adjoint sources
     if (n_receiverssc_per_shot_h > 0) {
-      add_adjoint_sourcessc<<<dimGrid_receiverssc, dimBlock_receiverssc, 0, stream_compute>>>(
+      add_adjoint_sourcessc<<<dimGrid_receiverssc, dimBlock_receiverssc, 0,
+                              stream_compute>>>(
           wfpsc, grad_rsc + t * n_shots_h * n_receiverssc_per_shot_h,
           receiverssc_i);
       CHECK_KERNEL_ERROR
@@ -1921,8 +1961,8 @@ extern "C"
   }
   // Reduce per-shot gradients to a single array if needed
   if (scatter_requires_grad && !scatter_batched_h && n_shots_h > 1) {
-    combine_grad<<<dimGrid_combine, dimBlock_combine, 0, stream_compute>>>(grad_scatter,
-                                                        grad_scatter_shot);
+    combine_grad<<<dimGrid_combine, dimBlock_combine, 0, stream_compute>>>(
+        grad_scatter, grad_scatter_shot);
     CHECK_KERNEL_ERROR
   }
 

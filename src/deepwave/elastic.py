@@ -1361,7 +1361,7 @@ class ElasticForwardFunc(torch.autograd.Function):
                 receiver_amplitudes[i].resize_(nt, n_shots, n_receivers_per_shot[i])
                 receiver_amplitudes[i].fill_(0)
 
-        stream = 0
+        stream: Union[int, torch.Stream] = 0
         if is_cuda:
             aux = models[0].get_device()
             stream = torch.cuda.current_stream(aux)
@@ -1513,7 +1513,7 @@ class ElasticForwardFunc(torch.autograd.Function):
         )
 
     @staticmethod
-    @torch.autograd.function.once_differentiable  # type: ignore[misc]
+    @torch.autograd.function.once_differentiable
     def backward(
         ctx: Any,
         *args: torch.Tensor,
@@ -1668,7 +1668,7 @@ class ElasticForwardFunc(torch.autograd.Function):
                 grad_f[i].resize_(nt, n_shots, n_sources_per_shot[i])
                 grad_f[i].fill_(0)
 
-        stream = 0
+        stream: Union[int, torch.Stream] = 0
         if is_cuda:
             aux = models[0].get_device()
             stream = torch.cuda.current_stream(aux)

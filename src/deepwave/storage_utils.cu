@@ -9,16 +9,18 @@
 extern "C" {
 
 int storage_save_snapshot_gpu(
-    void* store_1, void* store_2, void* store_3, FILE* fp, int64_t storage_mode,
-    bool use_compression, int64_t step_idx,
-    size_t shot_bytes_uncomp,  // Bytes per shot (uncompressed)
-    size_t shot_bytes_comp,    // Bytes per shot (compressed)
-    size_t n_shots, size_t n_elements_per_shot, int is_double, void* stream) {
+    void const* const store_1, void* const store_2, void* const store_3,
+    FILE* const fp, int64_t const storage_mode, bool const use_compression,
+    int64_t const step_idx,
+    size_t const shot_bytes_uncomp,  // Bytes per shot (uncompressed)
+    size_t const shot_bytes_comp,    // Bytes per shot (compressed)
+    size_t const n_shots, size_t const n_elements_per_shot, int const is_double,
+    void* const stream) {
   // Calculate total bytes for this step across all shots
-  size_t total_uncomp = shot_bytes_uncomp * n_shots;
-  size_t total_comp = shot_bytes_comp * n_shots;
+  size_t const total_uncomp = shot_bytes_uncomp * n_shots;
+  size_t const total_comp = shot_bytes_comp * n_shots;
 
-  void* data_to_store = store_1;
+  void const* data_to_store = store_1;
   size_t bytes_to_store = total_uncomp;
 
   if (storage_mode == STORAGE_NONE) return 0;
@@ -27,7 +29,7 @@ int storage_save_snapshot_gpu(
     if (simple_compress_cuda(store_1, store_2, n_shots, n_elements_per_shot,
                              is_double, stream) != 0)
       return 1;
-    data_to_store = store_2;
+    data_to_store = (void const*)store_2;
     bytes_to_store = total_comp;
   }
 
@@ -39,32 +41,32 @@ int storage_save_snapshot_gpu(
   }
   if (storage_mode == STORAGE_DISK) {
     cudaStreamSynchronize((cudaStream_t)stream);
-    int64_t offset = step_idx * (int64_t)bytes_to_store;
+    int64_t const offset = step_idx * (int64_t)bytes_to_store;
     fseek(fp, offset, SEEK_SET);
     fwrite(store_3, 1, bytes_to_store, fp);
   }
   return 0;
 }
 
-int storage_load_snapshot_gpu(void* store_1, void* store_2, void* store_3,
-                              FILE* fp, int64_t storage_mode,
-                              bool use_compression, int step_idx,
-                              size_t shot_bytes_uncomp, size_t shot_bytes_comp,
-                              size_t n_shots, size_t n_elements_per_shot,
-                              int is_double, void* stream) {
-  size_t total_uncomp = shot_bytes_uncomp * n_shots;
-  size_t total_comp = shot_bytes_comp * n_shots;
+int storage_load_snapshot_gpu(
+    void* const store_1, void* const store_2, void* const store_3,
+    FILE* const fp, int64_t const storage_mode, bool const use_compression,
+    int const step_idx, size_t const shot_bytes_uncomp,
+    size_t const shot_bytes_comp, size_t const n_shots,
+    size_t const n_elements_per_shot, int const is_double, void* const stream) {
+  size_t const total_uncomp = shot_bytes_uncomp * n_shots;
+  size_t const total_comp = shot_bytes_comp * n_shots;
 
-  size_t bytes_to_load = use_compression ? total_comp : total_uncomp;
+  size_t const bytes_to_load = use_compression ? total_comp : total_uncomp;
 
   if (storage_mode == STORAGE_NONE) return 0;
 
   if (storage_mode == STORAGE_DISK) {
     // Load from disk to Host
     cudaStreamSynchronize((cudaStream_t)stream);
-    int64_t offset = step_idx * (int64_t)bytes_to_load;
+    int64_t const offset = step_idx * (int64_t)bytes_to_load;
     fseek(fp, offset, SEEK_SET);
-    size_t count = fread(store_3, 1, bytes_to_load, fp);
+    size_t const count = fread(store_3, 1, bytes_to_load, fp);
     if (count != bytes_to_load) return 1;
   }
 

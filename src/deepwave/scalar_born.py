@@ -770,7 +770,7 @@ class ScalarBornForwardFunc(torch.autograd.Function):
             receiver_amplitudessc.resize_(nt, n_shots, n_receiverssc_per_shot)
             receiver_amplitudessc.fill_(0)
 
-        stream = 0
+        stream: Union[int, torch.Stream] = 0
         if is_cuda:
             aux = v.get_device()
             stream = torch.cuda.current_stream(aux)
@@ -907,7 +907,7 @@ class ScalarBornForwardFunc(torch.autograd.Function):
         )
 
     @staticmethod
-    @torch.autograd.function.once_differentiable  # type: ignore[misc]
+    @torch.autograd.function.once_differentiable
     def backward(
         ctx: Any,
         *args: torch.Tensor,
@@ -1058,7 +1058,7 @@ class ScalarBornForwardFunc(torch.autograd.Function):
             grad_fsc.resize_(nt, n_shots, n_sources_per_shot)
             grad_fsc.fill_(0)
 
-        stream = 0
+        stream: Union[int, torch.Stream] = 0
         if is_cuda:
             aux = v.get_device()
             stream = torch.cuda.current_stream(aux)
