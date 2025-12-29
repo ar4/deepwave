@@ -451,6 +451,8 @@ def get_acoustic_forward_template(ndim: int) -> List[Any]:
     args += [c_void_p] * (1 + 3 * ndim)  # p, v, phi, psi
     args += [c_void_p] * 5  # k_store_1a, k_store_1b, k_store_2, k_store_3, k_filenames
     args += [c_void_p] * (5 * ndim)  # b_store...
+    args += [c_void_p]  # gradient_mask_indices
+    args += [c_int64]  # grad_shot_numel
     args += [c_void_p] * (1 + ndim)  # receiver_amplitudes
     args += [c_void_p] * (4 * ndim)  # a, b, ah, bh
     args += [c_void_p] * (1 + ndim)  # sources_i
@@ -482,6 +484,8 @@ def get_acoustic_backward_template(ndim: int) -> List[Any]:
     args += [c_void_p] * (ndim)  # psin
     args += [c_void_p] * 5  # k_store
     args += [c_void_p] * (5 * ndim)  # b_store
+    args += [c_void_p]  # gradient_mask_indices
+    args += [c_int64]  # grad_shot_numel
     args += [c_void_p] * (1 + ndim)  # grad_f
     args += [c_void_p] * (2 + 2 * ndim)  # grad_k, grad_b, grad_k_thread, grad_b_thread
     args += [c_void_p] * (4 * ndim)  # a, b, ah, bh

@@ -112,6 +112,7 @@ __constant__ int64_t pml_y1;
 __constant__ DW_DTYPE rdx;
 __constant__ int64_t nx;
 __constant__ int64_t shot_numel;
+__constant__ int64_t grad_shot_numel;
 __constant__ int64_t n_shots;
 __constant__ int64_t step_ratio;
 __constant__ int64_t pml_x0;
@@ -170,6 +171,12 @@ __launch_bounds__(128) __global__
   }
 }
 
+__device__ __forceinline__ int64_t get_grad_idx(
+    int64_t const *__restrict__ const gradient_mask_indices, int64_t j) {
+  if (!gradient_mask_indices) return j;
+  return gradient_mask_indices[j];
+}
+
 __launch_bounds__(128) __global__
     void forward_kernel_v(DW_DTYPE const *__restrict__ const p,
 #if DW_NDIM >= 3
@@ -193,6 +200,8 @@ __launch_bounds__(128) __global__
                           DW_DTYPE const *__restrict__ const buoyancy_y,
 #endif
                           DW_DTYPE const *__restrict__ const buoyancy_x,
+                          int64_t const *__restrict__ const
+                              gradient_mask_indices,
 #if DW_NDIM >= 3
                           DW_DTYPE *__restrict__ const bz_grad_store_1,
 #endif
@@ -232,6 +241,7 @@ __launch_bounds__(128) __global__
     int64_t const j = x;
 #endif
       int64_t const i = shot_idx * shot_numel + j;
+      int64_t const grad_idx = get_grad_idx(gradient_mask_indices, j);
 
 #if DW_NDIM >= 3
       int64_t const pml_z0h = pml_z0;
@@ -257,8 +267,8 @@ __launch_bounds__(128) __global__
           psi_z[i] = bzh[z] * term_z + azh[z] * psi_z[i];
           term_z += psi_z[i];
         }
-        if (b_requires_grad) {
-          bz_grad_store_1[i] = term_z;
+        if (b_requires_grad && grad_idx >= 0) {
+          bz_grad_store_1[shot_idx * grad_shot_numel + grad_idx] = term_z;
         }
         vz[i] -= dt * buoyancy_z_shot[j] * term_z;
       }
@@ -274,8 +284,8 @@ __launch_bounds__(128) __global__
           psi_y[i] = byh[y] * term_y + ayh[y] * psi_y[i];
           term_y += psi_y[i];
         }
-        if (b_requires_grad) {
-          by_grad_store_1[i] = term_y;
+        if (b_requires_grad && grad_idx >= 0) {
+          by_grad_store_1[shot_idx * grad_shot_numel + grad_idx] = term_y;
         }
         vy[i] -= dt * buoyancy_y_shot[j] * term_y;
       }
@@ -288,8 +298,8 @@ __launch_bounds__(128) __global__
           psi_x[i] = bxh[x] * term_x + axh[x] * psi_x[i];
           term_x += psi_x[i];
         }
-        if (b_requires_grad) {
-          bx_grad_store_1[i] = term_x;
+        if (b_requires_grad && grad_idx >= 0) {
+          bx_grad_store_1[shot_idx * grad_shot_numel + grad_idx] = term_x;
         }
         vx[i] -= dt * buoyancy_x_shot[j] * term_x;
       }
@@ -317,6 +327,7 @@ __launch_bounds__(128) __global__
 #endif
                           DW_DTYPE *__restrict__ const phi_x,
                           DW_DTYPE const *__restrict__ const k,
+                          int64_t const *__restrict__ const gradient_mask_indices,
                           DW_DTYPE *__restrict__ const k_grad_store_1,
 #if DW_NDIM >= 3
                           DW_DTYPE const *__restrict__ const az,
@@ -350,6 +361,7 @@ __launch_bounds__(128) __global__
     int64_t const j = x;
 #endif
       int64_t const i = shot_idx * shot_numel + j;
+      int64_t const grad_idx = get_grad_idx(gradient_mask_indices, j);
 
       DW_DTYPE const *__restrict__ const k_shot =
           k_batched ? k + shot_idx * shot_numel : k;
@@ -381,8 +393,8 @@ __launch_bounds__(128) __global__
       }
       div_v += d_x;
 
-      if (k_requires_grad) {
-        k_grad_store_1[i] = div_v;
+      if (k_requires_grad && grad_idx >= 0) {
+        k_grad_store_1[shot_idx * grad_shot_numel + grad_idx] = div_v;
       }
       p[i] -= dt * k_shot[j] * div_v;
 
@@ -430,6 +442,8 @@ __launch_bounds__(128) __global__
                            DW_DTYPE const *__restrict__ const buoyancy_y,
 #endif
                            DW_DTYPE const *__restrict__ const buoyancy_x,
+                           int64_t const *__restrict__ const
+                               gradient_mask_indices,
 #if DW_NDIM >= 3
                            DW_DTYPE *__restrict__ const grad_bz_shot,
                            DW_DTYPE const *__restrict__ const bz_grad_store_1,
@@ -471,6 +485,7 @@ __launch_bounds__(128) __global__
     int64_t const j = x;
 #endif
       int64_t const i = shot_idx * shot_numel + j;
+      int64_t const grad_idx = get_grad_idx(gradient_mask_indices, j);
 
       DW_DTYPE const *__restrict__ const k_shot =
           k_batched ? k + shot_idx * shot_numel : k;
@@ -495,9 +510,11 @@ __launch_bounds__(128) __global__
         psi_zn[i] =
             azh[z] * psi_z[i] - dt * buoyancy_z_shot[j] * azh[z] * vz[i];
 
-        if (b_requires_grad) {
+        if (b_requires_grad && grad_idx >= 0) {
           grad_bz_shot[i] -=
-              dt * vz[i] * bz_grad_store_1[i] * (DW_DTYPE)step_ratio;
+              dt * vz[i] *
+              bz_grad_store_1[shot_idx * grad_shot_numel + grad_idx] *
+              (DW_DTYPE)step_ratio;
         }
       }
 #endif
@@ -511,9 +528,11 @@ __launch_bounds__(128) __global__
         psi_yn[i] =
             ayh[y] * psi_y[i] - dt * buoyancy_y_shot[j] * ayh[y] * vy[i];
 
-        if (b_requires_grad) {
+        if (b_requires_grad && grad_idx >= 0) {
           grad_by_shot[i] -=
-              dt * vy[i] * by_grad_store_1[i] * (DW_DTYPE)step_ratio;
+              dt * vy[i] *
+              by_grad_store_1[shot_idx * grad_shot_numel + grad_idx] *
+              (DW_DTYPE)step_ratio;
         }
       }
 #endif
@@ -526,9 +545,11 @@ __launch_bounds__(128) __global__
         psi_xn[i] =
             axh[x] * psi_x[i] - dt * buoyancy_x_shot[j] * axh[x] * vx[i];
 
-        if (b_requires_grad) {
+        if (b_requires_grad && grad_idx >= 0) {
           grad_bx_shot[i] -=
-              dt * vx[i] * bx_grad_store_1[i] * (DW_DTYPE)step_ratio;
+              dt * vx[i] *
+              bx_grad_store_1[shot_idx * grad_shot_numel + grad_idx] *
+              (DW_DTYPE)step_ratio;
         }
       }
 
@@ -569,6 +590,8 @@ __launch_bounds__(128) __global__
                            DW_DTYPE const *__restrict__ const buoyancy_y,
 #endif
                            DW_DTYPE const *__restrict__ const buoyancy_x,
+                           int64_t const *__restrict__ const
+                               gradient_mask_indices,
                            DW_DTYPE *__restrict__ const grad_k_shot,
                            DW_DTYPE const *__restrict__ const k_grad_store_1,
 #if DW_NDIM >= 3
@@ -606,6 +629,7 @@ __launch_bounds__(128) __global__
     int64_t const j = x;
 #endif
       int64_t const i = shot_idx * shot_numel + j;
+      int64_t const grad_idx = get_grad_idx(gradient_mask_indices, j);
 
       DW_DTYPE const *__restrict__ const k_shot =
           k_batched ? k + shot_idx * shot_numel : k;
@@ -622,8 +646,11 @@ __launch_bounds__(128) __global__
       bool const pml_x = x < pml_x0 || x >= pml_x1;
       if (pml_x) phi_x[i] = ax[x] * phi_x[i] - dt * k_shot[j] * ax[x] * p[i];
 
-      if (k_requires_grad) {
-        grad_k_shot[i] -= dt * p[i] * k_grad_store_1[i] * (DW_DTYPE)step_ratio;
+      if (k_requires_grad && grad_idx >= 0) {
+        grad_k_shot[i] -=
+            dt * p[i] *
+            k_grad_store_1[shot_idx * grad_shot_numel + grad_idx] *
+            (DW_DTYPE)step_ratio;
       }
 
       // Update P
@@ -663,7 +690,8 @@ int set_config(
 #endif
     /* x-dimension */
     DW_DTYPE const rdx_h, int64_t const nx_h, int64_t const shot_numel_h,
-    int64_t const pml_x0_h, int64_t const pml_x1_h,
+    int64_t const grad_shot_numel_h, int64_t const pml_x0_h,
+    int64_t const pml_x1_h,
     /* other */
     DW_DTYPE const dt_h, int64_t const n_shots_h, int64_t const step_ratio_h,
     bool const k_batched_h, bool const b_batched_h) {
@@ -683,6 +711,8 @@ int set_config(
   gpuErrchk(cudaMemcpyToSymbol(rdx, &rdx_h, sizeof(DW_DTYPE)));
   gpuErrchk(cudaMemcpyToSymbol(nx, &nx_h, sizeof(int64_t)));
   gpuErrchk(cudaMemcpyToSymbol(shot_numel, &shot_numel_h, sizeof(int64_t)));
+  gpuErrchk(
+      cudaMemcpyToSymbol(grad_shot_numel, &grad_shot_numel_h, sizeof(int64_t)));
   gpuErrchk(cudaMemcpyToSymbol(n_shots, &n_shots_h, sizeof(int64_t)));
   gpuErrchk(cudaMemcpyToSymbol(step_ratio, &step_ratio_h, sizeof(int64_t)));
   gpuErrchk(cudaMemcpyToSymbol(pml_x0, &pml_x0_h, sizeof(int64_t)));
@@ -765,6 +795,8 @@ extern "C"
             void *__restrict__ const bx_grad_store_3,
             char const *__restrict__ const
                 *__restrict__ const bx_grad_filenames_ptr,
+            int64_t const *__restrict__ const gradient_mask_indices,
+            int64_t const grad_shot_numel_h,
             DW_DTYPE *__restrict__ const r_p,
 #if DW_NDIM >= 3
             DW_DTYPE *__restrict__ const r_vz,
@@ -893,8 +925,8 @@ extern "C"
 #if DW_NDIM >= 2
         rdy_h, ny_h, pml_y0_h, pml_y1_h,
 #endif
-        rdx_h, nx_h, shot_numel_h, pml_x0_h, pml_x1_h, dt_h, n_shots_h,
-        step_ratio_h, k_batched_h, b_batched_h);
+        rdx_h, nx_h, shot_numel_h, grad_shot_numel_h, pml_x0_h, pml_x1_h, dt_h,
+        n_shots_h, step_ratio_h, k_batched_h, b_batched_h);
     if (err != 0) return err;
   }
 
@@ -940,7 +972,7 @@ extern "C"
   DW_DTYPE *__restrict name##_store_1_t =                                    \
       name##_store_1a +                                                      \
       ((storage_mode == STORAGE_DEVICE && !storage_compression)              \
-           ? (t / step_ratio_h) * n_shots_h * shot_numel_h                   \
+           ? (t / step_ratio_h) * n_shots_h * grad_shot_numel_h              \
            : 0);                                                             \
   void *__restrict const name##_store_2_t =                                  \
       (uint8_t *)name##_store_2 +                                            \
@@ -1055,6 +1087,7 @@ extern "C"
         buoyancy_y,
 #endif
         buoyancy_x,
+        gradient_mask_indices,
 #if DW_NDIM >= 3
         bz_grad_store_1_t,
 #endif
@@ -1124,7 +1157,7 @@ extern "C"
 #if DW_NDIM >= 2
         phi_y,
 #endif
-        phi_x, k, k_grad_store_1_t,
+        phi_x, k, gradient_mask_indices, k_grad_store_1_t,
 #if DW_NDIM >= 3
         az, bz,
 #endif
@@ -1144,7 +1177,7 @@ extern "C"
     if (storage_save_snapshot_gpu(                                           \
             name##_store_1_t, name##_store_2_t, name##_store_3_t, fp_##name, \
             storage_mode, storage_compression, step_idx, shot_bytes_uncomp,  \
-            shot_bytes_comp, n_shots_h, shot_numel_h,                        \
+            shot_bytes_comp, n_shots_h, grad_shot_numel_h,                   \
             sizeof(DW_DTYPE) == sizeof(double),                              \
             use_double_buffering ? stream_storage : stream_compute) != 0)    \
       return 1;                                                              \
@@ -1260,6 +1293,8 @@ extern "C"
             void *__restrict__ const bx_grad_store_3,
             char const *__restrict__ const
                 *__restrict__ const bx_grad_filenames_ptr,
+            int64_t const *__restrict__ const gradient_mask_indices,
+            int64_t const grad_shot_numel_h,
             DW_DTYPE *__restrict__ const grad_f_p,
 #if DW_NDIM >= 3
             DW_DTYPE *__restrict__ const grad_f_vz,
@@ -1404,8 +1439,8 @@ extern "C"
 #if DW_NDIM >= 2
         rdy_h, ny_h, pml_y0_h, pml_y1_h,
 #endif
-        rdx_h, nx_h, shot_numel_h, pml_x0_h, pml_x1_h, dt_h, n_shots_h,
-        step_ratio_h, k_batched_h, b_batched_h);
+        rdx_h, nx_h, shot_numel_h, grad_shot_numel_h, pml_x0_h, pml_x1_h, dt_h,
+        n_shots_h, step_ratio_h, k_batched_h, b_batched_h);
     if (err != 0) return err;
   }
 
@@ -1449,7 +1484,7 @@ extern "C"
   DW_DTYPE *__restrict__ name##_store_1_t =                                  \
       name##_store_1a +                                                      \
       ((storage_mode == STORAGE_DEVICE && !storage_compression)              \
-           ? (t / step_ratio_h) * n_shots_h * shot_numel_h                   \
+           ? (t / step_ratio_h) * n_shots_h * grad_shot_numel_h              \
            : 0);                                                             \
   void *__restrict__ const name##_store_2_t =                                \
       (uint8_t *)name##_store_2 +                                            \
@@ -1470,7 +1505,7 @@ extern "C"
     if (storage_load_snapshot_gpu(                                           \
             (void *)name##_store_1_t, name##_store_2_t, name##_store_3_t,    \
             fp_##name, storage_mode, storage_compression, step_idx,          \
-            shot_bytes_uncomp, shot_bytes_comp, n_shots_h, shot_numel_h,     \
+            shot_bytes_uncomp, shot_bytes_comp, n_shots_h, grad_shot_numel_h,\
             sizeof(DW_DTYPE) == sizeof(double),                              \
             use_double_buffering ? stream_storage : stream_compute) != 0)    \
       return 1;                                                              \
@@ -1549,6 +1584,7 @@ extern "C"
         buoyancy_y,
 #endif
         buoyancy_x,
+        gradient_mask_indices,
 #if DW_NDIM >= 3
         grad_bz_shot, bz_grad_store_1_t, azh, bz, bzh,
 #endif
@@ -1626,7 +1662,7 @@ extern "C"
 #if DW_NDIM >= 2
         buoyancy_y,
 #endif
-        buoyancy_x, grad_k_shot, k_grad_store_1_t,
+        buoyancy_x, gradient_mask_indices, grad_k_shot, k_grad_store_1_t,
 #if DW_NDIM >= 3
         az, bzh, bz,
 #endif
