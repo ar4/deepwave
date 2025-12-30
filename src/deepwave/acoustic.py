@@ -180,6 +180,7 @@ class Acoustic(torch.nn.Module):
         origin: Optional[Sequence[int]] = None,
         nt: Optional[int] = None,
         model_gradient_sampling_interval: int = 1,
+        gradient_mask: Optional[torch.Tensor] = None,
         freq_taper_frac: float = 0.0,
         time_pad_frac: float = 0.0,
         time_taper: bool = False,
@@ -227,6 +228,7 @@ class Acoustic(torch.nn.Module):
             origin=origin,
             nt=nt,
             model_gradient_sampling_interval=model_gradient_sampling_interval,
+            gradient_mask=gradient_mask,
             freq_taper_frac=freq_taper_frac,
             time_pad_frac=time_pad_frac,
             time_taper=time_taper,
@@ -275,6 +277,7 @@ def acoustic(
     origin: Optional[Sequence[int]] = None,
     nt: Optional[int] = None,
     model_gradient_sampling_interval: int = 1,
+    gradient_mask: Optional[torch.Tensor] = None,
     freq_taper_frac: float = 0.0,
     time_pad_frac: float = 0.0,
     time_taper: bool = False,
@@ -326,6 +329,13 @@ def acoustic(
         origin: Origin of initial wavefields.
         nt: Number of time steps.
         model_gradient_sampling_interval: Interval for gradient sampling.
+        gradient_mask: A boolean Tensor with the same spatial shape as the
+            model, specifying which cells should have gradients computed.
+            Optional. If not provided, gradients will be computed everywhere in
+            the model. If the model is padded internally, an unpadded mask will
+            be padded with False values. True values indicate cells where
+            gradients should be computed, while False values indicate cells
+            where gradients should be set to 0.
         freq_taper_frac: Frequency taper fraction.
         time_pad_frac: Time padding fraction.
         time_taper: Time taper flag.
@@ -377,6 +387,31 @@ def acoustic(
             f"{ndim}d, so locations related to the "
             "y dimension should not be provided."
         )
+
+    if gradient_mask is not None:
+        if not isinstance(gradient_mask, torch.Tensor):
+            raise TypeError("gradient_mask must be a torch.Tensor if provided.")
+        if gradient_mask.dtype != torch.bool:
+            raise TypeError("gradient_mask must be a boolean Tensor.")
+        if gradient_mask.shape != v.shape[-ndim:]:
+            raise RuntimeError(
+                "gradient_mask must match the spatial shape of v and have no batch "
+                "dimension."
+            )
+        if python_backend:
+            raise RuntimeError("gradient_mask is not supported in the Python backend.")
+
+        if (v.requires_grad or rho.requires_grad):
+            # In the backend, gradient masking is applied to the K/B gradient storage and accumulation
+            # but not to v and rho directly. Since buoyancy B depends on neighbor averages of rho, 
+            # autograd gradients on masked cells spread to adjacent rho entries outside the mask, 
+            # causing nonzero gradients there. This violates the API contract. To prevent this, we
+            # disable gradients on masked cells.
+            gradient_mask = gradient_mask.to(
+                device=v.device, dtype=torch.bool, copy=False
+            )
+            v = torch.where(gradient_mask, v, v.detach())
+            rho = torch.where(gradient_mask, rho, rho.detach())
 
     # Prepare initial wavefields list
     initial_wavefields: List[Optional[torch.Tensor]] = []
@@ -461,6 +496,16 @@ def acoustic(
     source_locations_list.insert(0, source_locations_p)
     receiver_locations_list.insert(0, receiver_locations_p)
 
+    models_list = [v, rho]
+    model_pad_modes = ["replicate", "replicate"]
+    gradient_mask_for_setup: Optional[torch.Tensor] = None
+    if gradient_mask is not None:
+        gradient_mask_for_setup = gradient_mask.to(
+            device=v.device, dtype=v.dtype, copy=False
+        )
+        models_list.append(gradient_mask_for_setup)
+        model_pad_modes.append("constant")
+
     (
         models,
         source_amplitudes_out,
@@ -483,8 +528,8 @@ def acoustic(
         device,
         dtype,
     ) = deepwave.common.setup_propagator(
-        [v, rho],
-        ["replicate", "replicate"],
+        models_list,
+        model_pad_modes,
         grid_spacing,
         dt,
         source_amplitudes_list,
@@ -524,6 +569,11 @@ def acoustic(
         receiver_locations_x,
     )
 
+    gradient_mask_prepared: Optional[torch.Tensor] = None
+    if gradient_mask is not None:
+        gradient_mask_prepared = models.pop()
+        del gradient_mask_for_setup
+
     models = prepare_models(models[0], models[1])
 
     # Scale source amplitudes
@@ -532,6 +582,15 @@ def acoustic(
     # models order: K, B_z (3D), B_y (2D/3D), B_x (1D/2D/3D) matches target indices
     model_shape = models[0].shape[-ndim:]
     flat_model_shape = int(torch.prod(torch.tensor(model_shape)).item())
+
+    # Prepare compact gradient mask indices and number of elements
+    gradient_mask_indices: Optional[torch.Tensor] = None
+    gradient_mask_numel = flat_model_shape
+    if gradient_mask_prepared is not None:
+        gradient_mask_indices, gradient_mask_numel = _prepare_gradient_indices(
+            gradient_mask_prepared,
+        )
+        del gradient_mask_prepared
 
     for i, (src_amp, src_loc, model) in enumerate(
         zip(source_amplitudes_out, sources_i, models)
@@ -586,6 +645,8 @@ def acoustic(
             storage_mode,
             storage_path,
             storage_compression,
+            gradient_mask_indices,
+            gradient_mask_numel,
             *models,
             *source_amplitudes_out,
             *sources_i,
@@ -604,6 +665,32 @@ def acoustic(
         )
 
     return outputs
+
+
+def _prepare_gradient_indices(
+    gradient_mask_prepared: torch.Tensor,
+) -> Tuple[torch.Tensor, int]:
+    """
+    Build compact indices from a prepared (padded/sliced) gradient mask.
+
+    Produces a spatial-only index tensor aligned with the internally padded
+    model: -1 for masked-out cells and 0..N-1 for masked-in cells (N = number
+    of True entries), along with that count. Enforces a single shared mask
+    (no batch dimension) across all shots.
+    """
+    gradient_mask_prepared = gradient_mask_prepared.to(
+        dtype=torch.bool, copy=False
+    )
+    if gradient_mask_prepared.shape[0] != 1:
+        raise RuntimeError("gradient_mask must not have a batch dimension.")
+    gradient_mask_prepared = gradient_mask_prepared[0].contiguous()
+    mask_flat = gradient_mask_prepared.flatten()
+    indices_flat = torch.full_like(mask_flat, -1, dtype=torch.int64)
+    cumsum = mask_flat.cumsum(dim=0).to(torch.int64) - 1
+    indices_flat = torch.where(mask_flat, cumsum, indices_flat)
+    gradient_mask_indices = indices_flat.reshape_as(gradient_mask_prepared).contiguous()
+    gradient_mask_numel = int(mask_flat.sum().item())
+    return gradient_mask_indices, gradient_mask_numel
 
 
 def zero_edge(tensor: torch.Tensor, fd_pad: int, dim: int) -> torch.Tensor:
@@ -714,6 +801,8 @@ class AcousticForwardFunc(torch.autograd.Function):
         storage_mode_str: str,
         storage_path: str,
         storage_compression: bool,
+        gradient_mask_indices: Optional[torch.Tensor],
+        gradient_mask_numel: int,
         *args: torch.Tensor,
     ) -> Tuple[torch.Tensor, ...]:
         """Performs the forward propagation of the acoustic wave equation."""
@@ -763,6 +852,19 @@ class AcousticForwardFunc(torch.autograd.Function):
 
         device = models[0].device
         dtype = models[0].dtype
+        is_cuda = models[0].is_cuda
+        model_shape = models[0].shape[-ndim:]
+
+        gradient_mask_indices_tensor: Optional[torch.Tensor] = None
+        gradient_mask_indices_ptr: int = 0
+        if gradient_mask_indices is not None:
+            if gradient_mask_indices.shape != model_shape:
+                raise RuntimeError(
+                    "gradient_mask must match the padded model spatial shape and have "
+                    "no batch dimension."
+                )
+            gradient_mask_indices_tensor = gradient_mask_indices.contiguous()
+            gradient_mask_indices_ptr = gradient_mask_indices_tensor.data_ptr()
 
         # Setup storage
         if str(device) == "cpu" and storage_mode_str == "cpu":
@@ -779,13 +881,14 @@ class AcousticForwardFunc(torch.autograd.Function):
         else:
             raise ValueError(f"Invalid storage_mode {storage_mode_str}")
 
-        is_cuda = models[0].is_cuda
-        model_shape = models[0].shape[-ndim:]
+        storage_shape: Tuple[int, ...] = tuple(model_shape)
+        if gradient_mask_indices_tensor is not None:
+            storage_shape = (gradient_mask_numel,)
         n_sources_per_shot_list = [locs.numel() // n_shots for locs in sources_i]
         n_receivers_per_shot_list = [locs.numel() // n_shots for locs in receivers_i]
 
         storage_manager = deepwave.common.StorageManager(
-            model_shape,
+            storage_shape,
             dtype,
             n_shots,
             nt,
@@ -821,6 +924,7 @@ class AcousticForwardFunc(torch.autograd.Function):
             ctx.backward_callback = backward_callback
             ctx.callback_frequency = callback_frequency
             ctx.storage_manager = storage_manager
+            ctx.gradient_mask_indices = gradient_mask_indices_tensor
 
         fd_pad = accuracy // 2
         fd_pad_list = [fd_pad, fd_pad - 1] * ndim
@@ -931,6 +1035,8 @@ class AcousticForwardFunc(torch.autograd.Function):
                         *[amp.data_ptr() for amp in source_amplitudes],
                         *[w.data_ptr() for w in wavefields],
                         *storage_manager.storage_ptrs,
+                        gradient_mask_indices_ptr,
+                        storage_manager.num_elements_per_shot,
                         *[amp.data_ptr() for amp in receiver_amplitudes],
                         *[p.data_ptr() for p in pml_profiles],
                         *[loc.data_ptr() for loc in sources_i],
@@ -975,6 +1081,12 @@ class AcousticForwardFunc(torch.autograd.Function):
         # Unpack
         grid_spacing = ctx.grid_spacing
         ndim = len(grid_spacing)
+        gradient_mask_indices = ctx.gradient_mask_indices
+        gradient_mask_indices_ptr = (
+            0
+            if gradient_mask_indices is None
+            else gradient_mask_indices.data_ptr()
+        )
 
         grad_wavefields = list(args[: -ndim - 1])
         grad_r = list(args[-ndim - 1 :])
@@ -1151,6 +1263,8 @@ class AcousticForwardFunc(torch.autograd.Function):
                         *[field.data_ptr() for field in grad_wavefields],
                         *[field.data_ptr() for field in aux_wavefields],
                         *storage_manager.storage_ptrs,
+                        gradient_mask_indices_ptr,
+                        storage_manager.num_elements_per_shot,
                         *[g.data_ptr() for g in grad_f_list],
                         *[g.data_ptr() for g in grad_models],
                         *grad_models_tmp_ptr,
@@ -1212,7 +1326,7 @@ class AcousticForwardFunc(torch.autograd.Function):
             *(slice(fd_pad, shape - (fd_pad - 1)) for shape in model_shape),
         )
         return tuple(
-            [None] * 14
+            [None] * 16
             + grad_models
             + grad_f_list
             + [None] * num_source_types  # sources_i
@@ -1316,11 +1430,15 @@ def acoustic_python(
     storage_mode_str: str,
     storage_path: str,
     storage_compression: bool,
+    gradient_mask_indices: Optional[torch.Tensor],
+    gradient_mask_numel: int,
     *args: torch.Tensor,
 ) -> Tuple[torch.Tensor, ...]:
     """Python backend for acoustic wave propagation."""
     if backward_callback is not None:
         raise RuntimeError("backward_callback is not supported in the Python backend.")
+    if gradient_mask_indices is not None:
+        raise RuntimeError("gradient_mask is not supported in the Python backend.")
     if storage_mode_str != "device":
         raise RuntimeError(
             "Specifying storage mode is not supported in Python backend."

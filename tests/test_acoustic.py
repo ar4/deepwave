@@ -1,5 +1,6 @@
 """Tests for deepwave.acoustic."""
 
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import pytest
@@ -54,6 +55,7 @@ def acousticprop(
     psi_x_0: Optional[torch.Tensor] = None,
     nt: Optional[int] = None,
     model_gradient_sampling_interval: int = 1,
+    gradient_mask: Optional[torch.Tensor] = None,
     functional: bool = True,
 ) -> Tuple[torch.Tensor, ...]:
     """Wraps the acoustic propagator."""
@@ -120,6 +122,7 @@ def acousticprop(
             psi_x_0=psi_x_0,
             nt=nt,
             model_gradient_sampling_interval=model_gradient_sampling_interval,
+            gradient_mask=gradient_mask,
             **prop_kwargs,
         )
 
@@ -150,6 +153,7 @@ def acousticprop(
         psi_x_0=psi_x_0,
         nt=nt,
         model_gradient_sampling_interval=model_gradient_sampling_interval,
+        gradient_mask=gradient_mask,
         **prop_kwargs,
     )
 
@@ -159,6 +163,115 @@ def test_python_backends() -> None:
     if USE_OPENMP:
         run_forward(propagator=acousticprop, prop_kwargs={"python_backend": "jit"})
         run_forward(propagator=acousticprop, prop_kwargs={"python_backend": "compile"})
+
+
+def _compute_gradient(mask: Optional[torch.Tensor]) -> Tuple[torch.Tensor, torch.Tensor]:
+    nt = 4
+    v = torch.ones(5, 5, requires_grad=True)
+    rho = torch.ones_like(v, requires_grad=True)
+    source_amplitudes = torch.zeros(1, 1, nt)
+    source_amplitudes[0, 0, 0] = 1
+    locations = torch.tensor([[[2, 2]]], dtype=torch.long)
+    outputs = acoustic(
+        v,
+        rho,
+        1.0,
+        0.001,
+        source_amplitudes_p=source_amplitudes,
+        source_locations_p=locations,
+        receiver_locations_p=locations,
+        nt=nt,
+        pml_width=2,
+        gradient_mask=mask,
+    )
+    receivers = outputs[-3:]
+    loss = sum(o.sum() for o in receivers)
+    loss.backward()
+    assert v.grad is not None
+    assert rho.grad is not None
+    return v.grad.detach(), rho.grad.detach()
+
+
+def _run_forward_for_storage(storage_dir: Path, mask: Optional[torch.Tensor]) -> int:
+    storage_dir.mkdir()
+    nt = 3
+    v = torch.ones(5, 5, requires_grad=True)
+    rho = torch.ones_like(v)
+    source_amplitudes = torch.zeros(1, 1, nt)
+    source_amplitudes[0, 0, 0] = 1
+    locations = torch.tensor([[[2, 2]]], dtype=torch.long)
+    outputs = acoustic(
+        v,
+        rho,
+        1.0,
+        0.001,
+        source_amplitudes_p=source_amplitudes,
+        source_locations_p=locations,
+        receiver_locations_p=locations,
+        nt=nt,
+        pml_width=2,
+        storage_mode="disk",
+        storage_path=str(storage_dir),
+        storage_compression=False,
+        gradient_mask=mask,
+    )
+    assert outputs
+    return sum(p.stat().st_size for p in storage_dir.rglob("*") if p.is_file())
+
+
+def test_gradient_mask_reduces_storage(tmp_path: Path) -> None:
+    mask = torch.zeros(5, 5, dtype=torch.bool)
+    mask[2, 2] = True
+    masked_size = _run_forward_for_storage(tmp_path / "masked", mask)
+    unmasked_size = _run_forward_for_storage(tmp_path / "unmasked", None)
+    assert masked_size < (0.1 * unmasked_size)
+
+
+def test_gradient_mask_zeroes_outside_mask() -> None:
+    mask = torch.zeros(5, 5, dtype=torch.bool)
+    mask[2, 2] = True
+    grad_v, grad_rho = _compute_gradient(mask)
+    assert torch.count_nonzero(grad_v[mask]) == 1
+    assert torch.count_nonzero(grad_v[~mask]) == 0
+    assert torch.count_nonzero(grad_rho[mask]) == 1
+    assert torch.count_nonzero(grad_rho[~mask]) == 0
+
+
+def test_gradient_mask_default_computes_everywhere() -> None:
+    full_mask = torch.ones(5, 5, dtype=torch.bool)
+    grad_no_mask_v, grad_no_mask_rho = _compute_gradient(None)
+    grad_full_mask_v, grad_full_mask_rho = _compute_gradient(full_mask)
+    assert torch.count_nonzero(grad_no_mask_v) > 0
+    assert torch.count_nonzero(grad_no_mask_rho) > 0
+    assert torch.allclose(grad_no_mask_v, grad_full_mask_v, rtol=1e-30)
+    assert torch.allclose(grad_no_mask_rho, grad_full_mask_rho, rtol=1e-30)
+
+
+def test_gradient_mask_python_backend_raises() -> None:
+    nt = 4
+    v = torch.ones(5, 5)
+    rho = torch.ones_like(v)
+    source_amplitudes = torch.zeros(1, 1, nt)
+    source_amplitudes[0, 0, 0] = 1
+    locations = torch.tensor([[[2, 2]]], dtype=torch.long)
+    mask = torch.ones(5, 5, dtype=torch.bool)
+    with pytest.raises(
+        RuntimeError,
+        match=r"gradient_mask is not supported in the Python backend\.",
+    ):
+        acoustic(
+            v,
+            rho,
+            1.0,
+            0.001,
+            source_amplitudes_p=source_amplitudes,
+            source_locations_p=locations,
+            receiver_locations_p=locations,
+            nt=nt,
+            pml_width=2,
+            python_backend="eager",
+            gradient_mask=mask,
+        )
 
 
 @pytest.mark.parametrize(
@@ -1052,6 +1165,7 @@ def run_gradcheck(
             psi_x_0,
             nt,
             1,
+            None,
             True,
         )
         out = propagator(*inputs)
