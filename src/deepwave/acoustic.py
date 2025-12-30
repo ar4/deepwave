@@ -496,6 +496,16 @@ def acoustic(
     source_locations_list.insert(0, source_locations_p)
     receiver_locations_list.insert(0, receiver_locations_p)
 
+    models_list = [v, rho]
+    model_pad_modes = ["replicate", "replicate"]
+    gradient_mask_for_setup: Optional[torch.Tensor] = None
+    if gradient_mask is not None:
+        gradient_mask_for_setup = gradient_mask.to(
+            device=v.device, dtype=v.dtype, copy=False
+        )
+        models_list.append(gradient_mask_for_setup)
+        model_pad_modes.append("constant")
+
     (
         models,
         source_amplitudes_out,
@@ -518,8 +528,8 @@ def acoustic(
         device,
         dtype,
     ) = deepwave.common.setup_propagator(
-        [v, rho],
-        ["replicate", "replicate"],
+        models_list,
+        model_pad_modes,
         grid_spacing,
         dt,
         source_amplitudes_list,
@@ -559,6 +569,11 @@ def acoustic(
         receiver_locations_x,
     )
 
+    gradient_mask_prepared: Optional[torch.Tensor] = None
+    if gradient_mask is not None:
+        gradient_mask_prepared = models.pop()
+        del gradient_mask_for_setup
+
     models = prepare_models(models[0], models[1])
 
     # Scale source amplitudes
@@ -568,23 +583,14 @@ def acoustic(
     model_shape = models[0].shape[-ndim:]
     flat_model_shape = int(torch.prod(torch.tensor(model_shape)).item())
 
+    # Prepare compact gradient mask indices and number of elements
     gradient_mask_indices: Optional[torch.Tensor] = None
     gradient_mask_numel = flat_model_shape
-    if gradient_mask is not None:
+    if gradient_mask_prepared is not None:
         gradient_mask_indices, gradient_mask_numel = _prepare_gradient_indices(
-            gradient_mask,
-            fd_pad,
-            pml_width,
-            survey_pad,
-            origin,
-            n_shots,
-            ndim,
-            device,
-            source_locations_list,
-            receiver_locations_list,
-            initial_wavefields,
+            gradient_mask_prepared,
         )
-        del gradient_mask
+        del gradient_mask_prepared
 
     for i, (src_amp, src_loc, model) in enumerate(
         zip(source_amplitudes_out, sources_i, models)
@@ -662,48 +668,19 @@ def acoustic(
 
 
 def _prepare_gradient_indices(
-    gradient_mask: torch.Tensor,
-    fd_pad: List[int],
-    pml_width: List[int],
-    survey_pad: Optional[Union[int, Sequence[Optional[int]]]],
-    origin: Optional[Sequence[int]],
-    n_shots: int,
-    ndims: int,
-    device: torch.device,
-    source_locations: List[Optional[torch.Tensor]],
-    receiver_locations: List[Optional[torch.Tensor]],
-    wavefields: List[Optional[torch.Tensor]],
+    gradient_mask_prepared: torch.Tensor,
 ) -> Tuple[torch.Tensor, int]:
     """
-    Pad/slice mask to the internal domain and build compact indices.
+    Build compact indices from a prepared (padded/sliced) gradient mask.
 
     Produces a spatial-only index tensor aligned with the internally padded
     model: -1 for masked-out cells and 0..N-1 for masked-in cells (N = number
     of True entries), along with that count. Enforces a single shared mask
     (no batch dimension) across all shots.
     """
-    gradient_mask = gradient_mask.to(device=device, dtype=torch.bool, copy=False)
-    (
-        gradient_mask_prepared,
-        _,
-        _,
-        _,
-    ) = deepwave.common.extract_survey(
-        [gradient_mask],
-        source_locations,
-        receiver_locations,
-        wavefields,
-        survey_pad,
-        origin,
-        fd_pad,
-        pml_width,
-        ["constant"],
-        n_shots,
-        ndims,
-        device,
-        torch.bool,
+    gradient_mask_prepared = gradient_mask_prepared.to(
+        dtype=torch.bool, copy=False
     )
-    gradient_mask_prepared = gradient_mask_prepared[0]
     if gradient_mask_prepared.shape[0] != 1:
         raise RuntimeError("gradient_mask must not have a batch dimension.")
     gradient_mask_prepared = gradient_mask_prepared[0].contiguous()
