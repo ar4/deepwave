@@ -996,14 +996,10 @@ def test_check_points_per_wavelength_zero_min_nonzero_vel() -> None:
     min_nonzero_vel = 0.0
     pml_freq = 25.0
     grid_spacing = [5.0, 5.0]
-    # Should not warn, as min_wavelength will be 0, so cells_per_wavelength
-    # will be 0
     with pytest.warns(
         UserWarning,
         match=re.escape(
-            "At least six grid cells per wavelength is recommended, but at a "
-            "frequency of 25.0, a minimum non-zero velocity of 0.0, and a "
-            "grid cell spacing of 5.0, there are only 0.00.",
+            "The test for the number of grid lengths per wavelength is being skipped.",
         ),
     ):
         check_points_per_wavelength(min_nonzero_vel, pml_freq, grid_spacing)

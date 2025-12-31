@@ -12,6 +12,7 @@ from test_utils import (
     direct_3d,
     run_reciprocity_check,
 )
+from torch.func import jvp, vmap
 
 from deepwave import IGNORE_LOCATION, Acoustic, acoustic
 from deepwave.backend_utils import USE_OPENMP
@@ -1137,3 +1138,180 @@ def test_reciprocity(nx, dx):
             prop_kwargs,
             acousticprop,
         )
+
+
+def test_vmap_acoustic_props() -> None:
+    """Test vmap over acoustic property models."""
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    ny, nx = 8, 8
+    dx = 5.0
+    dt = 0.004
+    v_base = 1500.0
+    rho_base = 2200.0
+
+    batch_size = 3
+    v_batch = torch.empty(batch_size, ny, nx, device=device)
+    rho_batch = torch.empty(batch_size, ny, nx, device=device)
+    for i in range(batch_size):
+        v_batch[i] = v_base + i * 100.0
+        rho_batch[i] = rho_base + i * 50.0
+
+    n_shots = 2
+    n_receivers_per_shot = 3
+    source_locations = torch.zeros(n_shots, 1, 2, dtype=torch.long, device=device)
+    source_locations[..., 0] = ny // 2
+    source_locations[..., 1] = nx // 2
+
+    receiver_locations = torch.zeros(
+        n_shots, n_receivers_per_shot, 2, dtype=torch.long, device=device
+    )
+    receiver_locations[..., 0] = ny // 2
+    receiver_locations[..., 1] = torch.linspace(
+        0, nx - 1, n_receivers_per_shot, device=device
+    ).long()
+
+    source_amplitudes = (
+        ricker(25.0, 30, dt, 0.05).to(device).reshape(1, 1, -1).repeat(n_shots, 1, 1)
+    )
+
+    def prop(v, rho):
+        return acoustic(
+            v,
+            rho,
+            dx,
+            dt,
+            source_amplitudes_p=source_amplitudes,
+            source_locations_p=source_locations,
+            receiver_locations_p=receiver_locations,
+            pml_width=3,
+            max_vel=2000.0,
+            python_backend="eager",
+        )[-1]
+
+    res_vmap = vmap(prop)(v_batch, rho_batch)
+
+    res_loop = []
+    for i in range(batch_size):
+        res_loop.append(prop(v_batch[i], rho_batch[i]))
+    res_loop = torch.stack(res_loop)
+
+    assert torch.allclose(res_vmap, res_loop, atol=1e-5)
+
+
+def test_vmap_acoustic_partial() -> None:
+    """Test vmap over rho only (v shared)."""
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    ny, nx = 8, 8
+    dx = 5.0
+    dt = 0.004
+    v = torch.full((ny, nx), 1500.0, device=device)
+
+    batch_size = 3
+    rho_batch = torch.empty(batch_size, ny, nx, device=device)
+    for i in range(batch_size):
+        rho_batch[i] = 2200.0 + i * 50.0
+
+    n_shots = 1
+    source_locations = torch.zeros(n_shots, 1, 2, dtype=torch.long, device=device)
+    source_locations[..., 0] = ny // 2
+    source_locations[..., 1] = nx // 2
+    receiver_locations = source_locations.clone()
+
+    source_amplitudes = ricker(25.0, 30, dt, 0.05).to(device).reshape(1, 1, -1)
+
+    def prop(r):
+        return acoustic(
+            v,
+            r,
+            dx,
+            dt,
+            source_amplitudes_p=source_amplitudes,
+            source_locations_p=source_locations,
+            receiver_locations_p=receiver_locations,
+            pml_width=3,
+            max_vel=2000.0,
+            python_backend="eager",
+        )[-1]
+
+    res_vmap = vmap(prop)(rho_batch)
+
+    res_loop = []
+    for i in range(batch_size):
+        res_loop.append(prop(rho_batch[i]))
+    res_loop = torch.stack(res_loop)
+
+    assert torch.allclose(res_vmap, res_loop, atol=1e-5)
+
+
+def test_jvp_acoustic() -> None:
+    """Test jvp on acoustic."""
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    dtype = torch.double
+    ny, nx = 8, 8
+    dx = 5.0
+    dt = 0.004
+    v0 = torch.full((ny, nx), 1500.0, device=device, dtype=dtype)
+    rho0 = torch.full((ny, nx), 2200.0, device=device, dtype=dtype)
+
+    v_tangent = torch.randn_like(v0) * 10.0
+    rho_tangent = torch.randn_like(rho0) * 10.0
+
+    source_locations = torch.zeros(1, 1, 2, dtype=torch.long, device=device)
+    source_locations[..., 0] = ny // 2
+    source_locations[..., 1] = nx // 2
+    receiver_locations = source_locations.clone()
+    source_amplitudes = (
+        ricker(25.0, 30, dt, 0.05, dtype=dtype).to(device).reshape(1, 1, -1)
+    )
+
+    def prop(v, r):
+        return acoustic(
+            v,
+            r,
+            dx,
+            dt,
+            source_amplitudes_p=source_amplitudes,
+            source_locations_p=source_locations,
+            receiver_locations_p=receiver_locations,
+            pml_width=3,
+            max_vel=2000.0,
+            python_backend="eager",
+        )[-1]
+
+    _, jvp_out = jvp(prop, (v0, rho0), (v_tangent, rho_tangent))
+
+    # Finite Difference
+    epsilon = 1e-6
+    out_plus = prop(v0 + epsilon * v_tangent, rho0 + epsilon * rho_tangent)
+    out_minus = prop(v0 - epsilon * v_tangent, rho0 - epsilon * rho_tangent)
+    fd_out = (out_plus - out_minus) / (2 * epsilon)
+
+    assert torch.allclose(jvp_out, fd_out, atol=1e-5)
+
+
+def test_vmap_error_check() -> None:
+    """Ensure error is raised if non-property inputs are vmapped."""
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    ny, nx = 8, 8
+    v = torch.full((ny, nx), 1500.0, device=device)
+    rho = torch.full((ny, nx), 2200.0, device=device)
+
+    # Try to vmap over source amplitudes
+    batch_size = 2
+    source_amplitudes_batch = torch.randn(batch_size, 1, 1, 10, device=device)
+
+    def prop(amps):
+        return acoustic(
+            v,
+            rho,
+            5.0,
+            0.004,
+            source_amplitudes_p=amps,
+            source_locations_p=torch.zeros(1, 1, 2, dtype=torch.long, device=device),
+            pml_width=3,
+            max_vel=2000.0,
+            python_backend="eager",
+        )
+
+    with pytest.raises(NotImplementedError, match="Only property models"):
+        vmap(prop)(source_amplitudes_batch)

@@ -15,6 +15,7 @@ from test_utils import (
     run_reciprocity_check,
     scattered,
 )
+from torch.func import jvp, vmap
 
 import deepwave
 from deepwave import IGNORE_LOCATION, Elastic, elastic
@@ -2474,3 +2475,201 @@ def test_stress_symmetry(shape, dx, stress_indices):
         # Dimension in tensor is dim + 1 due to batch dimension
         flipped = torch.flip(sum_normal_stresses, dims=[dim + 1])
         assert torch.allclose(sum_normal_stresses, flipped, atol=1e-9)
+
+
+def test_vmap_elastic_props() -> None:
+    """Test vmap over elastic property models."""
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    ny, nx = 8, 8
+    dx = 5.0
+    dt = 0.004
+    lamb_base = 1e9
+    mu_base = 1e9
+    buoyancy_base = 1.0 / 2200.0
+
+    batch_size = 3
+    lamb_batch = torch.empty(batch_size, ny, nx, device=device)
+    mu_batch = torch.empty(batch_size, ny, nx, device=device)
+    buoyancy_batch = torch.empty(batch_size, ny, nx, device=device)
+    for i in range(batch_size):
+        lamb_batch[i] = lamb_base + i * 1e8
+        mu_batch[i] = mu_base + i * 1e8
+        buoyancy_batch[i] = buoyancy_base
+
+    n_shots = 2
+    n_receivers_per_shot = 3
+    source_locations = torch.zeros(n_shots, 1, 2, dtype=torch.long, device=device)
+    source_locations[..., 0] = ny // 2
+    source_locations[..., 1] = nx // 2
+
+    receiver_locations = torch.zeros(
+        n_shots, n_receivers_per_shot, 2, dtype=torch.long, device=device
+    )
+    receiver_locations[..., 0] = ny // 2
+    receiver_locations[..., 1] = torch.linspace(
+        0, nx - 1, n_receivers_per_shot, device=device
+    ).long()
+
+    source_amplitudes = (
+        ricker(25.0, 30, dt, 0.05).to(device).reshape(1, 1, -1).repeat(n_shots, 1, 1)
+    )
+
+    def prop(lamb, mu, buoyancy):
+        return elastic(
+            lamb,
+            mu,
+            buoyancy,
+            dx,
+            dt,
+            source_amplitudes_p=source_amplitudes,
+            source_locations_p=source_locations,
+            receiver_locations_p=receiver_locations,
+            pml_width=3,
+            max_vel=2000.0,
+            python_backend="eager",
+        )[-1]  # Pressure receiver
+
+    res_vmap = vmap(prop)(lamb_batch, mu_batch, buoyancy_batch)
+
+    res_loop = []
+    for i in range(batch_size):
+        res_loop.append(prop(lamb_batch[i], mu_batch[i], buoyancy_batch[i]))
+    res_loop = torch.stack(res_loop)
+
+    assert torch.allclose(res_vmap, res_loop, atol=1e-5)
+
+
+def test_vmap_elastic_partial() -> None:
+    """Test vmap over lamb only (others shared)."""
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    ny, nx = 8, 8
+    dx = 5.0
+    dt = 0.004
+    mu = torch.full((ny, nx), 1e9, device=device)
+    buoyancy = torch.full((ny, nx), 1.0 / 2200.0, device=device)
+
+    batch_size = 3
+    lamb_batch = torch.empty(batch_size, ny, nx, device=device)
+    for i in range(batch_size):
+        lamb_batch[i] = 1e9 + i * 1e8
+
+    n_shots = 1
+    source_locations = torch.zeros(n_shots, 1, 2, dtype=torch.long, device=device)
+    source_locations[..., 0] = ny // 2
+    source_locations[..., 1] = nx // 2
+    receiver_locations = source_locations.clone()
+
+    source_amplitudes = ricker(25.0, 30, dt, 0.05).to(device).reshape(1, 1, -1)
+
+    def prop(lamb):
+        return elastic(
+            lamb,
+            mu,
+            buoyancy,
+            dx,
+            dt,
+            source_amplitudes_p=source_amplitudes,
+            source_locations_p=source_locations,
+            receiver_locations_p=receiver_locations,
+            pml_width=3,
+            max_vel=2000.0,
+            python_backend="eager",
+        )[-1]
+
+    res_vmap = vmap(prop)(lamb_batch)
+
+    res_loop = []
+    for i in range(batch_size):
+        res_loop.append(prop(lamb_batch[i]))
+    res_loop = torch.stack(res_loop)
+
+    assert torch.allclose(res_vmap, res_loop, atol=1e-5)
+
+
+def test_jvp_elastic() -> None:
+    """Test jvp on elastic."""
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    dtype = torch.double
+    ny, nx = 8, 8
+    dx = 5.0
+    dt = 0.004
+    lamb0 = torch.full((ny, nx), 1e9, device=device, dtype=dtype)
+    mu0 = torch.full((ny, nx), 1e9, device=device, dtype=dtype)
+    buoyancy0 = torch.full((ny, nx), 1.0 / 2200.0, device=device, dtype=dtype)
+
+    lamb_tangent = torch.randn_like(lamb0) * 1e7
+    mu_tangent = torch.randn_like(mu0) * 1e7
+    buoyancy_tangent = torch.randn_like(buoyancy0) * 1e-6
+
+    source_locations = torch.zeros(1, 1, 2, dtype=torch.long, device=device)
+    source_locations[..., 0] = ny // 2
+    source_locations[..., 1] = nx // 2
+    receiver_locations = source_locations.clone()
+    source_amplitudes = (
+        ricker(25.0, 30, dt, 0.05, dtype=dtype).to(device).reshape(1, 1, -1)
+    )
+
+    def prop(lamb, m, b):
+        return elastic(
+            lamb,
+            m,
+            b,
+            dx,
+            dt,
+            source_amplitudes_p=source_amplitudes,
+            source_locations_p=source_locations,
+            receiver_locations_p=receiver_locations,
+            pml_width=3,
+            max_vel=2000.0,
+            python_backend="eager",
+        )[-1]
+
+    _, jvp_out = jvp(
+        prop, (lamb0, mu0, buoyancy0), (lamb_tangent, mu_tangent, buoyancy_tangent)
+    )
+
+    # Finite Difference
+    epsilon = 1e-6
+    out_plus = prop(
+        lamb0 + epsilon * lamb_tangent,
+        mu0 + epsilon * mu_tangent,
+        buoyancy0 + epsilon * buoyancy_tangent,
+    )
+    out_minus = prop(
+        lamb0 - epsilon * lamb_tangent,
+        mu0 - epsilon * mu_tangent,
+        buoyancy0 - epsilon * buoyancy_tangent,
+    )
+    fd_out = (out_plus - out_minus) / (2 * epsilon)
+
+    assert torch.allclose(jvp_out, fd_out, atol=1e-5)
+
+
+def test_vmap_error_check() -> None:
+    """Ensure error is raised if non-property inputs are vmapped."""
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    ny, nx = 8, 8
+    lamb = torch.full((ny, nx), 1e9, device=device)
+    mu = torch.full((ny, nx), 1e9, device=device)
+    buoyancy = torch.full((ny, nx), 1.0 / 2200.0, device=device)
+
+    # Try to vmap over source amplitudes
+    batch_size = 2
+    source_amplitudes_batch = torch.randn(batch_size, 1, 1, 10, device=device)
+
+    def prop(amps):
+        return elastic(
+            lamb,
+            mu,
+            buoyancy,
+            5.0,
+            0.004,
+            source_amplitudes_p=amps,
+            source_locations_p=torch.zeros(1, 1, 2, dtype=torch.long, device=device),
+            pml_width=3,
+            max_vel=2000.0,
+            python_backend="eager",
+        )
+
+    with pytest.raises(NotImplementedError, match="Only property models"):
+        vmap(prop)(source_amplitudes_batch)

@@ -64,25 +64,25 @@ def prepare_models(v: torch.Tensor, rho: torch.Tensor) -> List[torch.Tensor]:
             (rho[..., :-1, :, :] + rho[..., 1:, :, :]) / 2, (0, 0, 0, 0, 0, 1)
         )
         mask = rfmax < rho_z.abs()
-        buoyancy_z = torch.zeros_like(rho)
-        buoyancy_z[mask] = 1 / rho_z[mask]
+        rho_z_safe = torch.where(mask, rho_z, torch.ones_like(rho_z))
+        buoyancy_z = torch.where(mask, 1 / rho_z_safe, torch.zeros_like(rho))
         models.append(buoyancy_z)
-        del rho_z, buoyancy_z
+        del rho_z, mask, rho_z_safe, buoyancy_z
 
     if ndim >= 2:
         rho_y = torch.nn.functional.pad(
             (rho[..., :-1, :] + rho[..., 1:, :]) / 2, (0, 0, 0, 1)
         )
         mask = rfmax < rho_y.abs()
-        buoyancy_y = torch.zeros_like(rho)
-        buoyancy_y[mask] = 1 / rho_y[mask]
+        rho_y_safe = torch.where(mask, rho_y, torch.ones_like(rho_y))
+        buoyancy_y = torch.where(mask, 1 / rho_y_safe, torch.zeros_like(rho))
         models.append(buoyancy_y)
-        del rho_y, buoyancy_y
+        del rho_y, mask, rho_y_safe, buoyancy_y
 
     rho_x = torch.nn.functional.pad((rho[..., :-1] + rho[..., 1:]) / 2, (0, 1))
     mask = rfmax < rho_x.abs()
-    buoyancy_x = torch.zeros_like(rho)
-    buoyancy_x[mask] = 1 / rho_x[mask]
+    rho_x_safe = torch.where(mask, rho_x, torch.ones_like(rho_x))
+    buoyancy_x = torch.where(mask, 1 / rho_x_safe, torch.zeros_like(rho))
     models.append(buoyancy_x)
 
     return models
@@ -344,6 +344,30 @@ def acoustic(
         and receiver_amplitudes (pressure, vz, vy, vx) (omitting dimensions that
         don't exist).
     """
+    deepwave.common.check_inputs_not_vmapped(
+        pressure_0,
+        source_amplitudes_p,
+        source_amplitudes_z,
+        source_amplitudes_y,
+        source_amplitudes_x,
+        source_locations_p,
+        source_locations_z,
+        source_locations_y,
+        source_locations_x,
+        receiver_locations_p,
+        receiver_locations_z,
+        receiver_locations_y,
+        receiver_locations_x,
+        vz_0,
+        phi_z_0,
+        psi_z_0,
+        vy_0,
+        phi_y_0,
+        psi_y_0,
+        vx_0,
+        phi_x_0,
+        psi_x_0,
+    )
     ndim = deepwave.common.get_ndim(
         [v, rho],
         [pressure_0],
@@ -401,13 +425,21 @@ def acoustic(
         initial_wavefields.append(psi_y_0)
     initial_wavefields.append(psi_x_0)
 
-    v_nonzero = v[v != 0]
-    if v_nonzero.numel() > 0:
-        min_nonzero_model_vel = v_nonzero.abs().min().item()
-    else:
+    if deepwave.common.is_inside_vmap(v):
+        if max_vel is None:
+            raise RuntimeError(
+                "If using BatchedTensor inputs, you must specify max_vel"
+            )
+        max_model_vel = max_vel
         min_nonzero_model_vel = 0.0
-    del v_nonzero
-    max_model_vel = v.abs().max().item()
+    else:
+        v_nonzero = v[v != 0]
+        if v_nonzero.numel() > 0:
+            min_nonzero_model_vel = v_nonzero.abs().min().item()
+        else:
+            min_nonzero_model_vel = 0.0
+        del v_nonzero
+        max_model_vel = v.abs().max().item()
     fd_pad = [accuracy // 2, accuracy // 2 - 1] * ndim
 
     source_amplitudes_list = []
@@ -1326,6 +1358,7 @@ def acoustic_python(
             "Specifying storage mode is not supported in Python backend."
         )
 
+    is_batched = any(deepwave.common.is_inside_vmap(x) for x in args)
     ndim = len(grid_spacing)
     args_list = list(args)
 
@@ -1372,8 +1405,10 @@ def acoustic_python(
     receiver_amplitudes = [
         torch.empty(0, device=device, dtype=dtype) for _ in receivers_i
     ]
+    receiver_amplitudes_lists: List[List[torch.Tensor]] = [[] for _ in receivers_i]
+
     for i, (locs, n_per_shot) in enumerate(zip(receivers_i, n_receivers_per_shot_list)):
-        if locs.numel() > 0:
+        if locs.numel() > 0 and not is_batched:
             receiver_amplitudes[i].resize_(nt, n_shots, n_per_shot)
             receiver_amplitudes[i].fill_(0)
 
@@ -1457,18 +1492,22 @@ def acoustic_python(
 
             # Record receivers
             for i, (receivers_i_masked, _, target_idx) in enumerate(masked_receivers):
-                if receiver_amplitudes[i].numel() > 0:
+                if receivers_i_masked.numel() > 0:
+                    val = torch.empty(0)
                     if target_idx == 0:  # Pressure
-                        receiver_amplitudes[i][t] = p.view(-1, flat_shape).gather(
-                            1, receivers_i_masked
-                        )
+                        val = p.view(-1, flat_shape).gather(1, receivers_i_masked)
                     elif target_idx > 0 and target_idx <= ndim:  # Velocity
                         v_idx = target_idx - 1
-                        receiver_amplitudes[i][t] = (
+                        val = (
                             velocities[v_idx]
                             .view(-1, flat_shape)
                             .gather(1, receivers_i_masked)
                         )
+                    if val.numel() > 0:
+                        if is_batched:
+                            receiver_amplitudes_lists[i].append(val)
+                        else:
+                            receiver_amplitudes[i][t] = val
 
             # Update velocities
             velocities, psi = _update_velocities_opt(
@@ -1501,6 +1540,11 @@ def acoustic_python(
                         .scatter_add(1, sources_i_masked, src_amp_masked[t])
                         .view(size_with_batch)
                     )
+
+    if is_batched:
+        for i in range(len(receiver_amplitudes)):
+            if len(receiver_amplitudes_lists[i]) > 0:
+                receiver_amplitudes[i] = torch.stack(receiver_amplitudes_lists[i])
 
     for i, (_, recv_mask, _) in enumerate(masked_receivers):
         if receiver_amplitudes[i].numel() > 0:

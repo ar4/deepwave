@@ -402,6 +402,19 @@ def scalar(
               receivers were specified.
 
     """
+    deepwave.common.check_inputs_not_vmapped(
+        wavefield_0,
+        wavefield_m1,
+        source_amplitudes,
+        source_locations,
+        receiver_locations,
+        psiz_m1,
+        zetaz_m1,
+        psiy_m1,
+        zetay_m1,
+        psix_m1,
+        zetax_m1,
+    )
     ndim = deepwave.common.get_ndim(
         [v],
         [wavefield_0, wavefield_m1],
@@ -428,13 +441,21 @@ def scalar(
         *zeta,
     ]
 
-    v_nonzero = v[v != 0]
-    if v_nonzero.numel() > 0:
-        min_nonzero_model_vel = v_nonzero.abs().min().item()
-    else:
+    if deepwave.common.is_inside_vmap(v):
+        if max_vel is None:
+            raise RuntimeError(
+                "If using BatchedTensor inputs, you must specify max_vel"
+            )
+        max_model_vel = max_vel
         min_nonzero_model_vel = 0.0
-    del v_nonzero
-    max_model_vel = v.abs().max().item()
+    else:
+        v_nonzero = v[v != 0]
+        if v_nonzero.numel() > 0:
+            min_nonzero_model_vel = v_nonzero.abs().min().item()
+        else:
+            min_nonzero_model_vel = 0.0
+        del v_nonzero
+        max_model_vel = v.abs().max().item()
     fd_pad = [accuracy // 2] * 2 * ndim
     (
         models,
@@ -1950,6 +1971,10 @@ def scalar_python(
         A tuple containing the output wavefields and receiver amplitudes.
 
     """
+    is_batched = any(
+        deepwave.common.is_inside_vmap(x)
+        for x in [v, source_amplitudes, sources_i, receivers_i, *wavefields_tuple]
+    )
     if backward_callback is not None:
         raise RuntimeError("backward_callback is not supported in the Python backend.")
     if storage_mode_str != "device":
@@ -1982,8 +2007,9 @@ def scalar_python(
     ndim = len(shape)
     n_receivers_per_shot = receivers_i.numel() // n_shots
     receiver_amplitudes = torch.empty(0, device=device, dtype=dtype)
+    receiver_amplitudes_list: List[torch.Tensor] = []
 
-    if receivers_i.numel() > 0:
+    if receivers_i.numel() > 0 and not is_batched:
         receiver_amplitudes.resize_(nt, n_shots, n_receivers_per_shot)
         receiver_amplitudes.fill_(0)
 
@@ -2027,10 +2053,12 @@ def scalar_python(
             )
         for inner_step in range(step_ratio):
             t = step * step_ratio + inner_step
-            if receiver_amplitudes.numel() > 0:
-                receiver_amplitudes[t] = (
-                    wavefields[0].view(-1, flat_shape).gather(1, receivers_i_masked)
-                )
+            if receivers_i_masked.numel() > 0:
+                val = wavefields[0].view(-1, flat_shape).gather(1, receivers_i_masked)
+                if is_batched:
+                    receiver_amplitudes_list.append(val)
+                else:
+                    receiver_amplitudes[t] = val
             wavefields = _forward_step_opt(
                 v, grid_spacing, dt, accuracy, pml_profiles, wavefields
             )
@@ -2038,6 +2066,9 @@ def scalar_python(
                 wavefields[0].view(-1, flat_shape).scatter_add_(
                     1, sources_i_masked, source_amplitudes_masked[t]
                 )
+
+    if is_batched and len(receiver_amplitudes_list) > 0:
+        receiver_amplitudes = torch.stack(receiver_amplitudes_list)
 
     receiver_amplitudes_masked = torch.zeros_like(receiver_amplitudes)
     if receiver_amplitudes.numel() > 0:

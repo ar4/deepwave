@@ -27,6 +27,7 @@ from typing import (
 from uuid import uuid4
 
 import torch
+import torch._C._functorch as _functorch
 import torch.fft
 
 if TYPE_CHECKING:
@@ -1169,6 +1170,12 @@ def check_points_per_wavelength(
             `grid_spacing` is negative or zero.
 
     """
+    if min_nonzero_vel == 0:
+        warnings.warn(
+            "The test for the number of grid lengths per wavelength is being skipped.",
+            stacklevel=1,
+        )
+        return
     if min_nonzero_vel < 0:
         raise ValueError("min_nonzero_vel must be non-negative.")
     if pml_freq < 0:
@@ -2722,3 +2729,23 @@ def get_ndim(
             "initial wavefield."
         )
     return ndim
+
+
+def is_inside_vmap(tensor: torch.Tensor) -> bool:
+    """Check if a tensor is vmapped."""
+    return _functorch.is_functorch_wrapped_tensor(
+        tensor
+    ) or _functorch.is_batchedtensor(tensor)
+
+
+def check_inputs_not_vmapped(*args: Optional[torch.Tensor]) -> None:
+    """Check that none of the parameters is vmapped."""
+    for tensor in args:
+        if (
+            tensor is not None
+            and isinstance(tensor, torch.Tensor)
+            and is_inside_vmap(tensor)
+        ):
+            raise NotImplementedError(
+                "Only property models (e.g. velocity) support vmap currently."
+            )

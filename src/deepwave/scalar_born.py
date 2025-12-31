@@ -355,6 +355,28 @@ def scalar_born(
               wavefield.
 
     """
+    deepwave.common.check_inputs_not_vmapped(
+        wavefield_0,
+        wavefield_m1,
+        wavefield_sc_0,
+        wavefield_sc_m1,
+        source_amplitudes,
+        source_locations,
+        receiver_locations,
+        bg_receiver_locations,
+        psiz_m1,
+        zetaz_m1,
+        psiz_sc_m1,
+        zetaz_sc_m1,
+        psiy_m1,
+        zetay_m1,
+        psiy_sc_m1,
+        zetay_sc_m1,
+        psix_m1,
+        zetax_m1,
+        psix_sc_m1,
+        zetax_sc_m1,
+    )
     ndim = deepwave.common.get_ndim(
         [v, scatter],
         [wavefield_0, wavefield_m1, wavefield_sc_0, wavefield_sc_m1],
@@ -398,13 +420,21 @@ def scalar_born(
         *zeta_sc,
     ]
 
-    v_nonzero = v[v != 0]
-    if v_nonzero.numel() > 0:
-        min_nonzero_model_vel = v_nonzero.abs().min().item()
-    else:
+    if deepwave.common.is_inside_vmap(v):
+        if max_vel is None:
+            raise RuntimeError(
+                "If using BatchedTensor inputs, you must specify max_vel"
+            )
+        max_model_vel = max_vel
         min_nonzero_model_vel = 0.0
-    del v_nonzero
-    max_model_vel = v.abs().max().item()
+    else:
+        v_nonzero = v[v != 0]
+        if v_nonzero.numel() > 0:
+            min_nonzero_model_vel = v_nonzero.abs().min().item()
+        else:
+            min_nonzero_model_vel = 0.0
+        del v_nonzero
+        max_model_vel = v.abs().max().item()
     fd_pad = [accuracy // 2] * 2 * ndim
     (
         models,
@@ -1533,6 +1563,19 @@ def scalar_born_python(
         A tuple containing the final wavefields and receiver data.
 
     """
+    is_batched = any(
+        deepwave.common.is_inside_vmap(x)
+        for x in [
+            v,
+            scatter,
+            source_amplitudes,
+            source_amplitudessc,
+            sources_i,
+            receivers_i,
+            receiverssc_i,
+            *wavefields_tuple,
+        ]
+    )
     if backward_callback is not None:
         raise RuntimeError("backward_callback is not supported in the Python backend.")
     if storage_mode_str != "device":
@@ -1568,11 +1611,13 @@ def scalar_born_python(
     n_receiverssc_per_shot = receiverssc_i.numel() // n_shots
     receiver_amplitudes = torch.empty(0, device=device, dtype=dtype)
     receiver_amplitudessc = torch.empty(0, device=device, dtype=dtype)
+    receiver_amplitudes_list: List[torch.Tensor] = []
+    receiver_amplitudessc_list: List[torch.Tensor] = []
 
-    if receivers_i.numel() > 0:
+    if receivers_i.numel() > 0 and not is_batched:
         receiver_amplitudes.resize_(nt, n_shots, n_receivers_per_shot)
         receiver_amplitudes.fill_(0)
-    if receiverssc_i.numel() > 0:
+    if receiverssc_i.numel() > 0 and not is_batched:
         receiver_amplitudessc.resize_(nt, n_shots, n_receiverssc_per_shot)
         receiver_amplitudessc.fill_(0)
 
@@ -1634,16 +1679,22 @@ def scalar_born_python(
             )
         for inner_step in range(step_ratio):
             t = step * step_ratio + inner_step
-            if receiver_amplitudes.numel() > 0:
-                receiver_amplitudes[t] = (
-                    wavefields[0].view(-1, flat_shape).gather(1, receivers_i_masked)
-                )
-            if receiver_amplitudessc.numel() > 0:
-                receiver_amplitudessc[t] = (
+            if receivers_i_masked.numel() > 0:
+                val = wavefields[0].view(-1, flat_shape).gather(1, receivers_i_masked)
+                if is_batched:
+                    receiver_amplitudes_list.append(val)
+                else:
+                    receiver_amplitudes[t] = val
+            if receiverssc_i_masked.numel() > 0:
+                val = (
                     wavefields[2 + 2 * ndim]
                     .view(-1, flat_shape)
                     .gather(1, receiverssc_i_masked)
                 )
+                if is_batched:
+                    receiver_amplitudessc_list.append(val)
+                else:
+                    receiver_amplitudessc[t] = val
             wavefields = _forward_step_opt(
                 v,
                 scatter,
@@ -1660,6 +1711,11 @@ def scalar_born_python(
                 wavefields[2 + 2 * ndim].view(-1, flat_shape).scatter_add_(
                     1, sources_i_masked, source_amplitudessc_masked[t]
                 )
+
+    if is_batched and len(receiver_amplitudes_list) > 0:
+        receiver_amplitudes = torch.stack(receiver_amplitudes_list)
+    if is_batched and len(receiver_amplitudessc_list) > 0:
+        receiver_amplitudessc = torch.stack(receiver_amplitudessc_list)
 
     receiver_amplitudes_masked = torch.zeros_like(receiver_amplitudes)
     if receiver_amplitudes.numel() > 0:

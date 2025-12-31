@@ -37,6 +37,7 @@ def prepare_parameters(mu: torch.Tensor, buoyancy: torch.Tensor) -> List[torch.T
     parameters = []
 
     # Mu (harmonic mean)
+    mu_safe = torch.where(mu.abs() > rfmax, mu, torch.ones_like(mu))
     if ndim >= 3:
         mask = (
             (rfmax < mu[..., 1:, 1:, :].abs())
@@ -44,32 +45,32 @@ def prepare_parameters(mu: torch.Tensor, buoyancy: torch.Tensor) -> List[torch.T
             .logical_and(rfmax < mu[..., 1:, :-1, :].abs())
             .logical_and(rfmax < mu[..., :-1, 1:, :].abs())
         )
-        mu_zy = torch.zeros_like(mu[..., :-1, :-1, :])
-        mu_zy[mask] = 4 / (
-            1 / mu[..., 1:, 1:, :][mask]
-            + 1 / mu[..., :-1, :-1, :][mask]
-            + 1 / mu[..., 1:, :-1, :][mask]
-            + 1 / mu[..., :-1, 1:, :][mask]
+        mu_zy_val = 4 / (
+            1 / mu_safe[..., 1:, 1:, :]
+            + 1 / mu_safe[..., :-1, :-1, :]
+            + 1 / mu_safe[..., 1:, :-1, :]
+            + 1 / mu_safe[..., :-1, 1:, :]
         )
+        mu_zy = torch.where(mask, mu_zy_val, torch.zeros_like(mu_zy_val))
         mu_zy = torch.nn.functional.pad(mu_zy, (0, 0, 0, 1, 0, 1))
         parameters.append(mu_zy)
-        del mu_zy
+        del mask, mu_zy_val, mu_zy
         mask = (
             (rfmax < mu[..., 1:, :, 1:].abs())
             .logical_and(rfmax < mu[..., :-1, :, :-1].abs())
             .logical_and(rfmax < mu[..., 1:, :, :-1].abs())
             .logical_and(rfmax < mu[..., :-1, :, 1:].abs())
         )
-        mu_zx = torch.zeros_like(mu[..., :-1, :, :-1])
-        mu_zx[mask] = 4 / (
-            1 / mu[..., 1:, :, 1:][mask]
-            + 1 / mu[..., :-1, :, :-1][mask]
-            + 1 / mu[..., 1:, :, :-1][mask]
-            + 1 / mu[..., :-1, :, 1:][mask]
+        mu_zx_val = 4 / (
+            1 / mu_safe[..., 1:, :, 1:]
+            + 1 / mu_safe[..., :-1, :, :-1]
+            + 1 / mu_safe[..., 1:, :, :-1]
+            + 1 / mu_safe[..., :-1, :, 1:]
         )
+        mu_zx = torch.where(mask, mu_zx_val, torch.zeros_like(mu_zx_val))
         mu_zx = torch.nn.functional.pad(mu_zx, (0, 1, 0, 0, 0, 1))
         parameters.append(mu_zx)
-        del mu_zx
+        del mask, mu_zx_val, mu_zx
     if ndim >= 2:
         mask = (
             (rfmax < mu[..., 1:, 1:].abs())
@@ -77,45 +78,46 @@ def prepare_parameters(mu: torch.Tensor, buoyancy: torch.Tensor) -> List[torch.T
             .logical_and(rfmax < mu[..., 1:, :-1].abs())
             .logical_and(rfmax < mu[..., :-1, 1:].abs())
         )
-        mu_yx = torch.zeros_like(mu[..., :-1, :-1])
-        mu_yx[mask] = 4 / (
-            1 / mu[..., 1:, 1:][mask]
-            + 1 / mu[..., :-1, :-1][mask]
-            + 1 / mu[..., 1:, :-1][mask]
-            + 1 / mu[..., :-1, 1:][mask]
+        mu_yx_val = 4 / (
+            1 / mu_safe[..., 1:, 1:]
+            + 1 / mu_safe[..., :-1, :-1]
+            + 1 / mu_safe[..., 1:, :-1]
+            + 1 / mu_safe[..., :-1, 1:]
         )
+        mu_yx = torch.where(mask, mu_yx_val, torch.zeros_like(mu_yx_val))
         mu_yx = torch.nn.functional.pad(mu_yx, (0, 1, 0, 1))
         parameters.append(mu_yx)
-        del mu_yx
+        del mask, mu_yx_val, mu_yx
 
     # Buoyancy (inverse of arithmetic mean of density)
     # Arithmetic mean: rho[i+1/2] = (rho[i] + rho[i+1])/2
     # => buoyancy[i+1/2] = 2/(rho[i] + rho[i+1])
-    rho = torch.zeros_like(buoyancy)
     mask = rfmax < buoyancy.abs()
-    rho[mask] = 1 / buoyancy[mask]
+    buoyancy_safe = torch.where(mask, buoyancy, torch.ones_like(buoyancy))
+    rho = torch.where(mask, 1 / buoyancy_safe, torch.zeros_like(buoyancy))
+    del mask, buoyancy_safe
     if ndim >= 3:
         rho_z = torch.nn.functional.pad(
             (rho[..., :-1, :, :] + rho[..., 1:, :, :]) / 2, (0, 0, 0, 0, 0, 1)
         )
         mask = rfmax < rho_z.abs()
-        buoyancy_z = torch.zeros_like(buoyancy)
-        buoyancy_z[mask] = 1 / rho_z[mask]
+        rho_z_safe = torch.where(mask, rho_z, torch.ones_like(rho_z))
+        buoyancy_z = torch.where(mask, 1 / rho_z_safe, torch.zeros_like(buoyancy))
         parameters.append(buoyancy_z)
-        del rho_z, buoyancy_z
+        del rho_z, mask, rho_z_safe, buoyancy_z
     if ndim >= 2:
         rho_y = torch.nn.functional.pad(
             (rho[..., :-1, :] + rho[..., 1:, :]) / 2, (0, 0, 0, 1)
         )
         mask = rfmax < rho_y.abs()
-        buoyancy_y = torch.zeros_like(buoyancy)
-        buoyancy_y[mask] = 1 / rho_y[mask]
+        rho_y_safe = torch.where(mask, rho_y, torch.ones_like(rho_y))
+        buoyancy_y = torch.where(mask, 1 / rho_y_safe, torch.zeros_like(buoyancy))
         parameters.append(buoyancy_y)
-        del rho_y, buoyancy_y
+        del rho_y, mask, rho_y_safe, buoyancy_y
     rho_x = torch.nn.functional.pad((rho[..., :-1] + rho[..., 1:]) / 2, (0, 1))
     mask = rfmax < rho_x.abs()
-    buoyancy_x = torch.zeros_like(buoyancy)
-    buoyancy_x[mask] = 1 / rho_x[mask]
+    rho_x_safe = torch.where(mask, rho_x, torch.ones_like(rho_x))
+    buoyancy_x = torch.where(mask, 1 / rho_x_safe, torch.zeros_like(buoyancy))
     parameters.append(buoyancy_x)
 
     return parameters
@@ -610,6 +612,46 @@ def elastic(
               units of velocity. The samples correspond to times `(t-0.5)*dt`.
 
     """
+    deepwave.common.check_inputs_not_vmapped(
+        source_amplitudes_p,
+        source_amplitudes_z,
+        source_amplitudes_y,
+        source_amplitudes_x,
+        source_locations_z,
+        source_locations_y,
+        source_locations_x,
+        source_locations_p,
+        receiver_locations_z,
+        receiver_locations_y,
+        receiver_locations_x,
+        receiver_locations_p,
+        vz_0,
+        sigmazz_0,
+        sigmayz_0,
+        sigmaxz_0,
+        m_vzz_0,
+        m_vzy_0,
+        m_vzx_0,
+        m_vyz_0,
+        m_vxz_0,
+        m_sigmazzz_0,
+        m_sigmayzy_0,
+        m_sigmaxzx_0,
+        m_sigmayzz_0,
+        m_sigmaxzz_0,
+        vy_0,
+        sigmayy_0,
+        sigmaxy_0,
+        m_vyy_0,
+        m_vyx_0,
+        m_vxy_0,
+        m_sigmayyy_0,
+        m_sigmaxyy_0,
+        m_sigmaxyx_0,
+        vx_0,
+        m_vxx_0,
+        m_sigmaxxx_0,
+    )
     ndim = deepwave.common.get_ndim(
         [lamb, mu, buoyancy],
         [],
@@ -750,25 +792,37 @@ def elastic(
     source_amplitudes.append(source_amplitudes_p)
     source_locations.append(source_locations_p)
     receiver_locations.append(receiver_locations_p)
-    vp, vs, _ = deepwave.common.lambmubuoyancy_to_vpvsrho(
-        lamb,
-        mu,
-        buoyancy,
-    )
-    max_model_vel = max(vp.abs().max().item(), vs.abs().max().item())
-    vp_nonzero = vp[vp != 0]
-    min_nonzero_vp = vp_nonzero.abs().min().item() if vp_nonzero.numel() > 0 else 0.0
-    vs_nonzero = vs[vs != 0]
-    min_nonzero_vs = vs_nonzero.abs().min().item() if vs_nonzero.numel() > 0 else 0.0
-    if min_nonzero_vp == 0 and min_nonzero_vs == 0:
+    if any(deepwave.common.is_inside_vmap(prop) for prop in [lamb, mu, buoyancy]):
+        if max_vel is None:
+            raise RuntimeError(
+                "If using BatchedTensor inputs, you must specify max_vel"
+            )
+        max_model_vel = max_vel
         min_nonzero_model_vel = 0.0
-    elif min_nonzero_vp == 0:
-        min_nonzero_model_vel = float(min_nonzero_vs)
-    elif min_nonzero_vs == 0:
-        min_nonzero_model_vel = float(min_nonzero_vp)
     else:
-        min_nonzero_model_vel = float(min(min_nonzero_vp, min_nonzero_vs))
-    del vp, vs, vp_nonzero, vs_nonzero
+        vp, vs, _ = deepwave.common.lambmubuoyancy_to_vpvsrho(
+            lamb,
+            mu,
+            buoyancy,
+        )
+        max_model_vel = max(vp.abs().max().item(), vs.abs().max().item())
+        vp_nonzero = vp[vp != 0]
+        min_nonzero_vp = (
+            vp_nonzero.abs().min().item() if vp_nonzero.numel() > 0 else 0.0
+        )
+        vs_nonzero = vs[vs != 0]
+        min_nonzero_vs = (
+            vs_nonzero.abs().min().item() if vs_nonzero.numel() > 0 else 0.0
+        )
+        if min_nonzero_vp == 0 and min_nonzero_vs == 0:
+            min_nonzero_model_vel = 0.0
+        elif min_nonzero_vp == 0:
+            min_nonzero_model_vel = float(min_nonzero_vs)
+        elif min_nonzero_vs == 0:
+            min_nonzero_model_vel = float(min_nonzero_vp)
+        else:
+            min_nonzero_model_vel = float(min(min_nonzero_vp, min_nonzero_vs))
+        del vp, vs, vp_nonzero, vs_nonzero
     fd_pad = [accuracy // 2, accuracy // 2 - 1] * ndim
 
     (
@@ -2103,6 +2157,7 @@ def elastic_python(
     *args: torch.Tensor,
 ) -> Tuple[torch.Tensor, ...]:
     """Performs the forward propagation of the elastic wave equation."""
+    is_batched = any(deepwave.common.is_inside_vmap(x) for x in args)
     if backward_callback is not None:
         raise RuntimeError("backward_callback is not supported in the Python backend.")
     if storage_mode_str != "device":
@@ -2395,9 +2450,10 @@ def elastic_python(
     receiver_amplitudes: List[torch.Tensor] = [
         torch.empty(0, device=device, dtype=dtype) for _ in range(ndim + 1)
     ]
+    receiver_amplitudes_lists: List[List[torch.Tensor]] = [[] for _ in range(ndim + 1)]
 
     for i, loc in enumerate(receivers_i):
-        if loc.numel() > 0:
+        if loc.numel() > 0 and not is_batched:
             receiver_amplitudes[i] = torch.zeros(
                 nt, n_shots, n_receivers_per_shot[i], device=device, dtype=dtype
             )
@@ -2477,21 +2533,29 @@ def elastic_python(
             t = step * step_ratio + inner_step
 
             for ridx in range(ndim):
-                if receiver_amplitudes[ridx].numel() > 0:
-                    receiver_amplitudes[ridx][t] = (
+                if receivers_i_masked[ridx].numel() > 0:
+                    val_vel = (
                         velocities[ridx]
                         .reshape(-1, flat_model_shape)
                         .gather(1, receivers_i_masked[ridx])
                     )
-            if receiver_amplitudes[-1].numel() > 0:  # pressure receiver
-                receiver_amplitudes[-1][t] = sum(
+                    if is_batched:
+                        receiver_amplitudes_lists[ridx].append(val_vel)
+                    else:
+                        receiver_amplitudes[ridx][t] = val_vel
+            if receivers_i_masked[-1].numel() > 0:  # pressure receiver
+                val_stress = torch.stack(
                     [
                         normal_stresses[idx]
                         .reshape(-1, flat_model_shape)
                         .gather(1, receivers_i_masked[-1])
                         for idx in range(ndim)
                     ]
-                )
+                ).sum(dim=0)
+                if is_batched:
+                    receiver_amplitudes_lists[-1].append(val_stress)
+                else:
+                    receiver_amplitudes[-1][t] = val_stress
 
             velocities, s_mem_vars_normal, s_mem_vars_shear = _update_velocities_opt(
                 models,
@@ -2557,6 +2621,11 @@ def elastic_python(
                     )
                 normal_stresses = list(new_normal_stresses)
                 del new_normal_stresses
+
+    if is_batched:
+        for i in range(len(receiver_amplitudes)):
+            if len(receiver_amplitudes_lists[i]) > 0:
+                receiver_amplitudes[i] = torch.stack(receiver_amplitudes_lists[i])
 
     receiver_amplitudes_masked = []
     for i, amp in enumerate(receiver_amplitudes):

@@ -14,6 +14,7 @@ from test_utils import (
     run_reciprocity_check,
     scattered,
 )
+from torch.func import jvp, vmap
 
 from deepwave import IGNORE_LOCATION, Scalar, scalar
 from deepwave.backend_utils import USE_OPENMP
@@ -1464,3 +1465,237 @@ def test_reciprocity(nx, dx):
         prop_kwargs,
         scalarprop,
     )
+
+
+def test_vmap_v() -> None:
+    """Test vmap over the velocity model."""
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    ny, nx = 8, 8
+    dx = 5.0
+    dt = 0.004
+    v_base = 1500.0
+    n_shots = 2
+    n_receivers_per_shot = 3
+
+    # Create a batch of velocities
+    batch_size = 3
+    v_batch = torch.empty(batch_size, ny, nx, device=device)
+    for i in range(batch_size):
+        v_batch[i] = v_base + i * 100.0
+
+    # Setup source and receivers
+    source_locations = torch.zeros(n_shots, 1, 2, dtype=torch.long, device=device)
+    source_locations[..., 0] = ny // 2
+    source_locations[..., 1] = nx // 2
+
+    receiver_locations = torch.zeros(
+        n_shots, n_receivers_per_shot, 2, dtype=torch.long, device=device
+    )
+    receiver_locations[..., 0] = ny // 2
+    receiver_locations[..., 1] = torch.linspace(
+        0, nx - 1, n_receivers_per_shot, device=device
+    ).long()
+
+    source_amplitudes = (
+        ricker(25.0, 30, dt, 0.05).to(device).reshape(1, 1, -1).repeat(n_shots, 1, 1)
+    )
+
+    def prop(v):
+        return scalar(
+            v,
+            dx,
+            dt,
+            source_amplitudes=source_amplitudes,
+            source_locations=source_locations,
+            receiver_locations=receiver_locations,
+            pml_width=3,
+            max_vel=2000.0,
+            python_backend="eager",
+        )[-1]
+
+    # Run vmap
+    res_vmap = vmap(prop)(v_batch)
+
+    # Run loop
+    res_loop = []
+    for i in range(batch_size):
+        res_loop.append(prop(v_batch[i]))
+    res_loop = torch.stack(res_loop)
+
+    assert torch.allclose(res_vmap, res_loop, atol=1e-5)
+
+
+def test_jvp_v() -> None:
+    """Test forward-mode AD (jvp) with respect to velocity."""
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    dtype = torch.double
+    ny, nx = 8, 8
+    dx = 5.0
+    dt = 0.004
+    v0 = torch.full((ny, nx), 1500.0, device=device, dtype=dtype)
+
+    # Perturbation
+    v_tangent = torch.randn(ny, nx, device=device, dtype=dtype) * 10.0
+
+    n_shots = 1
+    source_locations = torch.zeros(n_shots, 1, 2, dtype=torch.long, device=device)
+    source_locations[..., 0] = ny // 2
+    source_locations[..., 1] = nx // 2
+
+    receiver_locations = torch.zeros(n_shots, 3, 2, dtype=torch.long, device=device)
+    receiver_locations[..., 0] = ny // 2
+    receiver_locations[..., 1] = torch.linspace(0, nx - 1, 3, device=device).long()
+
+    source_amplitudes = (
+        ricker(25.0, 30, dt, 0.05, dtype=dtype).to(device).reshape(1, 1, -1)
+    )
+
+    def prop(v):
+        return scalar(
+            v,
+            dx,
+            dt,
+            source_amplitudes=source_amplitudes,
+            source_locations=source_locations,
+            receiver_locations=receiver_locations,
+            pml_width=3,
+            max_vel=2000.0,
+            python_backend="eager",
+        )[-1]
+
+    # Run JVP
+    _, jvp_out = jvp(prop, (v0,), (v_tangent,))
+
+    # Finite Difference check
+    epsilon = 1e-6
+    out_plus = prop(v0 + epsilon * v_tangent)
+    out_minus = prop(v0 - epsilon * v_tangent)
+    fd_out = (out_plus - out_minus) / (2 * epsilon)
+
+    # Check that JVP matches FD reasonably well
+    assert torch.allclose(jvp_out, fd_out)
+
+
+def test_hessian_v() -> None:
+    """Test Hessian-vector product (double backward) vs JVP of grad."""
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    ny, nx = 8, 8
+    dx = 5.0
+    dt = 0.004
+    v0 = torch.full((ny, nx), 1500.0, device=device)
+    v0.requires_grad_(True)
+
+    source_locations = torch.zeros(1, 1, 2, dtype=torch.long, device=device)
+    source_locations[..., 0] = ny // 2
+    source_locations[..., 1] = nx // 2
+
+    receiver_locations = torch.zeros(1, 3, 2, dtype=torch.long, device=device)
+    receiver_locations[..., 0] = ny // 2
+    receiver_locations[..., 1] = torch.linspace(0, nx - 1, 3, device=device).long()
+
+    source_amplitudes = ricker(25.0, 30, dt, 0.05).to(device).reshape(1, 1, -1)
+
+    def loss_func(v):
+        out = scalar(
+            v,
+            dx,
+            dt,
+            source_amplitudes=source_amplitudes,
+            source_locations=source_locations,
+            receiver_locations=receiver_locations,
+            pml_width=3,
+            max_vel=2000.0,
+            python_backend="eager",
+        )[-1]
+        return (out**2).sum()
+
+    # 1. Compute HVP using standard double backward
+    loss = loss_func(v0)
+    grads = torch.autograd.grad(loss, v0, create_graph=True)[0]
+    v_tangent = torch.randn_like(v0)
+    hvp_standard = torch.autograd.grad(torch.sum(grads * v_tangent), v0)[0]
+
+    # 2. Compute HVP using functional jvp of grad
+    def grad_func(v):
+        return torch.func.grad(loss_func)(v)
+
+    _, hvp_functional = jvp(grad_func, (v0,), (v_tangent,))
+
+    assert torch.allclose(hvp_standard, hvp_functional, atol=1e-5)
+
+
+def test_vmap_grad_v() -> None:
+    """Test vmap over grad with respect to velocity."""
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    ny, nx = 8, 8
+    dx = 5.0
+    dt = 0.004
+    v_base = 1500.0
+
+    batch_size = 3
+    v_batch = torch.full((batch_size, ny, nx), v_base, device=device)
+    for i in range(batch_size):
+        v_batch[i] += i * 100.0
+    v_batch.requires_grad_(True)
+
+    source_locations = torch.zeros(1, 1, 2, dtype=torch.long, device=device)
+    source_locations[..., 0] = ny // 2
+    source_locations[..., 1] = nx // 2
+
+    receiver_locations = torch.zeros(1, 3, 2, dtype=torch.long, device=device)
+    receiver_locations[..., 0] = ny // 2
+    receiver_locations[..., 1] = torch.linspace(0, nx - 1, 3, device=device).long()
+
+    source_amplitudes = ricker(25.0, 30, dt, 0.05).to(device).reshape(1, 1, -1)
+
+    def loss_func(v):
+        out = scalar(
+            v,
+            dx,
+            dt,
+            source_amplitudes=source_amplitudes,
+            source_locations=source_locations,
+            receiver_locations=receiver_locations,
+            pml_width=3,
+            max_vel=2000.0,
+            python_backend="eager",
+        )[-1]
+        return (out**2).sum()
+
+    # vmap of grad
+    vmapped_grad_func = vmap(torch.func.grad(loss_func))
+    grads_vmap = vmapped_grad_func(v_batch)
+
+    # loop of grad
+    grads_loop = []
+    for i in range(batch_size):
+        grads_loop.append(torch.func.grad(loss_func)(v_batch[i]))
+    grads_loop = torch.stack(grads_loop)
+
+    assert torch.allclose(grads_vmap, grads_loop, atol=1e-5)
+
+
+def test_vmap_error_check() -> None:
+    """Ensure error is raised if non-property inputs are vmapped."""
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    ny, nx = 8, 8
+    v = torch.full((ny, nx), 1500.0, device=device)
+
+    # Try to vmap over source amplitudes
+    batch_size = 2
+    source_amplitudes_batch = torch.randn(batch_size, 1, 1, 10, device=device)
+
+    def prop(amps):
+        return scalar(
+            v,
+            5.0,
+            0.004,
+            source_amplitudes=amps,
+            source_locations=torch.zeros(1, 1, 2, dtype=torch.long, device=device),
+            pml_width=3,
+            max_vel=2000.0,
+            python_backend="eager",
+        )
+
+    with pytest.raises(NotImplementedError, match="Only property models"):
+        vmap(prop)(source_amplitudes_batch)

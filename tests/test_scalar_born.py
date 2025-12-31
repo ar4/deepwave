@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import pytest
 import torch
 from test_utils import _set_coords, _set_sources, scattered
+from torch.func import jvp, vmap
 
 from deepwave import IGNORE_LOCATION, ScalarBorn, scalar_born
 from deepwave.backend_utils import USE_OPENMP
@@ -1649,3 +1650,182 @@ def test_reciprocity(nx, dx):
     rec2 = outputs2[-2]
 
     assert torch.allclose(rec1, rec2, atol=1e-3)
+
+
+def test_vmap_born_props() -> None:
+    """Test vmap over velocity and scatter models."""
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    ny, nx = 8, 8
+    dx = 5.0
+    dt = 0.004
+    v_base = 1500.0
+
+    batch_size = 3
+    v_batch = torch.empty(batch_size, ny, nx, device=device)
+    scatter_batch = torch.empty(batch_size, ny, nx, device=device)
+    for i in range(batch_size):
+        v_batch[i] = v_base + i * 100.0
+        scatter_batch[i] = 0.1 * i
+
+    n_shots = 2
+    n_receivers_per_shot = 3
+    source_locations = torch.zeros(n_shots, 1, 2, dtype=torch.long, device=device)
+    source_locations[..., 0] = ny // 2
+    source_locations[..., 1] = nx // 2
+
+    receiver_locations = torch.zeros(
+        n_shots, n_receivers_per_shot, 2, dtype=torch.long, device=device
+    )
+    receiver_locations[..., 0] = ny // 2
+    receiver_locations[..., 1] = torch.linspace(
+        0, nx - 1, n_receivers_per_shot, device=device
+    ).long()
+
+    source_amplitudes = (
+        ricker(25.0, 30, dt, 0.05).to(device).reshape(1, 1, -1).repeat(n_shots, 1, 1)
+    )
+
+    def prop(v, scatter):
+        return scalar_born(
+            v,
+            scatter,
+            dx,
+            dt,
+            source_amplitudes=source_amplitudes,
+            source_locations=source_locations,
+            receiver_locations=receiver_locations,
+            pml_width=3,
+            max_vel=2000.0,
+            python_backend="eager",
+        )[-1]  # Return scattered receiver amplitudes
+
+    # Run vmap
+    res_vmap = vmap(prop)(v_batch, scatter_batch)
+
+    # Run loop
+    res_loop = []
+    for i in range(batch_size):
+        res_loop.append(prop(v_batch[i], scatter_batch[i]))
+    res_loop = torch.stack(res_loop)
+
+    assert torch.allclose(res_vmap, res_loop, atol=1e-5)
+
+
+def test_vmap_born_partial() -> None:
+    """Test vmap over scatter model only (v shared)."""
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    ny, nx = 8, 8
+    dx = 5.0
+    dt = 0.004
+    v = torch.full((ny, nx), 1500.0, device=device)
+
+    batch_size = 3
+    scatter_batch = torch.empty(batch_size, ny, nx, device=device)
+    for i in range(batch_size):
+        scatter_batch[i] = 0.1 * (i + 1)
+
+    n_shots = 1
+    source_locations = torch.zeros(n_shots, 1, 2, dtype=torch.long, device=device)
+    source_locations[..., 0] = ny // 2
+    source_locations[..., 1] = nx // 2
+    receiver_locations = source_locations.clone()  # Just one receiver
+
+    source_amplitudes = ricker(25.0, 30, dt, 0.05).to(device).reshape(1, 1, -1)
+
+    def prop(s):
+        return scalar_born(
+            v,
+            s,
+            dx,
+            dt,
+            source_amplitudes=source_amplitudes,
+            source_locations=source_locations,
+            receiver_locations=receiver_locations,
+            pml_width=3,
+            max_vel=2000.0,
+            python_backend="eager",
+        )[-1]
+
+    res_vmap = vmap(prop)(scatter_batch)
+
+    res_loop = []
+    for i in range(batch_size):
+        res_loop.append(prop(scatter_batch[i]))
+    res_loop = torch.stack(res_loop)
+
+    assert torch.allclose(res_vmap, res_loop, atol=1e-5)
+
+
+def test_jvp_born() -> None:
+    """Test jvp on scalar_born."""
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    dtype = torch.double
+    ny, nx = 8, 8
+    dx = 5.0
+    dt = 0.004
+    v0 = torch.full((ny, nx), 1500.0, device=device, dtype=dtype)
+    scatter0 = torch.zeros_like(v0)
+
+    v_tangent = torch.randn_like(v0) * 10.0
+    scatter_tangent = torch.randn_like(scatter0) * 0.1
+
+    source_locations = torch.zeros(1, 1, 2, dtype=torch.long, device=device)
+    source_locations[..., 0] = ny // 2
+    source_locations[..., 1] = nx // 2
+    receiver_locations = source_locations.clone()
+    source_amplitudes = (
+        ricker(25.0, 30, dt, 0.05, dtype=dtype).to(device).reshape(1, 1, -1)
+    )
+
+    def prop(v, s):
+        # We check the scattered wavefield output
+        return scalar_born(
+            v,
+            s,
+            dx,
+            dt,
+            source_amplitudes=source_amplitudes,
+            source_locations=source_locations,
+            receiver_locations=receiver_locations,
+            pml_width=3,
+            max_vel=2000.0,
+            python_backend="eager",
+        )[-1]
+
+    _, jvp_out = jvp(prop, (v0, scatter0), (v_tangent, scatter_tangent))
+
+    # Finite Difference
+    epsilon = 1e-6
+    out_plus = prop(v0 + epsilon * v_tangent, scatter0 + epsilon * scatter_tangent)
+    out_minus = prop(v0 - epsilon * v_tangent, scatter0 - epsilon * scatter_tangent)
+    fd_out = (out_plus - out_minus) / (2 * epsilon)
+
+    assert torch.allclose(jvp_out, fd_out, atol=1e-5)
+
+
+def test_vmap_error_check() -> None:
+    """Ensure error is raised if non-property inputs are vmapped."""
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    ny, nx = 8, 8
+    v = torch.full((ny, nx), 1500.0, device=device)
+    scatter = torch.zeros_like(v)
+
+    # Try to vmap over source amplitudes
+    batch_size = 2
+    source_amplitudes_batch = torch.randn(batch_size, 1, 1, 10, device=device)
+
+    def prop(amps):
+        return scalar_born(
+            v,
+            scatter,
+            5.0,
+            0.004,
+            source_amplitudes=amps,
+            source_locations=torch.zeros(1, 1, 2, dtype=torch.long, device=device),
+            pml_width=3,
+            max_vel=2000.0,
+            python_backend="eager",
+        )
+
+    with pytest.raises(NotImplementedError, match="Only property models"):
+        vmap(prop)(source_amplitudes_batch)
