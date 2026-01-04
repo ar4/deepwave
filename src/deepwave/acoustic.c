@@ -21,10 +21,13 @@
 
 #if DW_NDIM == 3
 #define ND_INDEX(i, dz, dy, dx) (i + (dz)*ny * nx + (dy)*nx + (dx))
+#define DIM_ARGS nz, ny, nx
 #elif DW_NDIM == 2
 #define ND_INDEX(i, dz, dy, dx) (i + (dy)*nx + (dx))
+#define DIM_ARGS ny, nx
 #else /* DW_NDIM == 1 */
 #define ND_INDEX(i, dz, dy, dx) (i + (dx))
+#define DIM_ARGS nx
 #endif
 
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
@@ -289,13 +292,6 @@ __declspec(dllexport)
 #pragma omp parallel for num_threads(n_threads)
 #endif /* _OPENMP */
   for (shot = 0; shot < n_shots; ++shot) {
-#if DW_NDIM == 3
-    int64_t const n_grid_points = nz * ny * nx;
-#elif DW_NDIM == 2
-    int64_t const n_grid_points = ny * nx;
-#else
-    int64_t const n_grid_points = nx;
-#endif
 
     int64_t const si = shot * n_grid_points;
     int64_t const src_i_p = shot * n_sources_p_per_shot;
@@ -616,10 +612,10 @@ __declspec(dllexport)
 #define SAVE_SNAPSHOT(name, grad_cond)                                     \
   if (grad_cond) {                                                         \
     int64_t const step_idx = t / step_ratio;                               \
-    storage_save_snapshot_cpu(                                             \
+    STORAGE_FUNC(save_snapshot_cpu)(                                       \
         name##_store_1_t, name##_store_2_t, fp_##name, storage_mode,       \
         storage_compression, step_idx, shot_bytes_uncomp, shot_bytes_comp, \
-        n_grid_points, sizeof(DW_DTYPE) == sizeof(double));                \
+        DIM_ARGS);                                                         \
   }
 
       SAVE_SNAPSHOT(k_grad, k_requires_grad_t)
@@ -953,10 +949,10 @@ __declspec(dllexport)
           (int64_t)shot_bytes_comp;                                          \
   if ((grad_cond) && ((t % step_ratio) == 0)) {                              \
     int64_t const step_idx = t / step_ratio;                                 \
-    storage_load_snapshot_cpu(                                               \
+    STORAGE_FUNC(load_snapshot_cpu)(                                         \
         (void *)name##_store_1_t, name##_store_2_t, fp_##name, storage_mode, \
         storage_compression, step_idx, shot_bytes_uncomp, shot_bytes_comp,   \
-        n_grid_points, sizeof(DW_DTYPE) == sizeof(double));                  \
+        DIM_ARGS);                                                           \
   }
 
       SETUP_STORE_LOAD(k_grad, k_requires_grad)

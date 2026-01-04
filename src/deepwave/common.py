@@ -158,8 +158,16 @@ class StorageManager:
         self.shot_bytes_uncomp = self.num_elements_per_shot * self.dtype_size
         self.shot_bytes_comp = 0
         if storage_compression and storage_mode != StorageMode.NONE:
+            n_blocks = 1
+            for dim in self.shot_shape:
+                n_blocks *= (dim + 7) // 8
             self.shot_bytes_comp = (
-                (self.num_elements_per_shot + 2 * self.dtype_size + self.dtype_size - 1)
+                (
+                    self.num_elements_per_shot
+                    + n_blocks * self.dtype_size
+                    + self.dtype_size
+                    - 1
+                )
                 // self.dtype_size
             ) * self.dtype_size
 

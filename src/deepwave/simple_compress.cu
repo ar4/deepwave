@@ -4,221 +4,310 @@
 #include "common_gpu.h"
 #include "simple_compress.h"
 
-/* CUDA kernel for finding min/max per field */
-template <typename T>
-__launch_bounds__(256) __global__
-    void find_minmax_kernel(T const *const input, T *const minmax,
-                            size_t const n_elements_per_field,
-                            size_t const n_batch) {
-  size_t const b = blockIdx.x;
-  if (b >= n_batch) return;
+#define BLOCK_SIZE 8
+#if DW_NDIM == 1
+#define THREADS_PER_BLOCK BLOCK_SIZE
+#elif DW_NDIM == 2
+#define THREADS_PER_BLOCK (BLOCK_SIZE * BLOCK_SIZE)
+#else
+#define THREADS_PER_BLOCK (BLOCK_SIZE * BLOCK_SIZE * BLOCK_SIZE)
+#endif
 
-  T const *const field = input + b * n_elements_per_field;
+#if defined(DW_NDIM) && defined(DW_DTYPE)
+
+/* CUDA kernel for compression */
+__launch_bounds__(THREADS_PER_BLOCK) __global__
+    void compress_kernel(DW_DTYPE const *const input, uint8_t *const output,
+#if DW_NDIM >= 3
+                         size_t const nz,
+#endif
+#if DW_NDIM >= 2
+                         size_t const ny,
+#endif
+                         size_t const nx,
+#if DW_NDIM >= 3
+                         size_t const nbz,
+#endif
+#if DW_NDIM >= 2
+                         size_t const nby,
+#endif
+                         size_t const nbx,
+                         size_t const n_blocks_per_shot) {
+  size_t const global_block_idx = blockIdx.x;
+  size_t const batch_idx = global_block_idx / n_blocks_per_shot;
+  size_t const block_idx_in_shot = global_block_idx % n_blocks_per_shot;
+
+  size_t const bx = block_idx_in_shot % nbx;
+#if DW_NDIM >= 2
+  size_t const tmp = block_idx_in_shot / nbx;
+  size_t const by = tmp % nby;
+#if DW_NDIM >= 3
+  size_t const bz = tmp / nby;
+#endif
+#endif
+
+  size_t const tid = threadIdx.x;
+  size_t const tx = tid % BLOCK_SIZE;
+#if DW_NDIM >= 2
+  size_t const tmp_t = tid / BLOCK_SIZE;
+  size_t const ty = tmp_t % BLOCK_SIZE;
+#if DW_NDIM >= 3
+  size_t const tz = tmp_t / BLOCK_SIZE;
+#endif
+#endif
+
+  size_t const x = bx * BLOCK_SIZE + tx;
+#if DW_NDIM >= 2
+  size_t const y = by * BLOCK_SIZE + ty;
+#endif
+#if DW_NDIM >= 3
+  size_t const z = bz * BLOCK_SIZE + tz;
+#endif
+
+  DW_DTYPE val = 0;
+  bool in_bounds = (x < nx 
+#if DW_NDIM >= 2
+    && y < ny 
+#endif
+#if DW_NDIM >= 3
+    && z < nz
+#endif
+  );
+  size_t idx = 0;
+
+  if (in_bounds) {
+    idx = batch_idx * (
+#if DW_NDIM >= 3
+      nz * 
+#endif
+#if DW_NDIM >= 2
+      ny * 
+#endif
+      nx) + 
+#if DW_NDIM >= 3
+      z * ny * nx + 
+#endif
+#if DW_NDIM >= 2
+      y * nx + 
+#endif
+      x;
+    val = input[idx];
+  }
 
   /* Shared memory for reduction */
   extern __shared__ char shared_mem[];
-  T *const s_min = (T *)shared_mem;
-  T *const s_max = (T *)(shared_mem + blockDim.x * sizeof(T));
+  DW_DTYPE *const s_max_abs = (DW_DTYPE *)shared_mem;
 
-  /* Each thread finds local min/max */
-  T local_min, local_max;
-  if (threadIdx.x < n_elements_per_field) {
-    local_min = field[threadIdx.x];
-    local_max = field[threadIdx.x];
-  } else if (n_elements_per_field > 0) {
-    local_min = field[0];
-    local_max = field[0];
-  } else {
-    local_min = 0;
-    local_max = 0;
-  }
-
-  for (size_t i = threadIdx.x + blockDim.x; i < n_elements_per_field;
-       i += blockDim.x) {
-    T val = field[i];
-    if (val < local_min) local_min = val;
-    if (val > local_max) local_max = val;
-  }
-
-  s_min[threadIdx.x] = local_min;
-  s_max[threadIdx.x] = local_max;
+  DW_DTYPE abs_val = (val >= 0) ? val : -val;
+  s_max_abs[tid] = abs_val;
   __syncthreads();
 
-  /* Reduction in shared memory */
-  for (size_t s = blockDim.x / 2; s > 0; s >>= 1) {
-    if (threadIdx.x < s) {
-      if (s_min[threadIdx.x + s] < s_min[threadIdx.x])
-        s_min[threadIdx.x] = s_min[threadIdx.x + s];
-      if (s_max[threadIdx.x + s] > s_max[threadIdx.x])
-        s_max[threadIdx.x] = s_max[threadIdx.x + s];
+  /* Reduction to find max abs in block */
+  for (unsigned int s = THREADS_PER_BLOCK / 2; s > 0; s >>= 1) {
+    if (tid < s) {
+      if (s_max_abs[tid + s] > s_max_abs[tid]) {
+        s_max_abs[tid] = s_max_abs[tid + s];
+      }
     }
     __syncthreads();
   }
 
-  /* Write result */
-  if (threadIdx.x == 0) {
-    minmax[2 * b] = s_min[0];
-    minmax[2 * b + 1] = s_max[0];
+  DW_DTYPE max_abs = s_max_abs[0];
+
+  /* Store max_abs */
+  DW_DTYPE *const max_abs_vals = (DW_DTYPE *)output;
+  if (tid == 0) {
+    max_abs_vals[global_block_idx] = max_abs;
+  }
+
+  /* Quantize and store */
+  uint8_t *const compressed_data_start = output + gridDim.x * sizeof(DW_DTYPE);
+
+  if (in_bounds) {
+    DW_DTYPE scale = (max_abs > 0) ? ((DW_DTYPE)(127.0) / max_abs) : (DW_DTYPE)(0);
+    DW_DTYPE normalized = val * scale;
+    compressed_data_start[idx] = (uint8_t)((DW_DTYPE)(128.0) + normalized + (DW_DTYPE)(0.5));
   }
 }
 
-/* CUDA kernel for compression */
-template <typename T>
-__launch_bounds__(256) __global__
-    void compress_kernel(T const *const input, uint8_t *const output,
-                         T const *const minmax,
-                         size_t const n_elements_per_field,
-                         size_t const n_batch) {
-  size_t const idx = blockIdx.x * blockDim.x + threadIdx.x;
-  size_t const total = n_batch * n_elements_per_field;
-
-  if (idx >= total) return;
-
-  size_t const b = idx / n_elements_per_field;
-  T min_val = minmax[2 * b];
-  T max_val = minmax[2 * b + 1];
-  T range = max_val - min_val;
-  T scale = (range > 0) ? (T(255) / range) : T(0);
-
-  T normalized = (input[idx] - min_val) * scale;
-  output[idx] = (uint8_t)(normalized + T(0.5));
-}
-
 /* CUDA kernel for decompression */
-template <typename T>
-__launch_bounds__(256) __global__
-    void decompress_kernel(uint8_t const *const input, T *const output,
-                           const T *const minmax,
-                           size_t const n_elements_per_field,
-                           size_t const n_batch) {
-  size_t const idx = blockIdx.x * blockDim.x + threadIdx.x;
-  size_t const total = n_batch * n_elements_per_field;
+__launch_bounds__(THREADS_PER_BLOCK) __global__
+    void decompress_kernel(uint8_t const *const input, DW_DTYPE *const output,
+#if DW_NDIM >= 3
+                           size_t const nz,
+#endif
+#if DW_NDIM >= 2
+                           size_t const ny,
+#endif
+                           size_t const nx,
+#if DW_NDIM >= 3
+                           size_t const nbz,
+#endif
+#if DW_NDIM >= 2
+                           size_t const nby,
+#endif
+                           size_t const nbx,
+                           size_t const n_blocks_per_shot) {
+  size_t const global_block_idx = blockIdx.x;
+  size_t const batch_idx = global_block_idx / n_blocks_per_shot;
+  size_t const block_idx_in_shot = global_block_idx % n_blocks_per_shot;
 
-  if (idx >= total) return;
+  size_t const bx = block_idx_in_shot % nbx;
+#if DW_NDIM >= 2
+  size_t const tmp = block_idx_in_shot / nbx;
+  size_t const by = tmp % nby;
+#if DW_NDIM >= 3
+  size_t const bz = tmp / nby;
+#endif
+#endif
 
-  size_t const b = idx / n_elements_per_field;
-  T min_val = minmax[2 * b];
-  T max_val = minmax[2 * b + 1];
-  T range = max_val - min_val;
-  T scale = range / T(255);
+  size_t const tid = threadIdx.x;
+  size_t const tx = tid % BLOCK_SIZE;
+#if DW_NDIM >= 2
+  size_t const tmp_t = tid / BLOCK_SIZE;
+  size_t const ty = tmp_t % BLOCK_SIZE;
+#if DW_NDIM >= 3
+  size_t const tz = tmp_t / BLOCK_SIZE;
+#endif
+#endif
 
-  output[idx] = min_val + input[idx] * scale;
+  size_t const x = bx * BLOCK_SIZE + tx;
+#if DW_NDIM >= 2
+  size_t const y = by * BLOCK_SIZE + ty;
+#endif
+#if DW_NDIM >= 3
+  size_t const z = bz * BLOCK_SIZE + tz;
+#endif
+
+  if (x >= nx 
+#if DW_NDIM >= 2
+    || y >= ny 
+#endif
+#if DW_NDIM >= 3
+    || z >= nz
+#endif
+  ) return;
+
+  DW_DTYPE const *const max_abs_vals = (DW_DTYPE const *)input;
+  uint8_t const *const compressed_data_start = input + gridDim.x * sizeof(DW_DTYPE);
+
+  DW_DTYPE max_abs = max_abs_vals[global_block_idx];
+  DW_DTYPE scale = max_abs / (DW_DTYPE)(127.0);
+
+  size_t const idx = batch_idx * (
+#if DW_NDIM >= 3
+      nz * 
+#endif
+#if DW_NDIM >= 2
+      ny * 
+#endif
+      nx) + 
+#if DW_NDIM >= 3
+      z * ny * nx + 
+#endif
+#if DW_NDIM >= 2
+      y * nx + 
+#endif
+      x;
+  uint8_t val_u8 = compressed_data_start[idx];
+  
+  output[idx] = ((DW_DTYPE)(val_u8) - (DW_DTYPE)(128.0)) * scale;
 }
 
 /* CUDA wrapper functions */
 extern "C" {
 
-static int simple_compress_cuda_float(float const *const input,
-                                      uint8_t *const output,
-                                      size_t const n_batch,
-                                      size_t const n_elements_per_field,
-                                      cudaStream_t stream) {
-  float *const minmax = (float *)output;
-  uint8_t *const compressed = output + 2 * n_batch * sizeof(float);
-
-  /* Find min/max for each field */
-  size_t const threads = 256;
-  size_t const shared_mem = 2 * threads * sizeof(float);
-  find_minmax_kernel<<<n_batch, threads, shared_mem, stream>>>(
-      input, minmax, n_elements_per_field, n_batch);
-
-  /* Compress */
-  size_t const total = n_batch * n_elements_per_field;
-  size_t const blocks = (total + threads - 1) / threads;
-  compress_kernel<<<blocks, threads, 0, stream>>>(
-      input, compressed, minmax, n_elements_per_field, n_batch);
-  CHECK_KERNEL_ERROR
-  return 0;
-}
-
-static int simple_compress_cuda_double(double const *const input,
-                                       uint8_t *const output,
-                                       size_t const n_batch,
-                                       size_t const n_elements_per_field,
-                                       cudaStream_t stream) {
-  double *const minmax = (double *)output;
-  uint8_t *const compressed = output + 2 * n_batch * sizeof(double);
-
-  /* Find min/max for each field */
-  size_t const threads = 256;
-  size_t const shared_mem = 2 * threads * sizeof(double);
-  find_minmax_kernel<<<n_batch, threads, shared_mem, stream>>>(
-      input, minmax, n_elements_per_field, n_batch);
-
-  /* Compress */
-  size_t const total = n_batch * n_elements_per_field;
-  size_t const blocks = (total + threads - 1) / threads;
-  compress_kernel<<<blocks, threads, 0, stream>>>(
-      input, compressed, minmax, n_elements_per_field, n_batch);
-  CHECK_KERNEL_ERROR
-  return 0;
-}
-
-static int simple_decompress_cuda_float(uint8_t const *const input,
-                                        float *const output,
-                                        size_t const n_batch,
-                                        size_t const n_elements_per_field,
-                                        cudaStream_t stream) {
-  float const *const minmax = (const float *)input;
-  uint8_t const *const compressed = input + 2 * n_batch * sizeof(float);
-
-  size_t const threads = 256;
-  size_t const total = n_batch * n_elements_per_field;
-  size_t const blocks = (total + threads - 1) / threads;
-
-  decompress_kernel<<<blocks, threads, 0, stream>>>(
-      compressed, output, minmax, n_elements_per_field, n_batch);
-  CHECK_KERNEL_ERROR
-  return 0;
-}
-
-static int simple_decompress_cuda_double(uint8_t const *const input,
-                                         double *const output,
-                                         size_t const n_batch,
-                                         size_t const n_elements_per_field,
-                                         cudaStream_t stream) {
-  double const *const minmax = (const double *)input;
-  uint8_t const *const compressed = input + 2 * n_batch * sizeof(double);
-
-  size_t const threads = 256;
-  size_t const total = n_batch * n_elements_per_field;
-  size_t const blocks = (total + threads - 1) / threads;
-
-  decompress_kernel<<<blocks, threads, 0, stream>>>(
-      compressed, output, minmax, n_elements_per_field, n_batch);
-  CHECK_KERNEL_ERROR
-  return 0;
-}
-
-/* Update the main compress/decompress functions to call CUDA versions */
-int simple_compress_cuda(void const *const input, void *const output,
-                         size_t const n_batch,
-                         size_t const n_elements_per_field, int const is_double,
-                         void *const stream) {
-  if (is_double) {
-    return simple_compress_cuda_double((double const *)input, (uint8_t *)output,
-                                       n_batch, n_elements_per_field,
-                                       (cudaStream_t)stream);
-  } else {
-    return simple_compress_cuda_float((float const *)input, (uint8_t *)output,
-                                      n_batch, n_elements_per_field,
-                                      (cudaStream_t)stream);
-  }
-}
-
-int simple_decompress_cuda(void const *const input, void *const output,
+int SC_FUNC(compress_cuda)(void const *const input, void *const output,
                            size_t const n_batch,
-                           size_t const n_elements_per_field,
-                           int const is_double, void *const stream) {
-  if (is_double) {
-    return simple_decompress_cuda_double(
-        (uint8_t const *)input, (double *)output, n_batch, n_elements_per_field,
-        (cudaStream_t)stream);
-  } else {
-    return simple_decompress_cuda_float((uint8_t const *)input, (float *)output,
-                                        n_batch, n_elements_per_field,
-                                        (cudaStream_t)stream);
-  }
+#if DW_NDIM >= 3
+                           size_t const nz,
+#endif
+#if DW_NDIM >= 2
+                           size_t const ny,
+#endif
+                           size_t const nx,
+                           void *const stream) {
+
+  size_t const nbx = (nx + BLOCK_SIZE - 1) / BLOCK_SIZE;
+#if DW_NDIM >= 2
+  size_t const nby = (ny + BLOCK_SIZE - 1) / BLOCK_SIZE;
+#else
+  size_t const nby = 1;
+#endif
+#if DW_NDIM >= 3
+  size_t const nbz = (nz + BLOCK_SIZE - 1) / BLOCK_SIZE;
+#else
+  size_t const nbz = 1;
+#endif
+  size_t const n_blocks_per_shot = nbx * nby * nbz;
+  size_t const total_blocks = n_batch * n_blocks_per_shot;
+
+  size_t const shared_mem = THREADS_PER_BLOCK * sizeof(DW_DTYPE);
+
+  compress_kernel<<<total_blocks, THREADS_PER_BLOCK, shared_mem, (cudaStream_t)stream>>>(
+      (DW_DTYPE const *)input, (uint8_t *)output, 
+#if DW_NDIM >= 3
+      nz, 
+#endif
+#if DW_NDIM >= 2
+      ny, 
+#endif
+      nx, 
+#if DW_NDIM >= 3
+      nbz, 
+#endif
+#if DW_NDIM >= 2
+      nby, 
+#endif
+      nbx, n_blocks_per_shot);
+  CHECK_KERNEL_ERROR
+  return 0;
+}
+
+int SC_FUNC(decompress_cuda)(void const *const input, void *const output,
+                             size_t const n_batch,
+#if DW_NDIM >= 3
+                             size_t const nz,
+#endif
+#if DW_NDIM >= 2
+                             size_t const ny,
+#endif
+                             size_t const nx,
+                             void *const stream) {
+  size_t const nbx = (nx + BLOCK_SIZE - 1) / BLOCK_SIZE;
+#if DW_NDIM >= 2
+  size_t const nby = (ny + BLOCK_SIZE - 1) / BLOCK_SIZE;
+#else
+  size_t const nby = 1;
+#endif
+#if DW_NDIM >= 3
+  size_t const nbz = (nz + BLOCK_SIZE - 1) / BLOCK_SIZE;
+#else
+  size_t const nbz = 1;
+#endif
+  size_t const n_blocks_per_shot = nbx * nby * nbz;
+  size_t const total_blocks = n_batch * n_blocks_per_shot;
+
+  decompress_kernel<<<total_blocks, THREADS_PER_BLOCK, 0, (cudaStream_t)stream>>>(
+      (uint8_t const *)input, (DW_DTYPE *)output, 
+#if DW_NDIM >= 3
+      nz, 
+#endif
+#if DW_NDIM >= 2
+      ny, 
+#endif
+      nx, 
+#if DW_NDIM >= 3
+      nbz, 
+#endif
+#if DW_NDIM >= 2
+      nby, 
+#endif
+      nbx, n_blocks_per_shot);
+  CHECK_KERNEL_ERROR
+  return 0;
 }
 
 } /* extern "C" */
+
+#endif

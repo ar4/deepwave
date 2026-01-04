@@ -6,16 +6,24 @@
 #include "simple_compress.h"
 #include "storage_utils.h"
 
+#if defined(DW_NDIM) && defined(DW_DTYPE)
+
 extern "C" {
 
-int storage_save_snapshot_gpu(
+int STORAGE_FUNC(save_snapshot_gpu)(
     void const* const store_1, void* const store_2, void* const store_3,
     FILE* const fp, int64_t const storage_mode, bool const use_compression,
     int64_t const step_idx,
     size_t const shot_bytes_uncomp,  // Bytes per shot (uncompressed)
     size_t const shot_bytes_comp,    // Bytes per shot (compressed)
-    size_t const n_shots, size_t const n_elements_per_shot, int const is_double,
-    void* const stream) {
+    size_t const n_shots,
+#if DW_NDIM >= 3
+    size_t const nz,
+#endif
+#if DW_NDIM >= 2
+    size_t const ny,
+#endif
+    size_t const nx, void* const stream) {
   // Calculate total bytes for this step across all shots
   size_t const total_uncomp = shot_bytes_uncomp * n_shots;
   size_t const total_comp = shot_bytes_comp * n_shots;
@@ -26,8 +34,14 @@ int storage_save_snapshot_gpu(
   if (storage_mode == STORAGE_NONE) return 0;
 
   if (use_compression) {
-    if (simple_compress_cuda(store_1, store_2, n_shots, n_elements_per_shot,
-                             is_double, stream) != 0)
+    if (SC_FUNC(compress_cuda)(store_1, store_2, n_shots,
+#if DW_NDIM >= 3
+                             nz,
+#endif
+#if DW_NDIM >= 2
+                             ny,
+#endif
+                             nx, stream) != 0)
       return 1;
     data_to_store = (void const*)store_2;
     bytes_to_store = total_comp;
@@ -48,12 +62,18 @@ int storage_save_snapshot_gpu(
   return 0;
 }
 
-int storage_load_snapshot_gpu(
+int STORAGE_FUNC(load_snapshot_gpu)(
     void* const store_1, void* const store_2, void* const store_3,
     FILE* const fp, int64_t const storage_mode, bool const use_compression,
     int const step_idx, size_t const shot_bytes_uncomp,
     size_t const shot_bytes_comp, size_t const n_shots,
-    size_t const n_elements_per_shot, int const is_double, void* const stream) {
+#if DW_NDIM >= 3
+    size_t const nz,
+#endif
+#if DW_NDIM >= 2
+    size_t const ny,
+#endif
+    size_t const nx, void* const stream) {
   size_t const total_uncomp = shot_bytes_uncomp * n_shots;
   size_t const total_comp = shot_bytes_comp * n_shots;
 
@@ -78,10 +98,17 @@ int storage_load_snapshot_gpu(
 
   if (use_compression) {
     // Decompress from store_2 to store_1
-    if (simple_decompress_cuda(store_2, store_1, n_shots, n_elements_per_shot,
-                               is_double, stream) != 0)
+    if (SC_FUNC(decompress_cuda)(store_2, store_1, n_shots,
+#if DW_NDIM >= 3
+                               nz,
+#endif
+#if DW_NDIM >= 2
+                               ny,
+#endif
+                               nx, stream) != 0)
       return 1;
   }
   return 0;
 }
 }
+#endif

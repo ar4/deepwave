@@ -15,31 +15,63 @@
 extern "C" {
 #endif
 
-void storage_save_snapshot_cpu(void const* store_1, void* store_2, FILE* fp,
-                               int64_t storage_mode, bool use_compression,
-                               int64_t step_idx, size_t step_bytes_uncomp,
-                               size_t step_bytes_comp, size_t n_elements,
-                               int is_double);
+#if defined(DW_NDIM) && defined(DW_DTYPE)
+#define SS_CAT_I(name, ndim, dtype) storage_##name##_##ndim##d_##dtype
+#define SS_CAT(name, ndim, dtype) SS_CAT_I(name, ndim, dtype)
+#define STORAGE_FUNC(name) SS_CAT(name, DW_NDIM, DW_DTYPE)
 
-int storage_save_snapshot_gpu(void const* store_1, void* store_2, void* store_3,
-                              FILE* fp, int64_t storage_mode,
-                              bool use_compression, int64_t step_idx,
-                              size_t shot_bytes_uncomp, size_t shot_bytes_comp,
-                              size_t n_shots, size_t n_elements_per_shot,
-                              int is_double, void* stream);
+void STORAGE_FUNC(save_snapshot_cpu)(void const* store_1, void* store_2,
+                                     FILE* fp, int64_t storage_mode,
+                                     bool use_compression, int64_t step_idx,
+                                     size_t step_bytes_uncomp,
+                                     size_t step_bytes_comp,
+#if DW_NDIM >= 3
+                                     size_t nz,
+#endif
+#if DW_NDIM >= 2
+                                     size_t ny,
+#endif
+                                     size_t nx);
 
-void storage_load_snapshot_cpu(void* store_1, void* store_2, FILE* fp,
-                               int64_t storage_mode, bool use_compression,
-                               int64_t step_idx, size_t step_bytes_uncomp,
-                               size_t step_bytes_comp, size_t n_elements,
-                               int is_double);
+int STORAGE_FUNC(save_snapshot_gpu)(void const* store_1, void* store_2,
+                                    void* store_3, FILE* fp,
+                                    int64_t storage_mode, bool use_compression,
+                                    int64_t step_idx, size_t shot_bytes_uncomp,
+                                    size_t shot_bytes_comp, size_t n_shots,
+#if DW_NDIM >= 3
+                                    size_t nz,
+#endif
+#if DW_NDIM >= 2
+                                    size_t ny,
+#endif
+                                    size_t nx, void* stream);
 
-int storage_load_snapshot_gpu(void* store_1, void* store_2, void* store_3,
-                              FILE* fp, int64_t storage_mode,
-                              bool use_compression, int step_idx,
-                              size_t shot_bytes_uncomp, size_t shot_bytes_comp,
-                              size_t n_shots, size_t n_elements_per_shot,
-                              int is_double, void* stream);
+void STORAGE_FUNC(load_snapshot_cpu)(void* store_1, void* store_2, FILE* fp,
+                                     int64_t storage_mode, bool use_compression,
+                                     int64_t step_idx, size_t step_bytes_uncomp,
+                                     size_t step_bytes_comp,
+#if DW_NDIM >= 3
+                                     size_t nz,
+#endif
+#if DW_NDIM >= 2
+                                     size_t ny,
+#endif
+                                     size_t nx);
+
+int STORAGE_FUNC(load_snapshot_gpu)(void* store_1, void* store_2, void* store_3,
+                                    FILE* fp, int64_t storage_mode,
+                                    bool use_compression, int step_idx,
+                                    size_t shot_bytes_uncomp,
+                                    size_t shot_bytes_comp, size_t n_shots,
+#if DW_NDIM >= 3
+                                    size_t nz,
+#endif
+#if DW_NDIM >= 2
+                                    size_t ny,
+#endif
+                                    size_t nx, void* stream);
+
+#endif /* DW_NDIM && DW_DTYPE */
 
 #ifdef __cplusplus
 }

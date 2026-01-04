@@ -7,38 +7,46 @@
 extern "C" {
 #endif
 
-/* Compress a batch of wavefields to 8 bits per sample
- *
- * Parameters:
- *   input: pointer to input data (float or double)
- *   output: pointer to output buffer (uint8_t)
- *   n_batch: number of wavefields in batch
- *   n_elements_per_field: number of elements in each wavefield
- *   is_double: 1 if input is double, 0 if float
- *
- * Output buffer size: n_elements + 2*n_batch*sizeof(float or double) for
- * min/max Returns: actual compressed size in bytes
- */
-void simple_compress_cpu(void const *input, void *output,
-                         size_t n_elements_per_field, int is_double);
-int simple_compress_cuda(void const *input, void *output, size_t n_batch,
-                         size_t n_elements_per_field, int is_double,
-                         void *stream);
+#if defined(DW_NDIM) && defined(DW_DTYPE)
+#define SC_CAT_I(name, ndim, dtype) simple_compress_##name##_##ndim##d_##dtype
+#define SC_CAT(name, ndim, dtype) SC_CAT_I(name, ndim, dtype)
+#define SC_FUNC(name) SC_CAT(name, DW_NDIM, DW_DTYPE)
 
-/* Decompress a batch of wavefields from 8 bits per sample
- *
- * Parameters:
- *   input: pointer to compressed data
- *   output: pointer to output buffer (float or double)
- *   n_batch: number of wavefields in batch
- *   n_elements_per_field: number of elements in each wavefield
- *   is_double: 1 if output is double, 0 if float
- */
-void simple_decompress_cpu(void const *input, void *output,
-                           size_t n_elements_per_field, int is_double);
-int simple_decompress_cuda(void const *input, void *output, size_t n_batch,
-                           size_t n_elements_per_field, int is_double,
-                           void *stream);
+void SC_FUNC(compress_cpu)(void const *input, void *output,
+#if DW_NDIM >= 3
+                           size_t nz,
+#endif
+#if DW_NDIM >= 2
+                           size_t ny,
+#endif
+                           size_t nx);
+int SC_FUNC(compress_cuda)(void const *input, void *output, size_t n_batch,
+#if DW_NDIM >= 3
+                           size_t nz,
+#endif
+#if DW_NDIM >= 2
+                           size_t ny,
+#endif
+                           size_t nx, void *stream);
+
+void SC_FUNC(decompress_cpu)(void const *input, void *output,
+#if DW_NDIM >= 3
+                             size_t nz,
+#endif
+#if DW_NDIM >= 2
+                             size_t ny,
+#endif
+                             size_t nx);
+int SC_FUNC(decompress_cuda)(void const *input, void *output, size_t n_batch,
+#if DW_NDIM >= 3
+                             size_t nz,
+#endif
+#if DW_NDIM >= 2
+                             size_t ny,
+#endif
+                             size_t nx, void *stream);
+#endif /* DW_NDIM && DW_DTYPE */
+
 #ifdef __cplusplus
 }
 #endif

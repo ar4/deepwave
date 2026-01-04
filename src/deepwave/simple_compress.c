@@ -5,114 +5,215 @@
 #include <stdint.h>
 #include <string.h>
 
-/* CPU implementation for float */
-static void compress_float_cpu(float const *const input, uint8_t *const output,
-                               size_t const n_elements) {
-  float *const minmax = (float *)output;
-  uint8_t *const compressed = output + 2 * sizeof(float);
+#define BLOCK_SIZE 8
 
-  /* Find min and max */
-  float min_val = input[0];
-  float max_val = input[0];
-  for (size_t i = 1; i < n_elements; i++) {
-    if (input[i] < min_val) min_val = input[i];
-    if (input[i] > max_val) max_val = input[i];
+#if defined(DW_NDIM) && defined(DW_DTYPE)
+
+static inline DW_DTYPE dw_abs(DW_DTYPE val) { return (val >= 0) ? val : -val; }
+
+/* CPU implementation */
+void SC_FUNC(compress_cpu)(void const *const input, void *const output,
+#if DW_NDIM >= 3
+                           size_t const nz,
+#endif
+#if DW_NDIM >= 2
+                           size_t const ny,
+#endif
+                           size_t const nx) {
+
+  DW_DTYPE const *const in_ptr = (DW_DTYPE const *)input;
+  size_t const nbx = (nx + BLOCK_SIZE - 1) / BLOCK_SIZE;
+#if DW_NDIM >= 2
+  size_t const nby = (ny + BLOCK_SIZE - 1) / BLOCK_SIZE;
+#else
+  size_t const nby = 1;
+#endif
+#if DW_NDIM >= 3
+  size_t const nbz = (nz + BLOCK_SIZE - 1) / BLOCK_SIZE;
+#else
+  size_t const nbz = 1;
+#endif
+  size_t const n_blocks = nbz * nby * nbx;
+
+  DW_DTYPE *const max_abs_vals = (DW_DTYPE *)output;
+  uint8_t *const compressed = (uint8_t *)output + n_blocks * sizeof(DW_DTYPE);
+
+#if DW_NDIM >= 3
+  for (size_t bz = 0; bz < nbz; ++bz) {
+    size_t const z_start = bz * BLOCK_SIZE;
+    size_t const z_end =
+            (z_start + BLOCK_SIZE < nz) ? z_start + BLOCK_SIZE : nz;
+#else
+    size_t const bz = 0;
+#endif
+
+#if DW_NDIM >= 2
+    for (size_t by = 0; by < nby; ++by) {
+      size_t const y_start = by * BLOCK_SIZE;
+      size_t const y_end =
+            (y_start + BLOCK_SIZE < ny) ? y_start + BLOCK_SIZE : ny;
+#else
+      size_t const by = 0;
+#endif
+
+      for (size_t bx = 0; bx < nbx; ++bx) {
+        /* Find max abs in block */
+        DW_DTYPE max_abs = 0;
+        size_t const x_start = bx * BLOCK_SIZE;
+        size_t const x_end =
+            (x_start + BLOCK_SIZE < nx) ? x_start + BLOCK_SIZE : nx;
+
+#if DW_NDIM >= 3
+        for (size_t z = z_start; z < z_end; ++z) {
+#endif
+#if DW_NDIM >= 2
+          for (size_t y = y_start; y < y_end; ++y) {
+#endif
+            for (size_t x = x_start; x < x_end; ++x) {
+              size_t const idx = 
+#if DW_NDIM >= 3
+                  z * ny * nx + 
+#endif
+#if DW_NDIM >= 2
+                  y * nx + 
+#endif
+                  x;
+              DW_DTYPE const val = dw_abs(in_ptr[idx]);
+              if (val > max_abs) max_abs = val;
+            }
+#if DW_NDIM >= 2
+          }
+#endif
+#if DW_NDIM >= 3
+        }
+#endif
+
+        size_t const block_idx = bz * nby * nbx + by * nbx + bx;
+        max_abs_vals[block_idx] = max_abs;
+
+        DW_DTYPE const scale =
+            (max_abs > 0) ? ((DW_DTYPE)127.0 / max_abs) : 0;
+
+        /* Quantize */
+#if DW_NDIM >= 3
+        for (size_t z = z_start; z < z_end; ++z) {
+#endif
+#if DW_NDIM >= 2
+          for (size_t y = y_start; y < y_end; ++y) {
+#endif
+            for (size_t x = x_start; x < x_end; ++x) {
+              size_t const idx = 
+#if DW_NDIM >= 3
+                  z * ny * nx + 
+#endif
+#if DW_NDIM >= 2
+                  y * nx + 
+#endif
+                  x;
+              compressed[idx] =
+                  (uint8_t)((DW_DTYPE)128.0 + in_ptr[idx] * scale + (DW_DTYPE)0.5);
+            }
+#if DW_NDIM >= 2
+          }
+#endif
+#if DW_NDIM >= 3
+        }
+#endif
+      }
+
+#if DW_NDIM >= 2
+    }
+#endif
+
+#if DW_NDIM >= 3
   }
-
-  /* Store min and max */
-  minmax[0] = min_val;
-  minmax[1] = max_val;
-
-  /* Quantize to 8 bits */
-  float const range = max_val - min_val;
-  float const scale = (range > 0) ? (255.0f / range) : 0.0f;
-
-  for (size_t i = 0; i < n_elements; i++) {
-    float const normalized = (input[i] - min_val) * scale;
-    compressed[i] = (uint8_t)(normalized + 0.5f);
-  }
+#endif
 }
 
-/* CPU implementation for double */
-static void compress_double_cpu(double const *const input,
-                                uint8_t *const output,
-                                size_t const n_elements) {
-  double *const minmax = (double *)output;
-  uint8_t *const compressed = output + 2 * sizeof(double);
+/* CPU implementation for decompression */
+void SC_FUNC(decompress_cpu)(void const *const input, void *const output,
+#if DW_NDIM >= 3
+                             size_t const nz,
+#endif
+#if DW_NDIM >= 2
+                             size_t const ny,
+#endif
+                             size_t const nx) {
+  DW_DTYPE *const out_ptr = (DW_DTYPE *)output;
+  size_t const nbx = (nx + BLOCK_SIZE - 1) / BLOCK_SIZE;
+#if DW_NDIM >= 2
+  size_t const nby = (ny + BLOCK_SIZE - 1) / BLOCK_SIZE;
+#else
+  size_t const nby = 1;
+#endif
+#if DW_NDIM >= 3
+  size_t const nbz = (nz + BLOCK_SIZE - 1) / BLOCK_SIZE;
+#else
+  size_t const nbz = 1;
+#endif
+  size_t const n_blocks = nbz * nby * nbx;
 
-  /* Find min and max */
-  double min_val = input[0];
-  double max_val = input[0];
-  for (size_t i = 1; i < n_elements; i++) {
-    if (input[i] < min_val) min_val = input[i];
-    if (input[i] > max_val) max_val = input[i];
+  DW_DTYPE const *const max_abs_vals = (const DW_DTYPE *)input;
+  uint8_t const *const compressed =
+      (const uint8_t *)input + n_blocks * sizeof(DW_DTYPE);
+
+#if DW_NDIM >= 3
+  for (size_t bz = 0; bz < nbz; ++bz) {
+    size_t const z_start = bz * BLOCK_SIZE;
+    size_t const z_end =
+            (z_start + BLOCK_SIZE < nz) ? z_start + BLOCK_SIZE : nz;
+#else
+    size_t const bz = 0;
+#endif
+
+#if DW_NDIM >= 2
+    for (size_t by = 0; by < nby; ++by) {
+      size_t const y_start = by * BLOCK_SIZE;
+      size_t const y_end =
+            (y_start + BLOCK_SIZE < ny) ? y_start + BLOCK_SIZE : ny;
+#else
+      size_t const by = 0;
+#endif
+
+      for (size_t bx = 0; bx < nbx; ++bx) {
+        size_t const block_idx = bz * nby * nbx + by * nbx + bx;
+        DW_DTYPE const max_abs = max_abs_vals[block_idx];
+        DW_DTYPE const scale = max_abs / (DW_DTYPE)127.0;
+
+        size_t const x_start = bx * BLOCK_SIZE;
+        size_t const x_end =
+            (x_start + BLOCK_SIZE < nx) ? x_start + BLOCK_SIZE : nx;
+
+#if DW_NDIM >= 3
+        for (size_t z = z_start; z < z_end; ++z) {
+#endif
+#if DW_NDIM >= 2
+          for (size_t y = y_start; y < y_end; ++y) {
+#endif
+            for (size_t x = x_start; x < x_end; ++x) {
+              size_t const idx = 
+#if DW_NDIM >= 3
+                  z * ny * nx + 
+#endif
+#if DW_NDIM >= 2
+                  y * nx + 
+#endif
+                  x;
+              out_ptr[idx] = ((DW_DTYPE)compressed[idx] - (DW_DTYPE)128.0) * scale;
+            }
+#if DW_NDIM >= 2
+          }
+#endif
+#if DW_NDIM >= 3
+        }
+#endif
+      }
+#if DW_NDIM >= 2
+    }
+#endif
+#if DW_NDIM >= 3
   }
-
-  /* Store min and max */
-  minmax[0] = min_val;
-  minmax[1] = max_val;
-
-  /* Quantize to 8 bits */
-  double const range = max_val - min_val;
-  double const scale = (range > 0) ? (255.0 / range) : 0.0;
-
-  for (size_t i = 0; i < n_elements; i++) {
-    double const normalized = (input[i] - min_val) * scale;
-    compressed[i] = (uint8_t)(normalized + 0.5);
-  }
+#endif
 }
 
-/* CPU implementation for float decompression */
-static void decompress_float_cpu(uint8_t const *const input,
-                                 float *const output, size_t const n_elements) {
-  float const *const minmax = (const float *)input;
-  uint8_t const *const compressed = input + 2 * sizeof(float);
-
-  float const min_val = minmax[0];
-  float const max_val = minmax[1];
-  float const range = max_val - min_val;
-  float const scale = range / 255.0f;
-
-  uint8_t const *const in_field = compressed;
-
-  for (size_t i = 0; i < n_elements; i++) {
-    output[i] = min_val + in_field[i] * scale;
-  }
-}
-
-/* CPU implementation for double decompression */
-static void decompress_double_cpu(uint8_t const *const input,
-                                  double *const output,
-                                  size_t const n_elements) {
-  double const *const minmax = (const double *)input;
-  uint8_t const *const compressed = input + 2 * sizeof(double);
-
-  double const min_val = minmax[0];
-  double const max_val = minmax[1];
-  double const range = max_val - min_val;
-  double const scale = range / 255.0;
-
-  uint8_t const *const in_field = compressed;
-
-  for (size_t i = 0; i < n_elements; i++) {
-    output[i] = min_val + in_field[i] * scale;
-  }
-}
-
-void simple_compress_cpu(void const *input, void *output, size_t n_elements,
-                         int is_double) {
-  if (is_double) {
-    compress_double_cpu((double const *)input, (uint8_t *)output, n_elements);
-  } else {
-    compress_float_cpu((float const *)input, (uint8_t *)output, n_elements);
-  }
-}
-
-void simple_decompress_cpu(void const *input, void *output, size_t n_elements,
-                           int is_double) {
-  if (is_double) {
-    decompress_double_cpu((uint8_t const *)input, (double *)output, n_elements);
-  } else {
-    decompress_float_cpu((uint8_t const *)input, (float *)output, n_elements);
-  }
-}
+#endif

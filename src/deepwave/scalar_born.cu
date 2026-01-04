@@ -43,10 +43,13 @@
 
 #if DW_NDIM == 3
 #define ND_INDEX(i, dz, dy, dx) (i + (dz)*ny * nx + (dy)*nx + (dx))
+#define DIM_ARGS nz_h, ny_h, nx_h
 #elif DW_NDIM == 2
 #define ND_INDEX(i, dz, dy, dx) (i + (dy)*nx + (dx))
+#define DIM_ARGS ny_h, nx_h
 #else /* DW_NDIM == 1 */
 #define ND_INDEX(i, dz, dy, dx) (i + (dx))
+#define DIM_ARGS nx_h
 #endif
 
 // Access the background wavefield at offset (dz, dy, dx) from i
@@ -1128,18 +1131,18 @@ extern "C"
     }
 
     if (store_w) {
-      if (storage_save_snapshot_gpu(
+      if (STORAGE_FUNC(save_snapshot_gpu)(
               w_store_1_t, w_store_2_t, w_store_3_t, fp_w, storage_mode,
               storage_compression, step_idx, shot_bytes_uncomp, shot_bytes_comp,
-              n_shots_h, shot_numel_h, sizeof(DW_DTYPE) == sizeof(double),
+              n_shots_h, DIM_ARGS,
               use_double_buffering ? stream_storage : stream_compute) != 0)
         return 1;
     }
     if (store_wsc) {
-      if (storage_save_snapshot_gpu(
+      if (STORAGE_FUNC(save_snapshot_gpu)(
               wsc_store_1_t, wsc_store_2_t, wsc_store_3_t, fp_wsc, storage_mode,
               storage_compression, step_idx, shot_bytes_uncomp, shot_bytes_comp,
-              n_shots_h, shot_numel_h, sizeof(DW_DTYPE) == sizeof(double),
+              n_shots_h, DIM_ARGS,
               use_double_buffering ? stream_storage : stream_compute) != 0)
         return 1;
     }
@@ -1527,10 +1530,10 @@ extern "C"
       if (use_double_buffering && step_idx % 2 != 0) {
         w_store_1_t = w_store_1b;
       }
-      if (storage_load_snapshot_gpu(
+      if (STORAGE_FUNC(load_snapshot_gpu)(
               w_store_1_t, w_store_2_t, w_store_3_t, fp_w, storage_mode,
               storage_compression, step_idx, shot_bytes_uncomp, shot_bytes_comp,
-              n_shots_h, shot_numel_h, sizeof(DW_DTYPE) == sizeof(double),
+              n_shots_h, DIM_ARGS,
               use_double_buffering ? stream_storage : stream_compute) != 0)
         return 1;
     }
@@ -1539,10 +1542,10 @@ extern "C"
       if (use_double_buffering && step_idx % 2 != 0) {
         wsc_store_1_t = wsc_store_1b;
       }
-      if (storage_load_snapshot_gpu(
+      if (STORAGE_FUNC(load_snapshot_gpu)(
               wsc_store_1_t, wsc_store_2_t, wsc_store_3_t, fp_wsc, storage_mode,
               storage_compression, step_idx, shot_bytes_uncomp, shot_bytes_comp,
-              n_shots_h, shot_numel_h, sizeof(DW_DTYPE) == sizeof(double),
+              n_shots_h, DIM_ARGS,
               use_double_buffering ? stream_storage : stream_compute) != 0)
         return 1;
     }
@@ -1904,10 +1907,10 @@ extern "C"
     }
 
     if (load_w) {
-      if (storage_load_snapshot_gpu(
+      if (STORAGE_FUNC(load_snapshot_gpu)(
               w_store_1_t, w_store_2_t, w_store_3_t, fp_w, storage_mode,
               storage_compression, step_idx, shot_bytes_uncomp, shot_bytes_comp,
-              n_shots_h, shot_numel_h, sizeof(DW_DTYPE) == sizeof(double),
+              n_shots_h, DIM_ARGS,
               use_double_buffering ? stream_storage : stream_compute) != 0)
         return 1;
       if (use_double_buffering) {

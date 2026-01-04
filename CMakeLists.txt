@@ -146,13 +146,19 @@ set(ACCURACIES 2 4 6 8)
 set(DTYPES float double)
 
 # --- CPU object libraries ---
+# Simple compress is generic (not dependent on NDIM/ACCURACY/DTYPE macros)
+
 foreach(NDIM ${NDIMS})
-    foreach(ACCURACY ${ACCURACIES})
-        foreach(DTYPE ${DTYPES})
-		add_deepwave_cpu_object_library(scalar ${NDIM} ${ACCURACY} ${DTYPE})
-		add_deepwave_cpu_object_library(scalar_born ${NDIM} ${ACCURACY} ${DTYPE})
-		add_deepwave_cpu_object_library(elastic ${NDIM} ${ACCURACY} ${DTYPE})
-		add_deepwave_cpu_object_library(acoustic ${NDIM} ${ACCURACY} ${DTYPE}) # Added acoustic
+    foreach(DTYPE ${DTYPES})
+        # storage_utils and simple_compress depend on NDIM and DTYPE
+        add_deepwave_cpu_object_library(storage_utils ${NDIM} 2 ${DTYPE})
+        add_deepwave_cpu_object_library(simple_compress ${NDIM} 2 ${DTYPE})
+
+    	foreach(ACCURACY ${ACCURACIES})
+            add_deepwave_cpu_object_library(scalar ${NDIM} ${ACCURACY} ${DTYPE})
+            add_deepwave_cpu_object_library(scalar_born ${NDIM} ${ACCURACY} ${DTYPE})
+            add_deepwave_cpu_object_library(elastic ${NDIM} ${ACCURACY} ${DTYPE})
+            add_deepwave_cpu_object_library(acoustic ${NDIM} ${ACCURACY} ${DTYPE})
         endforeach()
     endforeach()
 endforeach()
@@ -164,51 +170,35 @@ if(OPENMP_CONFIGURED)
     endforeach()
 endif()
 
-# --- Storage and Simple Compression Library (CPU) ---
-add_library(storage_obj OBJECT src/deepwave/storage_utils.c src/deepwave/simple_compress.c)
-set_target_properties(storage_obj PROPERTIES POSITION_INDEPENDENT_CODE ON)
-if(C_RELEASE_FLAGS)
-    target_compile_options(storage_obj PRIVATE ${C_RELEASE_FLAGS})
-endif()
-
-if(HAVE_AVX2 AND C_AVX2_FLAG)
-    target_compile_options(storage_obj PRIVATE ${C_AVX2_FLAG})
-endif()
-list(APPEND DEEPWAVE_OBJECTS $<TARGET_OBJECTS:storage_obj>)
-
 # --- End CPU object libraries ---
 
 
 # --- CUDA object libraries ---
 if(CUDAToolkit_FOUND)
-	    if(CMAKE_BUILD_TYPE MATCHES Release)
-	        set(CUDA_RELEASE_OPTIONS --use_fast_math -O3 --restrict)
-	    endif()
-	    if(NOT WIN32)
-	        # -fPIC is not a valid option for the MSVC compiler on Windows.
-		list(APPEND CMAKE_CUDA_FLAGS -Xcompiler=-fPIC)
-	    endif()
-	
-	    foreach(NDIM ${NDIMS})
-	        foreach(ACCURACY ${ACCURACIES})
-	            foreach(DTYPE ${DTYPES})
-			add_deepwave_cuda_object_library(scalar ${NDIM} ${ACCURACY} ${DTYPE})
-			add_deepwave_cuda_object_library(scalar_born ${NDIM} ${ACCURACY} ${DTYPE})
-			add_deepwave_cuda_object_library(elastic ${NDIM} ${ACCURACY} ${DTYPE})
-			add_deepwave_cuda_object_library(acoustic ${NDIM} ${ACCURACY} ${DTYPE}) # Added acoustic
-	            endforeach()
-	        endforeach()
-	    endforeach()
-	
-	    # --- Storage and Simple Compression Library (CUDA) ---
-	    add_library(storage_cu_obj OBJECT src/deepwave/storage_utils.cu src/deepwave/simple_compress.cu)
-	    set_target_properties(storage_cu_obj PROPERTIES 
-	        POSITION_INDEPENDENT_CODE ON 
-	        CUDA_ARCHITECTURES all)
-	        if(CMAKE_BUILD_TYPE MATCHES Release)
-	            target_compile_options(storage_cu_obj PRIVATE ${CUDA_RELEASE_OPTIONS})
-	        endif()
-	    list(APPEND DEEPWAVE_OBJECTS $<TARGET_OBJECTS:storage_cu_obj>)
+        if(CMAKE_BUILD_TYPE MATCHES Release)
+            set(CUDA_RELEASE_OPTIONS --use_fast_math -O3 --restrict)
+        endif()
+        if(NOT WIN32)
+            # -fPIC is not a valid option for the MSVC compiler on Windows.
+            list(APPEND CMAKE_CUDA_FLAGS -Xcompiler=-fPIC)
+        endif()
+
+        # Simple compress CUDA is generic
+
+        foreach(NDIM ${NDIMS})
+            foreach(DTYPE ${DTYPES})
+                # storage_utils and simple_compress depend on NDIM and DTYPE
+                add_deepwave_cuda_object_library(storage_utils ${NDIM} 2 ${DTYPE})
+                add_deepwave_cuda_object_library(simple_compress ${NDIM} 2 ${DTYPE})
+
+            	foreach(ACCURACY ${ACCURACIES})
+                    add_deepwave_cuda_object_library(scalar ${NDIM} ${ACCURACY} ${DTYPE})
+                    add_deepwave_cuda_object_library(scalar_born ${NDIM} ${ACCURACY} ${DTYPE})
+                    add_deepwave_cuda_object_library(elastic ${NDIM} ${ACCURACY} ${DTYPE})
+                    add_deepwave_cuda_object_library(acoustic ${NDIM} ${ACCURACY} ${DTYPE})
+                endforeach()
+            endforeach()
+        endforeach()
 endif()
 # --- End CUDA object libraries ---
 

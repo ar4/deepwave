@@ -19,10 +19,13 @@
 
 #if DW_NDIM == 3
 #define ND_INDEX(i, dz, dy, dx) (i + (dz)*ny * nx + (dy)*nx + (dx))
+#define DIM_ARGS nz_h, ny_h, nx_h
 #elif DW_NDIM == 2
 #define ND_INDEX(i, dz, dy, dx) (i + (dy)*nx + (dx))
+#define DIM_ARGS ny_h, nx_h
 #else /* DW_NDIM == 1 */
 #define ND_INDEX(i, dz, dy, dx) (i + (dx))
+#define DIM_ARGS nx_h
 #endif
 
 #define P(dz, dy, dx) p[ND_INDEX(i, dz, dy, dx)]
@@ -435,20 +438,17 @@ __launch_bounds__(128) __global__
                            DW_DTYPE const *__restrict__ const bz_grad_store_1,
                            DW_DTYPE const *__restrict__ const azh,
                            DW_DTYPE const *__restrict__ const bz,
-                           DW_DTYPE const *__restrict__ const bzh,
 #endif
 #if DW_NDIM >= 2
                            DW_DTYPE *__restrict__ const grad_by_shot,
                            DW_DTYPE const *__restrict__ const by_grad_store_1,
                            DW_DTYPE const *__restrict__ const ayh,
                            DW_DTYPE const *__restrict__ const by,
-                           DW_DTYPE const *__restrict__ const byh,
 #endif
                            DW_DTYPE *__restrict__ const grad_bx_shot,
                            DW_DTYPE const *__restrict__ const bx_grad_store_1,
                            DW_DTYPE const *__restrict__ const axh,
                            DW_DTYPE const *__restrict__ const bx,
-                           DW_DTYPE const *__restrict__ const bxh,
                            bool const b_requires_grad) {
 
 #if DW_NDIM == 3
@@ -574,16 +574,13 @@ __launch_bounds__(128) __global__
 #if DW_NDIM >= 3
                            DW_DTYPE const *__restrict__ const az,
                            DW_DTYPE const *__restrict__ const bzh,
-                           DW_DTYPE const *__restrict__ const bz,
 #endif
 #if DW_NDIM >= 2
                            DW_DTYPE const *__restrict__ const ay,
                            DW_DTYPE const *__restrict__ const byh,
-                           DW_DTYPE const *__restrict__ const by,
 #endif
                            DW_DTYPE const *__restrict__ const ax,
                            DW_DTYPE const *__restrict__ const bxh,
-                           DW_DTYPE const *__restrict__ const bx,
                            bool const k_requires_grad) {
 
 #if DW_NDIM == 3
@@ -1141,11 +1138,10 @@ extern "C"
 
 #define SAVE_SNAPSHOT(name)                                                  \
   if (name##_cond) {                                                         \
-    if (storage_save_snapshot_gpu(                                           \
+    if (STORAGE_FUNC(save_snapshot_gpu)(                                     \
             name##_store_1_t, name##_store_2_t, name##_store_3_t, fp_##name, \
             storage_mode, storage_compression, step_idx, shot_bytes_uncomp,  \
-            shot_bytes_comp, n_shots_h, shot_numel_h,                        \
-            sizeof(DW_DTYPE) == sizeof(double),                              \
+            shot_bytes_comp, n_shots_h, DIM_ARGS,                            \
             use_double_buffering ? stream_storage : stream_compute) != 0)    \
       return 1;                                                              \
   }
@@ -1463,19 +1459,17 @@ extern "C"
                  (storage_compression ? shot_bytes_comp : shot_bytes_uncomp) \
            : 0);                                                             \
   bool const name##_cond = (grad_cond) && ((t % step_ratio_h) == 0);         \
-  if (name##_cond) {                                                         \
-    if (use_double_buffering && step_idx % 2 != 0) {                         \
-      name##_store_1_t = name##_store_1b;                                    \
-    }                                                                        \
-    if (storage_load_snapshot_gpu(                                           \
-            (void *)name##_store_1_t, name##_store_2_t, name##_store_3_t,    \
-            fp_##name, storage_mode, storage_compression, step_idx,          \
-            shot_bytes_uncomp, shot_bytes_comp, n_shots_h, shot_numel_h,     \
-            sizeof(DW_DTYPE) == sizeof(double),                              \
-            use_double_buffering ? stream_storage : stream_compute) != 0)    \
-      return 1;                                                              \
-  }
-
+      if (name##_cond) {                                                         \
+      if (use_double_buffering && step_idx % 2 != 0) {                         \
+        name##_store_1_t = name##_store_1b;                                    \
+      }                                                                        \
+      if (STORAGE_FUNC(load_snapshot_gpu)(                                     \
+              (void *)name##_store_1_t, name##_store_2_t, name##_store_3_t,    \
+              fp_##name, storage_mode, storage_compression, step_idx,          \
+              shot_bytes_uncomp, shot_bytes_comp, n_shots_h, DIM_ARGS,         \
+              use_double_buffering ? stream_storage : stream_compute) != 0)    \
+        return 1;                                                              \
+    }
     cudaEvent_t event_storage_done = event_storage_done_a;
     cudaEvent_t event_compute_done = event_compute_done_a;
     if (use_double_buffering) {
@@ -1550,12 +1544,12 @@ extern "C"
 #endif
         buoyancy_x,
 #if DW_NDIM >= 3
-        grad_bz_shot, bz_grad_store_1_t, azh, bz, bzh,
+        grad_bz_shot, bz_grad_store_1_t, azh, bz,
 #endif
 #if DW_NDIM >= 2
-        grad_by_shot, by_grad_store_1_t, ayh, by, byh,
+        grad_by_shot, by_grad_store_1_t, ayh, by,
 #endif
-        grad_bx_shot, bx_grad_store_1_t, axh, bx, bxh,
+        grad_bx_shot, bx_grad_store_1_t, axh, bx,
         b_requires_grad && ((t % step_ratio_h) == 0));
     CHECK_KERNEL_ERROR
 
@@ -1628,12 +1622,12 @@ extern "C"
 #endif
         buoyancy_x, grad_k_shot, k_grad_store_1_t,
 #if DW_NDIM >= 3
-        az, bzh, bz,
+        az, bzh,
 #endif
 #if DW_NDIM >= 2
-        ay, byh, by,
+        ay, byh,
 #endif
-        ax, bxh, bx, k_grad_cond);
+        ax, bxh, k_grad_cond);
     CHECK_KERNEL_ERROR
 
     if (use_double_buffering) {

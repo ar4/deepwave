@@ -44,10 +44,13 @@
 
 #if DW_NDIM == 3
 #define ND_INDEX(i, dz, dy, dx) (i + (dz)*ny * nx + (dy)*nx + (dx))
+#define DIM_ARGS nz, ny, nx
 #elif DW_NDIM == 2
 #define ND_INDEX(i, dz, dy, dx) (i + (dy)*nx + (dx))
+#define DIM_ARGS ny, nx
 #else /* DW_NDIM == 1 */
 #define ND_INDEX(i, dz, dy, dx) (i + (dx))
+#define DIM_ARGS nx
 #endif
 
 // Access the background wavefield at offset (dz, dy, dx) from i
@@ -515,17 +518,16 @@ __declspec(dllexport)
       // Save Snapshots
       if (v_or_scatter_requires_grad_t) {
         int64_t const step_idx = t / step_ratio;
-        storage_save_snapshot_cpu(
+        STORAGE_FUNC(save_snapshot_cpu)(
             w_store_1_t, w_store_2_t, fp_w, storage_mode, storage_compression,
-            step_idx, shot_bytes_uncomp, shot_bytes_comp, n_grid_points,
-            sizeof(DW_DTYPE) == sizeof(double));
+            step_idx, shot_bytes_uncomp, shot_bytes_comp, DIM_ARGS);
       }
       if (v_requires_grad_t) {
         int64_t const step_idx = t / step_ratio;
-        storage_save_snapshot_cpu(
+        STORAGE_FUNC(save_snapshot_cpu)(
             wsc_store_1_t, wsc_store_2_t, fp_wsc, storage_mode,
             storage_compression, step_idx, shot_bytes_uncomp, shot_bytes_comp,
-            n_grid_points, sizeof(DW_DTYPE) == sizeof(double));
+            DIM_ARGS);
       }
 
       add_to_wavefield(wfp_t, sources_i + si,
@@ -825,18 +827,17 @@ __declspec(dllexport)
 
       if (v_requires_grad_t || scatter_requires_grad_t) {
         int64_t const step_idx = t / step_ratio;
-        storage_load_snapshot_cpu(
+        STORAGE_FUNC(load_snapshot_cpu)(
             w_store_1_t, w_store_2_t, fp_w, storage_mode, storage_compression,
-            step_idx, shot_bytes_uncomp, shot_bytes_comp, n_grid_points,
-            sizeof(DW_DTYPE) == sizeof(double));
+            step_idx, shot_bytes_uncomp, shot_bytes_comp, DIM_ARGS);
       }
 
       if (v_requires_grad_t) {
         int64_t const step_idx = t / step_ratio;
-        storage_load_snapshot_cpu(
+        STORAGE_FUNC(load_snapshot_cpu)(
             wsc_store_1_t, wsc_store_2_t, fp_wsc, storage_mode,
             storage_compression, step_idx, shot_bytes_uncomp, shot_bytes_comp,
-            n_grid_points, sizeof(DW_DTYPE) == sizeof(double));
+            DIM_ARGS);
       }
 
 #if DW_NDIM >= 3
@@ -1178,10 +1179,9 @@ __declspec(dllexport)
 
       if (scatter_requires_grad_t) {
         int64_t const step_idx = t / step_ratio;
-        storage_load_snapshot_cpu(
+        STORAGE_FUNC(load_snapshot_cpu)(
             w_store_1_t, w_store_2_t, fp_w, storage_mode, storage_compression,
-            step_idx, shot_bytes_uncomp, shot_bytes_comp, n_grid_points,
-            sizeof(DW_DTYPE) == sizeof(double));
+            step_idx, shot_bytes_uncomp, shot_bytes_comp, DIM_ARGS);
       }
 
 #if DW_NDIM >= 3

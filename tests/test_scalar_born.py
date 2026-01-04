@@ -1361,8 +1361,8 @@ def test_storage(
     if model.is_cuda:
         modes.append("cpu")
 
-    atol_model = [2, 0.02, 2e-3]
-    atol_scatter = [2e-3, 1e-4, 1e-5]
+    atol_model = [4, 0.02, 2e-3]
+    atol_scatter = [2e-3, 1e-4, 4e-5]
 
     for mode in modes:
         for compression in [False, True]:

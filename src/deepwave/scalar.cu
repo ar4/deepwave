@@ -46,10 +46,13 @@
 
 #if DW_NDIM == 3
 #define ND_INDEX(i, dz, dy, dx) (i + (dz)*ny * nx + (dy)*nx + (dx))
+#define DIM_ARGS nz_h, ny_h, nx_h
 #elif DW_NDIM == 2
 #define ND_INDEX(i, dz, dy, dx) (i + (dy)*nx + (dx))
+#define DIM_ARGS ny_h, nx_h
 #else /* DW_NDIM == 1 */
 #define ND_INDEX(i, dz, dy, dx) (i + (dx))
+#define DIM_ARGS nx_h
 #endif
 
 #define WFC(dz, dy, dx) wfc[ND_INDEX(i, dz, dy, dx)]
@@ -649,10 +652,10 @@ extern "C"
         gpuErrchk(cudaEventRecord(event_compute_done, stream_compute));
         gpuErrchk(cudaStreamWaitEvent(stream_storage, event_compute_done, 0));
       }
-      if (storage_save_snapshot_gpu(
+      if (STORAGE_FUNC(save_snapshot_gpu)(
               w_store_1_t, w_store_2_t, w_store_3_t, fp_w, storage_mode,
               storage_compression, step_idx, shot_bytes_uncomp, shot_bytes_comp,
-              n_shots_h, shot_numel_h, sizeof(DW_DTYPE) == sizeof(double),
+              n_shots_h, DIM_ARGS,
               use_double_buffering ? stream_storage : stream_compute) != 0)
         return 1;
       if (use_double_buffering) {
@@ -927,10 +930,10 @@ extern "C"
                                           : shot_bytes_uncomp) *
                      n_shots_h
                : 0);
-      if (storage_load_snapshot_gpu(
+      if (STORAGE_FUNC(load_snapshot_gpu)(
               w_store_1_t, w_store_2_t, w_store_3_t, fp_w, storage_mode,
               storage_compression, step_idx, shot_bytes_uncomp, shot_bytes_comp,
-              n_shots_h, shot_numel_h, sizeof(DW_DTYPE) == sizeof(double),
+              n_shots_h, DIM_ARGS,
               use_double_buffering ? stream_storage : stream_compute) != 0)
         return 1;
       if (use_double_buffering) {
