@@ -59,13 +59,13 @@ There are more examples in [the documentation](https://ausargeo.com/deepwave).
 
 If you would like to cite Deepwave, I suggest:
 ```bibtex
-@software{richardson_alan_2025,
+@software{richardson_alan_2026,
   author       = {Richardson, Alan},
   title        = {Deepwave},
-  month        = dec,
-  year         = 2025,
+  month        = jan,
+  year         = 2026,
   publisher    = {Zenodo},
-  version      = {v0.0.25},
+  version      = {v0.0.26},
   doi          = {10.5281/zenodo.3829886},
   url          = {https://doi.org/10.5281/zenodo.3829886}
 }
