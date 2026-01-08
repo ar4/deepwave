@@ -25,3 +25,4 @@ These examples demonstrate how to use Deepwave. Each is designed to show differe
     example_joint_migration_inversion
     example_hessian
     example_custom_imaging_condition
+    example_torch_func
