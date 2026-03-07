@@ -654,33 +654,29 @@ class ScalarBornForwardFunc(torch.autograd.Function):
 
         """
         del unused_tensor  # Unused.
-        v = v.contiguous()
-        scatter = scatter.contiguous()
-        source_amplitudes = source_amplitudes.contiguous()
-        source_amplitudessc = source_amplitudessc.contiguous()
-        pml_profiles = [profile.contiguous() for profile in pml_profiles]
-        sources_i = sources_i.contiguous()
-        receivers_i = receivers_i.contiguous()
-        receiverssc_i = receiverssc_i.contiguous()
+        (
+            v,
+            scatter,
+            source_amplitudes,
+            source_amplitudessc,
+            pml_profiles,
+            sources_i,
+            receivers_i,
+            receiverssc_i,
+        ) = deepwave.common.ensure_contiguous(
+            v,
+            scatter,
+            source_amplitudes,
+            source_amplitudessc,
+            pml_profiles,
+            sources_i,
+            receivers_i,
+            receiverssc_i,
+        )
 
         device = v.device
         dtype = v.dtype
-        if str(device) == "cpu" and storage_mode_str == "cpu":
-            storage_mode_str = "device"
-
-        if storage_mode_str == "device":
-            storage_mode = deepwave.common.StorageMode.DEVICE
-        elif storage_mode_str == "cpu":
-            storage_mode = deepwave.common.StorageMode.CPU
-        elif storage_mode_str == "disk":
-            storage_mode = deepwave.common.StorageMode.DISK
-        elif storage_mode_str == "none":
-            storage_mode = deepwave.common.StorageMode.NONE
-        else:
-            raise ValueError(
-                "storage_mode must be 'device', 'cpu', 'disk', or 'none', "
-                f"but got {storage_mode_str}"
-            )
+        storage_mode = deepwave.common.get_storage_mode(storage_mode_str, device)
 
         ndim = len(grid_spacing)
         is_cuda = v.is_cuda
@@ -800,14 +796,7 @@ class ScalarBornForwardFunc(torch.autograd.Function):
             receiver_amplitudessc.resize_(nt, n_shots, n_receiverssc_per_shot)
             receiver_amplitudessc.fill_(0)
 
-        stream: Union[int, torch.Stream] = 0
-        if is_cuda:
-            aux = v.get_device()
-            stream = torch.cuda.current_stream(aux)
-        elif deepwave.backend_utils.USE_OPENMP:
-            aux = min(n_shots, torch.get_num_threads())
-        else:
-            aux = 1
+        stream, aux = deepwave.common.get_stream_or_aux(device, is_cuda, n_shots)
         forward = deepwave.backend_utils.get_backend_function(
             "scalar_born",
             ndim,
@@ -966,15 +955,27 @@ class ScalarBornForwardFunc(torch.autograd.Function):
             *pml_profiles,
         ) = ctx.saved_tensors
 
-        v = v.contiguous()
-        scatter = scatter.contiguous()
-        grad_r = grad_r.contiguous()
-        grad_rsc = grad_rsc.contiguous()
-        grad_wavefields = [p.contiguous() for p in grad_wavefields]
-        pml_profiles = [p.contiguous() for p in pml_profiles]
-        sources_i = sources_i.contiguous()
-        receivers_i = receivers_i.contiguous()
-        receiverssc_i = receiverssc_i.contiguous()
+        (
+            v,
+            scatter,
+            grad_r,
+            grad_rsc,
+            grad_wavefields,
+            pml_profiles,
+            sources_i,
+            receivers_i,
+            receiverssc_i,
+        ) = deepwave.common.ensure_contiguous(
+            v,
+            scatter,
+            grad_r,
+            grad_rsc,
+            grad_wavefields,
+            pml_profiles,
+            sources_i,
+            receivers_i,
+            receiverssc_i,
+        )
 
         grid_spacing = ctx.grid_spacing
         ndim = len(grid_spacing)
@@ -1088,49 +1089,37 @@ class ScalarBornForwardFunc(torch.autograd.Function):
             grad_fsc.resize_(nt, n_shots, n_sources_per_shot)
             grad_fsc.fill_(0)
 
-        stream: Union[int, torch.Stream] = 0
-        if is_cuda:
-            aux = v.get_device()
-            stream = torch.cuda.current_stream(aux)
-            if (
-                v.requires_grad
-                and not v_batched
-                and n_shots > 1
-                and storage_manager.storage_mode != deepwave.common.StorageMode.NONE
-            ):
-                grad_v_tmp.resize_(n_shots, *model_shape)
-                grad_v_tmp.fill_(0)
-                grad_v_tmp_ptr = grad_v_tmp.data_ptr()
-            if (
-                scatter.requires_grad
-                and not scatter_batched
-                and n_shots > 1
-                and storage_manager.storage_mode != deepwave.common.StorageMode.NONE
-            ):
-                grad_scatter_tmp.resize_(n_shots, *model_shape)
-                grad_scatter_tmp.fill_(0)
-                grad_scatter_tmp_ptr = grad_scatter_tmp.data_ptr()
-        else:
-            if deepwave.backend_utils.USE_OPENMP:
-                aux = min(n_shots, torch.get_num_threads())
-            else:
-                aux = 1
-            if (
-                v.requires_grad
-                and not v_batched
-                and aux > 1
+        stream, aux = deepwave.common.get_stream_or_aux(device, is_cuda, n_shots)
+        if (
+            v.requires_grad
+            and not v_batched
+            and storage_manager.storage_mode != deepwave.common.StorageMode.NONE
+        ):
+            if is_cuda:
+                if n_shots > 1:
+                    grad_v_tmp.resize_(n_shots, *model_shape)
+                    grad_v_tmp.fill_(0)
+                    grad_v_tmp_ptr = grad_v_tmp.data_ptr()
+            elif (
+                aux > 1
                 and deepwave.backend_utils.USE_OPENMP
-                and storage_manager.storage_mode != deepwave.common.StorageMode.NONE
             ):
                 grad_v_tmp.resize_(aux, *model_shape)
                 grad_v_tmp.fill_(0)
                 grad_v_tmp_ptr = grad_v_tmp.data_ptr()
-            if (
-                scatter.requires_grad
-                and not scatter_batched
-                and aux > 1
+        if (
+            scatter.requires_grad
+            and not scatter_batched
+            and storage_manager.storage_mode != deepwave.common.StorageMode.NONE
+        ):
+            if is_cuda:
+                if n_shots > 1:
+                    grad_scatter_tmp.resize_(n_shots, *model_shape)
+                    grad_scatter_tmp.fill_(0)
+                    grad_scatter_tmp_ptr = grad_scatter_tmp.data_ptr()
+            elif (
+                aux > 1
                 and deepwave.backend_utils.USE_OPENMP
-                and storage_manager.storage_mode != deepwave.common.StorageMode.NONE
             ):
                 grad_scatter_tmp.resize_(aux, *model_shape)
                 grad_scatter_tmp.fill_(0)

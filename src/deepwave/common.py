@@ -1984,6 +1984,88 @@ def check_extents_match_wavefields_shape(
                     )
 
 
+def get_storage_mode(storage_mode_str: str, device: torch.device) -> StorageMode:
+    """Converts a storage mode string to a StorageMode enum.
+
+    Args:
+        storage_mode_str: The storage mode string ("device", "cpu", "disk", or "none").
+        device: The PyTorch device.
+
+    Returns:
+        The corresponding StorageMode enum.
+
+    Raises:
+        ValueError: If the storage mode string is invalid.
+    """
+    if str(device) == "cpu" and storage_mode_str == "cpu":
+        storage_mode_str = "device"
+
+    if storage_mode_str == "device":
+        return StorageMode.DEVICE
+    if storage_mode_str == "cpu":
+        return StorageMode.CPU
+    if storage_mode_str == "disk":
+        return StorageMode.DISK
+    if storage_mode_str == "none":
+        return StorageMode.NONE
+    raise ValueError(
+        f"storage_mode must be 'device', 'cpu', 'disk', or 'none', "
+        f"but got {storage_mode_str}"
+    )
+
+
+def ensure_contiguous(*args: Any) -> Any:
+    """Ensures that all input tensors are contiguous in memory.
+
+    Args:
+        *args: Tensors or lists of tensors to check.
+
+    Returns:
+        The input tensors or lists of tensors, ensuring they are contiguous.
+        If a single argument is provided, returns it directly.
+        If multiple arguments are provided, returns a tuple.
+    """
+
+    def _make_contiguous(item: Any) -> Any:
+        if item is None:
+            return None
+        if isinstance(item, torch.Tensor):
+            return item.contiguous()
+        if isinstance(item, list):
+            return [_make_contiguous(i) for i in item]
+        return item
+
+    out = [_make_contiguous(arg) for arg in args]
+    return out[0] if len(out) == 1 else tuple(out)
+
+
+def get_stream_or_aux(
+    device: torch.device, is_cuda: bool, n_shots: int
+) -> Tuple[Union[int, torch.Stream], int]:
+    """Returns the CUDA stream or number of OpenMP threads.
+
+    Args:
+        device: The PyTorch device.
+        is_cuda: Whether the device is a CUDA device.
+        n_shots: The number of shots in the batch.
+
+    Returns:
+        A tuple containing the stream (for CUDA) or 0, and the auxiliary
+        value (device ID for CUDA or number of threads for CPU).
+    """
+    import deepwave.backend_utils
+
+    stream: Union[int, torch.Stream] = 0
+    if is_cuda:
+        aux = device.index if device.index is not None else 0
+        stream = torch.cuda.current_stream(device)
+    elif deepwave.backend_utils.USE_OPENMP:
+        aux = min(n_shots, torch.get_num_threads())
+    else:
+        aux = 1
+    return stream, aux
+
+
 def reverse_pad(pad: abc.Sequence[int]) -> List[int]:
     """Reverses the order of padding for each dimension.
 

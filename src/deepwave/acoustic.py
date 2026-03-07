@@ -787,29 +787,25 @@ class AcousticForwardFunc(torch.autograd.Function):
             )
 
         del args
-        models = [model.contiguous() for model in models]
-        source_amplitudes = [amp.contiguous() for amp in source_amplitudes]
-        pml_profiles = [profile.contiguous() for profile in pml_profiles]
-        sources_i = [locs.contiguous() for locs in sources_i]
-        receivers_i = [locs.contiguous() for locs in receivers_i]
+        (
+            models,
+            source_amplitudes,
+            pml_profiles,
+            sources_i,
+            receivers_i,
+            wavefields,
+        ) = deepwave.common.ensure_contiguous(
+            models,
+            source_amplitudes,
+            pml_profiles,
+            sources_i,
+            receivers_i,
+            wavefields,
+        )
 
         device = models[0].device
         dtype = models[0].dtype
-
-        # Setup storage
-        if str(device) == "cpu" and storage_mode_str == "cpu":
-            storage_mode_str = "device"
-
-        if storage_mode_str == "device":
-            storage_mode = deepwave.common.StorageMode.DEVICE
-        elif storage_mode_str == "cpu":
-            storage_mode = deepwave.common.StorageMode.CPU
-        elif storage_mode_str == "disk":
-            storage_mode = deepwave.common.StorageMode.DISK
-        elif storage_mode_str == "none":
-            storage_mode = deepwave.common.StorageMode.NONE
-        else:
-            raise ValueError(f"Invalid storage_mode {storage_mode_str}")
+        storage_mode = deepwave.common.get_storage_mode(storage_mode_str, device)
 
         is_cuda = models[0].is_cuda
         model_shape = models[0].shape[-ndim:]
@@ -886,14 +882,7 @@ class AcousticForwardFunc(torch.autograd.Function):
                 receiver_amplitudes[i].resize_(nt, n_shots, n_per_shot)
                 receiver_amplitudes[i].fill_(0)
 
-        stream: Union[int, torch.Stream] = 0
-        if is_cuda:
-            aux = models[0].get_device()
-            stream = torch.cuda.current_stream(aux)
-        elif deepwave.backend_utils.USE_OPENMP:
-            aux = min(n_shots, torch.get_num_threads())
-        else:
-            aux = 1
+        stream, aux = deepwave.common.get_stream_or_aux(device, is_cuda, n_shots)
 
         forward = deepwave.backend_utils.get_backend_function(
             "acoustic", ndim, "forward", accuracy, dtype, device
@@ -1027,12 +1016,21 @@ class AcousticForwardFunc(torch.autograd.Function):
         del saved_tensors[:num_source_types]
         pml_profiles = saved_tensors
 
-        grad_r = [g.contiguous() for g in grad_r]
-        models = [m.contiguous() for m in models]
-        sources_i = [locs.contiguous() for locs in sources_i]
-        receivers_i = [locs.contiguous() for locs in receivers_i]
-        source_amplitudes = [a.contiguous() for a in source_amplitudes]
-        pml_profiles = [p.contiguous() for p in pml_profiles]
+        (
+            grad_r,
+            models,
+            sources_i,
+            receivers_i,
+            source_amplitudes,
+            pml_profiles,
+        ) = deepwave.common.ensure_contiguous(
+            grad_r,
+            models,
+            sources_i,
+            receivers_i,
+            source_amplitudes,
+            pml_profiles,
+        )
 
         dt = ctx.dt
         nt = ctx.nt
@@ -1100,32 +1098,21 @@ class AcousticForwardFunc(torch.autograd.Function):
 
         model_batched = [m.ndim == ndim + 1 and m.shape[0] > 1 for m in models[:2]]
 
-        stream: Union[int, torch.Stream] = 0
-        if is_cuda:
-            aux = models[0].get_device()
-            stream = torch.cuda.current_stream(aux)
-            for i, model in enumerate(models):
-                if (
-                    model.requires_grad
-                    and not (model_batched[0] if i == 0 else model_batched[1])
-                    and n_shots > 1
-                    and storage_manager.storage_mode != deepwave.common.StorageMode.NONE
-                ):
-                    grad_models_tmp[i].resize_(n_shots, *model_shape)
-                    grad_models_tmp[i].fill_(0)
-                    grad_models_tmp_ptr[i] = grad_models_tmp[i].data_ptr()
-        else:
-            if deepwave.backend_utils.USE_OPENMP:
-                aux = min(n_shots, torch.get_num_threads())
-            else:
-                aux = 1
-            for i, model in enumerate(models):
-                if (
-                    model.requires_grad
-                    and not (model_batched[0] if i == 0 else model_batched[1])
-                    and aux > 1
+        stream, aux = deepwave.common.get_stream_or_aux(device, is_cuda, n_shots)
+        for i, model in enumerate(models):
+            if (
+                model.requires_grad
+                and not (model_batched[0] if i == 0 else model_batched[1])
+                and storage_manager.storage_mode != deepwave.common.StorageMode.NONE
+            ):
+                if is_cuda:
+                    if n_shots > 1:
+                        grad_models_tmp[i].resize_(n_shots, *model_shape)
+                        grad_models_tmp[i].fill_(0)
+                        grad_models_tmp_ptr[i] = grad_models_tmp[i].data_ptr()
+                elif (
+                    aux > 1
                     and deepwave.backend_utils.USE_OPENMP
-                    and storage_manager.storage_mode != deepwave.common.StorageMode.NONE
                 ):
                     grad_models_tmp[i].resize_(aux, *model_shape)
                     grad_models_tmp[i].fill_(0)
