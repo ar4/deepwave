@@ -25,7 +25,7 @@ receiver amplitudes (empty if no receivers).
 All outputs are differentiable with respect to float torch.Tensor inputs.
 """
 
-from typing import Any, List, Literal, Optional, Sequence, Tuple, Union, cast
+from typing import Any, Dict, List, Literal, Optional, Sequence, Tuple, Union, cast
 
 import torch
 
@@ -638,12 +638,6 @@ def acoustic(
     return outputs
 
 
-def zero_edge(tensor: torch.Tensor, fd_pad: int, dim: int) -> torch.Tensor:
-    """Sets values at the end of a dimension of a tensor to zero."""
-    tensor[(slice(None),) + (slice(None),) * dim + (-fd_pad,)].fill_(0)
-    return tensor
-
-
 def zero_edges_and_interiors(
     wavefields: List[torch.Tensor],
     ndim: int,
@@ -653,107 +647,70 @@ def zero_edges_and_interiors(
     interior: bool = True,
 ) -> None:
     """Zeros the edges and/or interiors of wavefields."""
-    # Based on elastic.py implementation but adapted for acoustic variables
-    # Wavefields order: [pressure, vz, vy, vx, phi..., psi...]
-    # Pressure (scalar) is at integer grid points.
-    # Velocities are at half grid points.
-
-    # Identify which wavefields are "half-grid" in each dimension.
-    # > p: (0,0,0)
-    # > vz: (1,0,0) (shifted in z) -> ndim=3
-    # > vy: (0,1,0) (shifted in y)
-    # > vx: (0,0,1) (shifted in x)
-
-    # > phi (PML memory variable for p update): centered at p (0,0,0)
-    # > psi (PML memory variable for v update): centered at v.
-    # > psi_z matches vz (1,0,0)
-    # > psi_y matches vy (0,1,0)
-    # > psi_x matches vx (0,0,1)
-
-    # Map wavefield index to half_grid boolean tuple
-
     num_vars = len(wavefields)
-    # Expected num_vars:
-    # 3D: p, vz, vy, vx, phiz, phiy, phix, psiz, psiy, psix (10 vars)
-    # 2D: p, vy, vx, phiy, phix, psiy, psix (7 vars)
-    # 1D: p, vx, phix, psix (4 vars)
-
-    half_grid = [[False] * ndim for _ in range(num_vars)]
-    pml_edge_idx: List[List[int]] = [[] * ndim]
+    half_grid_mask: List[List[int]] = [[] for _ in range(num_vars)]
+    interior_mask: List[Tuple[int, int]] = []
 
     if ndim == 3:
-        # p, phis are 0, 4, 5, 6 -> all False (integer grid)
         # vz (1), psiz (7) -> shifted z (dim 0)
-        half_grid[1][0] = True
-        half_grid[7][0] = True
+        half_grid_mask[1] = [0]
+        half_grid_mask[7] = [0]
         # vy (2), psiy (8) -> shifted y (dim 1)
-        half_grid[2][1] = True
-        half_grid[8][1] = True
+        half_grid_mask[2] = [1]
+        half_grid_mask[8] = [1]
         # vx (3), psix (9) -> shifted x (dim 2)
-        half_grid[3][2] = True
-        half_grid[9][2] = True
-        pml_edge_idx = [[4, 7], [5, 8], [6, 9]]
+        half_grid_mask[3] = [2]
+        half_grid_mask[9] = [2]
+        if interior:
+            interior_mask = [(4, 0), (7, 0), (5, 1), (8, 1), (6, 2), (9, 2)]
     elif ndim == 2:
-        # p (0), phis (3,4) -> False
         # vy (1), psiy (5) -> shifted y (dim 0)
-        half_grid[1][0] = True
-        half_grid[5][0] = True
+        half_grid_mask[1] = [0]
+        half_grid_mask[5] = [0]
         # vx (2), psix (6) -> shifted x (dim 1)
-        half_grid[2][1] = True
-        half_grid[6][1] = True
-        pml_edge_idx = [[3, 5], [4, 6]]
+        half_grid_mask[2] = [1]
+        half_grid_mask[6] = [1]
+        if interior:
+            interior_mask = [(3, 0), (5, 0), (4, 1), (6, 1)]
     elif ndim == 1:
-        # p (0), phi (2) -> False
         # vx (1), psix (3) -> shifted x (dim 0)
-        half_grid[1][0] = True
-        half_grid[3][0] = True
-        pml_edge_idx = [[2, 3]]
+        half_grid_mask[1] = [0]
+        half_grid_mask[3] = [0]
+        if interior:
+            interior_mask = [(2, 0), (3, 0)]
 
-    for i in range(num_vars):
-        for dim in range(ndim):
-            if half_grid[i][dim]:
-                wavefields[i] = zero_edge(wavefields[i], fd_pad, dim)
-
-    # Zero the interiors of the PML memory variables
-    if interior:
-        for dim in range(ndim):
-            for i in pml_edge_idx[dim]:
-                fd_pad_shifted = list(fd_pad_list)
-                if half_grid[i][dim]:
-                    fd_pad_shifted[2 * dim + 1] += 1
-                wavefields[i] = deepwave.common.zero_interior(
-                    wavefields[i], fd_pad_shifted, pml_width, dim
-                )
+    deepwave.common.zero_edges_and_interiors(
+        wavefields,
+        ndim,
+        fd_pad,
+        fd_pad_list,
+        pml_width,
+        half_grid_mask,
+        interior_mask,
+    )
 
 
 class AcousticForwardFunc(torch.autograd.Function):
     """Autograd function for the forward pass of acoustic wave propagation."""
 
     @staticmethod
-    def forward(
-        ctx: Any,
+    def _parse_args(
+        ndim: int,
         pml_profiles: List[torch.Tensor],
-        grid_spacing: List[float],
-        dt: float,
-        nt: int,
-        step_ratio: int,
-        accuracy: int,
-        pml_width: List[int],
-        n_shots: int,
-        forward_callback: Optional[deepwave.common.Callback],
-        backward_callback: Optional[deepwave.common.Callback],
-        callback_frequency: int,
         storage_mode_str: str,
-        storage_path: str,
-        storage_compression: bool,
-        *args: torch.Tensor,
-    ) -> Tuple[torch.Tensor, ...]:
-        """Performs the forward propagation of the acoustic wave equation."""
-        ndim = len(grid_spacing)
+        args: Tuple[torch.Tensor, ...],
+    ) -> Tuple[
+        List[torch.Tensor],
+        List[torch.Tensor],
+        List[torch.Tensor],
+        List[torch.Tensor],
+        List[torch.Tensor],
+        List[torch.Tensor],
+        torch.device,
+        torch.dtype,
+        deepwave.common.StorageMode,
+    ]:
         args_list = list(args)
-
-        # Parse args based on ndim
-        # Structure: models, source_amplitudes, sources_i, receivers_i, wavefields
 
         # Models: [K, B_z, B_y, B_x] (3D: 4 models),
         #         [K, B_y, B_x] (2D: 3 models),
@@ -786,7 +743,6 @@ class AcousticForwardFunc(torch.autograd.Function):
                 "Error parsing arguments for AcousticForwardFunc.forward"
             )
 
-        del args
         (
             models,
             source_amplitudes,
@@ -806,12 +762,32 @@ class AcousticForwardFunc(torch.autograd.Function):
         device = models[0].device
         dtype = models[0].dtype
         storage_mode = deepwave.common.get_storage_mode(storage_mode_str, device)
+        return (
+            models,
+            source_amplitudes,
+            pml_profiles,
+            sources_i,
+            receivers_i,
+            wavefields,
+            device,
+            dtype,
+            storage_mode,
+        )
 
-        is_cuda = models[0].is_cuda
-        model_shape = models[0].shape[-ndim:]
-        n_sources_per_shot_list = [locs.numel() // n_shots for locs in sources_i]
-        n_receivers_per_shot_list = [locs.numel() // n_shots for locs in receivers_i]
-
+    @staticmethod
+    def _setup_storage(
+        model_shape: torch.Size,
+        dtype: torch.dtype,
+        n_shots: int,
+        nt: int,
+        step_ratio: int,
+        storage_mode: deepwave.common.StorageMode,
+        storage_compression: bool,
+        storage_path: str,
+        device: torch.device,
+        is_cuda: bool,
+        models: List[torch.Tensor],
+    ) -> deepwave.common.StorageManager:
         storage_manager = deepwave.common.StorageManager(
             model_shape,
             dtype,
@@ -828,6 +804,28 @@ class AcousticForwardFunc(torch.autograd.Function):
         for model in models:
             storage_manager.allocate(model.requires_grad)
 
+        return storage_manager
+
+    @staticmethod
+    def _save_ctx(
+        ctx: Any,
+        models: List[torch.Tensor],
+        sources_i: List[torch.Tensor],
+        receivers_i: List[torch.Tensor],
+        source_amplitudes: List[torch.Tensor],
+        pml_profiles: List[torch.Tensor],
+        wavefields: List[torch.Tensor],
+        grid_spacing: List[float],
+        dt: float,
+        nt: int,
+        n_shots: int,
+        step_ratio: int,
+        accuracy: int,
+        pml_width: List[int],
+        backward_callback: Optional[deepwave.common.Callback],
+        callback_frequency: int,
+        storage_manager: deepwave.common.StorageManager,
+    ) -> None:
         if (
             any(m.requires_grad for m in models)
             or any(sa.requires_grad for sa in source_amplitudes)
@@ -850,9 +848,18 @@ class AcousticForwardFunc(torch.autograd.Function):
             ctx.callback_frequency = callback_frequency
             ctx.storage_manager = storage_manager
 
+    @staticmethod
+    def _prepare_wavefields(
+        wavefields: List[torch.Tensor],
+        ndim: int,
+        accuracy: int,
+        device: torch.device,
+        dtype: torch.dtype,
+        size_with_batch: Tuple[int, ...],
+        pml_width: List[int],
+    ) -> List[torch.Tensor]:
         fd_pad = accuracy // 2
         fd_pad_list = [fd_pad, fd_pad - 1] * ndim
-        size_with_batch = (n_shots, *models[0].shape[-ndim:])
 
         wavefields = [
             deepwave.common.create_or_pad(
@@ -862,6 +869,264 @@ class AcousticForwardFunc(torch.autograd.Function):
         ]
 
         zero_edges_and_interiors(wavefields, ndim, fd_pad, fd_pad_list, pml_width)
+        return wavefields
+
+    @staticmethod
+    def _parse_backward_args(
+        ndim: int,
+        args: Tuple[torch.Tensor, ...],
+        ctx: Any,
+    ) -> Tuple[
+        List[torch.Tensor],
+        List[torch.Tensor],
+        List[torch.Tensor],
+        List[torch.Tensor],
+        List[torch.Tensor],
+        List[torch.Tensor],
+        List[torch.Tensor],
+    ]:
+        args_list = list(args)
+        grad_wavefields = args_list[: -ndim - 1]
+        grad_r = args_list[-ndim - 1 :]
+
+        saved_tensors = list(ctx.saved_tensors)
+        num_models = ndim + 1
+        num_receiver_types = ndim + 1
+        num_source_types = ndim + 1
+
+        models = saved_tensors[:num_models]
+        del saved_tensors[:num_models]
+        sources_i = saved_tensors[:num_source_types]
+        del saved_tensors[:num_source_types]
+        receivers_i = saved_tensors[:num_receiver_types]
+        del saved_tensors[:num_receiver_types]
+        source_amplitudes = saved_tensors[:num_source_types]
+        del saved_tensors[:num_source_types]
+        pml_profiles = saved_tensors
+
+        (
+            grad_r,
+            models,
+            sources_i,
+            receivers_i,
+            source_amplitudes,
+            pml_profiles,
+        ) = deepwave.common.ensure_contiguous(
+            grad_r,
+            models,
+            sources_i,
+            receivers_i,
+            source_amplitudes,
+            pml_profiles,
+        )
+        return (
+            grad_wavefields,
+            grad_r,
+            models,
+            sources_i,
+            receivers_i,
+            source_amplitudes,
+            pml_profiles,
+        )
+
+    @staticmethod
+    def _setup_backward_gradients(
+        models: List[torch.Tensor],
+        model_batched: List[bool],
+        n_shots: int,
+        model_shape: torch.Size,
+        storage_mode: deepwave.common.StorageMode,
+        is_cuda: bool,
+        aux: int,
+        nt: int,
+        source_amplitudes_requires_grad: List[bool],
+        n_sources_per_shot_list: List[int],
+    ) -> Tuple[List[torch.Tensor], List[int], List[torch.Tensor]]:
+        grad_models = []
+        grad_models_tmp_ptr = []
+        for i, model in enumerate(models):
+            g_m, _, g_m_t_p = deepwave.common.setup_model_grad_buffer(
+                model,
+                model_batched[0] if i == 0 else model_batched[1],
+                n_shots,
+                model_shape,
+                storage_mode,
+                is_cuda,
+                aux,
+            )
+            grad_models.append(g_m)
+            grad_models_tmp_ptr.append(g_m_t_p)
+
+        grad_f_list = []
+        for i, req in enumerate(source_amplitudes_requires_grad):
+            grad_f = torch.empty(0, device=models[0].device, dtype=models[0].dtype)
+            if req:
+                grad_f.resize_(nt, n_shots, n_sources_per_shot_list[i])
+                grad_f.fill_(0)
+            grad_f_list.append(grad_f)
+
+        return grad_models, grad_models_tmp_ptr, grad_f_list
+
+    @staticmethod
+    def _prepare_backward_wavefields(
+        grad_wavefields: List[torch.Tensor],
+        ndim: int,
+        accuracy: int,
+        device: torch.device,
+        dtype: torch.dtype,
+        size_with_batch: Tuple[int, ...],
+        pml_width: List[int],
+    ) -> Tuple[List[torch.Tensor], List[torch.Tensor]]:
+        fd_pad = accuracy // 2
+        fd_pad_list = [fd_pad, fd_pad - 1] * ndim
+        grad_wavefields = [
+            deepwave.common.create_or_pad(
+                w, fd_pad_list, device, dtype, size_with_batch
+            )
+            for w in grad_wavefields
+        ]
+        aux_wavefields = [torch.zeros_like(grad_wavefields[0]) for _ in range(ndim)]
+        zero_edges_and_interiors(grad_wavefields, ndim, fd_pad, fd_pad_list, pml_width)
+        return grad_wavefields, aux_wavefields
+
+    @staticmethod
+    def _setup_backward_pml(
+        ndim: int,
+        pml_width: List[int],
+        accuracy: int,
+        model_shape: torch.Size,
+    ) -> Tuple[List[int], List[int]]:
+        fd_pad = accuracy // 2
+        pml_b = [
+            min(pml_width[2 * i] + 2 * fd_pad, model_shape[i] - (fd_pad - 1))
+            for i in range(ndim)
+        ]
+        pml_e = [
+            max(pml_b[i], model_shape[i] - pml_width[2 * i + 1] - 2 * fd_pad + 1)
+            for i in range(ndim)
+        ]
+        return pml_b, pml_e
+
+    @staticmethod
+    def _setup_callback_args(
+        ndim: int,
+        models: List[torch.Tensor],
+        grad_models: List[torch.Tensor],
+    ) -> Tuple[List[str], Dict[str, torch.Tensor], Dict[str, torch.Tensor]]:
+        wf_names = ["pressure_0"]
+        if ndim == 3:
+            wf_names.extend(["vz_0", "vy_0", "vx_0"])
+        elif ndim == 2:
+            wf_names.extend(["vy_0", "vx_0"])
+        elif ndim == 1:
+            wf_names.extend(["vx_0"])
+
+        if ndim == 3:
+            wf_names.extend(["phi_z_0", "phi_y_0", "phi_x_0"])
+        elif ndim == 2:
+            wf_names.extend(["phi_y_0", "phi_x_0"])
+        elif ndim == 1:
+            wf_names.extend(["phi_x_0"])
+
+        if ndim == 3:
+            wf_names.extend(["psi_z_0", "psi_y_0", "psi_x_0"])
+        elif ndim == 2:
+            wf_names.extend(["psi_y_0", "psi_x_0"])
+        elif ndim == 1:
+            wf_names.extend(["psi_x_0"])
+
+        model_names = ["K"]
+        if ndim == 3:
+            model_names.extend(["Bz", "By", "Bx"])
+        elif ndim == 2:
+            model_names.extend(["By", "Bx"])
+        elif ndim == 1:
+            model_names.extend(["Bx"])
+
+        callback_models = dict(zip(model_names, models))
+        callback_grad_models = dict(zip(model_names, grad_models))
+        return wf_names, callback_models, callback_grad_models
+
+    @staticmethod
+    def forward(
+        ctx: Any,
+        pml_profiles: List[torch.Tensor],
+        grid_spacing: List[float],
+        dt: float,
+        nt: int,
+        step_ratio: int,
+        accuracy: int,
+        pml_width: List[int],
+        n_shots: int,
+        forward_callback: Optional[deepwave.common.Callback],
+        backward_callback: Optional[deepwave.common.Callback],
+        callback_frequency: int,
+        storage_mode_str: str,
+        storage_path: str,
+        storage_compression: bool,
+        *args: torch.Tensor,
+    ) -> Tuple[torch.Tensor, ...]:
+        """Performs the forward propagation of the acoustic wave equation."""
+        ndim = len(grid_spacing)
+        (
+            models,
+            source_amplitudes,
+            pml_profiles,
+            sources_i,
+            receivers_i,
+            wavefields,
+            device,
+            dtype,
+            storage_mode,
+        ) = AcousticForwardFunc._parse_args(ndim, pml_profiles, storage_mode_str, args)
+        del args
+
+        is_cuda = models[0].is_cuda
+        model_shape = models[0].shape[-ndim:]
+        n_sources_per_shot_list = [locs.numel() // n_shots for locs in sources_i]
+        n_receivers_per_shot_list = [locs.numel() // n_shots for locs in receivers_i]
+
+        storage_manager = AcousticForwardFunc._setup_storage(
+            model_shape,
+            dtype,
+            n_shots,
+            nt,
+            step_ratio,
+            storage_mode,
+            storage_compression,
+            storage_path,
+            device,
+            is_cuda,
+            models,
+        )
+
+        AcousticForwardFunc._save_ctx(
+            ctx,
+            models,
+            sources_i,
+            receivers_i,
+            source_amplitudes,
+            pml_profiles,
+            wavefields,
+            grid_spacing,
+            dt,
+            nt,
+            n_shots,
+            step_ratio,
+            accuracy,
+            pml_width,
+            backward_callback,
+            callback_frequency,
+            storage_manager,
+        )
+
+        size_with_batch = (n_shots, *model_shape)
+        wavefields = AcousticForwardFunc._prepare_wavefields(
+            wavefields, ndim, accuracy, device, dtype, size_with_batch, pml_width
+        )
+
+        fd_pad = accuracy // 2
+        fd_pad_list = [fd_pad, fd_pad - 1] * ndim
 
         # Setup PML bounds
         pml_b = [pml_width[2 * i] + fd_pad for i in range(ndim)]
@@ -997,40 +1262,16 @@ class AcousticForwardFunc(torch.autograd.Function):
         grid_spacing = ctx.grid_spacing
         ndim = len(grid_spacing)
 
-        grad_wavefields = list(args[: -ndim - 1])
-        grad_r = list(args[-ndim - 1 :])
-        del args
-
-        saved_tensors = list(ctx.saved_tensors)
-        num_models = ndim + 1
-        num_receiver_types = ndim + 1  # For receivers
-        num_source_types = ndim + 1
-
-        models = saved_tensors[:num_models]
-        del saved_tensors[:num_models]
-        sources_i = saved_tensors[:num_source_types]
-        del saved_tensors[:num_source_types]
-        receivers_i = saved_tensors[:num_receiver_types]
-        del saved_tensors[:num_receiver_types]
-        source_amplitudes = saved_tensors[:num_source_types]
-        del saved_tensors[:num_source_types]
-        pml_profiles = saved_tensors
-
         (
+            grad_wavefields,
             grad_r,
             models,
             sources_i,
             receivers_i,
-            source_amplitudes,
+            _source_amplitudes,
             pml_profiles,
-        ) = deepwave.common.ensure_contiguous(
-            grad_r,
-            models,
-            sources_i,
-            receivers_i,
-            source_amplitudes,
-            pml_profiles,
-        )
+        ) = AcousticForwardFunc._parse_backward_args(ndim, args, ctx)
+        del args
 
         dt = ctx.dt
         nt = ctx.nt
@@ -1056,67 +1297,37 @@ class AcousticForwardFunc(torch.autograd.Function):
         ]
         n_receivers_per_shot_list = [locs.numel() // n_shots for locs in receivers_i]
 
-        grad_models = [torch.empty(0, device=device, dtype=dtype) for _ in models]
-        grad_models_tmp = [torch.empty(0, device=device, dtype=dtype) for _ in models]
-        grad_models_tmp_ptr = [g.data_ptr() for g in grad_models]
-        for i, model in enumerate(models):
-            if model.requires_grad:
-                grad_models[i].resize_(*model.shape)
-                grad_models[i].fill_(0)
-                grad_models_tmp_ptr[i] = grad_models[i].data_ptr()
-
-        grad_f_list = []
-        for i in range(num_source_types):
-            grad_f = torch.empty(0, device=device, dtype=dtype)
-            if source_amplitudes_requires_grad[i]:
-                grad_f.resize_(nt, n_shots, n_sources_per_shot_list[i])
-                grad_f.fill_(0)
-            grad_f_list.append(grad_f)
-
-        fd_pad = accuracy // 2
-        fd_pad_list = [fd_pad, fd_pad - 1] * ndim
-        size_with_batch = (n_shots, *model_shape)
-
-        grad_wavefields = [
-            deepwave.common.create_or_pad(
-                w, fd_pad_list, device, dtype, size_with_batch
-            )
-            for w in grad_wavefields
-        ]
-        aux_wavefields = [torch.zeros_like(grad_wavefields[0]) for _ in range(ndim)]
-
-        zero_edges_and_interiors(grad_wavefields, ndim, fd_pad, fd_pad_list, pml_width)
-
-        pml_b = [
-            min(pml_width[2 * i] + 2 * fd_pad, model_shape[i] - (fd_pad - 1))
-            for i in range(ndim)
-        ]
-        pml_e = [
-            max(pml_b[i], model_shape[i] - pml_width[2 * i + 1] - 2 * fd_pad + 1)
-            for i in range(ndim)
-        ]
-
         model_batched = [m.ndim == ndim + 1 and m.shape[0] > 1 for m in models[:2]]
-
         stream, aux = deepwave.common.get_stream_or_aux(device, is_cuda, n_shots)
-        for i, model in enumerate(models):
-            if (
-                model.requires_grad
-                and not (model_batched[0] if i == 0 else model_batched[1])
-                and storage_manager.storage_mode != deepwave.common.StorageMode.NONE
-            ):
-                if is_cuda:
-                    if n_shots > 1:
-                        grad_models_tmp[i].resize_(n_shots, *model_shape)
-                        grad_models_tmp[i].fill_(0)
-                        grad_models_tmp_ptr[i] = grad_models_tmp[i].data_ptr()
-                elif (
-                    aux > 1
-                    and deepwave.backend_utils.USE_OPENMP
-                ):
-                    grad_models_tmp[i].resize_(aux, *model_shape)
-                    grad_models_tmp[i].fill_(0)
-                    grad_models_tmp_ptr[i] = grad_models_tmp[i].data_ptr()
+
+        (
+            grad_models,
+            grad_models_tmp_ptr,
+            grad_f_list,
+        ) = AcousticForwardFunc._setup_backward_gradients(
+            models,
+            model_batched,
+            n_shots,
+            model_shape,
+            storage_manager.storage_mode,
+            is_cuda,
+            aux,
+            nt,
+            source_amplitudes_requires_grad,
+            n_sources_per_shot_list,
+        )
+
+        size_with_batch = (n_shots, *model_shape)
+        (
+            grad_wavefields,
+            aux_wavefields,
+        ) = AcousticForwardFunc._prepare_backward_wavefields(
+            grad_wavefields, ndim, accuracy, device, dtype, size_with_batch, pml_width
+        )
+
+        pml_b, pml_e = AcousticForwardFunc._setup_backward_pml(
+            ndim, pml_width, accuracy, model_shape
+        )
 
         backward = deepwave.backend_utils.get_backend_function(
             "acoustic", ndim, "backward", accuracy, dtype, device
@@ -1126,39 +1337,11 @@ class AcousticForwardFunc(torch.autograd.Function):
         if backward_callback is None:
             callback_frequency = nt // step_ratio
 
-        wf_names = ["pressure_0"]
-        if ndim == 3:
-            wf_names.extend(["vz_0", "vy_0", "vx_0"])
-        elif ndim == 2:
-            wf_names.extend(["vy_0", "vx_0"])
-        elif ndim == 1:
-            wf_names.extend(["vx_0"])
-
-        if ndim == 3:
-            wf_names.extend(["phi_z_0", "phi_y_0", "phi_x_0"])
-        elif ndim == 2:
-            wf_names.extend(["phi_y_0", "phi_x_0"])
-        elif ndim == 1:
-            wf_names.extend(["phi_x_0"])
-
-        if ndim == 3:
-            wf_names.extend(["psi_z_0", "psi_y_0", "psi_x_0"])
-        elif ndim == 2:
-            wf_names.extend(["psi_y_0", "psi_x_0"])
-        elif ndim == 1:
-            wf_names.extend(["psi_x_0"])
-
-        callback_wavefields = {}
-        model_names = ["K"]
-        if ndim == 3:
-            model_names.extend(["Bz", "By", "Bx"])
-        elif ndim == 2:
-            model_names.extend(["By", "Bx"])
-        elif ndim == 1:
-            model_names.extend(["Bx"])
-
-        callback_models = dict(zip(model_names, models))
-        callback_grad_models = dict(zip(model_names, grad_models))
+        (
+            wf_names,
+            callback_models,
+            callback_grad_models,
+        ) = AcousticForwardFunc._setup_callback_args(ndim, models, grad_models)
 
         if grad_wavefields[0].numel() > 0 and nt > 0:
             for step in range(nt // step_ratio, 0, -callback_frequency):
@@ -1221,15 +1404,18 @@ class AcousticForwardFunc(torch.autograd.Function):
                             callback_wavefields,
                             callback_models,
                             callback_grad_models,
-                            fd_pad_list,
+                            [accuracy // 2, accuracy // 2 - 1] * ndim,
                             pml_width,
                         )
                     )
 
+        fd_pad = accuracy // 2
         s = (
             slice(None),
             *(slice(fd_pad, shape - (fd_pad - 1)) for shape in model_shape),
         )
+        num_source_types = ndim + 1
+        num_receiver_types = ndim + 1
         return tuple(
             [None] * 14
             + grad_models

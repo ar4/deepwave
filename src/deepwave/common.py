@@ -123,7 +123,7 @@ class StorageManager:
         n_shots: int,
         nt: int,
         step_ratio: int,
-        storage_mode: int,
+        storage_mode: StorageMode,
         storage_compression: bool,
         storage_path: str,
         device: torch.device,
@@ -137,7 +137,7 @@ class StorageManager:
             n_shots: The number of shots being simulated.
             nt: The total number of time steps.
             step_ratio: The ratio between the user time step and the internal time step.
-            storage_mode: The mode of storage (0: device, 1: CPU, 2: Disk, 3: None).
+            storage_mode: The mode of storage.
             storage_compression: Whether to apply compression when storing to disk.
             storage_path: The path to the directory for disk storage.
             device: The PyTorch device for computation.
@@ -2811,6 +2811,182 @@ def get_ndim(
             "initial wavefield."
         )
     return ndim
+
+
+def zero_edge(tensor: torch.Tensor, fd_pad: int, dim: int) -> torch.Tensor:
+    """Sets values at the end of a dimension of a tensor to zero."""
+    tensor[(slice(None),) + (slice(None),) * dim + (-fd_pad,)].fill_(0)
+    return tensor
+
+
+def zero_edges_and_interiors(
+    wavefields: List[torch.Tensor],
+    ndim: int,
+    fd_pad: int,
+    fd_pad_list: List[int],
+    pml_width: List[int],
+    half_grid_mask: List[List[int]],
+    interior_mask: List[Tuple[int, int]],
+) -> None:
+    """Zeros the edges and/or interiors of wavefields.
+
+    Args:
+        wavefields: A list of wavefield tensors to modify.
+        ndim: The number of spatial dimensions.
+        fd_pad: The finite difference padding.
+        fd_pad_list: A list of padding for each side of each dimension.
+        pml_width: The width of the PML.
+        half_grid_mask: A list of lists, where each sublist specifies which
+            dimensions the corresponding wavefield is on the half-grid.
+        interior_mask: A list of (wavefield_index, dimension) tuples
+            specifying which wavefields should have their interior zeroed
+            in which dimension.
+    """
+    for i, wavefield in enumerate(wavefields):
+        if wavefield.numel() == 0:
+            continue
+        # Zero the edges for half-grid variables
+        for dim in half_grid_mask[i]:
+            zero_edge(wavefield, fd_pad, dim)
+
+    # Zero the interior for PML variables
+    for i, dim in interior_mask:
+        wavefield = wavefields[i]
+        if wavefield.numel() == 0:
+            continue
+        fd_pad_shifted = list(fd_pad_list)
+        if dim in half_grid_mask[i]:
+            fd_pad_shifted[2 * dim + 1] += 1
+        zero_interior(wavefield, fd_pad_shifted, pml_width, dim)
+
+
+def execute_stepping_loop(
+    nt: int,
+    step_ratio: int,
+    callback_frequency: int,
+    callback: Optional[Callback],
+    callback_state_args: Tuple[Any, ...],
+    backend_func: Callable[..., Any],
+    backend_args: List[Any],
+    backend_kwarg_indices: Dict[str, int],
+    backend_swap_pairs: Optional[List[Tuple[int, int]]] = None,
+    callback_swap_pairs: Optional[List[Tuple[int, int]]] = None,
+) -> None:
+    """Executes the time-stepping loop for a propagator.
+
+    Args:
+        nt: Total number of time steps.
+        step_ratio: Ratio between user dt and internal dt.
+        callback_frequency: Frequency at which to call the callback.
+        callback: User-provided callback function.
+        callback_state_args: Arguments to create CallbackState.
+        backend_func: The C/CUDA backend function to call.
+        backend_args: Positional arguments for the backend function.
+        backend_kwarg_indices: Mapping of names to indices in backend_args
+            that need to be updated each iteration (e.g., 'step', 'nt').
+        backend_swap_pairs: Optional list of pairs of indices in backend_args
+            to swap if an odd number of time steps are performed.
+        callback_swap_pairs: Optional list of pairs of indices in the
+            wavefield tensors to swap if an odd number of time steps
+            are performed.
+    """
+    if nt <= 0:
+        return
+
+    num_steps = nt // step_ratio
+    if callback is None:
+        callback_frequency = num_steps
+
+    dt, callback_wavefields, callback_models, fd_pad, pml_width = callback_state_args
+    wavefield_names = list(callback_wavefields.keys())
+    wavefield_tensors = list(callback_wavefields.values())
+
+    for step in range(0, num_steps, callback_frequency):
+        if callback is not None:
+            current_wavefields = dict(zip(wavefield_names, wavefield_tensors))
+            callback(
+                CallbackState(
+                    dt,
+                    step,
+                    current_wavefields,
+                    callback_models,
+                    {},
+                    fd_pad,
+                    pml_width,
+                )
+            )
+
+        step_nt = min(num_steps - step, callback_frequency)
+
+        # Update dynamic arguments
+        if "step" in backend_kwarg_indices:
+            backend_args[backend_kwarg_indices["step"]] = step * step_ratio
+        if "nt" in backend_kwarg_indices:
+            backend_args[backend_kwarg_indices["nt"]] = step_nt * step_ratio
+
+        backend_func(*backend_args)
+
+        if (step_nt * step_ratio) % 2 != 0:
+            if backend_swap_pairs is not None:
+                for i, j in backend_swap_pairs:
+                    backend_args[i], backend_args[j] = (
+                        backend_args[j],
+                        backend_args[i],
+                    )
+            if callback_swap_pairs is not None:
+                for i, j in callback_swap_pairs:
+                    wavefield_tensors[i], wavefield_tensors[j] = (
+                        wavefield_tensors[j],
+                        wavefield_tensors[i],
+                    )
+
+
+def setup_model_grad_buffer(
+    model: torch.Tensor,
+    model_batched: bool,
+    n_shots: int,
+    model_shape: torch.Size,
+    storage_mode: StorageMode,
+    is_cuda: bool,
+    aux: int,
+) -> Tuple[torch.Tensor, torch.Tensor, int]:
+    """Allocates and initializes the model gradient and temporary buffers.
+
+    Args:
+        model: The model tensor (e.g., v, lamb, mu, rho).
+        model_batched: Whether the model has a batch dimension > 1.
+        n_shots: Number of shots in the batch.
+        model_shape: Spatial shape of the model.
+        storage_mode: The storage mode being used.
+        is_cuda: Whether the device is a CUDA device.
+        aux: The auxiliary value (device ID for CUDA, thread count for CPU).
+
+    Returns:
+        A tuple containing (grad_model, grad_model_tmp, grad_model_tmp_ptr).
+    """
+    import deepwave.backend_utils
+
+    grad_model = torch.empty(0, device=model.device, dtype=model.dtype)
+    grad_model_tmp = torch.empty(0, device=model.device, dtype=model.dtype)
+    grad_model_tmp_ptr = grad_model.data_ptr()
+
+    if model.requires_grad:
+        grad_model.resize_(*model.shape)
+        grad_model.fill_(0)
+        grad_model_tmp_ptr = grad_model.data_ptr()
+
+    if model.requires_grad and not model_batched and storage_mode != StorageMode.NONE:
+        if is_cuda:
+            if n_shots > 1:
+                grad_model_tmp.resize_(n_shots, *model_shape)
+                grad_model_tmp.fill_(0)
+                grad_model_tmp_ptr = grad_model_tmp.data_ptr()
+        elif aux > 1 and deepwave.backend_utils.USE_OPENMP:
+            grad_model_tmp.resize_(aux, *model_shape)
+            grad_model_tmp.fill_(0)
+            grad_model_tmp_ptr = grad_model_tmp.data_ptr()
+
+    return grad_model, grad_model_tmp, grad_model_tmp_ptr
 
 
 def is_inside_vmap(tensor: torch.Tensor) -> bool:

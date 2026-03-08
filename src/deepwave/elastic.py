@@ -1076,23 +1076,6 @@ def elastic(
     return (*outputs[: -1 - ndim], outputs[-1], *outputs[-1 - ndim : -1])
 
 
-def zero_edge(tensor: torch.Tensor, fd_pad: int, dim: int) -> torch.Tensor:
-    """Sets values at the end of a dimension of a tensor to zero.
-
-    This is done because the staggered grid means that elements at
-    index -fd_pad in the dimension in which a component is shifted
-    by half a grid cell are not considered to be part of the
-    computational domain and so should be zeroed.
-
-    Args:
-        tensor: The input torch.Tensor to modify.
-        fd_pad: Half the length of the spatial finite difference stencil.
-        dim: The dimension in which to zero.
-    """
-    tensor[(slice(None),) + (slice(None),) * dim + (-fd_pad,)].fill_(0)
-    return tensor
-
-
 def zero_edges_and_interiors(
     wavefields: List[torch.Tensor],
     ndim: int,
@@ -1101,89 +1084,77 @@ def zero_edges_and_interiors(
     pml_width: List[int],
     interior: bool = True,
 ) -> None:
-    """Zeros the edges and/or interiors of wavefields.
+    """Zeros the edges and/or interiors of wavefields."""
+    num_vars = len(wavefields)
+    half_grid_mask: List[List[int]] = [[] for _ in range(num_vars)]
+    interior_mask: List[Tuple[int, int]] = []
 
-    This function modifies the input `wavefields` in-place.
-
-    Args:
-        wavefields: A list of wavefield tensors to modify.
-        ndim: The number of spatial dimensions.
-        fd_pad: The finite difference padding.
-        fd_pad_list: A list of finite difference padding for each dimension.
-        pml_width: A list of PML widths for each dimension.
-        interior: If True, zeros the interior of the wavefields.
-    """
     if ndim == 3:
-        half_grid = [[False, False, False] for _ in range(len(wavefields))]
         for i in [0, 2, 3, 5, 6, 7, 8, 9, 10, 11]:
-            half_grid[i][0] = True
-            wavefields[i] = zero_edge(wavefields[i], fd_pad, 0)
+            half_grid_mask[i].append(0)
         for i in [2, 5, 7, 12, 14, 16, 18, 19, 20, 22]:
-            half_grid[i][1] = True
-            wavefields[i] = zero_edge(wavefields[i], fd_pad, 1)
+            half_grid_mask[i].append(1)
         for i in [3, 6, 8, 13, 16, 18, 19, 21, 23, 26]:
-            half_grid[i][2] = True
-            wavefields[i] = zero_edge(wavefields[i], fd_pad, 2)
-        pml_edge_idx = [
-            [4, 7, 8, 9, 12, 13],
-            [5, 10, 17, 19, 20, 21],
-            [6, 11, 18, 22, 25, 26],
-        ]
+            half_grid_mask[i].append(2)
         if interior:
-            for dim in range(ndim):
-                for i in pml_edge_idx[dim]:
-                    fd_pad_shifted = list(fd_pad_list)
-                    if half_grid[i][dim]:
-                        fd_pad_shifted[2 * dim + 1] += 1
-                    wavefields[i] = deepwave.common.zero_interior(
-                        wavefields[i], fd_pad_shifted, pml_width, dim
-                    )
-    elif ndim == 2:
-        half_grid = [[False, False] for _ in range(len(wavefields))]
-        for i in [0, 2, 4, 5, 6, 8]:
-            half_grid[i][0] = True
-            wavefields[i] = zero_edge(wavefields[i], fd_pad, 0)
-        for i in [2, 4, 5, 7, 9, 12]:
-            half_grid[i][1] = True
-            wavefields[i] = zero_edge(wavefields[i], fd_pad, 1)
-        pml_edge_idx = [[3, 5, 6, 7], [4, 8, 11, 12]]
-        if interior:
-            for dim in range(ndim):
-                for i in pml_edge_idx[dim]:
-                    fd_pad_shifted = list(fd_pad_list)
-                    if half_grid[i][dim]:
-                        fd_pad_shifted[2 * dim + 1] += 1
-                    wavefields[i] = deepwave.common.zero_interior(
-                        wavefields[i], fd_pad_shifted, pml_width, dim
-                    )
-    elif ndim == 1:
-        half_grid = [
-            [
-                False,
+            interior_mask = [
+                (4, 0),
+                (7, 0),
+                (8, 0),
+                (9, 0),
+                (12, 0),
+                (13, 0),
+                (5, 1),
+                (10, 1),
+                (17, 1),
+                (19, 1),
+                (20, 1),
+                (21, 1),
+                (6, 2),
+                (11, 2),
+                (18, 2),
+                (22, 2),
+                (25, 2),
+                (26, 2),
             ]
-            for _ in range(len(wavefields))
-        ]
-        for i in [0, 3]:
-            half_grid[i][0] = True
-            wavefields[i] = zero_edge(wavefields[i], fd_pad, 0)
-        pml_edge_idx = [[2, 3]]
+    elif ndim == 2:
+        for i in [0, 2, 4, 5, 6, 8]:
+            half_grid_mask[i].append(0)
+        for i in [2, 4, 5, 7, 9, 12]:
+            half_grid_mask[i].append(1)
         if interior:
-            for dim in range(ndim):
-                for i in pml_edge_idx[dim]:
-                    fd_pad_shifted = list(fd_pad_list)
-                    if half_grid[i][dim]:
-                        fd_pad_shifted[2 * dim + 1] += 1
-                    wavefields[i] = deepwave.common.zero_interior(
-                        wavefields[i], fd_pad_shifted, pml_width, dim
-                    )
+            interior_mask = [
+                (3, 0),
+                (5, 0),
+                (6, 0),
+                (7, 0),
+                (4, 1),
+                (8, 1),
+                (11, 1),
+                (12, 1),
+            ]
+    elif ndim == 1:
+        for i in [0, 3]:
+            half_grid_mask[i].append(0)
+        if interior:
+            interior_mask = [(2, 0), (3, 0)]
+
+    deepwave.common.zero_edges_and_interiors(
+        wavefields,
+        ndim,
+        fd_pad,
+        fd_pad_list,
+        pml_width,
+        half_grid_mask,
+        interior_mask,
+    )
 
 
 class ElasticForwardFunc(torch.autograd.Function):
     """Forward propagation of the elastic wave equation."""
 
     @staticmethod
-    def forward(
-        ctx: Any,
+    def _forward_setup(
         pml_profiles: List[torch.Tensor],
         grid_spacing: List[float],
         dt: float,
@@ -1192,44 +1163,12 @@ class ElasticForwardFunc(torch.autograd.Function):
         accuracy: int,
         pml_width: List[int],
         n_shots: int,
-        forward_callback: Optional[deepwave.common.Callback],
-        backward_callback: Optional[deepwave.common.Callback],
-        callback_frequency: int,
         storage_mode_str: str,
         storage_path: str,
         storage_compression: bool,
-        *args: torch.Tensor,
-    ) -> Tuple[torch.Tensor, ...]:
-        """Performs the forward propagation of the elastic wave equation.
-
-        This method is called by PyTorch during the forward pass. It prepares
-        the input tensors, calls the appropriate C/CUDA function for wave
-        propagation, and saves necessary tensors for the backward pass.
-
-        Args:
-            ctx: A context object for saving information for the backward pass.
-            pml_profiles: List of PML profiles.
-            grid_spacing: Grid spacing for each spatial dimension.
-            dt: Time step interval.
-            nt: Total number of time steps.
-            step_ratio: Ratio between user dt and internal dt.
-            accuracy: Finite difference accuracy order.
-            pml_width: List of PML widths for each side.
-            n_shots: Number of shots in the batch.
-            forward_callback: The forward callback.
-            backward_callback: The backward callback.
-            callback_frequency: The callback frequency.
-            storage_mode_str: Storage mode ("device", "cpu", "disk", "none").
-            storage_path: Path for disk storage.
-            storage_compression: Whether to use compression.
-            args: Property models, source amplitudes, source locations (1D),
-                  receiver locations (1D), and initial wavefields.
-
-        Returns:
-            A tuple containing the final wavefields, memory variables, and
-            receiver amplitudes.
-
-        """
+        args: Tuple[torch.Tensor, ...],
+    ) -> Tuple[Any, ...]:
+        """Handle ensure_contiguous, storage allocation, and parameter parsing."""
         ndim = len(grid_spacing)
         args_list = list(args)
 
@@ -1277,7 +1216,6 @@ class ElasticForwardFunc(torch.autograd.Function):
                 "Error parsing arguments for ElasticForwardFunc.forward"
             )
 
-        del args
         (
             models,
             source_amplitudes,
@@ -1343,6 +1281,152 @@ class ElasticForwardFunc(torch.autograd.Function):
         for _name, requires_grad_cond in storage_vars_info:
             storage_manager.allocate(requires_grad_cond)
 
+        fd_pad = accuracy // 2
+        fd_pad_list = [fd_pad, fd_pad - 1] * ndim
+        size_with_batch = (n_shots, *models[0].shape[-ndim:])
+        wavefields = [
+            deepwave.common.create_or_pad(
+                wavefield,
+                fd_pad_list,
+                device,
+                dtype,
+                size_with_batch,
+            )
+            for wavefield in wavefields
+        ]
+
+        zero_edges_and_interiors(wavefields, ndim, fd_pad, fd_pad_list, pml_width)
+
+        pml_b = [pml_width[2 * i] + fd_pad for i in range(ndim)]
+        pml_e = [
+            max(pml_b[i], model_shape[i] - pml_width[2 * i + 1] - (fd_pad - 1))
+            for i in range(ndim)
+        ]
+
+        lamb_batched = models[0].ndim == ndim + 1 and models[0].shape[0] > 1
+        mu_batched = models[1].ndim == ndim + 1 and models[1].shape[0] > 1
+        buoyancy_batched = models[-1].ndim == ndim + 1 and models[-1].shape[0] > 1
+
+        rdx = [1 / dx for dx in grid_spacing]
+
+        return (
+            models,
+            source_amplitudes,
+            sources_i,
+            receivers_i,
+            wavefields,
+            storage_manager,
+            pml_profiles,
+            n_sources_per_shot,
+            n_receivers_per_shot,
+            model_shape,
+            pml_b,
+            pml_e,
+            rdx,
+            device,
+            dtype,
+            is_cuda,
+            fd_pad_list,
+            ndim,
+            lamb_requires_grad,
+            mu_requires_grad,
+            buoyancy_requires_grad,
+            lamb_batched,
+            mu_batched,
+            buoyancy_batched,
+            storage_mode,
+        )
+
+    @staticmethod
+    def forward(
+        ctx: Any,
+        pml_profiles: List[torch.Tensor],
+        grid_spacing: List[float],
+        dt: float,
+        nt: int,
+        step_ratio: int,
+        accuracy: int,
+        pml_width: List[int],
+        n_shots: int,
+        forward_callback: Optional[deepwave.common.Callback],
+        backward_callback: Optional[deepwave.common.Callback],
+        callback_frequency: int,
+        storage_mode_str: str,
+        storage_path: str,
+        storage_compression: bool,
+        *args: torch.Tensor,
+    ) -> Tuple[torch.Tensor, ...]:
+        """Performs the forward propagation of the elastic wave equation.
+
+        This method is called by PyTorch during the forward pass. It prepares
+        the input tensors, calls the appropriate C/CUDA function for wave
+        propagation, and saves necessary tensors for the backward pass.
+
+        Args:
+            ctx: A context object for saving information for the backward pass.
+            pml_profiles: List of PML profiles.
+            grid_spacing: Grid spacing for each spatial dimension.
+            dt: Time step interval.
+            nt: Total number of time steps.
+            step_ratio: Ratio between user dt and internal dt.
+            accuracy: Finite difference accuracy order.
+            pml_width: List of PML widths for each side.
+            n_shots: Number of shots in the batch.
+            forward_callback: The forward callback.
+            backward_callback: The backward callback.
+            callback_frequency: The callback frequency.
+            storage_mode_str: Storage mode ("device", "cpu", "disk", "none").
+            storage_path: Path for disk storage.
+            storage_compression: Whether to use compression.
+            args: Property models, source amplitudes, source locations (1D),
+                  receiver locations (1D), and initial wavefields.
+
+        Returns:
+            A tuple containing the final wavefields, memory variables, and
+            receiver amplitudes.
+
+        """
+        (
+            models,
+            source_amplitudes,
+            sources_i,
+            receivers_i,
+            wavefields,
+            storage_manager,
+            pml_profiles,
+            n_sources_per_shot,
+            n_receivers_per_shot,
+            model_shape,
+            pml_b,
+            pml_e,
+            rdx,
+            device,
+            dtype,
+            is_cuda,
+            fd_pad_list,
+            ndim,
+            lamb_requires_grad,
+            mu_requires_grad,
+            buoyancy_requires_grad,
+            lamb_batched,
+            mu_batched,
+            buoyancy_batched,
+            _storage_mode,
+        ) = ElasticForwardFunc._forward_setup(
+            pml_profiles,
+            grid_spacing,
+            dt,
+            nt,
+            step_ratio,
+            accuracy,
+            pml_width,
+            n_shots,
+            storage_mode_str,
+            storage_path,
+            storage_compression,
+            args,
+        )
+
         if (
             lamb_requires_grad
             or mu_requires_grad
@@ -1371,32 +1455,6 @@ class ElasticForwardFunc(torch.autograd.Function):
             ctx.callback_frequency = callback_frequency
             ctx.storage_manager = storage_manager
 
-        fd_pad = accuracy // 2
-        fd_pad_list = [fd_pad, fd_pad - 1] * ndim
-        size_with_batch = (n_shots, *models[0].shape[-ndim:])
-        wavefields = [
-            deepwave.common.create_or_pad(
-                wavefield,
-                fd_pad_list,
-                device,
-                dtype,
-                size_with_batch,
-            )
-            for wavefield in wavefields
-        ]
-
-        zero_edges_and_interiors(wavefields, ndim, fd_pad, fd_pad_list, pml_width)
-
-        pml_b = [pml_width[2 * i] + fd_pad for i in range(ndim)]
-        pml_e = [
-            max(pml_b[i], model_shape[i] - pml_width[2 * i + 1] - (fd_pad - 1))
-            for i in range(ndim)
-        ]
-
-        lamb_batched = models[0].ndim == ndim + 1 and models[0].shape[0] > 1
-        mu_batched = models[1].ndim == ndim + 1 and models[1].shape[0] > 1
-        buoyancy_batched = models[-1].ndim == ndim + 1 and models[-1].shape[0] > 1
-
         receiver_amplitudes: List[torch.Tensor] = [
             torch.empty(0, device=device, dtype=dtype) for _ in range(ndim + 1)
         ]
@@ -1415,8 +1473,6 @@ class ElasticForwardFunc(torch.autograd.Function):
             dtype,
             device,
         )
-
-        rdx = [1 / dx for dx in grid_spacing]
 
         if forward_callback is None:
             callback_frequency = nt // step_ratio
@@ -1541,6 +1597,7 @@ class ElasticForwardFunc(torch.autograd.Function):
                 ):
                     raise RuntimeError("Compiled backend failed.")
 
+        fd_pad = accuracy // 2
         s = (
             slice(None),
             *(slice(fd_pad, shape - (fd_pad - 1)) for shape in model_shape),
@@ -1551,30 +1608,15 @@ class ElasticForwardFunc(torch.autograd.Function):
         )
 
     @staticmethod
-    @torch.autograd.function.once_differentiable
-    def backward(
+    def _backward_setup(
         ctx: Any,
-        *args: torch.Tensor,
-    ) -> Tuple[Optional[torch.Tensor], ...]:
-        """Computes the gradients during the backward pass.
-
-        This method is called by PyTorch during the backward pass to compute
-        gradients with respect to the inputs of the forward pass.
-
-        Args:
-            ctx: A context object with saved information from the forward pass.
-            args: Gradients of the outputs of the forward pass.
-
-        Returns:
-            A tuple containing the gradients with respect to the inputs of the
-            forward pass.
-
-        """
+        grad_outputs: Tuple[torch.Tensor, ...],
+    ) -> Tuple[Any, ...]:
+        """Handle initialization for the backward pass."""
         grid_spacing = ctx.grid_spacing
         ndim = len(grid_spacing)
-        grad_r = list(args[-ndim - 1 :])
-        grad_wavefields = list(args[: -ndim - 1])
-        del args
+        grad_r = list(grad_outputs[-ndim - 1 :])
+        grad_wavefields = list(grad_outputs[: -ndim - 1])
 
         saved_tensors = list(ctx.saved_tensors)
 
@@ -1621,10 +1663,6 @@ class ElasticForwardFunc(torch.autograd.Function):
         pml_profiles = saved_tensors[:num_pml_profiles]
         del saved_tensors[:num_pml_profiles]
 
-        lamb_requires_grad = models[0].requires_grad
-        mu_requires_grad = models[1].requires_grad
-        buoyancy_requires_grad = models[-1].requires_grad
-
         (
             grad_r,
             models,
@@ -1641,31 +1679,46 @@ class ElasticForwardFunc(torch.autograd.Function):
             pml_profiles,
         )
 
-        dt = ctx.dt
+        _dt = ctx.dt
         nt = ctx.nt
         n_shots = ctx.n_shots
-        step_ratio = ctx.step_ratio
+        _step_ratio = ctx.step_ratio
         accuracy = ctx.accuracy
         pml_width = ctx.pml_width
         source_amplitudes_requires_grad = ctx.source_amplitudes_requires_grad
-        backward_callback = ctx.backward_callback
-        callback_frequency = ctx.callback_frequency
         storage_manager = ctx.storage_manager
         device = models[0].device
         dtype = models[0].dtype
         is_cuda = models[0].is_cuda
         model_shape = models[0].shape[-ndim:]
         n_sources_per_shot = [loc.numel() // n_shots for loc in sources_i]
-        n_receivers_per_shot = [loc.numel() // n_shots for loc in receivers_i]
-        grad_models = [torch.empty(0, device=device, dtype=dtype) for _ in models]
-        grad_models_tmp = [torch.empty(0, device=device, dtype=dtype) for _ in models]
-        grad_models_tmp_ptr = [grad_model.data_ptr() for grad_model in grad_models]
-        for i, model in enumerate(models):
-            if model.requires_grad:
-                grad_models[i].resize_(*model.shape)
-                grad_models[i].fill_(0)
-                grad_models_tmp_ptr[i] = grad_models[i].data_ptr()
+        n_receivers_per_shot = [locs.numel() // n_shots for locs in receivers_i]
+
+        stream, aux = deepwave.common.get_stream_or_aux(device, is_cuda, n_shots)
+
+        grad_models = []
+        grad_models_tmp = []
+        grad_models_tmp_ptr = []
+        for _i, model in enumerate(models):
+            model_batched = model.ndim == ndim + 1 and model.shape[0] > 1
+            gm, gmt, gmtp = deepwave.common.setup_model_grad_buffer(
+                model,
+                model_batched,
+                n_shots,
+                model_shape,
+                storage_manager.storage_mode,
+                is_cuda,
+                aux,
+            )
+            grad_models.append(gm)
+            grad_models_tmp.append(gmt)
+            grad_models_tmp_ptr.append(gmtp)
+
         grad_f = [torch.empty(0, device=device, dtype=dtype) for _ in sources_i]
+        for i, requires_grad in enumerate(source_amplitudes_requires_grad):
+            if requires_grad:
+                grad_f[i].resize_(nt, n_shots, n_sources_per_shot[i])
+                grad_f[i].fill_(0)
 
         lamb_batched = models[0].ndim == ndim + 1 and models[0].shape[0] > 1
         mu_batched = models[1].ndim == ndim + 1 and models[1].shape[0] > 1
@@ -1710,32 +1763,105 @@ class ElasticForwardFunc(torch.autograd.Function):
             for i in range(ndim)
         ]
 
-        for i, requires_grad in enumerate(source_amplitudes_requires_grad):
-            if requires_grad:
-                grad_f[i].resize_(nt, n_shots, n_sources_per_shot[i])
-                grad_f[i].fill_(0)
+        rdx = [1 / dx for dx in grid_spacing]
 
-        stream: Union[int, torch.Stream] = 0
-        stream, aux = deepwave.common.get_stream_or_aux(device, is_cuda, n_shots)
-        for i, model in enumerate(models):
-            batched = model.ndim == ndim + 1 and model.shape[0] > 1
-            if (
-                model.requires_grad
-                and not batched
-                and storage_manager.storage_mode != deepwave.common.StorageMode.NONE
-            ):
-                if is_cuda:
-                    if n_shots > 1:
-                        grad_models_tmp[i].resize_(n_shots, *model_shape)
-                        grad_models_tmp[i].fill_(0)
-                        grad_models_tmp_ptr[i] = grad_models_tmp[i].data_ptr()
-                elif (
-                    aux > 1
-                    and deepwave.backend_utils.USE_OPENMP
-                ):
-                    grad_models_tmp[i].resize_(n_shots, *model_shape)
-                    grad_models_tmp[i].fill_(0)
-                    grad_models_tmp_ptr[i] = grad_models_tmp[i].data_ptr()
+        return (
+            grad_r,
+            models,
+            sources_i,
+            receivers_i,
+            source_amplitudes,
+            pml_profiles,
+            grad_models,
+            grad_f,
+            grad_models_tmp_ptr,
+            grad_wavefields,
+            aux_wavefields,
+            n_sources_per_shot,
+            n_receivers_per_shot,
+            model_shape,
+            pml_b,
+            pml_e,
+            rdx,
+            device,
+            dtype,
+            is_cuda,
+            aux,
+            stream,
+            fd_pad_list,
+            ndim,
+            lamb_requires_grad,
+            mu_requires_grad,
+            buoyancy_requires_grad,
+            lamb_batched,
+            mu_batched,
+            buoyancy_batched,
+        )
+
+    @staticmethod
+    @torch.autograd.function.once_differentiable
+    def backward(
+        ctx: Any,
+        *args: torch.Tensor,
+    ) -> Tuple[Optional[torch.Tensor], ...]:
+        """Computes the gradients during the backward pass.
+
+        This method is called by PyTorch during the backward pass to compute
+        gradients with respect to the inputs of the forward pass.
+
+        Args:
+            ctx: A context object with saved information from the forward pass.
+            args: Gradients of the outputs of the forward pass.
+
+        Returns:
+            A tuple containing the gradients with respect to the inputs of the
+            forward pass.
+
+        """
+        (
+            grad_r,
+            models,
+            sources_i,
+            receivers_i,
+            _source_amplitudes,
+            pml_profiles,
+            grad_models,
+            grad_f,
+            grad_models_tmp_ptr,
+            grad_wavefields,
+            aux_wavefields,
+            n_sources_per_shot,
+            n_receivers_per_shot,
+            model_shape,
+            pml_b,
+            pml_e,
+            rdx,
+            device,
+            dtype,
+            _is_cuda,
+            aux,
+            stream,
+            fd_pad_list,
+            ndim,
+            lamb_requires_grad,
+            mu_requires_grad,
+            buoyancy_requires_grad,
+            lamb_batched,
+            mu_batched,
+            buoyancy_batched,
+        ) = ElasticForwardFunc._backward_setup(ctx, args)
+
+        dt = ctx.dt
+        nt = ctx.nt
+        n_shots = ctx.n_shots
+        step_ratio = ctx.step_ratio
+        accuracy = ctx.accuracy
+        pml_width = ctx.pml_width
+        source_amplitudes_requires_grad = ctx.source_amplitudes_requires_grad
+        backward_callback = ctx.backward_callback
+        callback_frequency = ctx.callback_frequency
+        storage_manager = ctx.storage_manager
+
         backward = deepwave.backend_utils.get_backend_function(
             "elastic",
             ndim,
@@ -1744,8 +1870,6 @@ class ElasticForwardFunc(torch.autograd.Function):
             dtype,
             device,
         )
-
-        rdx = [1 / dx for dx in grid_spacing]
 
         if backward_callback is None:
             callback_frequency = nt // step_ratio
@@ -1915,6 +2039,7 @@ class ElasticForwardFunc(torch.autograd.Function):
                         )
                     )
 
+        fd_pad = accuracy // 2
         s = (
             slice(None),
             *(slice(fd_pad, shape - (fd_pad - 1)) for shape in model_shape),

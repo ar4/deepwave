@@ -595,7 +595,7 @@ class ScalarBornForwardFunc(torch.autograd.Function):
     """Forward propagation function for scalar Born modeling."""
 
     @staticmethod
-    def forward(
+    def _forward_setup(
         ctx: Any,
         v: torch.Tensor,
         scatter: torch.Tensor,
@@ -603,7 +603,6 @@ class ScalarBornForwardFunc(torch.autograd.Function):
         source_amplitudessc: torch.Tensor,
         pml_profiles: List[torch.Tensor],
         sources_i: torch.Tensor,
-        unused_tensor: torch.Tensor,
         receivers_i: torch.Tensor,
         receiverssc_i: torch.Tensor,
         grid_spacing: Sequence[float],
@@ -613,47 +612,13 @@ class ScalarBornForwardFunc(torch.autograd.Function):
         accuracy: int,
         pml_width: List[int],
         n_shots: int,
-        forward_callback: Optional[deepwave.common.Callback],
         backward_callback: Optional[deepwave.common.Callback],
         callback_frequency: int,
         storage_mode_str: str,
         storage_path: str,
         storage_compression: bool,
-        *wavefields: torch.Tensor,
-    ) -> Tuple[torch.Tensor, ...]:
-        """Forward propagation of the scalar Born wave equation.
-
-        Args:
-            ctx: Context object for backpropagation.
-            v: Wavespeed model.
-            scatter: Scattering potential model.
-            source_amplitudes: Source amplitudes for the background wavefield.
-            source_amplitudessc: Source amplitudes for the scattered wavefield.
-            pml_profiles: List of PML profiles.
-            sources_i: Source locations.
-            unused_tensor: Unused tensor.
-            receivers_i: Receiver locations.
-            receiverssc_i: Scattered wavefield receiver locations.
-            grid_spacing: Grid spacing for each spatial dimension.
-            dt: Time step size.
-            nt: Number of time steps.
-            step_ratio: Step ratio for storing wavefields.
-            accuracy: Accuracy of the finite-difference scheme.
-            pml_width: Width of the PML.
-            n_shots: Number of shots.
-            forward_callback: The forward callback.
-            backward_callback: The backward callback.
-            callback_frequency: The callback frequency.
-            storage_mode_str: Storage mode ("device", "cpu", "disk", "none").
-            storage_path: Path for disk storage.
-            storage_compression: Whether to use compression.
-            wavefields: List of wavefields.
-
-        Returns:
-            A tuple containing the final wavefields and receiver data.
-
-        """
-        del unused_tensor  # Unused.
+        wavefields: Tuple[torch.Tensor, ...],
+    ) -> Tuple[Any, ...]:
         (
             v,
             scatter,
@@ -759,13 +724,11 @@ class ScalarBornForwardFunc(torch.autograd.Function):
 
         wfc, wfp, *pml_wavefields = wavefields[: 2 + 2 * ndim]
         wfcsc, wfpsc, *pml_wavefields_sc = wavefields[2 + 2 * ndim :]
-        del wavefields
         # The PML wavefields are ordered [psi, zeta] for each dimension
         psi = list(pml_wavefields[:ndim])
         zeta = list(pml_wavefields[ndim:])
         psisc = list(pml_wavefields_sc[:ndim])
         zetasc = list(pml_wavefields_sc[ndim:])
-        del pml_wavefields, pml_wavefields_sc
 
         for i in range(ndim):
             psi[i] = deepwave.common.zero_interior(psi[i], fd_pad, pml_width, i)
@@ -797,6 +760,165 @@ class ScalarBornForwardFunc(torch.autograd.Function):
             receiver_amplitudessc.fill_(0)
 
         stream, aux = deepwave.common.get_stream_or_aux(device, is_cuda, n_shots)
+
+        return (
+            v,
+            scatter,
+            source_amplitudes,
+            source_amplitudessc,
+            pml_profiles,
+            sources_i,
+            receivers_i,
+            receiverssc_i,
+            storage_manager,
+            storage_mode,
+            wfc,
+            wfp,
+            psi,
+            psin,
+            zeta,
+            zetasc,
+            wfcsc,
+            wfpsc,
+            psisc,
+            psinsc,
+            pml_b,
+            pml_e,
+            v_batched,
+            scatter_batched,
+            receiver_amplitudes,
+            receiver_amplitudessc,
+            stream,
+            aux,
+            model_shape,
+            n_sources_per_shot,
+            n_receivers_per_shot,
+            n_receiverssc_per_shot,
+            fd_pad,
+        )
+
+    @staticmethod
+    def forward(
+        ctx: Any,
+        v: torch.Tensor,
+        scatter: torch.Tensor,
+        source_amplitudes: torch.Tensor,
+        source_amplitudessc: torch.Tensor,
+        pml_profiles: List[torch.Tensor],
+        sources_i: torch.Tensor,
+        unused_tensor: torch.Tensor,
+        receivers_i: torch.Tensor,
+        receiverssc_i: torch.Tensor,
+        grid_spacing: Sequence[float],
+        dt: float,
+        nt: int,
+        step_ratio: int,
+        accuracy: int,
+        pml_width: List[int],
+        n_shots: int,
+        forward_callback: Optional[deepwave.common.Callback],
+        backward_callback: Optional[deepwave.common.Callback],
+        callback_frequency: int,
+        storage_mode_str: str,
+        storage_path: str,
+        storage_compression: bool,
+        *wavefields: torch.Tensor,
+    ) -> Tuple[torch.Tensor, ...]:
+        """Forward propagation of the scalar Born wave equation.
+
+        Args:
+            ctx: Context object for backpropagation.
+            v: Wavespeed model.
+            scatter: Scattering potential model.
+            source_amplitudes: Source amplitudes for the background wavefield.
+            source_amplitudessc: Source amplitudes for the scattered wavefield.
+            pml_profiles: List of PML profiles.
+            sources_i: Source locations.
+            unused_tensor: Unused tensor.
+            receivers_i: Receiver locations.
+            receiverssc_i: Scattered wavefield receiver locations.
+            grid_spacing: Grid spacing for each spatial dimension.
+            dt: Time step size.
+            nt: Number of time steps.
+            step_ratio: Step ratio for storing wavefields.
+            accuracy: Accuracy of the finite-difference scheme.
+            pml_width: Width of the PML.
+            n_shots: Number of shots.
+            forward_callback: The forward callback.
+            backward_callback: The backward callback.
+            callback_frequency: The callback frequency.
+            storage_mode_str: Storage mode ("device", "cpu", "disk", "none").
+            storage_path: Path for disk storage.
+            storage_compression: Whether to use compression.
+            wavefields: List of wavefields.
+
+        Returns:
+            A tuple containing the final wavefields and receiver data.
+
+        """
+        del unused_tensor  # Unused.
+        (
+            v,
+            scatter,
+            source_amplitudes,
+            source_amplitudessc,
+            pml_profiles,
+            sources_i,
+            receivers_i,
+            receiverssc_i,
+            storage_manager,
+            storage_mode,
+            wfc,
+            wfp,
+            psi,
+            psin,
+            zeta,
+            zetasc,
+            wfcsc,
+            wfpsc,
+            psisc,
+            psinsc,
+            pml_b,
+            pml_e,
+            v_batched,
+            scatter_batched,
+            receiver_amplitudes,
+            receiver_amplitudessc,
+            stream,
+            aux,
+            model_shape,
+            n_sources_per_shot,
+            n_receivers_per_shot,
+            n_receiverssc_per_shot,
+            fd_pad,
+        ) = ScalarBornForwardFunc._forward_setup(
+            ctx,
+            v,
+            scatter,
+            source_amplitudes,
+            source_amplitudessc,
+            pml_profiles,
+            sources_i,
+            receivers_i,
+            receiverssc_i,
+            grid_spacing,
+            dt,
+            nt,
+            step_ratio,
+            accuracy,
+            pml_width,
+            n_shots,
+            backward_callback,
+            callback_frequency,
+            storage_mode_str,
+            storage_path,
+            storage_compression,
+            wavefields,
+        )
+
+        dtype = v.dtype
+        ndim = len(grid_spacing)
+
         forward = deepwave.backend_utils.get_backend_function(
             "scalar_born",
             ndim,
@@ -926,26 +1048,12 @@ class ScalarBornForwardFunc(torch.autograd.Function):
         )
 
     @staticmethod
-    @torch.autograd.function.once_differentiable
-    def backward(
+    def _backward_setup(
         ctx: Any,
-        *args: torch.Tensor,
-    ) -> Tuple[Optional[torch.Tensor], ...]:
-        """Backward propagation of the scalar Born wave equation.
-
-        Args:
-            ctx: Context object from the forward pass.
-            args: Gradients of the outputs of the forward pass.
-
-        Returns:
-            A tuple containing the gradients with respect to the inputs of the
-            forward pass.
-
-        """
-        grad_r = args[-2]
-        grad_rsc = args[-1]
-        grad_wavefields = list(args[:-2])
-        del args
+        grad_r: torch.Tensor,
+        grad_rsc: torch.Tensor,
+        grad_wavefields: List[torch.Tensor],
+    ) -> Tuple[Any, ...]:
         (
             v,
             scatter,
@@ -979,16 +1087,14 @@ class ScalarBornForwardFunc(torch.autograd.Function):
 
         grid_spacing = ctx.grid_spacing
         ndim = len(grid_spacing)
-        dt = ctx.dt
+        _dt = ctx.dt
         nt = ctx.nt
         n_shots = ctx.n_shots
-        step_ratio = ctx.step_ratio
+        _step_ratio = ctx.step_ratio
         accuracy = ctx.accuracy
         pml_width = ctx.pml_width
         source_amplitudes_requires_grad = ctx.source_amplitudes_requires_grad
         source_amplitudessc_requires_grad = ctx.source_amplitudessc_requires_grad
-        backward_callback = ctx.backward_callback
-        callback_frequency = ctx.callback_frequency
         non_sc = ctx.non_sc
         device = v.device
         dtype = v.dtype
@@ -1001,7 +1107,7 @@ class ScalarBornForwardFunc(torch.autograd.Function):
         storage_manager = ctx.storage_manager
 
         size_with_batch = (n_shots, *model_shape)
-        grad_wavefields[2 + 2 * ndim :] = [
+        grad_wavefieldssc = [
             deepwave.common.create_or_pad(
                 wavefield,
                 fd_pad,
@@ -1011,11 +1117,9 @@ class ScalarBornForwardFunc(torch.autograd.Function):
             )
             for wavefield in grad_wavefields[2 + 2 * ndim :]
         ]
-        grad_wfcsc, grad_wfpsc, *grad_pml_wavefieldssc = grad_wavefields[2 + 2 * ndim :]
-        del grad_wavefields[2 + 2 * ndim :]
+        grad_wfcsc, grad_wfpsc, *grad_pml_wavefieldssc = grad_wavefieldssc
         grad_psisc = list(grad_pml_wavefieldssc[:ndim])
         grad_zetasc = list(grad_pml_wavefieldssc[ndim:])
-        del grad_pml_wavefieldssc
         for i in range(ndim):
             grad_psisc[i] = deepwave.common.zero_interior(
                 grad_psisc[i], fd_pad, pml_width, i
@@ -1026,8 +1130,15 @@ class ScalarBornForwardFunc(torch.autograd.Function):
         grad_psinsc = [torch.zeros_like(gwf) for gwf in grad_psisc]
         grad_zetansc = [torch.zeros_like(gwf) for gwf in grad_zetasc]
 
+        grad_wfc = None
+        grad_wfp = None
+        grad_psi = None
+        grad_psin = None
+        grad_zeta = None
+        grad_zetan = None
+
         if non_sc:
-            grad_wavefields[: 2 + 2 * ndim] = [
+            grad_wavefields_non_sc = [
                 deepwave.common.create_or_pad(
                     wavefield,
                     fd_pad,
@@ -1037,11 +1148,9 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                 )
                 for wavefield in grad_wavefields[: 2 + 2 * ndim]
             ]
-            grad_wfc, grad_wfp, *grad_pml_wavefields = grad_wavefields[: 2 + 2 * ndim]
-            del grad_wavefields[: 2 + 2 * ndim]
+            grad_wfc, grad_wfp, *grad_pml_wavefields = grad_wavefields_non_sc
             grad_psi = list(grad_pml_wavefields[:ndim])
             grad_zeta = list(grad_pml_wavefields[ndim:])
-            del grad_pml_wavefields
             for i in range(ndim):
                 grad_psi[i] = deepwave.common.zero_interior(
                     grad_psi[i], fd_pad, pml_width, i
@@ -1052,24 +1161,6 @@ class ScalarBornForwardFunc(torch.autograd.Function):
             grad_psin = [torch.zeros_like(gwf) for gwf in grad_psi]
             grad_zetan = [torch.zeros_like(gwf) for gwf in grad_zeta]
 
-        del grad_wavefields
-
-        grad_v = torch.empty(0, device=device, dtype=dtype)
-        grad_v_tmp = torch.empty(0, device=device, dtype=dtype)
-        grad_v_tmp_ptr = grad_v.data_ptr()
-        grad_scatter = torch.empty(0, device=device, dtype=dtype)
-        grad_scatter_tmp = torch.empty(0, device=device, dtype=dtype)
-        grad_scatter_tmp_ptr = grad_scatter.data_ptr()
-        if v.requires_grad:
-            grad_v.resize_(*v.shape)
-            grad_v.fill_(0)
-            grad_v_tmp_ptr = grad_v.data_ptr()
-        if scatter.requires_grad:
-            grad_scatter.resize_(*scatter.shape)
-            grad_scatter.fill_(0)
-            grad_scatter_tmp_ptr = grad_scatter.data_ptr()
-        grad_f = torch.empty(0, device=device, dtype=dtype)
-        grad_fsc = torch.empty(0, device=device, dtype=dtype)
         pml_b = [
             min(pml_width[2 * i] + 3 * fd_pad, model_shape[i] - fd_pad)
             for i in range(ndim)
@@ -1082,6 +1173,8 @@ class ScalarBornForwardFunc(torch.autograd.Function):
         v_batched = v.ndim == ndim + 1 and v.shape[0] > 1
         scatter_batched = scatter.ndim == ndim + 1 and scatter.shape[0] > 1
 
+        grad_f = torch.empty(0, device=device, dtype=dtype)
+        grad_fsc = torch.empty(0, device=device, dtype=dtype)
         if source_amplitudes_requires_grad:
             grad_f.resize_(nt, n_shots, n_sources_per_shot)
             grad_f.fill_(0)
@@ -1090,40 +1183,156 @@ class ScalarBornForwardFunc(torch.autograd.Function):
             grad_fsc.fill_(0)
 
         stream, aux = deepwave.common.get_stream_or_aux(device, is_cuda, n_shots)
-        if (
-            v.requires_grad
-            and not v_batched
-            and storage_manager.storage_mode != deepwave.common.StorageMode.NONE
-        ):
-            if is_cuda:
-                if n_shots > 1:
-                    grad_v_tmp.resize_(n_shots, *model_shape)
-                    grad_v_tmp.fill_(0)
-                    grad_v_tmp_ptr = grad_v_tmp.data_ptr()
-            elif (
-                aux > 1
-                and deepwave.backend_utils.USE_OPENMP
-            ):
-                grad_v_tmp.resize_(aux, *model_shape)
-                grad_v_tmp.fill_(0)
-                grad_v_tmp_ptr = grad_v_tmp.data_ptr()
-        if (
-            scatter.requires_grad
-            and not scatter_batched
-            and storage_manager.storage_mode != deepwave.common.StorageMode.NONE
-        ):
-            if is_cuda:
-                if n_shots > 1:
-                    grad_scatter_tmp.resize_(n_shots, *model_shape)
-                    grad_scatter_tmp.fill_(0)
-                    grad_scatter_tmp_ptr = grad_scatter_tmp.data_ptr()
-            elif (
-                aux > 1
-                and deepwave.backend_utils.USE_OPENMP
-            ):
-                grad_scatter_tmp.resize_(aux, *model_shape)
-                grad_scatter_tmp.fill_(0)
-                grad_scatter_tmp_ptr = grad_scatter_tmp.data_ptr()
+
+        grad_v, grad_v_tmp, grad_v_tmp_ptr = deepwave.common.setup_model_grad_buffer(
+            v,
+            v_batched,
+            n_shots,
+            model_shape,
+            storage_manager.storage_mode,
+            is_cuda,
+            aux,
+        )
+        (
+            grad_scatter,
+            grad_scatter_tmp,
+            grad_scatter_tmp_ptr,
+        ) = deepwave.common.setup_model_grad_buffer(
+            scatter,
+            scatter_batched,
+            n_shots,
+            model_shape,
+            storage_manager.storage_mode,
+            is_cuda,
+            aux,
+        )
+
+        return (
+            v,
+            scatter,
+            grad_r,
+            grad_rsc,
+            pml_profiles,
+            sources_i,
+            receivers_i,
+            receiverssc_i,
+            grad_wfc,
+            grad_wfp,
+            grad_psi,
+            grad_psin,
+            grad_zeta,
+            grad_zetan,
+            grad_wfcsc,
+            grad_wfpsc,
+            grad_psisc,
+            grad_psinsc,
+            grad_zetasc,
+            grad_zetansc,
+            grad_f,
+            grad_fsc,
+            grad_v,
+            grad_scatter,
+            grad_v_tmp_ptr,
+            grad_scatter_tmp_ptr,
+            grad_v_tmp,
+            grad_scatter_tmp,
+            pml_b,
+            pml_e,
+            v_batched,
+            scatter_batched,
+            stream,
+            aux,
+            grid_spacing,
+            model_shape,
+            n_sources_per_shot,
+            n_receivers_per_shot,
+            n_receiverssc_per_shot,
+            pml_width,
+        )
+
+    @staticmethod
+    @torch.autograd.function.once_differentiable
+    def backward(
+        ctx: Any,
+        *args: torch.Tensor,
+    ) -> Tuple[Optional[torch.Tensor], ...]:
+        """Backward propagation of the scalar Born wave equation.
+
+        Args:
+            ctx: Context object from the forward pass.
+            args: Gradients of the outputs of the forward pass.
+
+        Returns:
+            A tuple containing the gradients with respect to the inputs of the
+            forward pass.
+
+        """
+        grad_r = args[-2]
+        grad_rsc = args[-1]
+        grad_wavefields = list(args[:-2])
+        del args
+
+        (
+            v,
+            scatter,
+            grad_r,
+            grad_rsc,
+            pml_profiles,
+            sources_i,
+            receivers_i,
+            receiverssc_i,
+            grad_wfc,
+            grad_wfp,
+            grad_psi,
+            grad_psin,
+            grad_zeta,
+            grad_zetan,
+            grad_wfcsc,
+            grad_wfpsc,
+            grad_psisc,
+            grad_psinsc,
+            grad_zetasc,
+            grad_zetansc,
+            grad_f,
+            grad_fsc,
+            grad_v,
+            grad_scatter,
+            grad_v_tmp_ptr,
+            grad_scatter_tmp_ptr,
+            _grad_v_tmp,
+            _grad_scatter_tmp,
+            pml_b,
+            pml_e,
+            v_batched,
+            scatter_batched,
+            stream,
+            aux,
+            grid_spacing,
+            model_shape,
+            n_sources_per_shot,
+            n_receivers_per_shot,
+            n_receiverssc_per_shot,
+            pml_width,
+        ) = ScalarBornForwardFunc._backward_setup(
+            ctx, grad_r, grad_rsc, grad_wavefields
+        )
+
+        ndim = len(grid_spacing)
+        dt = ctx.dt
+        nt = ctx.nt
+        n_shots = ctx.n_shots
+        step_ratio = ctx.step_ratio
+        accuracy = ctx.accuracy
+        source_amplitudes_requires_grad = ctx.source_amplitudes_requires_grad
+        source_amplitudessc_requires_grad = ctx.source_amplitudessc_requires_grad
+        backward_callback = ctx.backward_callback
+        callback_frequency = ctx.callback_frequency
+        non_sc = ctx.non_sc
+        _device = v.device
+        dtype = v.dtype
+        fd_pad = accuracy // 2
+        storage_manager = ctx.storage_manager
+
         backward = deepwave.backend_utils.get_backend_function(
             "scalar_born",
             ndim,

@@ -592,6 +592,189 @@ class ScalarForwardFunc(torch.autograd.Function):
     """
 
     @staticmethod
+    def _parse_args(
+        v: torch.Tensor,
+        source_amplitudes: torch.Tensor,
+        pml_profiles: List[torch.Tensor],
+        sources_i: torch.Tensor,
+        receivers_i: torch.Tensor,
+        grid_spacing: Sequence[float],
+        n_shots: int,
+        storage_mode_str: str,
+        wavefields_tuple: Tuple[torch.Tensor, ...],
+    ) -> Tuple[
+        torch.Tensor,
+        torch.Tensor,
+        List[torch.Tensor],
+        torch.Tensor,
+        torch.Tensor,
+        List[torch.Tensor],
+        torch.device,
+        torch.dtype,
+        deepwave.common.StorageMode,
+        int,
+        bool,
+        torch.Size,
+        int,
+        int,
+    ]:
+        """Handle ensure_contiguous, get_storage_mode, and basic parameter parsing."""
+        (
+            v,
+            source_amplitudes,
+            pml_profiles,
+            sources_i,
+            receivers_i,
+            wavefields,
+        ) = deepwave.common.ensure_contiguous(
+            v,
+            source_amplitudes,
+            pml_profiles,
+            sources_i,
+            receivers_i,
+            list(wavefields_tuple),
+        )
+
+        device = v.device
+        dtype = v.dtype
+        storage_mode = deepwave.common.get_storage_mode(storage_mode_str, device)
+
+        # Get model properties and dimensions.
+        ndim = len(grid_spacing)
+        is_cuda = v.is_cuda
+        model_shape = v.shape[-ndim:]
+        n_sources_per_shot = sources_i.numel() // n_shots
+        n_receivers_per_shot = receivers_i.numel() // n_shots
+
+        return (
+            v,
+            source_amplitudes,
+            pml_profiles,
+            sources_i,
+            receivers_i,
+            wavefields,
+            device,
+            dtype,
+            storage_mode,
+            ndim,
+            is_cuda,
+            model_shape,
+            n_sources_per_shot,
+            n_receivers_per_shot,
+        )
+
+    @staticmethod
+    def _setup_storage(
+        model_shape: torch.Size,
+        dtype: torch.dtype,
+        n_shots: int,
+        nt: int,
+        step_ratio: int,
+        storage_mode: deepwave.common.StorageMode,
+        storage_compression: bool,
+        storage_path: str,
+        device: torch.device,
+        is_cuda: bool,
+        requires_grad: bool,
+    ) -> deepwave.common.StorageManager:
+        """Handle StorageManager initialization and allocation."""
+        storage_manager = deepwave.common.StorageManager(
+            model_shape,
+            dtype,
+            n_shots,
+            nt,
+            step_ratio,
+            storage_mode,
+            storage_compression,
+            storage_path,
+            device,
+            is_cuda,
+        )
+        storage_manager.allocate(requires_grad)
+        return storage_manager
+
+    @staticmethod
+    def _save_ctx(
+        ctx: Any,
+        v: torch.Tensor,
+        sources_i: torch.Tensor,
+        receivers_i: torch.Tensor,
+        source_amplitudes: torch.Tensor,
+        wavefields: List[torch.Tensor],
+        pml_profiles: List[torch.Tensor],
+        grid_spacing: Sequence[float],
+        dt: float,
+        nt: int,
+        n_shots: int,
+        step_ratio: int,
+        accuracy: int,
+        pml_width: List[int],
+        backward_callback: Optional[deepwave.common.Callback],
+        callback_frequency: int,
+        storage_manager: deepwave.common.StorageManager,
+    ) -> None:
+        """Handle ctx.save_for_backward and saving other attributes to ctx."""
+        if (
+            v.requires_grad
+            or source_amplitudes.requires_grad
+            or any(wavefield.requires_grad for wavefield in wavefields)
+        ):
+            ctx.save_for_backward(
+                v,
+                sources_i,
+                receivers_i,
+                source_amplitudes,
+                *wavefields,
+                *pml_profiles,
+            )
+            ctx.grid_spacing = grid_spacing
+            ctx.dt = dt
+            ctx.nt = nt
+            ctx.n_shots = n_shots
+            ctx.step_ratio = step_ratio
+            ctx.accuracy = accuracy
+            ctx.pml_width = pml_width
+            ctx.source_amplitudes_requires_grad = source_amplitudes.requires_grad
+            ctx.backward_callback = backward_callback
+            ctx.callback_frequency = callback_frequency
+            ctx.storage_manager = storage_manager
+
+    @staticmethod
+    def _prepare_wavefields(
+        wavefields: List[torch.Tensor],
+        accuracy: int,
+        device: torch.device,
+        dtype: torch.dtype,
+        n_shots: int,
+        model_shape: torch.Size,
+        ndim: int,
+        pml_width: List[int],
+    ) -> Tuple[torch.Tensor, torch.Tensor, List[torch.Tensor], List[torch.Tensor]]:
+        """Handle create_or_pad and zero_interior for the initial wavefields."""
+        fd_pad = accuracy // 2
+        size_with_batch = (n_shots, *model_shape)
+        wavefields = [
+            deepwave.common.create_or_pad(
+                wavefield,
+                fd_pad,
+                device,
+                dtype,
+                size_with_batch,
+            )
+            for wavefield in wavefields
+        ]
+
+        wfc, wfp, *pml_wavefields = wavefields
+        psi: List[torch.Tensor] = pml_wavefields[:ndim]
+        zeta: List[torch.Tensor] = pml_wavefields[ndim:]
+
+        for i in range(ndim):
+            psi[i] = deepwave.common.zero_interior(psi[i], fd_pad, pml_width, i)
+            zeta[i] = deepwave.common.zero_interior(zeta[i], fd_pad, pml_width, i)
+
+        return wfc, wfp, psi, zeta
+
+    @staticmethod
     def forward(
         ctx: Any,
         v: torch.Tensor,
@@ -647,9 +830,6 @@ class ScalarForwardFunc(torch.autograd.Function):
             A tuple containing the output wavefields and receiver amplitudes.
 
         """
-        # Ensure all input tensors are contiguous in memory. This is a
-        # requirement for the C/CUDA backend, as it expects pointers to
-        # contiguous blocks of data.
         (
             v,
             source_amplitudes,
@@ -657,28 +837,27 @@ class ScalarForwardFunc(torch.autograd.Function):
             sources_i,
             receivers_i,
             wavefields,
-        ) = deepwave.common.ensure_contiguous(
+            device,
+            dtype,
+            storage_mode,
+            ndim,
+            is_cuda,
+            model_shape,
+            n_sources_per_shot,
+            n_receivers_per_shot,
+        ) = ScalarForwardFunc._parse_args(
             v,
             source_amplitudes,
             pml_profiles,
             sources_i,
             receivers_i,
-            list(wavefields_tuple),
+            grid_spacing,
+            n_shots,
+            storage_mode_str,
+            wavefields_tuple,
         )
 
-        device = v.device
-        dtype = v.dtype
-        storage_mode = deepwave.common.get_storage_mode(storage_mode_str, device)
-
-        # Get model properties and dimensions.
-        ndim = len(grid_spacing)
-        is_cuda = v.is_cuda
-        model_shape = v.shape[-ndim:]
-        n_sources_per_shot = sources_i.numel() // n_shots
-        n_receivers_per_shot = receivers_i.numel() // n_shots
-
-        # Storage allocation
-        storage_manager = deepwave.common.StorageManager(
+        storage_manager = ScalarForwardFunc._setup_storage(
             model_shape,
             dtype,
             n_shots,
@@ -689,72 +868,40 @@ class ScalarForwardFunc(torch.autograd.Function):
             storage_path,
             device,
             is_cuda,
+            v.requires_grad,
         )
-        storage_manager.allocate(v.requires_grad)
 
-        # If any of the input Tensors require gradients, a backward pass (and
-        # possibly a double backward pass) may be performed. Save the Tensors
-        # and parameters that will be needed. Some of these, such as the
-        # source amplitudes and initial wavefields, are only required for the
-        # double backward pass.
-        if (
-            v.requires_grad
-            or source_amplitudes.requires_grad
-            or any(wavefield.requires_grad for wavefield in wavefields)
-        ):
-            ctx.save_for_backward(
-                v,
-                sources_i,
-                receivers_i,
-                source_amplitudes,
-                *wavefields,
-                *pml_profiles,
-            )
-            ctx.grid_spacing = grid_spacing
-            ctx.dt = dt
-            ctx.nt = nt
-            ctx.n_shots = n_shots
-            ctx.step_ratio = step_ratio
-            ctx.accuracy = accuracy
-            ctx.pml_width = pml_width
-            ctx.source_amplitudes_requires_grad = source_amplitudes.requires_grad
-            ctx.backward_callback = backward_callback
-            ctx.callback_frequency = callback_frequency
-            ctx.storage_manager = storage_manager
+        ScalarForwardFunc._save_ctx(
+            ctx,
+            v,
+            sources_i,
+            receivers_i,
+            source_amplitudes,
+            wavefields,
+            pml_profiles,
+            grid_spacing,
+            dt,
+            nt,
+            n_shots,
+            step_ratio,
+            accuracy,
+            pml_width,
+            backward_callback,
+            callback_frequency,
+            storage_manager,
+        )
 
-        # The finite difference (FD) stencil has a radius of `accuracy // 2`.
-        # To avoid special boundary handling, the wavefields are padded with
-        # this many zeros on each side.
-        fd_pad = accuracy // 2
-        size_with_batch = (n_shots, *v.shape[-ndim:])
-        # The `create_or_pad` function will either create a new zero tensor of
-        # the correct size (if the initial wavefield is not provided) or pad
-        # the provided initial wavefield.
-        wavefields = [
-            deepwave.common.create_or_pad(
-                wavefield,
-                fd_pad,
-                v.device,
-                v.dtype,
-                size_with_batch,
-            )
-            for wavefield in wavefields
-        ]
-
-        wfc, wfp, *pml_wavefields = wavefields
+        wfc, wfp, psi, zeta = ScalarForwardFunc._prepare_wavefields(
+            wavefields,
+            accuracy,
+            device,
+            dtype,
+            n_shots,
+            model_shape,
+            ndim,
+            pml_width,
+        )
         del wavefields
-        # The PML wavefields are ordered [psi, zeta] for each dimension
-        psi: List[torch.Tensor] = pml_wavefields[:ndim]
-        zeta: List[torch.Tensor] = pml_wavefields[ndim:]
-        del pml_wavefields
-
-        # The PML auxiliary variables (psi, zeta) are only non-zero in the PML
-        # regions. To avoid unnecessary computation in the interior of the
-        # domain, their values in the interior are set to zero here. The
-        # C/CUDA code will then skip PML calculations for these grid points.
-        for i in range(ndim):
-            psi[i] = deepwave.common.zero_interior(psi[i], fd_pad, pml_width, i)
-            zeta[i] = deepwave.common.zero_interior(zeta[i], fd_pad, pml_width, i)
 
         # `psiyn` and `psixn` are temporary tensors for updating the PML
         # auxiliary variables `psiy` and `psix`. A temporary variable is
@@ -762,6 +909,9 @@ class ScalarForwardFunc(torch.autograd.Function):
         # depends on the values of `psiy` and `psix` at neighboring grid
         # points, so they cannot be updated in-place.
         psin = [torch.zeros_like(wf) for wf in psi]
+
+        # The finite difference (FD) stencil has a radius of `accuracy // 2`.
+        fd_pad = accuracy // 2
 
         # The computational domain is divided into regions for performance,
         # and the boundaries of these regions are calculated here. The PML
@@ -1000,6 +1150,162 @@ class ScalarBackwardFunc(torch.autograd.Function):
     """
 
     @staticmethod
+    def _parse_args(
+        v: torch.Tensor,
+        sources_i: torch.Tensor,
+        receivers_i: torch.Tensor,
+        source_amplitudes: torch.Tensor,
+        wavefields: List[torch.Tensor],
+        grad_wavefields: List[torch.Tensor],
+        pml_profiles: List[torch.Tensor],
+        grad_r: torch.Tensor,
+        n_shots: int,
+        grid_spacing: Sequence[float],
+        accuracy: int,
+    ) -> Tuple[
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        List[torch.Tensor],
+        List[torch.Tensor],
+        List[torch.Tensor],
+        torch.Tensor,
+        torch.device,
+        torch.dtype,
+        bool,
+        torch.Size,
+        int,
+        int,
+        int,
+        int,
+    ]:
+        """Handle ensure_contiguous and parameter extraction."""
+        (
+            v,
+            sources_i,
+            receivers_i,
+            source_amplitudes,
+            wavefields,
+            grad_wavefields,
+            pml_profiles,
+            grad_r,
+        ) = deepwave.common.ensure_contiguous(
+            v,
+            sources_i,
+            receivers_i,
+            source_amplitudes,
+            wavefields,
+            grad_wavefields,
+            pml_profiles,
+            grad_r,
+        )
+
+        device = v.device
+        dtype = v.dtype
+        is_cuda = v.is_cuda
+        ndim = len(grid_spacing)
+        model_shape = v.shape[-ndim:]
+        n_sources_per_shot = sources_i.numel() // n_shots
+        n_receivers_per_shot = receivers_i.numel() // n_shots
+        fd_pad = accuracy // 2
+        return (
+            v,
+            sources_i,
+            receivers_i,
+            source_amplitudes,
+            wavefields,
+            grad_wavefields,
+            pml_profiles,
+            grad_r,
+            device,
+            dtype,
+            is_cuda,
+            model_shape,
+            n_sources_per_shot,
+            n_receivers_per_shot,
+            ndim,
+            fd_pad,
+        )
+
+    @staticmethod
+    def _save_ctx(
+        ctx: Any,
+        v: torch.Tensor,
+        sources_i: torch.Tensor,
+        receivers_i: torch.Tensor,
+        source_amplitudes: torch.Tensor,
+        grad_r: torch.Tensor,
+        wavefields: List[torch.Tensor],
+        grad_wavefields: List[torch.Tensor],
+        pml_profiles: List[torch.Tensor],
+        grid_spacing: Sequence[float],
+        dt: float,
+        nt: int,
+        n_shots: int,
+        step_ratio: int,
+        accuracy: int,
+        pml_width: List[int],
+        source_amplitudes_requires_grad: bool,
+        storage_manager: deepwave.common.StorageManager,
+    ) -> None:
+        """Handle saving info for double-backward."""
+        ctx.save_for_backward(
+            v,
+            sources_i,
+            receivers_i,
+            source_amplitudes,
+            grad_r,
+            *wavefields,
+            *grad_wavefields,
+            *pml_profiles,
+        )
+        ctx.grid_spacing = grid_spacing
+        ctx.dt = dt
+        ctx.nt = nt
+        ctx.n_shots = n_shots
+        ctx.step_ratio = step_ratio
+        ctx.accuracy = accuracy
+        ctx.pml_width = pml_width
+        ctx.source_amplitudes_requires_grad = source_amplitudes_requires_grad
+        ctx.storage_mode = storage_manager.storage_mode
+        ctx.storage_path = storage_manager.storage_path
+        ctx.storage_compression = storage_manager.storage_compression
+
+    @staticmethod
+    def _prepare_grad_wavefields(
+        grad_wavefields: List[torch.Tensor],
+        fd_pad: int,
+        device: torch.device,
+        dtype: torch.dtype,
+        size_with_batch: Tuple[int, ...],
+        ndim: int,
+        pml_width: List[int],
+    ) -> Tuple[torch.Tensor, torch.Tensor, List[torch.Tensor], List[torch.Tensor]]:
+        """Handle create_or_pad and zero_interior for the gradient wavefields."""
+        grad_wavefields = [
+            deepwave.common.create_or_pad(
+                wavefield,
+                fd_pad,
+                device,
+                dtype,
+                size_with_batch,
+            )
+            for wavefield in grad_wavefields
+        ]
+        grad_wfc, grad_wfp, *grad_pml_wavefields = grad_wavefields
+        grad_psi: List[torch.Tensor] = grad_pml_wavefields[:ndim]
+        grad_zeta: List[torch.Tensor] = grad_pml_wavefields[ndim:]
+        for i in range(ndim):
+            grad_psi[i] = deepwave.common.zero_interior(
+                grad_psi[i], fd_pad, pml_width, i
+            )
+            grad_zeta[i] = deepwave.common.zero_interior(
+                grad_zeta[i], fd_pad, pml_width, i
+            )
+        return grad_wfc, grad_wfp, grad_psi, grad_zeta
+
+    @staticmethod
     def forward(
         ctx: Any,
         grad_r: torch.Tensor,
@@ -1057,27 +1363,6 @@ class ScalarBackwardFunc(torch.autograd.Function):
         grad_wavefields = list(wavefields_tuple[: 2 + 2 * ndim])
         wavefields = list(wavefields_tuple[2 + 2 * ndim :])
         del wavefields_tuple
-        ctx.save_for_backward(
-            v,
-            sources_i,
-            receivers_i,
-            source_amplitudes,
-            grad_r,
-            *wavefields,
-            *grad_wavefields,
-            *pml_profiles,
-        )
-        ctx.grid_spacing = grid_spacing
-        ctx.dt = dt
-        ctx.nt = nt
-        ctx.n_shots = n_shots
-        ctx.step_ratio = step_ratio
-        ctx.accuracy = accuracy
-        ctx.pml_width = pml_width
-        ctx.source_amplitudes_requires_grad = source_amplitudes_requires_grad
-        ctx.storage_mode = storage_manager.storage_mode
-        ctx.storage_path = storage_manager.storage_path
-        ctx.storage_compression = storage_manager.storage_compression
 
         (
             v,
@@ -1088,7 +1373,15 @@ class ScalarBackwardFunc(torch.autograd.Function):
             grad_wavefields,
             pml_profiles,
             grad_r,
-        ) = deepwave.common.ensure_contiguous(
+            device,
+            dtype,
+            is_cuda,
+            model_shape,
+            n_sources_per_shot,
+            n_receivers_per_shot,
+            ndim,
+            fd_pad,
+        ) = ScalarBackwardFunc._parse_args(
             v,
             sources_i,
             receivers_i,
@@ -1097,40 +1390,48 @@ class ScalarBackwardFunc(torch.autograd.Function):
             grad_wavefields,
             pml_profiles,
             grad_r,
+            n_shots,
+            grid_spacing,
+            accuracy,
         )
 
-        device = v.device
-        dtype = v.dtype
-        is_cuda = v.is_cuda
-        model_shape = v.shape[-ndim:]
-        n_sources_per_shot = sources_i.numel() // n_shots
-        n_receivers_per_shot = receivers_i.numel() // n_shots
-        fd_pad = accuracy // 2
+        ScalarBackwardFunc._save_ctx(
+            ctx,
+            v,
+            sources_i,
+            receivers_i,
+            source_amplitudes,
+            grad_r,
+            wavefields,
+            grad_wavefields,
+            pml_profiles,
+            grid_spacing,
+            dt,
+            nt,
+            n_shots,
+            step_ratio,
+            accuracy,
+            pml_width,
+            source_amplitudes_requires_grad,
+            storage_manager,
+        )
 
         size_with_batch = (n_shots, *model_shape)
-        grad_wavefields = [
-            deepwave.common.create_or_pad(
-                wavefield,
-                fd_pad,
-                v.device,
-                v.dtype,
-                size_with_batch,
-            )
-            for wavefield in grad_wavefields
-        ]
-        grad_wfc, grad_wfp, *grad_pml_wavefields = grad_wavefields
+        (
+            grad_wfc,
+            grad_wfp,
+            grad_psi,
+            grad_zeta,
+        ) = ScalarBackwardFunc._prepare_grad_wavefields(
+            grad_wavefields,
+            fd_pad,
+            device,
+            dtype,
+            size_with_batch,
+            ndim,
+            pml_width,
+        )
         del grad_wavefields
-        # The PML wavefields are ordered [psi, zeta] for each dimension
-        grad_psi: List[torch.Tensor] = grad_pml_wavefields[:ndim]
-        grad_zeta: List[torch.Tensor] = grad_pml_wavefields[ndim:]
-        del grad_pml_wavefields
-        for i in range(ndim):
-            grad_psi[i] = deepwave.common.zero_interior(
-                grad_psi[i], fd_pad, pml_width, i
-            )
-            grad_zeta[i] = deepwave.common.zero_interior(
-                grad_zeta[i], fd_pad, pml_width, i
-            )
 
         # In the backward pass, temporary tensors are needed for the gradients
         # with respect to both `psi` and `zeta`, as their current values at
@@ -1138,14 +1439,6 @@ class ScalarBackwardFunc(torch.autograd.Function):
         # gradient wavefields, preventing in-place updates.
         grad_psin = [torch.zeros_like(gwf) for gwf in grad_psi]
         grad_zetan = [torch.zeros_like(gwf) for gwf in grad_zeta]
-        grad_v = torch.empty(0, device=device, dtype=dtype)
-        grad_v_tmp = torch.empty(0, device=device, dtype=dtype)
-        grad_v_tmp_ptr = grad_v.data_ptr()
-        if v.requires_grad:
-            grad_v.resize_(*v.shape)
-            grad_v.fill_(0)
-            grad_v_tmp_ptr = grad_v.data_ptr()
-        grad_f = torch.empty(0, device=device, dtype=dtype)
 
         # In the backward pass, the PML region is extended by an additional
         # `fd_pad` compared to the forward pass (for a total of `3 * fd_pad`).
@@ -1164,36 +1457,27 @@ class ScalarBackwardFunc(torch.autograd.Function):
 
         v_batched = v.ndim == ndim + 1 and v.shape[0] > 1
 
+        stream, aux = deepwave.common.get_stream_or_aux(device, is_cuda, n_shots)
+
+        (
+            grad_v,
+            _grad_v_tmp,
+            grad_v_tmp_ptr,
+        ) = deepwave.common.setup_model_grad_buffer(
+            v,
+            v_batched,
+            n_shots,
+            model_shape,
+            storage_manager.storage_mode,
+            is_cuda,
+            aux,
+        )
+
+        grad_f = torch.empty(0, device=device, dtype=dtype)
         if source_amplitudes_requires_grad:
             grad_f.resize_(nt, n_shots, n_sources_per_shot)
             grad_f.fill_(0)
 
-        # To avoid race conditions when multiple threads/shots contribute to the
-        # model gradient `grad_v` simultaneously, a temporary buffer
-        # `grad_v_tmp` is used. Each thread writes to its own slice of this
-        # buffer, and the results are summed after the loop.
-        # `grad_v_tmp_ptr` points to `grad_v_tmp` if it's needed (e.g. multiple
-        # threads on a non-batched model), otherwise it points directly to
-        # `grad_v` (e.g., for single-threaded execution or when each shot has
-        # its own model and memory space).
-        stream, aux = deepwave.common.get_stream_or_aux(device, is_cuda, n_shots)
-        if (
-            v.requires_grad
-            and not v_batched
-            and storage_manager.storage_mode != deepwave.common.StorageMode.NONE
-        ):
-            if is_cuda:
-                if n_shots > 1:
-                    grad_v_tmp.resize_(n_shots, *model_shape)
-                    grad_v_tmp.fill_(0)
-                    grad_v_tmp_ptr = grad_v_tmp.data_ptr()
-            elif (
-                aux > 1
-                and deepwave.backend_utils.USE_OPENMP
-            ):
-                grad_v_tmp.resize_(aux, *model_shape)
-                grad_v_tmp.fill_(0)
-                grad_v_tmp_ptr = grad_v_tmp.data_ptr()
         backward = deepwave.backend_utils.get_backend_function(
             "scalar",
             ndim,
@@ -1702,10 +1986,7 @@ class ScalarBackwardFunc(torch.autograd.Function):
                     grad_v_tmp.resize_(n_shots, *model_shape)
                     grad_v_tmp.fill_(0)
                     grad_v_tmp_ptr = grad_v_tmp.data_ptr()
-            elif (
-                aux > 1
-                and deepwave.backend_utils.USE_OPENMP
-            ):
+            elif aux > 1 and deepwave.backend_utils.USE_OPENMP:
                 grad_v_tmp.resize_(aux, *model_shape)
                 grad_v_tmp.fill_(0)
                 grad_v_tmp_ptr = grad_v_tmp.data_ptr()
