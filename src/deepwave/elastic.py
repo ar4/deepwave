@@ -1154,190 +1154,6 @@ class ElasticForwardFunc(torch.autograd.Function):
     """Forward propagation of the elastic wave equation."""
 
     @staticmethod
-    def _forward_setup(
-        pml_profiles: List[torch.Tensor],
-        grid_spacing: List[float],
-        dt: float,
-        nt: int,
-        step_ratio: int,
-        accuracy: int,
-        pml_width: List[int],
-        n_shots: int,
-        storage_mode_str: str,
-        storage_path: str,
-        storage_compression: bool,
-        args: Tuple[torch.Tensor, ...],
-    ) -> Tuple[Any, ...]:
-        """Handle ensure_contiguous, storage allocation, and parameter parsing."""
-        ndim = len(grid_spacing)
-        args_list = list(args)
-
-        # Determine number of models, sources_i, receivers_i, source_amplitudes,
-        # wavefields based on ndim
-        num_wavefields = 0
-        num_receivers_i = 0
-        num_sources_i = 0
-        num_source_amplitudes = 0
-        num_models = 0
-        if ndim == 3:
-            num_wavefields = 14 + 9 + 4  # vz_0...m_sigmaxxx_0
-            num_receivers_i = 4  # z,y,x,p
-            num_sources_i = 4  # z,y,x,p
-            num_source_amplitudes = 4  # z,y,x,p
-            num_models = (
-                2 + 3 + 3
-            )  # lamb,mu + mu_zy,mu_zx,mu_yx + buoyancy_z,buoyancy_y,buoyancy_x
-        elif ndim == 2:
-            num_wavefields = 9 + 4
-            num_receivers_i = 3
-            num_sources_i = 3
-            num_source_amplitudes = 3
-            num_models = 2 + 1 + 2  # lamb,mu + mu_yx + buoyancy_y,buoyancy_x
-        else:  # ndim == 1
-            num_wavefields = 4
-            num_receivers_i = 2
-            num_sources_i = 2
-            num_source_amplitudes = 2
-            num_models = 2 + 1  # lamb,mu + buoyancy_x
-
-        wavefields = args_list[-num_wavefields:]
-        del args_list[-num_wavefields:]
-        receivers_i = args_list[-num_receivers_i:]
-        del args_list[-num_receivers_i:]
-        sources_i = args_list[-num_sources_i:]
-        del args_list[-num_sources_i:]
-        source_amplitudes = args_list[-num_source_amplitudes:]
-        del args_list[-num_source_amplitudes:]
-        models = args_list[-num_models:]
-        del args_list[-num_models:]
-
-        if len(args_list) != 0:
-            raise AssertionError(
-                "Error parsing arguments for ElasticForwardFunc.forward"
-            )
-
-        (
-            models,
-            source_amplitudes,
-            pml_profiles,
-            sources_i,
-            receivers_i,
-        ) = deepwave.common.ensure_contiguous(
-            models,
-            source_amplitudes,
-            pml_profiles,
-            sources_i,
-            receivers_i,
-        )
-
-        device = models[0].device
-        dtype = models[0].dtype
-        storage_mode = deepwave.common.get_storage_mode(storage_mode_str, device)
-
-        is_cuda = models[0].is_cuda
-        model_shape = models[0].shape[-ndim:]
-        n_sources_per_shot = [locs.numel() // n_shots for locs in sources_i]
-        n_receivers_per_shot = [locs.numel() // n_shots for locs in receivers_i]
-
-        # Storage allocation for backward_storage variables
-        storage_manager = deepwave.common.StorageManager(
-            model_shape,
-            dtype,
-            n_shots,
-            nt,
-            step_ratio,
-            storage_mode,
-            storage_compression,
-            storage_path,
-            device,
-            is_cuda,
-        )
-
-        lamb_requires_grad = models[0].requires_grad
-        mu_requires_grad = models[1].requires_grad
-        buoyancy_requires_grad = models[-1].requires_grad
-
-        # Define which storage variables are relevant based on ndim
-        storage_vars_info = []
-        if ndim >= 3:
-            storage_vars_info.append(("dvzdbuoyancy", buoyancy_requires_grad))
-            storage_vars_info.append(
-                ("dvzdz_store", lamb_requires_grad or mu_requires_grad)
-            )
-            storage_vars_info.append(("dvzdx_plus_dvxdz_store", mu_requires_grad))
-            storage_vars_info.append(("dvzdy_plus_dvydz_store", mu_requires_grad))
-        if ndim >= 2:
-            storage_vars_info.append(("dvydbuoyancy", buoyancy_requires_grad))
-            storage_vars_info.append(
-                ("dvydy_store", lamb_requires_grad or mu_requires_grad)
-            )
-            storage_vars_info.append(("dvydx_plus_dvxdy_store", mu_requires_grad))
-        storage_vars_info.append(("dvxdbuoyancy", buoyancy_requires_grad))
-        storage_vars_info.append(
-            ("dvxdx_store", lamb_requires_grad or mu_requires_grad)
-        )
-
-        # Create storage buffers and file arrays
-        for _name, requires_grad_cond in storage_vars_info:
-            storage_manager.allocate(requires_grad_cond)
-
-        fd_pad = accuracy // 2
-        fd_pad_list = [fd_pad, fd_pad - 1] * ndim
-        size_with_batch = (n_shots, *models[0].shape[-ndim:])
-        wavefields = [
-            deepwave.common.create_or_pad(
-                wavefield,
-                fd_pad_list,
-                device,
-                dtype,
-                size_with_batch,
-            )
-            for wavefield in wavefields
-        ]
-
-        zero_edges_and_interiors(wavefields, ndim, fd_pad, fd_pad_list, pml_width)
-
-        pml_b = [pml_width[2 * i] + fd_pad for i in range(ndim)]
-        pml_e = [
-            max(pml_b[i], model_shape[i] - pml_width[2 * i + 1] - (fd_pad - 1))
-            for i in range(ndim)
-        ]
-
-        lamb_batched = models[0].ndim == ndim + 1 and models[0].shape[0] > 1
-        mu_batched = models[1].ndim == ndim + 1 and models[1].shape[0] > 1
-        buoyancy_batched = models[-1].ndim == ndim + 1 and models[-1].shape[0] > 1
-
-        rdx = [1 / dx for dx in grid_spacing]
-
-        return (
-            models,
-            source_amplitudes,
-            sources_i,
-            receivers_i,
-            wavefields,
-            storage_manager,
-            pml_profiles,
-            n_sources_per_shot,
-            n_receivers_per_shot,
-            model_shape,
-            pml_b,
-            pml_e,
-            rdx,
-            device,
-            dtype,
-            is_cuda,
-            fd_pad_list,
-            ndim,
-            lamb_requires_grad,
-            mu_requires_grad,
-            buoyancy_requires_grad,
-            lamb_batched,
-            mu_batched,
-            buoyancy_batched,
-            storage_mode,
-        )
-
-    @staticmethod
     def forward(
         ctx: Any,
         pml_profiles: List[torch.Tensor],
@@ -1696,41 +1512,34 @@ class ElasticForwardFunc(torch.autograd.Function):
 
         stream, aux = deepwave.common.get_stream_or_aux(device, is_cuda, n_shots)
 
-        grad_models = []
-        grad_models_tmp = []
-        grad_models_tmp_ptr = []
-        for _i, model in enumerate(models):
-            model_batched = model.ndim == ndim + 1 and model.shape[0] > 1
-            gm, gmt, gmtp = deepwave.common.setup_model_grad_buffer(
-                model,
-                model_batched,
-                n_shots,
-                model_shape,
-                storage_manager.storage_mode,
-                is_cuda,
-                aux,
-            )
-            grad_models.append(gm)
-            grad_models_tmp.append(gmt)
-            grad_models_tmp_ptr.append(gmtp)
-
-        grad_f = [torch.empty(0, device=device, dtype=dtype) for _ in sources_i]
-        for i, requires_grad in enumerate(source_amplitudes_requires_grad):
-            if requires_grad:
-                grad_f[i].resize_(nt, n_shots, n_sources_per_shot[i])
-                grad_f[i].fill_(0)
-
-        lamb_batched = models[0].ndim == ndim + 1 and models[0].shape[0] > 1
-        mu_batched = models[1].ndim == ndim + 1 and models[1].shape[0] > 1
-        buoyancy_batched = models[-1].ndim == ndim + 1 and models[-1].shape[0] > 1
+        model_batched_list = [model.ndim == ndim + 1 and model.shape[0] > 1 for model in models]
+        (
+            grad_models,
+            grad_models_tmp_ptr,
+            grad_f,
+        ) = deepwave.common.setup_backward_gradients(
+            models,
+            model_batched_list,
+            n_shots,
+            model_shape,
+            storage_manager.storage_mode,
+            is_cuda,
+            aux,
+            nt,
+            source_amplitudes_requires_grad,
+            n_sources_per_shot,
+        )
 
         lamb_requires_grad = models[0].requires_grad
         mu_requires_grad = models[1].requires_grad
         buoyancy_requires_grad = models[-1].requires_grad
+        lamb_batched = model_batched_list[0]
+        mu_batched = model_batched_list[1]
+        buoyancy_batched = model_batched_list[-1]
 
+        size_with_batch = (n_shots, *model_shape)
         fd_pad = accuracy // 2
         fd_pad_list = [fd_pad, fd_pad - 1] * ndim
-        size_with_batch = (n_shots, *model_shape)
         grad_wavefields = [
             deepwave.common.create_or_pad(
                 wavefield,
@@ -1754,14 +1563,9 @@ class ElasticForwardFunc(torch.autograd.Function):
 
         zero_edges_and_interiors(grad_wavefields, ndim, fd_pad, fd_pad_list, pml_width)
 
-        pml_b = [
-            min(pml_width[2 * i] + 2 * fd_pad, model_shape[i] - (fd_pad - 1))
-            for i in range(ndim)
-        ]
-        pml_e = [
-            max(pml_b[i], model_shape[i] - pml_width[2 * i + 1] - 2 * fd_pad + 1)
-            for i in range(ndim)
-        ]
+        pml_b, pml_e = deepwave.common.get_pml_bounds(
+            pml_width, accuracy, model_shape, ndim, staggered=True
+        )
 
         rdx = [1 / dx for dx in grid_spacing]
 

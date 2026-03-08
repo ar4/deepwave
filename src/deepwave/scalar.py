@@ -664,36 +664,6 @@ class ScalarForwardFunc(torch.autograd.Function):
         )
 
     @staticmethod
-    def _setup_storage(
-        model_shape: torch.Size,
-        dtype: torch.dtype,
-        n_shots: int,
-        nt: int,
-        step_ratio: int,
-        storage_mode: deepwave.common.StorageMode,
-        storage_compression: bool,
-        storage_path: str,
-        device: torch.device,
-        is_cuda: bool,
-        requires_grad: bool,
-    ) -> deepwave.common.StorageManager:
-        """Handle StorageManager initialization and allocation."""
-        storage_manager = deepwave.common.StorageManager(
-            model_shape,
-            dtype,
-            n_shots,
-            nt,
-            step_ratio,
-            storage_mode,
-            storage_compression,
-            storage_path,
-            device,
-            is_cuda,
-        )
-        storage_manager.allocate(requires_grad)
-        return storage_manager
-
-    @staticmethod
     def _save_ctx(
         ctx: Any,
         v: torch.Tensor,
@@ -1273,39 +1243,6 @@ class ScalarBackwardFunc(torch.autograd.Function):
         ctx.storage_compression = storage_manager.storage_compression
 
     @staticmethod
-    def _prepare_grad_wavefields(
-        grad_wavefields: List[torch.Tensor],
-        fd_pad: int,
-        device: torch.device,
-        dtype: torch.dtype,
-        size_with_batch: Tuple[int, ...],
-        ndim: int,
-        pml_width: List[int],
-    ) -> Tuple[torch.Tensor, torch.Tensor, List[torch.Tensor], List[torch.Tensor]]:
-        """Handle create_or_pad and zero_interior for the gradient wavefields."""
-        grad_wavefields = [
-            deepwave.common.create_or_pad(
-                wavefield,
-                fd_pad,
-                device,
-                dtype,
-                size_with_batch,
-            )
-            for wavefield in grad_wavefields
-        ]
-        grad_wfc, grad_wfp, *grad_pml_wavefields = grad_wavefields
-        grad_psi: List[torch.Tensor] = grad_pml_wavefields[:ndim]
-        grad_zeta: List[torch.Tensor] = grad_pml_wavefields[ndim:]
-        for i in range(ndim):
-            grad_psi[i] = deepwave.common.zero_interior(
-                grad_psi[i], fd_pad, pml_width, i
-            )
-            grad_zeta[i] = deepwave.common.zero_interior(
-                grad_zeta[i], fd_pad, pml_width, i
-            )
-        return grad_wfc, grad_wfp, grad_psi, grad_zeta
-
-    @staticmethod
     def forward(
         ctx: Any,
         grad_r: torch.Tensor,
@@ -1417,20 +1354,28 @@ class ScalarBackwardFunc(torch.autograd.Function):
         )
 
         size_with_batch = (n_shots, *model_shape)
-        (
-            grad_wfc,
-            grad_wfp,
-            grad_psi,
-            grad_zeta,
-        ) = ScalarBackwardFunc._prepare_grad_wavefields(
+        grad_wavefields = deepwave.common.prepare_wavefields(
             grad_wavefields,
-            fd_pad,
+            ndim,
+            accuracy,
             device,
             dtype,
             size_with_batch,
-            ndim,
             pml_width,
         )
+
+        grad_wfc, grad_wfp, *grad_pml_wavefields = grad_wavefields
+        grad_psi = list(grad_pml_wavefields[:ndim])
+        grad_zeta = list(grad_pml_wavefields[ndim:])
+        del grad_pml_wavefields
+
+        for i in range(ndim):
+            grad_psi[i] = deepwave.common.zero_interior(
+                grad_psi[i], accuracy // 2, pml_width, i
+            )
+            grad_zeta[i] = deepwave.common.zero_interior(
+                grad_zeta[i], accuracy // 2, pml_width, i
+            )
         del grad_wavefields
 
         # In the backward pass, temporary tensors are needed for the gradients
@@ -1440,43 +1385,33 @@ class ScalarBackwardFunc(torch.autograd.Function):
         grad_psin = [torch.zeros_like(gwf) for gwf in grad_psi]
         grad_zetan = [torch.zeros_like(gwf) for gwf in grad_zeta]
 
-        # In the backward pass, the PML region is extended by an additional
-        # `fd_pad` compared to the forward pass (for a total of `3 * fd_pad`).
-        # This is because the backward calculations involve spatial
-        # derivatives of terms that are themselves spatial derivatives,
-        # widening the stencil and the extent of the PML's influence into
-        # the non-PML region.
-        pml_b = [
-            min(pml_width[2 * i] + 3 * fd_pad, model_shape[i] - fd_pad)
-            for i in range(ndim)
-        ]
-        pml_e = [
-            max(pml_b[i], model_shape[i] - pml_width[2 * i + 1] - 3 * fd_pad)
-            for i in range(ndim)
-        ]
+        pml_b, pml_e = deepwave.common.get_pml_bounds(
+            pml_width, accuracy, model_shape, ndim, multiplier=3
+        )
 
         v_batched = v.ndim == ndim + 1 and v.shape[0] > 1
 
         stream, aux = deepwave.common.get_stream_or_aux(device, is_cuda, n_shots)
 
         (
-            grad_v,
-            _grad_v_tmp,
-            grad_v_tmp_ptr,
-        ) = deepwave.common.setup_model_grad_buffer(
-            v,
-            v_batched,
+            grad_models,
+            grad_models_tmp_ptr,
+            grad_f_list,
+        ) = deepwave.common.setup_backward_gradients(
+            [v],
+            [v_batched],
             n_shots,
             model_shape,
             storage_manager.storage_mode,
             is_cuda,
             aux,
+            nt,
+            [source_amplitudes_requires_grad],
+            [n_sources_per_shot],
         )
-
-        grad_f = torch.empty(0, device=device, dtype=dtype)
-        if source_amplitudes_requires_grad:
-            grad_f.resize_(nt, n_shots, n_sources_per_shot)
-            grad_f.fill_(0)
+        grad_v = grad_models[0]
+        grad_v_tmp_ptr = grad_models_tmp_ptr[0]
+        grad_f = grad_f_list[0]
 
         backward = deepwave.backend_utils.get_backend_function(
             "scalar",
@@ -1729,35 +1664,21 @@ class ScalarBackwardFunc(torch.autograd.Function):
         fd_pad = accuracy // 2
         model_shape = v.shape[-ndim:]
         size_with_batch = (n_shots, *model_shape)
-        wavefields = [
-            deepwave.common.create_or_pad(
-                wavefield,
-                fd_pad,
-                v.device,
-                v.dtype,
-                size_with_batch,
-            )
-            for wavefield in wavefields
-        ]
-        gradgrad_wavefields = [
-            deepwave.common.create_or_pad(
-                wavefield,
-                fd_pad,
-                v.device,
-                v.dtype,
-                size_with_batch,
-            )
-            for wavefield in gradgrad_wavefields
-        ]
+        wavefields = deepwave.common.prepare_wavefields(
+            wavefields, ndim, accuracy, device, dtype, size_with_batch, pml_width
+        )
+        gradgrad_wavefields = deepwave.common.prepare_wavefields(
+            gradgrad_wavefields, ndim, accuracy, device, dtype, size_with_batch, pml_width
+        )
         wfc, wfp, *pml_wavefields = wavefields
         del wavefields
         gradgrad_wfc, gradgrad_wfp, *gradgrad_pml_wavefields = gradgrad_wavefields
         del gradgrad_wavefields
-        psi: List[torch.Tensor] = pml_wavefields[:ndim]
-        zeta: List[torch.Tensor] = pml_wavefields[ndim:]
+        psi = list(pml_wavefields[:ndim])
+        zeta = list(pml_wavefields[ndim:])
         del pml_wavefields
-        gradgrad_psi: List[torch.Tensor] = gradgrad_pml_wavefields[:ndim]
-        gradgrad_zeta: List[torch.Tensor] = gradgrad_pml_wavefields[ndim:]
+        gradgrad_psi = list(gradgrad_pml_wavefields[:ndim])
+        gradgrad_zeta = list(gradgrad_pml_wavefields[ndim:])
         del gradgrad_pml_wavefields
         for i in range(ndim):
             psi[i] = deepwave.common.zero_interior(psi[i], fd_pad, pml_width, i)
@@ -1779,20 +1700,15 @@ class ScalarBackwardFunc(torch.autograd.Function):
         gradgrad_psin = [torch.zeros_like(wf) for wf in gradgrad_psi]
         receiver_amplitudes = torch.empty(0, device=device, dtype=dtype)
         ggreceiver_amplitudes = torch.empty(0, device=device, dtype=dtype)
-        pml_b = [
-            min(pml_width[2 * i] + 2 * fd_pad, model_shape[i] - fd_pad)
-            for i in range(ndim)
-        ]
-        pml_e = [
-            max(pml_b[i], model_shape[i] - pml_width[2 * i + 1] - 2 * fd_pad)
-            for i in range(ndim)
-        ]
+        pml_b, pml_e = deepwave.common.get_pml_bounds(
+            pml_width, accuracy, model_shape, ndim
+        )
 
         v_batched = v.ndim == ndim + 1 and v.shape[0] > 1
         ggv_batched = ggv.ndim == ndim + 1 and ggv.shape[0] > 1
 
         # Storage allocation
-        storage_manager = deepwave.common.StorageManager(
+        storage_manager = deepwave.common.setup_storage(
             model_shape,
             dtype,
             n_shots,
@@ -1803,9 +1719,8 @@ class ScalarBackwardFunc(torch.autograd.Function):
             storage_path,
             device,
             is_cuda,
+            [v.requires_grad, v.requires_grad],
         )
-        for requires_grad in [v.requires_grad, v.requires_grad]:
-            storage_manager.allocate(requires_grad)
 
         if fwd_receivers_i.numel() > 0:
             receiver_amplitudes.resize_(nt, n_shots, n_receivers_per_shot)
@@ -1893,56 +1808,28 @@ class ScalarBackwardFunc(torch.autograd.Function):
         n_greceivers_per_shot = bwd_greceivers_i.numel() // n_shots
 
         # Set the initial wavefields for the background propagation to zero.
-        wfc = deepwave.common.create_or_pad(
-            torch.empty(0),
-            fd_pad,
+        wavefields = deepwave.common.prepare_wavefields(
+            [torch.empty(0)] * (2 + 2 * ndim),
+            ndim,
+            accuracy,
             v.device,
             v.dtype,
             size_with_batch,
+            pml_width,
         )
-        wfp = deepwave.common.create_or_pad(
-            torch.empty(0),
-            fd_pad,
-            v.device,
-            v.dtype,
-            size_with_batch,
-        )
-        psi = [
-            deepwave.common.create_or_pad(
-                torch.empty(0),
-                fd_pad,
-                v.device,
-                v.dtype,
-                size_with_batch,
-            )
-            for _ in range(ndim)
-        ]
-        zeta = [
-            deepwave.common.create_or_pad(
-                torch.empty(0),
-                fd_pad,
-                v.device,
-                v.dtype,
-                size_with_batch,
-            )
-            for _ in range(ndim)
-        ]
+        wfc, wfp, *pml_wavefields = wavefields
+        psi = list(pml_wavefields[:ndim])
+        zeta = list(pml_wavefields[ndim:])
         psin = [torch.zeros_like(wf) for wf in psi]
         zetan = [torch.zeros_like(wf) for wf in zeta]
-        grad_wavefields = [
-            deepwave.common.create_or_pad(
-                wavefield,
-                fd_pad,
-                v.device,
-                v.dtype,
-                size_with_batch,
-            )
-            for wavefield in grad_wavefields
-        ]
+
+        grad_wavefields = deepwave.common.prepare_wavefields(
+            grad_wavefields, ndim, accuracy, v.device, v.dtype, size_with_batch, pml_width
+        )
         grad_wfc, grad_wfp, *grad_pml_wavefields = grad_wavefields
         del grad_wavefields
-        grad_psi = grad_pml_wavefields[:ndim]
-        grad_zeta = grad_pml_wavefields[ndim:]
+        grad_psi = list(grad_pml_wavefields[:ndim])
+        grad_zeta = list(grad_pml_wavefields[ndim:])
         del grad_pml_wavefields
         for i in range(ndim):
             grad_psi[i] = deepwave.common.zero_interior(
@@ -1953,43 +1840,34 @@ class ScalarBackwardFunc(torch.autograd.Function):
             )
         grad_psin = [torch.zeros_like(wf) for wf in grad_psi]
         grad_zetan = [torch.zeros_like(wf) for wf in grad_zeta]
-        grad_v = torch.empty(0, device=device, dtype=dtype)
-        grad_v_tmp = torch.empty(0, device=device, dtype=dtype)
-        grad_v_tmp_ptr = grad_v.data_ptr()
-        if v.requires_grad:
-            grad_v.resize_(*v.shape)
-            grad_v.fill_(0)
-            grad_v_tmp_ptr = grad_v.data_ptr()
-        grad_f = torch.empty(0, device=device, dtype=dtype)
-        grad_gf = torch.empty(0, device=device, dtype=dtype)
-        pml_b = [
-            min(pml_width[2 * i] + 3 * fd_pad, model_shape[i] - fd_pad)
-            for i in range(ndim)
-        ]
-        pml_e = [
-            max(pml_b[i], model_shape[i] - pml_width[2 * i + 1] - 3 * fd_pad)
-            for i in range(ndim)
-        ]
 
-        if source_amplitudes_requires_grad:
-            grad_f.resize_(nt, n_shots, n_sources_per_shot)
-            grad_f.fill_(0)
+        pml_b, pml_e = deepwave.common.get_pml_bounds(
+            pml_width, accuracy, model_shape, ndim, multiplier=3
+        )
 
         stream, aux = deepwave.common.get_stream_or_aux(device, is_cuda, n_shots)
-        if (
-            v.requires_grad
-            and not v_batched
-            and storage_manager.storage_mode != deepwave.common.StorageMode.NONE
-        ):
-            if is_cuda:
-                if n_shots > 1:
-                    grad_v_tmp.resize_(n_shots, *model_shape)
-                    grad_v_tmp.fill_(0)
-                    grad_v_tmp_ptr = grad_v_tmp.data_ptr()
-            elif aux > 1 and deepwave.backend_utils.USE_OPENMP:
-                grad_v_tmp.resize_(aux, *model_shape)
-                grad_v_tmp.fill_(0)
-                grad_v_tmp_ptr = grad_v_tmp.data_ptr()
+
+        (
+            grad_models,
+            grad_models_tmp_ptr,
+            grad_f_list,
+        ) = deepwave.common.setup_backward_gradients(
+            [v],
+            [v_batched],
+            n_shots,
+            model_shape,
+            storage_manager.storage_mode,
+            is_cuda,
+            aux,
+            nt,
+            [source_amplitudes_requires_grad],
+            [n_sources_per_shot],
+        )
+        grad_v = grad_models[0]
+        grad_v_tmp_ptr = grad_models_tmp_ptr[0]
+        grad_f = grad_f_list[0]
+
+        grad_gf = torch.empty(0, device=device, dtype=dtype)
 
         backward = deepwave.backend_utils.get_backend_function(
             "scalar_born",

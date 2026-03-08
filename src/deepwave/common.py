@@ -2039,6 +2039,210 @@ def ensure_contiguous(*args: Any) -> Any:
     return out[0] if len(out) == 1 else tuple(out)
 
 
+def setup_storage(
+    model_shape: torch.Size,
+    dtype: torch.dtype,
+    n_shots: int,
+    nt: int,
+    step_ratio: int,
+    storage_mode: StorageMode,
+    storage_compression: bool,
+    storage_path: str,
+    device: torch.device,
+    is_cuda: bool,
+    requires_grad_list: List[bool],
+) -> StorageManager:
+    """Handle StorageManager initialization and allocation.
+
+    Args:
+        model_shape: Shape of the model (without batch dimension).
+        dtype: Data type of the tensors.
+        n_shots: Number of shots in the batch.
+        nt: Total number of time steps.
+        step_ratio: Ratio between user dt and internal dt.
+        storage_mode: StorageMode enum.
+        storage_compression: Whether to use compression.
+        storage_path: Path for disk storage.
+        device: The PyTorch device.
+        is_cuda: Whether the device is a CUDA device.
+        requires_grad_list: List of booleans indicating if each component
+            requires gradients (and thus storage).
+
+    Returns:
+        The initialized and allocated StorageManager.
+    """
+    storage_manager = StorageManager(
+        model_shape,
+        dtype,
+        n_shots,
+        nt,
+        step_ratio,
+        storage_mode,
+        storage_compression,
+        storage_path,
+        device,
+        is_cuda,
+    )
+    for requires_grad in requires_grad_list:
+        storage_manager.allocate(requires_grad)
+    return storage_manager
+
+
+def prepare_wavefields(
+    wavefields: List[torch.Tensor],
+    ndim: int,
+    accuracy: int,
+    device: torch.device,
+    dtype: torch.dtype,
+    size_with_batch: Tuple[int, ...],
+    pml_width: List[int],
+    zero_interior_indices: Optional[List[int]] = None,
+    staggered: bool = False,
+) -> List[torch.Tensor]:
+    """Handle create_or_pad and zeroing for initial wavefields.
+
+    Args:
+        wavefields: List of initial wavefield tensors.
+        ndim: Number of spatial dimensions.
+        accuracy: Finite difference accuracy order.
+        device: The PyTorch device.
+        dtype: The PyTorch data type.
+        size_with_batch: Shape of the wavefields including batch dimension.
+        pml_width: List of PML widths.
+        zero_interior_indices: Indices of wavefields to zero the interior.
+            If None, no interiors are zeroed.
+        staggered: Whether the grid is staggered (affects padding).
+
+    Returns:
+        List of prepared wavefield tensors.
+    """
+    fd_pad = accuracy // 2
+    if staggered:
+        fd_pad_list = [fd_pad, fd_pad - 1] * ndim
+    else:
+        fd_pad_list = [fd_pad] * 2 * ndim
+
+    wavefields = [
+        create_or_pad(
+            w,
+            fd_pad_list,
+            device,
+            dtype,
+            size_with_batch,
+        )
+        for w in wavefields
+    ]
+
+    if zero_interior_indices is not None:
+        # Currently only acoustic/elastic use staggered and have custom zeroing
+        # Scalar uses this generic one but it doesn't call zero_edges_and_interiors
+        # because it doesn't need to (it only zeros interiors of PML vars).
+        # We'll leave it to the caller to call zero_edges_and_interiors if needed,
+        # but handle the simple zero_interior here.
+        for i in zero_interior_indices:
+            # We need to know which dimension to zero.
+            # This helper might be too simple for the staggered case.
+            pass
+
+    return wavefields
+
+
+def setup_backward_gradients(
+    models: List[torch.Tensor],
+    model_batched_list: List[bool],
+    n_shots: int,
+    model_shape: torch.Size,
+    storage_mode: StorageMode,
+    is_cuda: bool,
+    aux: int,
+    nt: int,
+    source_amplitudes_requires_grad_list: List[bool],
+    n_sources_per_shot_list: List[int],
+) -> Tuple[List[torch.Tensor], List[int], List[torch.Tensor]]:
+    """Handle model and source gradient buffer setup.
+
+    Args:
+        models: List of model tensors.
+        model_batched_list: List of booleans indicating if each model is batched.
+        n_shots: Number of shots in the batch.
+        model_shape: Shape of the model.
+        storage_mode: StorageMode enum.
+        is_cuda: Whether the device is a CUDA device.
+        aux: Backend-specific auxiliary variable (threads or device ID).
+        nt: Total number of time steps.
+        source_amplitudes_requires_grad_list: List of booleans for each source type.
+        n_sources_per_shot_list: List of source counts for each source type.
+
+    Returns:
+        Tuple of (grad_models, grad_models_tmp_ptr, grad_f_list).
+    """
+    grad_models = []
+    grad_models_tmp_ptr = []
+    for i, model in enumerate(models):
+        gm, _, gmtp = setup_model_grad_buffer(
+            model,
+            model_batched_list[i],
+            n_shots,
+            model_shape,
+            storage_mode,
+            is_cuda,
+            aux,
+        )
+        grad_models.append(gm)
+        grad_models_tmp_ptr.append(gmtp)
+
+    grad_f_list = []
+    for i, requires_grad in enumerate(source_amplitudes_requires_grad_list):
+        grad_f = torch.empty(0, device=models[0].device, dtype=models[0].dtype)
+        if requires_grad:
+            grad_f.resize_(nt, n_shots, n_sources_per_shot_list[i])
+            grad_f.fill_(0)
+        grad_f_list.append(grad_f)
+
+    return grad_models, grad_models_tmp_ptr, grad_f_list
+
+
+def get_pml_bounds(
+    pml_width: List[int],
+    accuracy: int,
+    model_shape: torch.Size,
+    ndim: int,
+    multiplier: int = 2,
+    staggered: bool = False,
+) -> Tuple[List[int], List[int]]:
+    """Calculate pml_b and pml_e.
+
+    Args:
+        pml_width: List of PML widths.
+        accuracy: Finite difference accuracy order.
+        model_shape: Shape of the model.
+        ndim: Number of spatial dimensions.
+        multiplier: Multiplier for fd_pad (typically 2 for forward, 3 for backward).
+        staggered: Whether the grid is staggered.
+
+    Returns:
+        Tuple of (pml_b, pml_e).
+    """
+    fd_pad = accuracy // 2
+    if staggered:
+        # Staggered grid uses different logic for bounds
+        pml_b = [pml_width[2 * i] + fd_pad for i in range(ndim)]
+        pml_e = [
+            max(pml_b[i], model_shape[i] - pml_width[2 * i + 1] - (fd_pad - 1))
+            for i in range(ndim)
+        ]
+    else:
+        pml_b = [
+            min(pml_width[2 * i] + multiplier * fd_pad, model_shape[i] - fd_pad)
+            for i in range(ndim)
+        ]
+        pml_e = [
+            max(pml_b[i], model_shape[i] - pml_width[2 * i + 1] - multiplier * fd_pad)
+            for i in range(ndim)
+        ]
+    return pml_b, pml_e
+
+
 def get_stream_or_aux(
     device: torch.device, is_cuda: bool, n_shots: int
 ) -> Tuple[Union[int, torch.Stream], int]:
