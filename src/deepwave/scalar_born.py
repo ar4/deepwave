@@ -666,7 +666,7 @@ class ScalarBornForwardFunc(torch.autograd.Function):
             storage_path,
             device,
             is_cuda,
-            [v.requires_grad or scatter.requires_grad, v.requires_grad],
+            [v.requires_grad, scatter.requires_grad],
         )
 
         bg_wavefield_requires_grad = any(
@@ -709,7 +709,7 @@ class ScalarBornForwardFunc(torch.autograd.Function):
             ctx.storage_manager = storage_manager
 
         size_with_batch = (n_shots, *model_shape)
-        wavefields = deepwave.common.prepare_wavefields(
+        wavefields = deepwave.common.prepare_initial_wavefields(
             list(wavefields_tuple), ndim, accuracy, device, dtype, size_with_batch, pml_width
         )
 
@@ -930,7 +930,7 @@ class ScalarBornForwardFunc(torch.autograd.Function):
         storage_manager = ctx.storage_manager
 
         size_with_batch = (n_shots, *model_shape)
-        grad_wavefieldssc = deepwave.common.prepare_wavefields(
+        grad_wavefieldssc = deepwave.common.prepare_initial_wavefields(
             grad_wavefields_list[2 + 2 * ndim :],
             ndim,
             accuracy,
@@ -960,7 +960,7 @@ class ScalarBornForwardFunc(torch.autograd.Function):
         grad_zetan = None
 
         if non_sc:
-            grad_wavefields_non_sc = deepwave.common.prepare_wavefields(
+            grad_wavefields_non_sc = deepwave.common.prepare_initial_wavefields(
                 grad_wavefields_list[: 2 + 2 * ndim],
                 ndim,
                 accuracy,
@@ -993,6 +993,7 @@ class ScalarBornForwardFunc(torch.autograd.Function):
 
         (
             grad_models,
+            grad_models_tmp,
             grad_models_tmp_ptr,
             grad_f_list,
         ) = deepwave.common.setup_backward_gradients(
@@ -1269,458 +1270,65 @@ class ScalarBornForwardFunc(torch.autograd.Function):
         if non_sc:
             grad_wfp = -grad_wfp
             return (
-                (
-                    grad_v,
-                    grad_scatter,
-                    grad_f,
-                    grad_fsc,
-                )
-                + (None,) * 18
-                + (
-                    grad_wfc[s],
-                    grad_wfp[s],
-                    *[gwf[s] for gwf in grad_psi],
-                    *[gwf[s] for gwf in grad_zeta],
-                    grad_wfcsc[s],
-                    grad_wfpsc[s],
-                    *[gwf[s] for gwf in grad_psisc],
-                    *[gwf[s] for gwf in grad_zetasc],
-                )
-            )
-        return (
-            (
-                None,
+                grad_v,
                 grad_scatter,
-                None,
+                grad_f,
                 grad_fsc,
-            )
-            + (None,) * (20 + 2 * ndim)
-            + (
+                None,  # pml_profiles
+                None,  # sources_i
+                None,  # unused_tensor
+                None,  # receivers_i
+                None,  # receiverssc_i
+                None,  # grid_spacing
+                None,  # dt
+                None,  # nt
+                None,  # step_ratio
+                None,  # accuracy
+                None,  # pml_width
+                None,  # n_shots
+                None,  # forward_callback
+                None,  # backward_callback
+                None,  # callback_frequency
+                None,  # storage_mode
+                None,  # storage_path
+                None,  # storage_compression
+                grad_wfc[s],
+                grad_wfp[s],
+                *[gwf[s] for gwf in grad_psi],
+                *[gwf[s] for gwf in grad_zeta],
                 grad_wfcsc[s],
                 grad_wfpsc[s],
                 *[gwf[s] for gwf in grad_psisc],
                 *[gwf[s] for gwf in grad_zetasc],
             )
-        )
-            scatter,
-            scatter_batched,
-            n_shots,
-            model_shape,
-            storage_manager.storage_mode,
-            is_cuda,
-            aux,
-        )
-
         return (
-            v,
-            scatter,
-            grad_r,
-            grad_rsc,
-            pml_profiles,
-            sources_i,
-            receivers_i,
-            receiverssc_i,
-            grad_wfc,
-            grad_wfp,
-            grad_psi,
-            grad_psin,
-            grad_zeta,
-            grad_zetan,
-            grad_wfcsc,
-            grad_wfpsc,
-            grad_psisc,
-            grad_psinsc,
-            grad_zetasc,
-            grad_zetansc,
-            grad_f,
-            grad_fsc,
-            grad_v,
+            None,
             grad_scatter,
-            grad_v_tmp_ptr,
-            grad_scatter_tmp_ptr,
-            grad_v_tmp,
-            grad_scatter_tmp,
-            pml_b,
-            pml_e,
-            v_batched,
-            scatter_batched,
-            stream,
-            aux,
-            grid_spacing,
-            model_shape,
-            n_sources_per_shot,
-            n_receivers_per_shot,
-            n_receiverssc_per_shot,
-            pml_width,
-        )
-
-    @staticmethod
-    @torch.autograd.function.once_differentiable
-    def backward(
-        ctx: Any,
-        *args: torch.Tensor,
-    ) -> Tuple[Optional[torch.Tensor], ...]:
-        """Backward propagation of the scalar Born wave equation.
-
-        Args:
-            ctx: Context object from the forward pass.
-            args: Gradients of the outputs of the forward pass.
-
-        Returns:
-            A tuple containing the gradients with respect to the inputs of the
-            forward pass.
-
-        """
-        grad_r = args[-2]
-        grad_rsc = args[-1]
-        grad_wavefields = list(args[:-2])
-        del args
-
-        (
-            v,
-            scatter,
-            grad_r,
-            grad_rsc,
-            pml_profiles,
-            sources_i,
-            receivers_i,
-            receiverssc_i,
-            grad_wfc,
-            grad_wfp,
-            grad_psi,
-            grad_psin,
-            grad_zeta,
-            grad_zetan,
-            grad_wfcsc,
-            grad_wfpsc,
-            grad_psisc,
-            grad_psinsc,
-            grad_zetasc,
-            grad_zetansc,
-            grad_f,
+            None,
             grad_fsc,
-            grad_v,
-            grad_scatter,
-            grad_v_tmp_ptr,
-            grad_scatter_tmp_ptr,
-            _grad_v_tmp,
-            _grad_scatter_tmp,
-            pml_b,
-            pml_e,
-            v_batched,
-            scatter_batched,
-            stream,
-            aux,
-            grid_spacing,
-            model_shape,
-            n_sources_per_shot,
-            n_receivers_per_shot,
-            n_receiverssc_per_shot,
-            pml_width,
-        ) = ScalarBornForwardFunc._backward_setup(
-            ctx, grad_r, grad_rsc, grad_wavefields
-        )
-
-        ndim = len(grid_spacing)
-        dt = ctx.dt
-        nt = ctx.nt
-        n_shots = ctx.n_shots
-        step_ratio = ctx.step_ratio
-        accuracy = ctx.accuracy
-        source_amplitudes_requires_grad = ctx.source_amplitudes_requires_grad
-        source_amplitudessc_requires_grad = ctx.source_amplitudessc_requires_grad
-        backward_callback = ctx.backward_callback
-        callback_frequency = ctx.callback_frequency
-        non_sc = ctx.non_sc
-        _device = v.device
-        dtype = v.dtype
-        fd_pad = accuracy // 2
-        storage_manager = ctx.storage_manager
-
-        backward = deepwave.backend_utils.get_backend_function(
-            "scalar_born",
-            ndim,
-            "backward",
-            accuracy,
-            dtype,
-            v.device,
-        )
-        backward_sc = deepwave.backend_utils.get_backend_function(
-            "scalar_born",
-            ndim,
-            "backward",
-            accuracy,
-            dtype,
-            v.device,
-            extra="_sc",
-        )
-
-        rdx = [1 / dx for dx in grid_spacing]
-        rdx2 = [1 / dx**2 for dx in grid_spacing]
-
-        if non_sc:
-            grad_wfp = -grad_wfp
-        grad_wfpsc = -grad_wfpsc
-
-        if backward_callback is None:
-            callback_frequency = nt // step_ratio
-
-        dim_names = ["z", "y", "x"]
-
-        if grad_wfcsc.numel() > 0 and nt > 0:
-            if non_sc:
-                for step in range(nt // step_ratio, 0, -callback_frequency):
-                    step_nt = min(step, callback_frequency)
-                    if (
-                        backward(
-                            v.data_ptr(),
-                            scatter.data_ptr(),
-                            grad_r.data_ptr(),
-                            grad_rsc.data_ptr(),
-                            grad_wfc.data_ptr(),
-                            grad_wfp.data_ptr(),
-                            *[field.data_ptr() for field in grad_psi],
-                            *[field.data_ptr() for field in grad_psin],
-                            *[field.data_ptr() for field in grad_zeta],
-                            *[field.data_ptr() for field in grad_zetan],
-                            grad_wfcsc.data_ptr(),
-                            grad_wfpsc.data_ptr(),
-                            *[field.data_ptr() for field in grad_psisc],
-                            *[field.data_ptr() for field in grad_psinsc],
-                            *[field.data_ptr() for field in grad_zetasc],
-                            *[field.data_ptr() for field in grad_zetansc],
-                            *storage_manager.storage_ptrs,
-                            grad_f.data_ptr(),
-                            grad_fsc.data_ptr(),
-                            grad_v.data_ptr(),
-                            grad_scatter.data_ptr(),
-                            grad_v_tmp_ptr,
-                            grad_scatter_tmp_ptr,
-                            *[profile.data_ptr() for profile in pml_profiles],
-                            sources_i.data_ptr(),
-                            receivers_i.data_ptr(),
-                            receiverssc_i.data_ptr(),
-                            *rdx,
-                            *rdx2,
-                            dt**2,
-                            step_nt * step_ratio,
-                            n_shots,
-                            *model_shape,
-                            n_sources_per_shot * source_amplitudes_requires_grad,
-                            n_sources_per_shot * source_amplitudessc_requires_grad,
-                            n_receivers_per_shot,
-                            n_receiverssc_per_shot,
-                            step_ratio,
-                            storage_manager.storage_mode,
-                            storage_manager.shot_bytes_uncomp,
-                            storage_manager.shot_bytes_comp,
-                            v.requires_grad
-                            and storage_manager.storage_mode
-                            != deepwave.common.StorageMode.NONE,
-                            scatter.requires_grad
-                            and storage_manager.storage_mode
-                            != deepwave.common.StorageMode.NONE,
-                            v_batched,
-                            scatter_batched,
-                            storage_manager.storage_compression,
-                            step * step_ratio,
-                            *pml_b,
-                            *pml_e,
-                            aux,
-                            stream,
-                        )
-                        != 0
-                    ):
-                        raise RuntimeError("Compiled backend failed.")
-                    if (step_nt * step_ratio) % 2 != 0:
-                        (
-                            grad_wfc,
-                            grad_wfp,
-                            grad_psi,
-                            grad_psin,
-                            grad_zeta,
-                            grad_zetan,
-                        ) = (
-                            grad_wfp,
-                            grad_wfc,
-                            grad_psin,
-                            grad_psi,
-                            grad_zetan,
-                            grad_zeta,
-                        )
-                        (
-                            grad_wfcsc,
-                            grad_wfpsc,
-                            grad_psisc,
-                            grad_psinsc,
-                            grad_zetasc,
-                            grad_zetansc,
-                        ) = (
-                            grad_wfpsc,
-                            grad_wfcsc,
-                            grad_psinsc,
-                            grad_psisc,
-                            grad_zetansc,
-                            grad_zetasc,
-                        )
-                    if backward_callback is not None:
-                        callback_wavefields = {
-                            "wavefield_0": grad_wfc,
-                            "wavefield_m1": grad_wfp,
-                            "wavefield_sc_0": grad_wfcsc,
-                            "wavefield_sc_m1": grad_wfpsc,
-                        }
-                        for i in range(ndim):
-                            callback_wavefields[f"psi{dim_names[-ndim + i]}_m1"] = (
-                                grad_psi[i]
-                            )
-                            callback_wavefields[f"zeta{dim_names[-ndim + i]}_m1"] = (
-                                grad_zeta[i]
-                            )
-                            callback_wavefields[f"psi{dim_names[-ndim + i]}_sc_m1"] = (
-                                grad_psisc[i]
-                            )
-                            callback_wavefields[f"zeta{dim_names[-ndim + i]}_sc_m1"] = (
-                                grad_zetasc[i]
-                            )
-                        backward_callback(
-                            deepwave.common.CallbackState(
-                                dt,
-                                step - step_nt,
-                                callback_wavefields,
-                                {"v": v, "scatter": scatter},
-                                {"v": grad_v, "scatter": grad_scatter},
-                                [fd_pad] * 2 * ndim,
-                                pml_width,
-                            )
-                        )
-            else:
-                for step in range(nt // step_ratio, 0, -callback_frequency):
-                    step_nt = min(step, callback_frequency)
-                    if (
-                        backward_sc(
-                            v.data_ptr(),
-                            grad_rsc.data_ptr(),
-                            grad_wfcsc.data_ptr(),
-                            grad_wfpsc.data_ptr(),
-                            *[field.data_ptr() for field in grad_psisc],
-                            *[field.data_ptr() for field in grad_psinsc],
-                            *[field.data_ptr() for field in grad_zetasc],
-                            *[field.data_ptr() for field in grad_zetansc],
-                            *storage_manager.storage_ptrs[:5],  # Not scattered
-                            grad_fsc.data_ptr(),
-                            grad_scatter.data_ptr(),
-                            grad_scatter_tmp_ptr,
-                            *[profile.data_ptr() for profile in pml_profiles],
-                            sources_i.data_ptr(),
-                            receiverssc_i.data_ptr(),
-                            *rdx,
-                            *rdx2,
-                            dt**2,
-                            step_nt * step_ratio,
-                            n_shots,
-                            *model_shape,
-                            n_sources_per_shot * source_amplitudessc_requires_grad,
-                            n_receiverssc_per_shot,
-                            step_ratio,
-                            storage_manager.storage_mode,
-                            storage_manager.shot_bytes_uncomp,
-                            storage_manager.shot_bytes_comp,
-                            scatter.requires_grad
-                            and storage_manager.storage_mode
-                            != deepwave.common.StorageMode.NONE,
-                            v_batched,
-                            scatter_batched,
-                            storage_manager.storage_compression,
-                            step * step_ratio,
-                            *pml_b,
-                            *pml_e,
-                            aux,
-                            stream,
-                        )
-                        != 0
-                    ):
-                        raise RuntimeError("Compiled backend failed.")
-                    if (step_nt * step_ratio) % 2 != 0:
-                        (
-                            grad_wfcsc,
-                            grad_wfpsc,
-                            grad_psisc,
-                            grad_psinsc,
-                            grad_zetasc,
-                            grad_zetansc,
-                        ) = (
-                            grad_wfpsc,
-                            grad_wfcsc,
-                            grad_psinsc,
-                            grad_psisc,
-                            grad_zetansc,
-                            grad_zetasc,
-                        )
-                    if backward_callback is not None:
-                        callback_wavefields = {
-                            "wavefield_sc_0": grad_wfcsc,
-                            "wavefield_sc_m1": grad_wfpsc,
-                        }
-                        for i in range(ndim):
-                            callback_wavefields[f"psi{dim_names[-ndim + i]}_sc_m1"] = (
-                                grad_psisc[i]
-                            )
-                            callback_wavefields[f"zeta{dim_names[-ndim + i]}_sc_m1"] = (
-                                grad_zetasc[i]
-                            )
-                        backward_callback(
-                            deepwave.common.CallbackState(
-                                dt,
-                                step - step_nt,
-                                callback_wavefields,
-                                {"v": v, "scatter": scatter},
-                                {"scatter": grad_scatter},
-                                [fd_pad] * 2 * ndim,
-                                pml_width,
-                            )
-                        )
-
-        s = (
-            slice(None),
-            *(slice(fd_pad, dim - fd_pad) for dim in model_shape),
-        )
-        grad_wfpsc = -grad_wfpsc
-        if non_sc:
-            grad_wfp = -grad_wfp
-            return (
-                (
-                    grad_v,
-                    grad_scatter,
-                    grad_f,
-                    grad_fsc,
-                )
-                + (None,) * 18
-                + (
-                    grad_wfc[s],
-                    grad_wfp[s],
-                    *[gwf[s] for gwf in grad_psi],
-                    *[gwf[s] for gwf in grad_zeta],
-                    grad_wfcsc[s],
-                    grad_wfpsc[s],
-                    *[gwf[s] for gwf in grad_psisc],
-                    *[gwf[s] for gwf in grad_zetasc],
-                )
-            )
-        return (
-            (
-                None,
-                grad_scatter,
-                None,
-                grad_fsc,
-            )
-            + (None,) * (20 + 2 * ndim)
-            + (
-                grad_wfcsc[s],
-                grad_wfpsc[s],
-                *[gwf[s] for gwf in grad_psisc],
-                *[gwf[s] for gwf in grad_zetasc],
-            )
+            None,  # pml_profiles
+            None,  # sources_i
+            None,  # unused_tensor
+            None,  # receivers_i
+            None,  # receiverssc_i
+            None,  # grid_spacing
+            None,  # dt
+            None,  # nt
+            None,  # step_ratio
+            None,  # accuracy
+            None,  # pml_width
+            None,  # n_shots
+            None,  # forward_callback
+            None,  # backward_callback
+            None,  # callback_frequency
+            None,  # storage_mode
+            None,  # storage_path
+            None,  # storage_compression
+            *[None] * (2 + 2 * ndim),
+            grad_wfcsc[s],
+            grad_wfpsc[s],
+            *[gwf[s] for gwf in grad_psisc],
+            *[gwf[s] for gwf in grad_zetasc],
         )
 
 

@@ -100,16 +100,16 @@ class IntermediateStorage:
 
     def get_ptrs(
         self,
-    ) -> Tuple[int, int, int, int, ctypes.Array[ctypes.c_char_p]]:
+    ) -> Tuple[int, int, int, int, int]:
         """Return pointers to the storage and filenames array."""
         return (
-            self.store_1a.data_ptr(),
-            self.store_1b.data_ptr(),
-            self.store_2.data_ptr(),
-            self.store_3.data_ptr(),
-            self.temporary_storage.get_filenames_ptr()
+            self.store_1a.data_ptr() if self.store_1a.numel() > 0 else 0,
+            self.store_1b.data_ptr() if self.store_1b.numel() > 0 else 0,
+            self.store_2.data_ptr() if self.store_2.numel() > 0 else 0,
+            self.store_3.data_ptr() if self.store_3.numel() > 0 else 0,
+            self.temporary_storage.get_filenames_ptr().value
             if self.temporary_storage is not None
-            else (ctypes.c_char_p * 0)(),
+            else 0,
         )
 
 
@@ -2088,7 +2088,7 @@ def setup_storage(
     return storage_manager
 
 
-def prepare_wavefields(
+def prepare_initial_wavefields(
     wavefields: List[torch.Tensor],
     ndim: int,
     accuracy: int,
@@ -2158,7 +2158,7 @@ def setup_backward_gradients(
     nt: int,
     source_amplitudes_requires_grad_list: List[bool],
     n_sources_per_shot_list: List[int],
-) -> Tuple[List[torch.Tensor], List[int], List[torch.Tensor]]:
+) -> Tuple[List[torch.Tensor], List[torch.Tensor], List[int], List[torch.Tensor]]:
     """Handle model and source gradient buffer setup.
 
     Args:
@@ -2174,12 +2174,13 @@ def setup_backward_gradients(
         n_sources_per_shot_list: List of source counts for each source type.
 
     Returns:
-        Tuple of (grad_models, grad_models_tmp_ptr, grad_f_list).
+        Tuple of (grad_models, grad_models_tmp, grad_models_tmp_ptr, grad_f_list).
     """
     grad_models = []
+    grad_models_tmp = []
     grad_models_tmp_ptr = []
     for i, model in enumerate(models):
-        gm, _, gmtp = setup_model_grad_buffer(
+        gm, gmt, gmtp = setup_model_grad_buffer(
             model,
             model_batched_list[i],
             n_shots,
@@ -2189,6 +2190,7 @@ def setup_backward_gradients(
             aux,
         )
         grad_models.append(gm)
+        grad_models_tmp.append(gmt)
         grad_models_tmp_ptr.append(gmtp)
 
     grad_f_list = []
@@ -2199,7 +2201,7 @@ def setup_backward_gradients(
             grad_f.fill_(0)
         grad_f_list.append(grad_f)
 
-    return grad_models, grad_models_tmp_ptr, grad_f_list
+    return grad_models, grad_models_tmp, grad_models_tmp_ptr, grad_f_list
 
 
 def get_pml_bounds(
@@ -2225,12 +2227,21 @@ def get_pml_bounds(
     """
     fd_pad = accuracy // 2
     if staggered:
-        # Staggered grid uses different logic for bounds
-        pml_b = [pml_width[2 * i] + fd_pad for i in range(ndim)]
-        pml_e = [
-            max(pml_b[i], model_shape[i] - pml_width[2 * i + 1] - (fd_pad - 1))
-            for i in range(ndim)
-        ]
+        if multiplier == 2:
+            pml_b = [pml_width[2 * i] + fd_pad for i in range(ndim)]
+            pml_e = [
+                max(pml_b[i], model_shape[i] - pml_width[2 * i + 1] - (fd_pad - 1))
+                for i in range(ndim)
+            ]
+        else:
+            pml_b = [
+                min(pml_width[2 * i] + 2 * fd_pad, model_shape[i] - (fd_pad - 1))
+                for i in range(ndim)
+            ]
+            pml_e = [
+                max(pml_b[i], model_shape[i] - pml_width[2 * i + 1] - 2 * fd_pad + 1)
+                for i in range(ndim)
+            ]
     else:
         pml_b = [
             min(pml_width[2 * i] + multiplier * fd_pad, model_shape[i] - fd_pad)
@@ -3172,7 +3183,7 @@ def setup_model_grad_buffer(
 
     grad_model = torch.empty(0, device=model.device, dtype=model.dtype)
     grad_model_tmp = torch.empty(0, device=model.device, dtype=model.dtype)
-    grad_model_tmp_ptr = grad_model.data_ptr()
+    grad_model_tmp_ptr = 0
 
     if model.requires_grad:
         grad_model.resize_(*model.shape)

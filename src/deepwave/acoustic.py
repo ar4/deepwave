@@ -576,9 +576,9 @@ def acoustic(
             source_amplitudes_out[i] = (
                 src_amp
                 * (
-                    model.view(-1, flat_model_shape)
-                    .expand(n_shots, -1)
-                    .gather(1, sources_i_masked)
+                    model.view(1, -1, flat_model_shape)
+                    .expand(1, n_shots, -1)
+                    .gather(2, sources_i_masked.unsqueeze(0).expand(1, -1, -1))
                 )
                 * dt
             )
@@ -604,7 +604,6 @@ def acoustic(
     outputs = list(
         acoustic_func(
             python_backend,
-            pml_profiles,
             grid_spacing,
             dt,
             nt,
@@ -620,6 +619,7 @@ def acoustic(
             storage_compression,
             *models,
             *source_amplitudes_out,
+            *pml_profiles,
             *sources_i,
             *receivers_i,
             *wavefields,
@@ -696,7 +696,6 @@ class AcousticForwardFunc(torch.autograd.Function):
     @staticmethod
     def _parse_args(
         ndim: int,
-        pml_profiles: List[torch.Tensor],
         storage_mode_str: str,
         args: Tuple[torch.Tensor, ...],
     ) -> Tuple[
@@ -712,29 +711,31 @@ class AcousticForwardFunc(torch.autograd.Function):
     ]:
         args_list = list(args)
 
-        # Models: [K, B_z, B_y, B_x] (3D: 4 models),
-        #         [K, B_y, B_x] (2D: 3 models),
-        #         [K, B_x] (1D: 2 models)
-        num_models = ndim + 1
-
-        num_source_amps = ndim + 1
-        num_source_locs = ndim + 1
-        num_recv_locs = ndim + 1
-
-        # Wavefields:
-        # 3D: p, vz, vy, vx, 3*phi, 3*psi -> 10
-        # 2D: p, vy, vx, 2*phi, 2*psi -> 7
-        # 1D: p, vx, phi, psi -> 4
-        num_wavefields = 1 + ndim + ndim + ndim
-
+        # Wavefields: 1 + 3*ndim
+        num_wavefields = 1 + 3 * ndim
         wavefields = args_list[-num_wavefields:]
         del args_list[-num_wavefields:]
+
+        num_recv_locs = ndim + 1
         receivers_i = args_list[-num_recv_locs:]
         del args_list[-num_recv_locs:]
+
+        num_source_locs = ndim + 1
         sources_i = args_list[-num_source_locs:]
         del args_list[-num_source_locs:]
+
+        # pml_profiles: 4*ndim
+        num_pml_profiles = 4 * ndim
+        pml_profiles = args_list[-num_pml_profiles:]
+        del args_list[-num_pml_profiles:]
+
+        # source_amplitudes: ndim + 1
+        num_source_amps = ndim + 1
         source_amplitudes = args_list[-num_source_amps:]
         del args_list[-num_source_amps:]
+
+        # Models: ndim + 1
+        num_models = ndim + 1
         models = args_list[-num_models:]
         del args_list[-num_models:]
 
@@ -800,7 +801,12 @@ class AcousticForwardFunc(torch.autograd.Function):
             or any(w.requires_grad for w in wavefields)
         ):
             ctx.save_for_backward(
-                *models, *sources_i, *receivers_i, *source_amplitudes, *pml_profiles
+                *models,
+                *source_amplitudes,
+                *pml_profiles,
+                *sources_i,
+                *receivers_i,
+                *wavefields,
             )
             ctx.grid_spacing = grid_spacing
             ctx.dt = dt
@@ -836,33 +842,41 @@ class AcousticForwardFunc(torch.autograd.Function):
 
         saved_tensors = list(ctx.saved_tensors)
         num_models = ndim + 1
-        num_receiver_types = ndim + 1
-        num_source_types = ndim + 1
+        num_source_amps = ndim + 1
+        num_pml_profiles = 4 * ndim
+        num_source_locs = ndim + 1
+        num_receiver_locs = ndim + 1
+        num_wavefields = 1 + 3 * ndim
 
         models = saved_tensors[:num_models]
         del saved_tensors[:num_models]
-        sources_i = saved_tensors[:num_source_types]
-        del saved_tensors[:num_source_types]
-        receivers_i = saved_tensors[:num_receiver_types]
-        del saved_tensors[:num_receiver_types]
-        source_amplitudes = saved_tensors[:num_source_types]
-        del saved_tensors[:num_source_types]
-        pml_profiles = saved_tensors
+        source_amplitudes = saved_tensors[:num_source_amps]
+        del saved_tensors[:num_source_amps]
+        pml_profiles = saved_tensors[:num_pml_profiles]
+        del saved_tensors[:num_pml_profiles]
+        sources_i = saved_tensors[:num_source_locs]
+        del saved_tensors[:num_source_locs]
+        receivers_i = saved_tensors[:num_receiver_locs]
+        del saved_tensors[:num_receiver_locs]
+        wavefields = saved_tensors[:num_wavefields]
+        del saved_tensors[:num_wavefields]
 
         (
             grad_r,
             models,
-            sources_i,
-            receivers_i,
             source_amplitudes,
             pml_profiles,
+            sources_i,
+            receivers_i,
+            wavefields,
         ) = deepwave.common.ensure_contiguous(
             grad_r,
             models,
-            sources_i,
-            receivers_i,
             source_amplitudes,
             pml_profiles,
+            sources_i,
+            receivers_i,
+            wavefields,
         )
         return (
             grad_wavefields,
@@ -917,7 +931,6 @@ class AcousticForwardFunc(torch.autograd.Function):
     @staticmethod
     def forward(
         ctx: Any,
-        pml_profiles: List[torch.Tensor],
         grid_spacing: List[float],
         dt: float,
         nt: int,
@@ -945,7 +958,7 @@ class AcousticForwardFunc(torch.autograd.Function):
             device,
             dtype,
             storage_mode,
-        ) = AcousticForwardFunc._parse_args(ndim, pml_profiles, storage_mode_str, args)
+        ) = AcousticForwardFunc._parse_args(ndim, storage_mode_str, args)
         del args
 
         is_cuda = models[0].is_cuda
@@ -964,7 +977,7 @@ class AcousticForwardFunc(torch.autograd.Function):
             storage_path,
             device,
             is_cuda,
-            [m.requires_grad for m in models],
+            [models[0].requires_grad] + [models[1].requires_grad] * (len(models) - 1),
         )
 
         AcousticForwardFunc._save_ctx(
@@ -988,19 +1001,24 @@ class AcousticForwardFunc(torch.autograd.Function):
         )
 
         size_with_batch = (n_shots, *model_shape)
-        wavefields = AcousticForwardFunc._prepare_wavefields(
-            wavefields, ndim, accuracy, device, dtype, size_with_batch, pml_width
+        wavefields = deepwave.common.prepare_initial_wavefields(
+            wavefields,
+            ndim,
+            accuracy,
+            device,
+            dtype,
+            size_with_batch,
+            pml_width,
+            staggered=True,
         )
 
         fd_pad = accuracy // 2
         fd_pad_list = [fd_pad, fd_pad - 1] * ndim
 
         # Setup PML bounds
-        pml_b = [pml_width[2 * i] + fd_pad for i in range(ndim)]
-        pml_e = [
-            max(pml_b[i], model_shape[i] - pml_width[2 * i + 1] - (fd_pad - 1))
-            for i in range(ndim)
-        ]
+        pml_b, pml_e = deepwave.common.get_pml_bounds(
+            pml_width, accuracy, model_shape, ndim, staggered=True
+        )
 
         model_batched = [m.ndim == ndim + 1 and m.shape[0] > 1 for m in models[:2]]
 
@@ -1147,6 +1165,11 @@ class AcousticForwardFunc(torch.autograd.Function):
         accuracy = ctx.accuracy
         pml_width = ctx.pml_width
         source_amplitudes_requires_grad = ctx.source_amplitudes_requires_grad
+        if len(source_amplitudes_requires_grad) < ndim + 1:
+            source_amplitudes_requires_grad = (
+                source_amplitudes_requires_grad
+                + [False] * (ndim + 1 - len(source_amplitudes_requires_grad))
+            )
         backward_callback = ctx.backward_callback
         callback_frequency = ctx.callback_frequency
         storage_manager = ctx.storage_manager
@@ -1169,11 +1192,12 @@ class AcousticForwardFunc(torch.autograd.Function):
 
         (
             grad_models,
+            grad_models_tmp,
             grad_models_tmp_ptr,
             grad_f_list,
         ) = deepwave.common.setup_backward_gradients(
             models,
-            model_batched,
+            [model_batched[0]] + [model_batched[1]] * (len(models) - 1),
             n_shots,
             model_shape,
             storage_manager.storage_mode,
@@ -1197,7 +1221,7 @@ class AcousticForwardFunc(torch.autograd.Function):
         zero_edges_and_interiors(grad_wavefields, ndim, fd_pad, fd_pad_list, pml_width)
 
         pml_b, pml_e = deepwave.common.get_pml_bounds(
-            pml_width, accuracy, model_shape, ndim, multiplier=2, staggered=True
+            pml_width, accuracy, model_shape, ndim, staggered=True
         )
 
         backward = deepwave.backend_utils.get_backend_function(
@@ -1213,6 +1237,12 @@ class AcousticForwardFunc(torch.autograd.Function):
             callback_models,
             callback_grad_models,
         ) = AcousticForwardFunc._setup_callback_args(ndim, models, grad_models)
+
+        import warnings
+        for i, g in enumerate(grad_r):
+            warnings.warn(f"DEBUG: grad_r[{i}] sum={g.sum().item()}")
+        for i, g in enumerate(grad_wavefields):
+            warnings.warn(f"DEBUG: grad_wavefield[{i}] sum={g.sum().item()}")
 
         if grad_wavefields[0].numel() > 0 and nt > 0:
             for step in range(nt // step_ratio, 0, -callback_frequency):
@@ -1285,15 +1315,26 @@ class AcousticForwardFunc(torch.autograd.Function):
             slice(None),
             *(slice(fd_pad, shape - (fd_pad - 1)) for shape in model_shape),
         )
-        num_source_types = ndim + 1
-        num_receiver_types = ndim + 1
-        return tuple(
-            [None] * 14
-            + grad_models
-            + grad_f_list
-            + [None] * num_source_types  # sources_i
-            + [None] * num_receiver_types  # receivers_i
-            + [w[s] for w in grad_wavefields]
+        return (
+            None,  # grid_spacing
+            None,  # dt
+            None,  # nt
+            None,  # step_ratio
+            None,  # accuracy
+            None,  # pml_width
+            None,  # n_shots
+            None,  # forward_callback
+            None,  # backward_callback
+            None,  # callback_frequency
+            None,  # storage_mode_str
+            None,  # storage_path
+            None,  # storage_compression
+            *grad_models,
+            *grad_f_list,
+            *[None] * len(pml_profiles),
+            *[None] * len(sources_i),
+            *[None] * len(receivers_i),
+            *[w[s] for w in grad_wavefields],
         )
 
 
@@ -1378,7 +1419,6 @@ _update_pressure_opt = update_pressure
 
 
 def acoustic_python(
-    pml_profiles: List[torch.Tensor],
     grid_spacing: List[float],
     dt: float,
     nt: int,
@@ -1406,19 +1446,28 @@ def acoustic_python(
     ndim = len(grid_spacing)
     args_list = list(args)
 
-    num_models = ndim + 1
-    num_source_types = ndim + 1
-    num_receiver_types = ndim + 1
     num_wf = 1 + 3 * ndim
-
     wavefields = args_list[-num_wf:]
     del args_list[-num_wf:]
+
+    num_receiver_types = ndim + 1
     receivers_i = args_list[-num_receiver_types:]
     del args_list[-num_receiver_types:]
+
+    num_source_types = ndim + 1
     sources_i = args_list[-num_source_types:]
     del args_list[-num_source_types:]
-    source_amplitudes = args_list[-num_source_types:]
-    del args_list[-num_source_types:]
+
+    # pml_profiles: 4*ndim (3D: 12, 2D: 8, 1D: 4)
+    num_pml_profiles = 4 * ndim
+    pml_profiles = args_list[-num_pml_profiles:]
+    del args_list[-num_pml_profiles:]
+
+    num_source_amps = ndim + 1
+    source_amplitudes = args_list[-num_source_amps:]
+    del args_list[-num_source_amps:]
+
+    num_models = ndim + 1
     models = args_list[-num_models:]
     del args_list[-num_models:]
 
@@ -1426,12 +1475,16 @@ def acoustic_python(
     fd_pad_list = [fd_pad, fd_pad - 1] * ndim
     size_with_batch = (n_shots, *models[0].shape[-ndim:])
 
-    wavefields = [
-        deepwave.common.create_or_pad(
-            w, fd_pad_list, models[0].device, models[0].dtype, size_with_batch
-        )
-        for w in wavefields
-    ]
+    wavefields = deepwave.common.prepare_initial_wavefields(
+        wavefields,
+        ndim,
+        accuracy,
+        models[0].device,
+        models[0].dtype,
+        size_with_batch,
+        pml_width,
+        staggered=True,
+    )
 
     zero_edges_and_interiors(wavefields, ndim, fd_pad, fd_pad_list, pml_width)
 
@@ -1466,7 +1519,11 @@ def acoustic_python(
 
         src_amp_masked = torch.zeros_like(source_amplitudes[i])
         if source_amplitudes[i].numel() > 0:
-            src_amp_masked[:, src_mask] = source_amplitudes[i][:, src_mask]
+            nt_src, n_shots_src, n_sources_src = source_amplitudes[i].shape
+            src_mask_src = src_mask[:n_shots_src]
+            src_amp_masked[:nt_src, src_mask_src] = source_amplitudes[i][
+                :, src_mask_src
+            ]
 
         masked_sources.append(
             (sources_i_masked, src_amp_masked, i)  # i is the target_idx
@@ -1601,6 +1658,19 @@ def acoustic_python(
 
 def acoustic_func(
     python_backend: Union[Literal["eager", "jit", "compile"], bool] = False,
+    grid_spacing: List[float] = [],
+    dt: float = 0.0,
+    nt: int = 0,
+    step_ratio: int = 0,
+    accuracy: int = 0,
+    pml_width: List[int] = [],
+    n_shots: int = 0,
+    forward_callback: Optional[deepwave.common.Callback] = None,
+    backward_callback: Optional[deepwave.common.Callback] = None,
+    callback_frequency: int = 0,
+    storage_mode_str: str = "",
+    storage_path: str = "",
+    storage_compression: bool = False,
     *args: Any,
 ) -> Tuple[torch.Tensor, ...]:
     """Helper function to apply the AcousticForwardFunc."""
@@ -1640,11 +1710,41 @@ def acoustic_func(
             _update_pressure_opt = update_pressure
         else:
             raise ValueError(f"Unknown python_backend value {mode!r}.")
-        return acoustic_python(*args)
+        return acoustic_python(
+            grid_spacing,
+            dt,
+            nt,
+            step_ratio,
+            accuracy,
+            pml_width,
+            n_shots,
+            forward_callback,
+            backward_callback,
+            callback_frequency,
+            storage_mode_str,
+            storage_path,
+            storage_compression,
+            *args,
+        )
 
     func = AcousticForwardFunc.apply
 
     return cast(
         "Tuple[torch.Tensor, ...]",
-        func(*args),  # type: ignore[no-untyped-call]
+        func(
+            grid_spacing,
+            dt,
+            nt,
+            step_ratio,
+            accuracy,
+            pml_width,
+            n_shots,
+            forward_callback,
+            backward_callback,
+            callback_frequency,
+            storage_mode_str,
+            storage_path,
+            storage_compression,
+            *args,
+        ),  # type: ignore[no-untyped-call]
     )

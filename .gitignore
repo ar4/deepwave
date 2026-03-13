@@ -149,3 +149,10 @@ cython_debug/
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Chatbot config
+GEMINI.md
+SPECIFICATION.md
+
+# libs
+src/deepwave.libs
