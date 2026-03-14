@@ -1221,7 +1221,7 @@ class AcousticForwardFunc(torch.autograd.Function):
         zero_edges_and_interiors(grad_wavefields, ndim, fd_pad, fd_pad_list, pml_width)
 
         pml_b, pml_e = deepwave.common.get_pml_bounds(
-            pml_width, accuracy, model_shape, ndim, staggered=True
+            pml_width, accuracy, model_shape, ndim, multiplier=3, staggered=True
         )
 
         backward = deepwave.backend_utils.get_backend_function(
@@ -1237,12 +1237,6 @@ class AcousticForwardFunc(torch.autograd.Function):
             callback_models,
             callback_grad_models,
         ) = AcousticForwardFunc._setup_callback_args(ndim, models, grad_models)
-
-        import warnings
-        for i, g in enumerate(grad_r):
-            warnings.warn(f"DEBUG: grad_r[{i}] sum={g.sum().item()}")
-        for i, g in enumerate(grad_wavefields):
-            warnings.warn(f"DEBUG: grad_wavefield[{i}] sum={g.sum().item()}")
 
         if grad_wavefields[0].numel() > 0 and nt > 0:
             for step in range(nt // step_ratio, 0, -callback_frequency):
