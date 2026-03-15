@@ -1994,7 +1994,7 @@ class ScalarBackwardFunc(torch.autograd.Function):
             wfp[s],
             -wfc[s],
             *[wf[s] for wf in psin],
-            *[wf[s] for wf in zeta],
+            *[wf[s] for wf in zetan],
         )
 
 
@@ -2131,17 +2131,6 @@ def scalar_python(
         )
         for wavefield in wavefields
     ]
-
-    # Zero the interior of the PML variables
-    shape = v.shape[1:]
-    ndim = len(shape)
-    for i in range(ndim):
-        wavefields[2 + i] = deepwave.common.zero_interior(
-            wavefields[2 + i], fd_pad, pml_width, i
-        )
-        wavefields[2 + ndim + i] = deepwave.common.zero_interior(
-            wavefields[2 + ndim + i], fd_pad, pml_width, i
-        )
 
     device = v.device
     dtype = v.dtype
