@@ -100,16 +100,16 @@ class IntermediateStorage:
 
     def get_ptrs(
         self,
-    ) -> Tuple[int, int, int, int, int]:
+    ) -> Tuple[int, int, int, int, Union[int, ctypes.Array[ctypes.c_char_p]]]:
         """Return pointers to the storage and filenames array."""
         return (
             self.store_1a.data_ptr() if self.store_1a.numel() > 0 else 0,
             self.store_1b.data_ptr() if self.store_1b.numel() > 0 else 0,
             self.store_2.data_ptr() if self.store_2.numel() > 0 else 0,
             self.store_3.data_ptr() if self.store_3.numel() > 0 else 0,
-            self.temporary_storage.get_filenames_ptr().value
+            self.temporary_storage.get_filenames_ptr()
             if self.temporary_storage is not None
-            else 0,
+            else (ctypes.c_char_p * 0)(),
         )
 
 
