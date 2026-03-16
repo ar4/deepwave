@@ -666,7 +666,7 @@ class ScalarBornForwardFunc(torch.autograd.Function):
             storage_path,
             device,
             is_cuda,
-            [v.requires_grad, scatter.requires_grad],
+            [v.requires_grad or scatter.requires_grad, v.requires_grad],
         )
 
         bg_wavefield_requires_grad = any(

@@ -1989,12 +1989,12 @@ class ScalarBackwardFunc(torch.autograd.Function):
             None,
             gradgrad_wfp[s],
             gradgrad_wfc[s],
-            *[wf[s] for wf in gradgrad_psin],
+            *[wf[s] for wf in gradgrad_psi],
             *[wf[s] for wf in gradgrad_zeta],
             wfp[s],
             -wfc[s],
-            *[wf[s] for wf in psin],
-            *[wf[s] for wf in zetan],
+            *[wf[s] for wf in psi],
+            *[wf[s] for wf in zeta],
         )
 
 
