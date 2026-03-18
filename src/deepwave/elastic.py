@@ -1084,11 +1084,21 @@ def zero_edges_and_interiors(
     pml_width: List[int],
     interior: bool = True,
 ) -> None:
-    """Zeros the edges and/or interiors of wavefields."""
+    """Zeros the edges and/or interiors of wavefields.
+
+    This function modifies the input `wavefields` in-place.
+
+    Args:
+        wavefields: A list of wavefield tensors to modify.
+        ndim: The number of spatial dimensions.
+        fd_pad: The finite difference padding.
+        fd_pad_list: A list of finite difference padding for each dimension.
+        pml_width: A list of PML widths for each dimension.
+        interior: If True, zeros the interior of the wavefields.
+    """
     num_vars = len(wavefields)
     half_grid_mask: List[List[int]] = [[] for _ in range(num_vars)]
     interior_mask: List[Tuple[int, int]] = []
-
     if ndim == 3:
         for i in [0, 2, 3, 5, 6, 7, 8, 9, 10, 11]:
             half_grid_mask[i].append(0)
@@ -1172,7 +1182,36 @@ class ElasticForwardFunc(torch.autograd.Function):
         storage_compression: bool,
         *args: torch.Tensor,
     ) -> Tuple[torch.Tensor, ...]:
-        """Performs the forward propagation of the elastic wave equation."""
+        """Performs the forward propagation of the elastic wave equation.
+
+        This method is called by PyTorch during the forward pass. It prepares
+        the input tensors, calls the appropriate C/CUDA function for wave
+        propagation, and saves necessary tensors for the backward pass.
+
+        Args:
+            ctx: A context object for saving information for the backward pass.
+            pml_profiles: List of PML profiles.
+            grid_spacing: Grid spacing for each spatial dimension.
+            dt: Time step interval.
+            nt: Total number of time steps.
+            step_ratio: Ratio between user dt and internal dt.
+            accuracy: Finite difference accuracy order.
+            pml_width: List of PML widths for each side.
+            n_shots: Number of shots in the batch.
+            forward_callback: The forward callback.
+            backward_callback: The backward callback.
+            callback_frequency: The callback frequency.
+            storage_mode_str: Storage mode ("device", "cpu", "disk", "none").
+            storage_path: Path for disk storage.
+            storage_compression: Whether to use compression.
+            args: Property models, source amplitudes, source locations (1D),
+                  receiver locations (1D), and initial wavefields.
+
+        Returns:
+            A tuple containing the final wavefields, memory variables, and
+            receiver amplitudes.
+
+        """
         ndim = len(grid_spacing)
         args_list = list(args)
 
@@ -1219,20 +1258,6 @@ class ElasticForwardFunc(torch.autograd.Function):
             raise AssertionError(
                 "Error parsing arguments for ElasticForwardFunc.forward"
             )
-
-        (
-            models,
-            source_amplitudes,
-            pml_profiles,
-            sources_i,
-            receivers_i,
-        ) = (
-            models,
-            source_amplitudes,
-            pml_profiles,
-            sources_i,
-            receivers_i,
-        )
 
         device = models[0].device
         dtype = models[0].dtype
@@ -1350,7 +1375,13 @@ class ElasticForwardFunc(torch.autograd.Function):
             staggered=True,
         )
 
-        zero_edges_and_interiors(wavefields, ndim, accuracy // 2, [accuracy // 2, accuracy // 2 - 1] * ndim, pml_width)
+        zero_edges_and_interiors(
+            wavefields,
+            ndim,
+            accuracy // 2,
+            [accuracy // 2, accuracy // 2 - 1] * ndim,
+            pml_width,
+        )
 
         pml_b, pml_e = deepwave.common.get_pml_bounds(
             pml_width, accuracy, model_shape, ndim, staggered=True
@@ -1520,7 +1551,20 @@ class ElasticForwardFunc(torch.autograd.Function):
         ctx: Any,
         *args: torch.Tensor,
     ) -> Tuple[Optional[torch.Tensor], ...]:
-        """Computes the gradients during the backward pass."""
+        """Computes the gradients during the backward pass.
+
+        This method is called by PyTorch during the backward pass to compute
+        gradients with respect to the inputs of the forward pass.
+
+        Args:
+            ctx: A context object with saved information from the forward pass.
+            args: Gradients of the outputs of the forward pass.
+
+        Returns:
+            A tuple containing the gradients with respect to the inputs of the
+            forward pass.
+
+        """
         grid_spacing = ctx.grid_spacing
         ndim = len(grid_spacing)
         grad_r = list(args[-ndim - 1 :])
@@ -1600,10 +1644,12 @@ class ElasticForwardFunc(torch.autograd.Function):
 
         stream, aux = deepwave.common.get_stream_or_aux(device, is_cuda, n_shots)
 
-        model_batched_list = [model.ndim == ndim + 1 and model.shape[0] > 1 for model in models]
+        model_batched_list = [
+            model.ndim == ndim + 1 and model.shape[0] > 1 for model in models
+        ]
         (
             grad_models,
-            grad_models_tmp,
+            _grad_models_tmp,
             grad_models_tmp_ptr,
             grad_f_list,
         ) = deepwave.common.setup_backward_gradients(

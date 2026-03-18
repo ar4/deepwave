@@ -713,7 +713,13 @@ class ScalarBornForwardFunc(torch.autograd.Function):
 
         size_with_batch = (n_shots, *model_shape)
         wavefields = deepwave.common.prepare_initial_wavefields(
-            list(wavefields_tuple), ndim, accuracy, device, dtype, size_with_batch, pml_width
+            list(wavefields_tuple),
+            ndim,
+            accuracy,
+            device,
+            dtype,
+            size_with_batch,
+            pml_width,
         )
 
         wfc, wfp, *pml_wavefields = wavefields[: 2 + 2 * ndim]
@@ -725,9 +731,15 @@ class ScalarBornForwardFunc(torch.autograd.Function):
 
         for i in range(ndim):
             psi[i] = deepwave.common.zero_interior(psi[i], accuracy // 2, pml_width, i)
-            zeta[i] = deepwave.common.zero_interior(zeta[i], accuracy // 2, pml_width, i)
-            psisc[i] = deepwave.common.zero_interior(psisc[i], accuracy // 2, pml_width, i)
-            zetasc[i] = deepwave.common.zero_interior(zetasc[i], accuracy // 2, pml_width, i)
+            zeta[i] = deepwave.common.zero_interior(
+                zeta[i], accuracy // 2, pml_width, i
+            )
+            psisc[i] = deepwave.common.zero_interior(
+                psisc[i], accuracy // 2, pml_width, i
+            )
+            zetasc[i] = deepwave.common.zero_interior(
+                zetasc[i], accuracy // 2, pml_width, i
+            )
 
         psin = [torch.zeros_like(wf) for wf in psi]
         psinsc = [torch.zeros_like(wf) for wf in psisc]
@@ -837,7 +849,6 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                         and storage_mode != deepwave.common.StorageMode.NONE,
                         v_batched,
                         scatter_batched,
-
                         storage_compression,
                         step * step_ratio,
                         *pml_b,
@@ -960,13 +971,6 @@ class ScalarBornForwardFunc(torch.autograd.Function):
         grad_psinsc = [torch.zeros_like(gwf) for gwf in grad_psisc]
         grad_zetansc = [torch.zeros_like(gwf) for gwf in grad_zetasc]
 
-        grad_wfc = None
-        grad_wfp = None
-        grad_psi = None
-        grad_psin = None
-        grad_zeta = None
-        grad_zetan = None
-
         if non_sc:
             grad_wavefields_non_sc = deepwave.common.prepare_initial_wavefields(
                 grad_wavefields_list[: 2 + 2 * ndim],
@@ -1001,7 +1005,7 @@ class ScalarBornForwardFunc(torch.autograd.Function):
 
         (
             grad_models,
-            grad_models_tmp,
+            _grad_models_tmp,
             grad_models_tmp_ptr,
             grad_f_list,
         ) = deepwave.common.setup_backward_gradients(

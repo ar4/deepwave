@@ -25,6 +25,7 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
+*.libs/
 
 # PyInstaller
 #  Used by exhibitors to bundle their python packages.
@@ -49,23 +50,6 @@ coverage.xml
 .hypotheses/
 .pytest_cache/
 cover/
-
-# Translations
-*.mo
-*.pot
-
-# Django stuff:
-*.log
-local_settings.py
-db.sqlite3
-db.sqlite3-journal
-
-# Flask stuff:
-instance/
-.webassets-cache
-
-# Scrapy stuff:
-.scrapy
 
 # Sphinx documentation
 docs/_build/
@@ -100,13 +84,6 @@ ipython_config.py
 
 # PEP 582; used by e.g. github.com/pdm-project/pdm
 __pypackages__/
-
-# Celery stuff
-celerybeat-schedule
-celerybeat.pid
-
-# SageMath parsed files
-*.sage.py
 
 # Environments
 .env
@@ -149,10 +126,3 @@ cython_debug/
 .Trashes
 ehthumbs.db
 Thumbs.db
-
-# Chatbot config
-GEMINI.md
-SPECIFICATION.md
-
-# libs
-src/deepwave.libs

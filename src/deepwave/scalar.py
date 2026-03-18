@@ -863,6 +863,17 @@ class ScalarForwardFunc(torch.autograd.Function):
             storage_manager,
         )
 
+        size_with_batch = (n_shots, *model_shape)
+        wavefields = deepwave.common.prepare_initial_wavefields(
+            list(wavefields),
+            ndim,
+            accuracy,
+            device,
+            dtype,
+            size_with_batch,
+            pml_width,
+        )
+
         (
             v,
             source_amplitudes,
@@ -879,28 +890,36 @@ class ScalarForwardFunc(torch.autograd.Function):
             list(wavefields),
         )
 
-        size_with_batch = (n_shots, *model_shape)
-        wavefields = deepwave.common.prepare_initial_wavefields(
-            list(wavefields),
-            ndim,
-            accuracy,
-            device,
-            dtype,
-            size_with_batch,
-            pml_width,
-        )
-
         wfc, wfp, *pml_wavefields = wavefields
         psi = list(pml_wavefields[:ndim])
         zeta = list(pml_wavefields[ndim:])
         del wavefields
 
+        # The PML auxiliary variables (psi, zeta) are only non-zero in the PML
+        # regions. To avoid unnecessary computation in the interior of the
+        # domain, their values in the interior are set to zero here. The
+        # C/CUDA code will then skip PML calculations for these grid points.
         for i in range(ndim):
             psi[i] = deepwave.common.zero_interior(psi[i], accuracy // 2, pml_width, i)
-            zeta[i] = deepwave.common.zero_interior(zeta[i], accuracy // 2, pml_width, i)
+            zeta[i] = deepwave.common.zero_interior(
+                zeta[i], accuracy // 2, pml_width, i
+            )
 
+        # `psin` are temporary tensors for updating the PML
+        # auxiliary variables `psi`. A temporary variable is
+        # needed because the update of other wavefields at a grid point
+        # depends on the values of `psi` at neighboring grid
+        # points, so they cannot be updated in-place.
         psin = [torch.zeros_like(wf) for wf in psi]
 
+        # The computational domain is divided into regions for performance,
+        # and the boundaries of these regions are calculated here. The PML
+        # update involves spatial derivatives of PML variables and profiles,
+        # which have a stencil radius of `fd_pad`. This causes the PML's
+        # effect to extend `fd_pad` cells into the non-PML region. An
+        # additional `fd_pad` is therefore added to the PML region width.
+        # The `min` and `max` calls ensure the boundaries are valid for
+        # small models.
         fd_pad = accuracy // 2
         pml_b, pml_e = deepwave.common.get_pml_bounds(
             pml_width, accuracy, model_shape, ndim
@@ -1008,8 +1027,8 @@ class ScalarForwardFunc(torch.autograd.Function):
                         storage_manager.shot_bytes_uncomp,
                         storage_manager.shot_bytes_comp,
                         v_requires_grad
-                        and storage_manager.storage_mode != deepwave.common.StorageMode.NONE,
-
+                        and storage_manager.storage_mode
+                        != deepwave.common.StorageMode.NONE,
                         v_batched,
                         storage_compression,
                         step * step_ratio,
@@ -1413,6 +1432,12 @@ class ScalarBackwardFunc(torch.autograd.Function):
         grad_psin = [torch.zeros_like(gwf) for gwf in grad_psi]
         grad_zetan = [torch.zeros_like(gwf) for gwf in grad_zeta]
 
+        # In the backward pass, the PML region is extended by an additional
+        # `fd_pad` compared to the forward pass (for a total of `3 * fd_pad`).
+        # This is because the backward calculations involve spatial
+        # derivatives of terms that are themselves spatial derivatives,
+        # widening the stencil and the extent of the PML's influence into
+        # the non-PML region.
         pml_b, pml_e = deepwave.common.get_pml_bounds(
             pml_width, accuracy, model_shape, ndim, multiplier=3
         )
@@ -1423,9 +1448,17 @@ class ScalarBackwardFunc(torch.autograd.Function):
 
         stream, aux = deepwave.common.get_stream_or_aux(device, is_cuda, n_shots)
 
+        # To avoid race conditions when multiple threads/shots contribute to the
+        # model gradient `grad_v` simultaneously, a temporary buffer
+        # `grad_v_tmp` is used. Each thread writes to its own slice of this
+        # buffer, and the results are summed after the loop.
+        # `grad_v_tmp_ptr` points to `grad_v_tmp` if it's needed (e.g. multiple
+        # threads on a non-batched model), otherwise it points directly to
+        # `grad_v` (e.g., for single-threaded execution or when each shot has
+        # its own model and memory space).
         (
             grad_models,
-            grad_models_tmp,
+            _grad_models_tmp,
             grad_models_tmp_ptr,
             grad_f_list,
         ) = deepwave.common.setup_backward_gradients(
@@ -1506,8 +1539,8 @@ class ScalarBackwardFunc(torch.autograd.Function):
                         storage_manager.shot_bytes_uncomp,
                         storage_manager.shot_bytes_comp,
                         v_requires_grad
-                        and storage_manager.storage_mode != deepwave.common.StorageMode.NONE,
-
+                        and storage_manager.storage_mode
+                        != deepwave.common.StorageMode.NONE,
                         v_batched,
                         storage_manager.storage_compression,
                         step * step_ratio,
@@ -1704,7 +1737,13 @@ class ScalarBackwardFunc(torch.autograd.Function):
             wavefields, ndim, accuracy, device, dtype, size_with_batch, pml_width
         )
         gradgrad_wavefields = deepwave.common.prepare_initial_wavefields(
-            gradgrad_wavefields, ndim, accuracy, device, dtype, size_with_batch, pml_width
+            gradgrad_wavefields,
+            ndim,
+            accuracy,
+            device,
+            dtype,
+            size_with_batch,
+            pml_width,
         )
         wfc, wfp, *pml_wavefields = wavefields
         del wavefields
@@ -1815,7 +1854,6 @@ class ScalarBackwardFunc(torch.autograd.Function):
                 storage_manager.shot_bytes_comp,
                 v_requires_grad
                 and storage_manager.storage_mode != deepwave.common.StorageMode.NONE,
-
                 False,
                 v_batched,
                 ggv_batched,
@@ -1858,7 +1896,13 @@ class ScalarBackwardFunc(torch.autograd.Function):
         zetan = [torch.zeros_like(wf) for wf in zeta]
 
         grad_wavefields = deepwave.common.prepare_initial_wavefields(
-            grad_wavefields, ndim, accuracy, v.device, v.dtype, size_with_batch, pml_width
+            grad_wavefields,
+            ndim,
+            accuracy,
+            v.device,
+            v.dtype,
+            size_with_batch,
+            pml_width,
         )
         grad_wfc, grad_wfp, *grad_pml_wavefields = grad_wavefields
         del grad_wavefields
@@ -1883,7 +1927,7 @@ class ScalarBackwardFunc(torch.autograd.Function):
 
         (
             grad_models,
-            grad_models_tmp,
+            _grad_models_tmp,
             grad_models_tmp_ptr,
             grad_f_list,
         ) = deepwave.common.setup_backward_gradients(
@@ -1966,7 +2010,6 @@ class ScalarBackwardFunc(torch.autograd.Function):
                 storage_manager.shot_bytes_comp,
                 v_requires_grad
                 and storage_manager.storage_mode != deepwave.common.StorageMode.NONE,
-
                 False,
                 v_batched,
                 ggv_batched,

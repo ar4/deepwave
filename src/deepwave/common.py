@@ -2117,12 +2117,9 @@ def prepare_initial_wavefields(
         List of prepared wavefield tensors.
     """
     fd_pad = accuracy // 2
-    if staggered:
-        fd_pad_list = [fd_pad, fd_pad - 1] * ndim
-    else:
-        fd_pad_list = [fd_pad] * 2 * ndim
+    fd_pad_list = [fd_pad, fd_pad - 1] * ndim if staggered else [fd_pad] * 2 * ndim
 
-    wavefields = [
+    return [
         create_or_pad(
             w,
             fd_pad_list,
@@ -2132,19 +2129,6 @@ def prepare_initial_wavefields(
         )
         for w in wavefields
     ]
-
-    if zero_interior_indices is not None:
-        # Currently only acoustic/elastic use staggered and have custom zeroing
-        # Scalar uses this generic one but it doesn't call zero_edges_and_interiors
-        # because it doesn't need to (it only zeros interiors of PML vars).
-        # We'll leave it to the caller to call zero_edges_and_interiors if needed,
-        # but handle the simple zero_interior here.
-        for i in zero_interior_indices:
-            # We need to know which dimension to zero.
-            # This helper might be too simple for the staggered case.
-            pass
-
-    return wavefields
 
 
 def setup_backward_gradients(
