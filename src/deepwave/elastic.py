@@ -2,7 +2,7 @@
 
 Implements elastic wave equation propagation using a velocity-stress
 formulation with finite differences in time (2nd order) and space
-(user-selectable order: 2 or 4). Supports Convolutional Perfectly Matched
+(user-selectable order: 2, 4, 6, or 8). Supports Convolutional Perfectly Matched
 Layer (C-PML) boundaries for absorbing reflections.
 
 This module provides both a `torch.nn.Module` interface (`Elastic` class)
