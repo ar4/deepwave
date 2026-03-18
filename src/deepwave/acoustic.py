@@ -869,7 +869,7 @@ class AcousticForwardFunc(torch.autograd.Function):
             sources_i,
             receivers_i,
             wavefields,
-        ) = deepwave.common.ensure_contiguous(
+        ) = (
             grad_r,
             models,
             source_amplitudes,
@@ -886,6 +886,7 @@ class AcousticForwardFunc(torch.autograd.Function):
             receivers_i,
             source_amplitudes,
             pml_profiles,
+            wavefields,
         )
 
     @staticmethod
@@ -966,6 +967,8 @@ class AcousticForwardFunc(torch.autograd.Function):
         n_sources_per_shot_list = [locs.numel() // n_shots for locs in sources_i]
         n_receivers_per_shot_list = [locs.numel() // n_shots for locs in receivers_i]
 
+        models_requires_grad = [m.requires_grad for m in models]
+
         storage_manager = deepwave.common.setup_storage(
             model_shape,
             dtype,
@@ -977,7 +980,7 @@ class AcousticForwardFunc(torch.autograd.Function):
             storage_path,
             device,
             is_cuda,
-            [models[0].requires_grad] + [models[1].requires_grad] * (len(models) - 1),
+            [models_requires_grad[0]] + [models_requires_grad[1]] * (len(models) - 1),
         )
 
         AcousticForwardFunc._save_ctx(
@@ -998,6 +1001,22 @@ class AcousticForwardFunc(torch.autograd.Function):
             backward_callback,
             callback_frequency,
             storage_manager,
+        )
+
+        (
+            models,
+            source_amplitudes,
+            pml_profiles,
+            sources_i,
+            receivers_i,
+            wavefields,
+        ) = deepwave.common.ensure_contiguous(
+            models,
+            source_amplitudes,
+            pml_profiles,
+            sources_i,
+            receivers_i,
+            wavefields,
         )
 
         size_with_batch = (n_shots, *model_shape)
@@ -1118,9 +1137,9 @@ class AcousticForwardFunc(torch.autograd.Function):
                         storage_manager.shot_bytes_uncomp,
                         storage_manager.shot_bytes_comp,
                         *[
-                            m.requires_grad
+                            req
                             and storage_mode != deepwave.common.StorageMode.NONE
-                            for m in models[:2]
+                            for req in models_requires_grad[:2]
                         ],
                         *model_batched,
                         storage_compression,
@@ -1155,8 +1174,27 @@ class AcousticForwardFunc(torch.autograd.Function):
             receivers_i,
             _source_amplitudes,
             pml_profiles,
+            wavefields,
         ) = AcousticForwardFunc._parse_backward_args(ndim, args, ctx)
         del args
+
+        (
+            grad_r,
+            models,
+            _source_amplitudes,
+            pml_profiles,
+            sources_i,
+            receivers_i,
+            wavefields,
+        ) = deepwave.common.ensure_contiguous(
+            grad_r,
+            models,
+            _source_amplitudes,
+            pml_profiles,
+            sources_i,
+            receivers_i,
+            wavefields,
+        )
 
         dt = ctx.dt
         nt = ctx.nt
@@ -1189,6 +1227,8 @@ class AcousticForwardFunc(torch.autograd.Function):
 
         model_batched = [m.ndim == ndim + 1 and m.shape[0] > 1 for m in models[:2]]
         stream, aux = deepwave.common.get_stream_or_aux(device, is_cuda, n_shots)
+
+        models_requires_grad = [m.requires_grad for m in models]
 
         (
             grad_models,
@@ -1266,10 +1306,10 @@ class AcousticForwardFunc(torch.autograd.Function):
                         storage_manager.shot_bytes_uncomp,
                         storage_manager.shot_bytes_comp,
                         *[
-                            m.requires_grad
+                            req
                             and storage_manager.storage_mode
                             != deepwave.common.StorageMode.NONE
-                            for m in models[:2]
+                            for req in models_requires_grad[:2]
                         ],
                         *model_batched,
                         storage_manager.storage_compression,

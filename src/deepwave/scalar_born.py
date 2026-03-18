@@ -623,26 +623,6 @@ class ScalarBornForwardFunc(torch.autograd.Function):
     ) -> Tuple[torch.Tensor, ...]:
         """Forward propagation of the scalar Born wave equation."""
         del unused_tensor  # Unused.
-        (
-            v,
-            scatter,
-            source_amplitudes,
-            source_amplitudessc,
-            pml_profiles,
-            sources_i,
-            receivers_i,
-            receiverssc_i,
-        ) = deepwave.common.ensure_contiguous(
-            v,
-            scatter,
-            source_amplitudes,
-            source_amplitudessc,
-            pml_profiles,
-            sources_i,
-            receivers_i,
-            receiverssc_i,
-        )
-
         device = v.device
         dtype = v.dtype
         storage_mode = deepwave.common.get_storage_mode(storage_mode_str, device)
@@ -653,6 +633,9 @@ class ScalarBornForwardFunc(torch.autograd.Function):
         n_sources_per_shot = sources_i.numel() // n_shots
         n_receivers_per_shot = receivers_i.numel() // n_shots
         n_receiverssc_per_shot = receiverssc_i.numel() // n_shots
+
+        v_requires_grad = v.requires_grad
+        scatter_requires_grad = scatter.requires_grad
 
         # Storage allocation
         storage_manager = deepwave.common.setup_storage(
@@ -666,7 +649,7 @@ class ScalarBornForwardFunc(torch.autograd.Function):
             storage_path,
             device,
             is_cuda,
-            [v.requires_grad or scatter.requires_grad, v.requires_grad],
+            [v_requires_grad or scatter_requires_grad, v_requires_grad],
         )
 
         bg_wavefield_requires_grad = any(
@@ -676,8 +659,8 @@ class ScalarBornForwardFunc(torch.autograd.Function):
             wavefield.requires_grad for wavefield in wavefields_tuple
         )
         if (
-            v.requires_grad
-            or scatter.requires_grad
+            v_requires_grad
+            or scatter_requires_grad
             or source_amplitudes.requires_grad
             or source_amplitudessc.requires_grad
             or wavefield_requires_grad
@@ -702,11 +685,31 @@ class ScalarBornForwardFunc(torch.autograd.Function):
             ctx.backward_callback = backward_callback
             ctx.callback_frequency = callback_frequency
             ctx.non_sc = (
-                v.requires_grad
+                v_requires_grad
                 or source_amplitudes.requires_grad
                 or bg_wavefield_requires_grad
             )
             ctx.storage_manager = storage_manager
+
+        (
+            v,
+            scatter,
+            source_amplitudes,
+            source_amplitudessc,
+            pml_profiles,
+            sources_i,
+            receivers_i,
+            receiverssc_i,
+        ) = deepwave.common.ensure_contiguous(
+            v,
+            scatter,
+            source_amplitudes,
+            source_amplitudessc,
+            pml_profiles,
+            sources_i,
+            receivers_i,
+            receiverssc_i,
+        )
 
         size_with_batch = (n_shots, *model_shape)
         wavefields = deepwave.common.prepare_initial_wavefields(
@@ -828,12 +831,13 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                         storage_mode,
                         storage_manager.shot_bytes_uncomp,
                         storage_manager.shot_bytes_comp,
-                        v.requires_grad
+                        v_requires_grad
                         and storage_mode != deepwave.common.StorageMode.NONE,
-                        scatter.requires_grad
+                        scatter_requires_grad
                         and storage_mode != deepwave.common.StorageMode.NONE,
                         v_batched,
                         scatter_batched,
+
                         storage_compression,
                         step * step_ratio,
                         *pml_b,
@@ -886,6 +890,18 @@ class ScalarBornForwardFunc(torch.autograd.Function):
             *pml_profiles,
         ) = ctx.saved_tensors
 
+        grid_spacing = ctx.grid_spacing
+        ndim = len(grid_spacing)
+        dt = ctx.dt
+        nt = ctx.nt
+        n_shots = ctx.n_shots
+        step_ratio = ctx.step_ratio
+        accuracy = ctx.accuracy
+        pml_width = ctx.pml_width
+        source_amplitudes_requires_grad = ctx.source_amplitudes_requires_grad
+        source_amplitudessc_requires_grad = ctx.source_amplitudessc_requires_grad
+        non_sc = ctx.non_sc
+
         (
             v,
             scatter,
@@ -908,17 +924,6 @@ class ScalarBornForwardFunc(torch.autograd.Function):
             receiverssc_i,
         )
 
-        grid_spacing = ctx.grid_spacing
-        ndim = len(grid_spacing)
-        dt = ctx.dt
-        nt = ctx.nt
-        n_shots = ctx.n_shots
-        step_ratio = ctx.step_ratio
-        accuracy = ctx.accuracy
-        pml_width = ctx.pml_width
-        source_amplitudes_requires_grad = ctx.source_amplitudes_requires_grad
-        source_amplitudessc_requires_grad = ctx.source_amplitudessc_requires_grad
-        non_sc = ctx.non_sc
         device = v.device
         dtype = v.dtype
         is_cuda = v.is_cuda
@@ -928,6 +933,9 @@ class ScalarBornForwardFunc(torch.autograd.Function):
         n_receiverssc_per_shot = receiverssc_i.numel() // n_shots
         fd_pad = accuracy // 2
         storage_manager = ctx.storage_manager
+
+        v_requires_grad = v.requires_grad
+        scatter_requires_grad = scatter.requires_grad
 
         size_with_batch = (n_shots, *model_shape)
         grad_wavefieldssc = deepwave.common.prepare_initial_wavefields(
@@ -1095,10 +1103,10 @@ class ScalarBornForwardFunc(torch.autograd.Function):
                             storage_manager.storage_mode,
                             storage_manager.shot_bytes_uncomp,
                             storage_manager.shot_bytes_comp,
-                            v.requires_grad
+                            v_requires_grad
                             and storage_manager.storage_mode
                             != deepwave.common.StorageMode.NONE,
-                            scatter.requires_grad
+                            scatter_requires_grad
                             and storage_manager.storage_mode
                             != deepwave.common.StorageMode.NONE,
                             v_batched,

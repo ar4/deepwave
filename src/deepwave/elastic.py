@@ -1226,7 +1226,7 @@ class ElasticForwardFunc(torch.autograd.Function):
             pml_profiles,
             sources_i,
             receivers_i,
-        ) = deepwave.common.ensure_contiguous(
+        ) = (
             models,
             source_amplitudes,
             pml_profiles,
@@ -1323,6 +1323,20 @@ class ElasticForwardFunc(torch.autograd.Function):
             ctx.backward_callback = backward_callback
             ctx.callback_frequency = callback_frequency
             ctx.storage_manager = storage_manager
+
+        (
+            models,
+            source_amplitudes,
+            pml_profiles,
+            sources_i,
+            receivers_i,
+        ) = deepwave.common.ensure_contiguous(
+            models,
+            source_amplitudes,
+            pml_profiles,
+            sources_i,
+            receivers_i,
+        )
 
         size_with_batch = (n_shots, *model_shape)
         wavefields = deepwave.common.prepare_initial_wavefields(
@@ -1551,6 +1565,15 @@ class ElasticForwardFunc(torch.autograd.Function):
         pml_profiles = saved_tensors[:num_pml_profiles]
         del saved_tensors[:num_pml_profiles]
 
+        dt = ctx.dt
+        nt = ctx.nt
+        n_shots = ctx.n_shots
+        step_ratio = ctx.step_ratio
+        accuracy = ctx.accuracy
+        pml_width = ctx.pml_width
+        source_amplitudes_requires_grad = ctx.source_amplitudes_requires_grad
+        storage_manager = ctx.storage_manager
+
         (
             grad_r,
             models,
@@ -1567,15 +1590,8 @@ class ElasticForwardFunc(torch.autograd.Function):
             pml_profiles,
         )
 
-        dt = ctx.dt
-        nt = ctx.nt
-        n_shots = ctx.n_shots
-        step_ratio = ctx.step_ratio
-        accuracy = ctx.accuracy
-        pml_width = ctx.pml_width
-        source_amplitudes_requires_grad = ctx.source_amplitudes_requires_grad
-        storage_manager = ctx.storage_manager
         device = models[0].device
+
         dtype = models[0].dtype
         is_cuda = models[0].is_cuda
         model_shape = models[0].shape[-ndim:]

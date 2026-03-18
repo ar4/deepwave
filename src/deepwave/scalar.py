@@ -626,7 +626,7 @@ class ScalarForwardFunc(torch.autograd.Function):
             sources_i,
             receivers_i,
             wavefields,
-        ) = deepwave.common.ensure_contiguous(
+        ) = (
             v,
             source_amplitudes,
             pml_profiles,
@@ -827,6 +827,8 @@ class ScalarForwardFunc(torch.autograd.Function):
             wavefields_tuple,
         )
 
+        v_requires_grad = v.requires_grad
+
         storage_manager = deepwave.common.setup_storage(
             model_shape,
             dtype,
@@ -838,7 +840,7 @@ class ScalarForwardFunc(torch.autograd.Function):
             storage_path,
             device,
             is_cuda,
-            [v.requires_grad],
+            [v_requires_grad],
         )
 
         ScalarForwardFunc._save_ctx(
@@ -859,6 +861,22 @@ class ScalarForwardFunc(torch.autograd.Function):
             backward_callback,
             callback_frequency,
             storage_manager,
+        )
+
+        (
+            v,
+            source_amplitudes,
+            pml_profiles,
+            sources_i,
+            receivers_i,
+            wavefields,
+        ) = deepwave.common.ensure_contiguous(
+            v,
+            source_amplitudes,
+            pml_profiles,
+            sources_i,
+            receivers_i,
+            list(wavefields),
         )
 
         size_with_batch = (n_shots, *model_shape)
@@ -989,9 +1007,9 @@ class ScalarForwardFunc(torch.autograd.Function):
                         storage_mode,
                         storage_manager.shot_bytes_uncomp,
                         storage_manager.shot_bytes_comp,
-                        v.requires_grad
-                        and storage_manager.storage_mode
-                        != deepwave.common.StorageMode.NONE,
+                        v_requires_grad
+                        and storage_manager.storage_mode != deepwave.common.StorageMode.NONE,
+
                         v_batched,
                         storage_compression,
                         step * step_ratio,
@@ -1150,7 +1168,7 @@ class ScalarBackwardFunc(torch.autograd.Function):
             grad_wavefields,
             pml_profiles,
             grad_r,
-        ) = deepwave.common.ensure_contiguous(
+        ) = (
             v,
             sources_i,
             receivers_i,
@@ -1343,6 +1361,26 @@ class ScalarBackwardFunc(torch.autograd.Function):
             storage_manager,
         )
 
+        (
+            v,
+            sources_i,
+            receivers_i,
+            source_amplitudes,
+            wavefields,
+            grad_wavefields,
+            pml_profiles,
+            grad_r,
+        ) = deepwave.common.ensure_contiguous(
+            v,
+            sources_i,
+            receivers_i,
+            source_amplitudes,
+            list(wavefields),
+            list(grad_wavefields),
+            pml_profiles,
+            grad_r,
+        )
+
         size_with_batch = (n_shots, *model_shape)
         grad_wavefields = deepwave.common.prepare_initial_wavefields(
             grad_wavefields,
@@ -1380,6 +1418,8 @@ class ScalarBackwardFunc(torch.autograd.Function):
         )
 
         v_batched = v.ndim == ndim + 1 and v.shape[0] > 1
+
+        v_requires_grad = v.requires_grad
 
         stream, aux = deepwave.common.get_stream_or_aux(device, is_cuda, n_shots)
 
@@ -1465,9 +1505,9 @@ class ScalarBackwardFunc(torch.autograd.Function):
                         storage_manager.storage_mode,
                         storage_manager.shot_bytes_uncomp,
                         storage_manager.shot_bytes_comp,
-                        v.requires_grad
-                        and storage_manager.storage_mode
-                        != deepwave.common.StorageMode.NONE,
+                        v_requires_grad
+                        and storage_manager.storage_mode != deepwave.common.StorageMode.NONE,
+
                         v_batched,
                         storage_manager.storage_compression,
                         step * step_ratio,
@@ -1620,6 +1660,8 @@ class ScalarBackwardFunc(torch.autograd.Function):
         if ggf.numel() == 0:
             ggf = torch.zeros_like(source_amplitudes.detach())
 
+        v_requires_grad = v.requires_grad
+
         (
             v,
             ggv,
@@ -1771,8 +1813,9 @@ class ScalarBackwardFunc(torch.autograd.Function):
                 storage_manager.storage_mode,
                 storage_manager.shot_bytes_uncomp,
                 storage_manager.shot_bytes_comp,
-                v.requires_grad
+                v_requires_grad
                 and storage_manager.storage_mode != deepwave.common.StorageMode.NONE,
+
                 False,
                 v_batched,
                 ggv_batched,
@@ -1878,7 +1921,7 @@ class ScalarBackwardFunc(torch.autograd.Function):
         if (
             wfc.numel() > 0
             and nt > 0
-            and v.requires_grad
+            and v_requires_grad
             and backward(
                 v.data_ptr(),
                 ggv.data_ptr(),
@@ -1921,8 +1964,9 @@ class ScalarBackwardFunc(torch.autograd.Function):
                 storage_manager.storage_mode,
                 storage_manager.shot_bytes_uncomp,
                 storage_manager.shot_bytes_comp,
-                v.requires_grad
+                v_requires_grad
                 and storage_manager.storage_mode != deepwave.common.StorageMode.NONE,
+
                 False,
                 v_batched,
                 ggv_batched,
