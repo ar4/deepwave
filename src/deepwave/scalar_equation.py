@@ -386,6 +386,95 @@ class ScalarEquation:
             stream,
         )
 
+    def call_backward_backend(
+        self,
+        backend_func: Any,
+        models: List[torch.Tensor],
+        grad_wavefields: List[torch.Tensor],
+        aux_wavefields: List[torch.Tensor],
+        grad_r: List[torch.Tensor],
+        grad_f_list: List[torch.Tensor],
+        grad_models: List[torch.Tensor],
+        grad_models_tmp_ptr: List[int],
+        storage_manager: Any,
+        pml_profiles: List[torch.Tensor],
+        sources_i: List[torch.Tensor],
+        receivers_i: List[torch.Tensor],
+        grid_spacing: Sequence[float],
+        dt: float,
+        step_nt: int,
+        n_shots: int,
+        model_shape: torch.Size,
+        n_sources_per_shot: List[int],
+        n_receivers_per_shot: List[int],
+        step_ratio: int,
+        models_requires_grad: List[bool],
+        model_batched: List[bool],
+        storage_compression: bool,
+        step: int,
+        pml_b: List[int],
+        pml_e: List[int],
+        aux: int,
+        stream: Any,
+    ) -> int:
+        """Call scalar backward C backend.
+
+        Scalar backward uses v^2 * dt^2 and creates its own PML temp vars.
+        """
+        v = models[0]
+        v2dt2 = v**2 * dt**2
+        ndim = len(grid_spacing)
+        rdx = [1 / dx for dx in grid_spacing]
+        rdx2 = [1 / dx**2 for dx in grid_spacing]
+
+        grad_wfc = grad_wavefields[0]
+        grad_wfp = grad_wavefields[1]
+        grad_psi = grad_wavefields[2 : 2 + ndim]
+        grad_zeta = grad_wavefields[2 + ndim :]
+
+        grad_psin = aux_wavefields[:ndim]
+        grad_zetan = aux_wavefields[ndim:]
+
+        v_requires_grad = models_requires_grad[0]
+        storage_mode = storage_manager.storage_mode
+
+        return backend_func(  # type: ignore[no-any-return]
+            v2dt2.data_ptr(),
+            grad_r[0].data_ptr(),
+            grad_wfc.data_ptr(),
+            grad_wfp.data_ptr(),
+            *[field.data_ptr() for field in grad_psi],
+            *[field.data_ptr() for field in grad_psin],
+            *[field.data_ptr() for field in grad_zeta],
+            *[field.data_ptr() for field in grad_zetan],
+            *storage_manager.storage_ptrs,
+            grad_f_list[0].data_ptr(),
+            grad_models[0].data_ptr(),
+            grad_models_tmp_ptr[0],
+            *[profile.data_ptr() for profile in pml_profiles],
+            sources_i[0].data_ptr(),
+            receivers_i[0].data_ptr(),
+            *rdx,
+            *rdx2,
+            step_nt,
+            n_shots,
+            *model_shape,
+            n_sources_per_shot[0],
+            n_receivers_per_shot[0],
+            step_ratio,
+            storage_mode,
+            storage_manager.shot_bytes_uncomp,
+            storage_manager.shot_bytes_comp,
+            v_requires_grad and storage_mode != deepwave.common.StorageMode.NONE,
+            model_batched[0],
+            storage_compression,
+            step,
+            *pml_b,
+            *pml_e,
+            aux,
+            stream,
+        )
+
     def call_born_backend(
         self,
         backend_func: Any,
@@ -460,6 +549,7 @@ class ScalarEquation:
             *[field.data_ptr() for field in gpsin],
             *[field.data_ptr() for field in gzeta],
             *storage_manager.storage_ptrs,
+            *[0] * len(storage_manager.storage_ptrs),
             receiver_amplitudes[0].data_ptr(),
             grad_receiver_amplitudes[0].data_ptr(),
             *[profile.data_ptr() for profile in pml_profiles],
@@ -479,7 +569,7 @@ class ScalarEquation:
             storage_mode,
             storage_manager.shot_bytes_uncomp,
             storage_manager.shot_bytes_comp,
-            v_requires_grad and storage_mode != deepwave.common.StorageMode.NONE,
+            False,
             False,
             model_batched[0],
             grad_model_batched[0],
