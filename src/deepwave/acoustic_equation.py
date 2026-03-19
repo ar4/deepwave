@@ -531,29 +531,79 @@ class AcousticEquation:
             stream,
         )
 
+    def call_born_backend(
+        self,
+        backend_func: Any,
+        models: List[torch.Tensor],
+        grad_models: List[torch.Tensor],
+        source_amplitudes: List[torch.Tensor],
+        grad_source_amplitudes: List[torch.Tensor],
+        wavefields: List[torch.Tensor],
+        grad_wavefields: List[torch.Tensor],
+        aux_wavefields: List[torch.Tensor],
+        grad_aux_wavefields: List[torch.Tensor],
+        receiver_amplitudes: List[torch.Tensor],
+        grad_receiver_amplitudes: List[torch.Tensor],
+        storage_manager: Any,
+        pml_profiles: List[torch.Tensor],
+        sources_i: List[torch.Tensor],
+        receivers_i: List[torch.Tensor],
+        grad_receivers_i: List[torch.Tensor],
+        grid_spacing: Sequence[float],
+        dt: float,
+        step_nt: int,
+        n_shots: int,
+        model_shape: torch.Size,
+        n_sources_per_shot: List[int],
+        n_receivers_per_shot: List[int],
+        n_grad_receivers_per_shot: List[int],
+        step_ratio: int,
+        models_requires_grad: List[bool],
+        model_batched: List[bool],
+        grad_model_batched: List[bool],
+        storage_compression: bool,
+        step: int,
+        pml_b: List[int],
+        pml_e: List[int],
+        aux: int,
+        stream: Any,
+    ) -> int:
+        """Call acoustic Born backend (Not Implemented)."""
+        raise NotImplementedError("Acoustic Born not implemented yet.")
+
     def create_aux_wavefields(
         self,
-        grad_wavefields: List[torch.Tensor],
+        wavefields: List[torch.Tensor],
         ndim: int,
+        is_backward: bool = False,
     ) -> List[torch.Tensor]:
-        """Create acoustic backward aux wavefields (ndim zero tensors)."""
-        return [torch.zeros_like(grad_wavefields[0]) for _ in range(ndim)]
+        """Create acoustic aux wavefields.
+
+        Forward: [].
+        Backward: ndim zero tensors.
+        """
+        if is_backward:
+            return [torch.zeros_like(wavefields[0]) for _ in range(ndim)]
+        return []
 
     def swap_odd_step_wavefields(
         self,
-        grad_wavefields: List[torch.Tensor],
+        wavefields: List[torch.Tensor],
         aux_wavefields: List[torch.Tensor],
         ndim: int,
+        is_backward: bool = False,
     ) -> Tuple[List[torch.Tensor], List[torch.Tensor]]:
-        """Swap velocity grad wavefields after odd backward steps.
+        """Swap acoustic wavefields.
 
-        Acoustic swaps grad_wavefields[-ndim:] with aux_wavefields.
+        Forward: no swap.
+        Backward: swap last ndim wavefields with aux.
         """
-        grad_wavefields[-ndim:], aux_wavefields[:] = (
-            aux_wavefields[:],
-            grad_wavefields[-ndim:],
-        )
-        return grad_wavefields, aux_wavefields
+        if is_backward:
+            wavefields[-ndim:], aux_wavefields[:] = (
+                aux_wavefields[:],
+                wavefields[-ndim:],
+            )
+        return wavefields, aux_wavefields
 
     def zero_backward_wavefields(
         self,

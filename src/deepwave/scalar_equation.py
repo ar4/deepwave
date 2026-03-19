@@ -207,9 +207,9 @@ class ScalarEquation:
     ) -> List[torch.Tensor]:
         """Prepare wavefields for the C kernel.
 
-        Delegates to common.prepare_initial_wavefields.
+        Delegates to common.prepare_initial_wavefields and zeros PML interior.
         """
-        return deepwave.common.prepare_initial_wavefields(
+        wavefields = deepwave.common.prepare_initial_wavefields(
             wavefields,
             ndim,
             accuracy,
@@ -218,6 +218,17 @@ class ScalarEquation:
             size_with_batch,
             pml_width,
         )
+        # Zero interiors of PML wavefields
+        # Scalar layout: [wfc, wfp, psi..., zeta...]
+        fd_pad = accuracy // 2
+        for i in range(ndim):
+            wavefields[2 + i] = deepwave.common.zero_interior(
+                wavefields[2 + i], fd_pad, pml_width, i
+            )
+            wavefields[2 + ndim + i] = deepwave.common.zero_interior(
+                wavefields[2 + ndim + i], fd_pad, pml_width, i
+            )
+        return wavefields
 
     def get_callback_wavefield_names(self, ndim: int) -> List[str]:
         """Names for the callback wavefield dict."""
@@ -297,6 +308,7 @@ class ScalarEquation:
         models: List[torch.Tensor],
         source_amplitudes: List[torch.Tensor],
         wavefields: List[torch.Tensor],
+        aux_wavefields: List[torch.Tensor],
         receiver_amplitudes: List[torch.Tensor],
         storage_manager: Any,
         pml_profiles: List[torch.Tensor],
@@ -322,7 +334,7 @@ class ScalarEquation:
         """Call scalar C backend.
 
         Scalar wavefield structure: [wfc, wfp, psi..., zeta...].
-        PML temp variables (psin) are created internally.
+        psin is taken from aux_wavefields.
         """
         v = models[0]
         wfc = wavefields[0]
@@ -330,7 +342,7 @@ class ScalarEquation:
         ndim = len(grid_spacing)
         psi = wavefields[2 : 2 + ndim]
         zeta = wavefields[2 + ndim :]
-        psin = [torch.zeros_like(wf) for wf in psi]
+        psin = aux_wavefields[:ndim]
 
         rdx = [1 / dx for dx in grid_spacing]
         rdx2 = [1 / dx**2 for dx in grid_spacing]
@@ -354,9 +366,10 @@ class ScalarEquation:
             *rdx,
             *rdx2,
             dt**2,
-            step_nt // step_ratio,
+            step_nt,
             n_shots,
             *model_shape,
+
             n_sources_per_shot[0],
             n_receivers_per_shot[0],
             step_ratio,
@@ -373,20 +386,24 @@ class ScalarEquation:
             stream,
         )
 
-    def call_backward_backend(
+    def call_born_backend(
         self,
         backend_func: Any,
         models: List[torch.Tensor],
+        grad_models: List[torch.Tensor],
+        source_amplitudes: List[torch.Tensor],
+        grad_source_amplitudes: List[torch.Tensor],
+        wavefields: List[torch.Tensor],
         grad_wavefields: List[torch.Tensor],
         aux_wavefields: List[torch.Tensor],
-        grad_r: List[torch.Tensor],
-        grad_f_list: List[torch.Tensor],
-        grad_models: List[torch.Tensor],
-        grad_models_tmp_ptr: List[int],
+        grad_aux_wavefields: List[torch.Tensor],
+        receiver_amplitudes: List[torch.Tensor],
+        grad_receiver_amplitudes: List[torch.Tensor],
         storage_manager: Any,
         pml_profiles: List[torch.Tensor],
         sources_i: List[torch.Tensor],
         receivers_i: List[torch.Tensor],
+        grad_receivers_i: List[torch.Tensor],
         grid_spacing: Sequence[float],
         dt: float,
         step_nt: int,
@@ -394,9 +411,11 @@ class ScalarEquation:
         model_shape: torch.Size,
         n_sources_per_shot: List[int],
         n_receivers_per_shot: List[int],
+        n_grad_receivers_per_shot: List[int],
         step_ratio: int,
         models_requires_grad: List[bool],
         model_batched: List[bool],
+        grad_model_batched: List[bool],
         storage_compression: bool,
         step: int,
         pml_b: List[int],
@@ -404,56 +423,66 @@ class ScalarEquation:
         aux: int,
         stream: Any,
     ) -> int:
-        """Call scalar backward C backend.
-
-        Scalar backward uses v^2 * dt^2 and creates its own PML temp vars.
-        """
+        """Call scalar Born backend."""
         v = models[0]
-        v2dt2 = v**2 * dt**2
+        ggv = grad_models[0]
+        wfc = wavefields[0]
+        wfp = wavefields[1]
+        gwfc = grad_wavefields[0]
+        gwfp = grad_wavefields[1]
         ndim = len(grid_spacing)
+        psi = wavefields[2 : 2 + ndim]
+        zeta = wavefields[2 + ndim :]
+        gpsi = grad_wavefields[2 : 2 + ndim]
+        gzeta = grad_wavefields[2 + ndim :]
+        psin = aux_wavefields[:ndim]
+        gpsin = grad_aux_wavefields[:ndim]
+
         rdx = [1 / dx for dx in grid_spacing]
         rdx2 = [1 / dx**2 for dx in grid_spacing]
-
-        grad_wfc = grad_wavefields[0]
-        grad_wfp = grad_wavefields[1]
-        grad_psi = grad_wavefields[2 : 2 + ndim]
-        grad_zeta = grad_wavefields[2 + ndim :]
-
-        grad_psin = [torch.zeros_like(gwf) for gwf in grad_psi]
-        grad_zetan = [torch.zeros_like(gwf) for gwf in grad_zeta]
 
         v_requires_grad = models_requires_grad[0]
         storage_mode = storage_manager.storage_mode
 
         return backend_func(  # type: ignore[no-any-return]
-            v2dt2.data_ptr(),
-            grad_r[0].data_ptr(),
-            grad_wfc.data_ptr(),
-            grad_wfp.data_ptr(),
-            *[field.data_ptr() for field in grad_psi],
-            *[field.data_ptr() for field in grad_psin],
-            *[field.data_ptr() for field in grad_zeta],
-            *[field.data_ptr() for field in grad_zetan],
+            v.data_ptr(),
+            ggv.data_ptr(),
+            source_amplitudes[0].data_ptr(),
+            grad_source_amplitudes[0].data_ptr(),
+            wfc.data_ptr(),
+            wfp.data_ptr(),
+            *[field.data_ptr() for field in psi],
+            *[field.data_ptr() for field in psin],
+            *[field.data_ptr() for field in zeta],
+            gwfc.data_ptr(),
+            gwfp.data_ptr(),
+            *[field.data_ptr() for field in gpsi],
+            *[field.data_ptr() for field in gpsin],
+            *[field.data_ptr() for field in gzeta],
             *storage_manager.storage_ptrs,
-            grad_f_list[0].data_ptr(),
-            grad_models[0].data_ptr(),
-            grad_models_tmp_ptr[0],
+            receiver_amplitudes[0].data_ptr(),
+            grad_receiver_amplitudes[0].data_ptr(),
             *[profile.data_ptr() for profile in pml_profiles],
             sources_i[0].data_ptr(),
             receivers_i[0].data_ptr(),
+            grad_receivers_i[0].data_ptr(),
             *rdx,
             *rdx2,
+            dt**2,
             step_nt,
             n_shots,
             *model_shape,
             n_sources_per_shot[0],
             n_receivers_per_shot[0],
+            n_grad_receivers_per_shot[0],
             step_ratio,
             storage_mode,
             storage_manager.shot_bytes_uncomp,
             storage_manager.shot_bytes_comp,
             v_requires_grad and storage_mode != deepwave.common.StorageMode.NONE,
+            False,
             model_batched[0],
+            grad_model_batched[0],
             storage_compression,
             step,
             *pml_b,
@@ -464,40 +493,54 @@ class ScalarEquation:
 
     def create_aux_wavefields(
         self,
-        grad_wavefields: List[torch.Tensor],
+        wavefields: List[torch.Tensor],
         ndim: int,
+        is_backward: bool = False,
     ) -> List[torch.Tensor]:
-        """Create scalar backward temp vars: psin + zetan."""
-        grad_psi = grad_wavefields[2 : 2 + ndim]
-        grad_zeta = grad_wavefields[2 + ndim :]
-        return [torch.zeros_like(gwf) for gwf in grad_psi] + [
-            torch.zeros_like(gwf) for gwf in grad_zeta
-        ]
+        """Create scalar aux vars.
+
+        Forward: psin.
+        Backward: grad_psin + grad_zetan.
+        """
+        psi = wavefields[2 : 2 + ndim]
+        if is_backward:
+            zeta = wavefields[2 + ndim :]
+            return [torch.zeros_like(wf) for wf in psi] + [
+                torch.zeros_like(wf) for wf in zeta
+            ]
+        return [torch.zeros_like(wf) for wf in psi]
 
     def swap_odd_step_wavefields(
         self,
-        grad_wavefields: List[torch.Tensor],
+        wavefields: List[torch.Tensor],
         aux_wavefields: List[torch.Tensor],
         ndim: int,
+        is_backward: bool = False,
     ) -> Tuple[List[torch.Tensor], List[torch.Tensor]]:
-        """Swap grad wavefields after odd backward steps.
+        """Swap scalar wavefields.
 
-        Scalar swaps wfc/wfp and psi/psin and zeta/zetan.
+        Forward: wfc/wfp and psi/psin.
+        Backward: wfc/wfp, psi/psin, zeta/zetan.
         """
-        grad_wavefields[0], grad_wavefields[1] = (
-            grad_wavefields[1],
-            grad_wavefields[0],
+        wavefields[0], wavefields[1] = (
+            wavefields[1],
+            wavefields[0],
         )
-        grad_psin = aux_wavefields[:ndim]
-        grad_zetan = aux_wavefields[ndim:]
-        for i in range(ndim):
-            old_psi = grad_wavefields[2 + i]
-            old_zeta = grad_wavefields[2 + ndim + i]
-            grad_wavefields[2 + i] = grad_psin[i]
-            grad_wavefields[2 + ndim + i] = grad_zetan[i]
-            aux_wavefields[i] = old_psi
-            aux_wavefields[ndim + i] = old_zeta
-        return grad_wavefields, aux_wavefields
+        if is_backward:
+            psin = aux_wavefields[:ndim]
+            zetan = aux_wavefields[ndim:]
+            for i in range(ndim):
+                # Swap psi/psin
+                wavefields[2 + i], psin[i] = psin[i], wavefields[2 + i]
+                # Swap zeta/zetan
+                wavefields[2 + ndim + i], zetan[i] = zetan[i], wavefields[2 + ndim + i]
+        else:
+            psin = aux_wavefields
+            for i in range(ndim):
+                # Swap psi/psin
+                wavefields[2 + i], psin[i] = psin[i], wavefields[2 + i]
+
+        return wavefields, aux_wavefields
 
     def zero_backward_wavefields(
         self,

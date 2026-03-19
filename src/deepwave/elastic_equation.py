@@ -717,58 +717,111 @@ class ElasticEquation:
             stream,
         )
 
+    def call_born_backend(
+        self,
+        backend_func: Any,
+        models: List[torch.Tensor],
+        grad_models: List[torch.Tensor],
+        source_amplitudes: List[torch.Tensor],
+        grad_source_amplitudes: List[torch.Tensor],
+        wavefields: List[torch.Tensor],
+        grad_wavefields: List[torch.Tensor],
+        aux_wavefields: List[torch.Tensor],
+        grad_aux_wavefields: List[torch.Tensor],
+        receiver_amplitudes: List[torch.Tensor],
+        grad_receiver_amplitudes: List[torch.Tensor],
+        storage_manager: Any,
+        pml_profiles: List[torch.Tensor],
+        sources_i: List[torch.Tensor],
+        receivers_i: List[torch.Tensor],
+        grad_receivers_i: List[torch.Tensor],
+        grid_spacing: Sequence[float],
+        dt: float,
+        step_nt: int,
+        n_shots: int,
+        model_shape: torch.Size,
+        n_sources_per_shot: List[int],
+        n_receivers_per_shot: List[int],
+        n_grad_receivers_per_shot: List[int],
+        step_ratio: int,
+        models_requires_grad: List[bool],
+        model_batched: List[bool],
+        grad_model_batched: List[bool],
+        storage_compression: bool,
+        step: int,
+        pml_b: List[int],
+        pml_e: List[int],
+        aux: int,
+        stream: Any,
+    ) -> int:
+        """Call elastic Born backend (Not Implemented)."""
+        raise NotImplementedError("Elastic Born not implemented yet.")
+
     def create_aux_wavefields(
         self,
-        grad_wavefields: List[torch.Tensor],
+        wavefields: List[torch.Tensor],
         ndim: int,
+        is_backward: bool = False,
     ) -> List[torch.Tensor]:
-        """Create elastic backward aux wavefields."""
+        """Create elastic aux wavefields.
+
+        Forward: [].
+        Backward: dimension-dependent temp vars.
+        """
+        if not is_backward:
+            return []
+
         aux: List[torch.Tensor] = []
         if ndim >= 3:
-            aux.extend([torch.zeros_like(grad_wavefields[0]) for _ in range(5)])
+            aux.extend([torch.zeros_like(wavefields[0]) for _ in range(5)])
         if ndim >= 2:
-            aux.extend([torch.zeros_like(grad_wavefields[0]) for _ in range(3)])
-        aux.append(torch.zeros_like(grad_wavefields[0]))
+            aux.extend([torch.zeros_like(wavefields[0]) for _ in range(3)])
+        aux.append(torch.zeros_like(wavefields[0]))
         return aux
 
     def swap_odd_step_wavefields(
         self,
-        grad_wavefields: List[torch.Tensor],
+        wavefields: List[torch.Tensor],
         aux_wavefields: List[torch.Tensor],
         ndim: int,
+        is_backward: bool = False,
     ) -> Tuple[List[torch.Tensor], List[torch.Tensor]]:
-        """Swap wavefields after odd backward steps.
+        """Swap wavefields after odd steps.
 
-        Elastic swaps specific stress wavefield indices based on ndim.
+        Forward: no swap.
+        Backward: Elastic swaps specific stress wavefield indices based on ndim.
         """
+        if not is_backward:
+            return wavefields, aux_wavefields
+
         if ndim == 3:
-            grad_wavefields[9:14], aux_wavefields[-9:-4] = (
+            wavefields[9:14], aux_wavefields[-9:-4] = (
                 aux_wavefields[-9:-4],
-                grad_wavefields[9:14],
+                wavefields[9:14],
             )
-            grad_wavefields[20:23], aux_wavefields[-4:-1] = (
+            wavefields[20:23], aux_wavefields[-4:-1] = (
                 aux_wavefields[-4:-1],
-                grad_wavefields[20:23],
+                wavefields[20:23],
             )
-            grad_wavefields[26], aux_wavefields[-1] = (
+            wavefields[26], aux_wavefields[-1] = (
                 aux_wavefields[-1],
-                grad_wavefields[26],
+                wavefields[26],
             )
         elif ndim == 2:
-            grad_wavefields[6:9], aux_wavefields[-4:-1] = (
+            wavefields[6:9], aux_wavefields[-4:-1] = (
                 aux_wavefields[-4:-1],
-                grad_wavefields[6:9],
+                wavefields[6:9],
             )
-            grad_wavefields[12], aux_wavefields[-1] = (
+            wavefields[12], aux_wavefields[-1] = (
                 aux_wavefields[-1],
-                grad_wavefields[12],
+                wavefields[12],
             )
         else:
-            grad_wavefields[3], aux_wavefields[-1] = (
+            wavefields[3], aux_wavefields[-1] = (
                 aux_wavefields[-1],
-                grad_wavefields[3],
+                wavefields[3],
             )
-        return grad_wavefields, aux_wavefields
+        return wavefields, aux_wavefields
 
     def zero_backward_wavefields(
         self,

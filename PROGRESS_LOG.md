@@ -127,3 +127,28 @@ ruff format src/deepwave/
 ruff check --fix src/deepwave/
 mypy --strict src/
 ```
+
+## [2026-03-19] Scalar Migration and Generic Framework Refinement
+
+### Phase 1 & 2: Framework Enhancements - COMPLETE
+
+**Completed:**
+- **Double Backward Support**: Implemented `GenericBackwardFunc` in `generic_forward_func.py`. This enables double backpropagation (Hessian-vector products) for any equation providing `call_born_backend`.
+- **Wavefield Swap Logic**: Updated the `PropagatorEquation` ABC and all implementations to support an `is_backward` flag. This allows the generic framework to correctly handle ping-pong wavefield swaps in both forward and backward passes.
+- **Scalar Born Implementation**: Added `call_born_backend` to `ScalarEquation`, wiring it to the `scalar_born` C/CUDA kernels.
+- **Placeholder Born support**: Added `call_born_backend` to `AcousticEquation` and `ElasticEquation` (raising `NotImplementedError`) to fulfill the ABC contract.
+
+### Phase 3: Migrate Scalar - IN PROGRESS
+
+**Status:** Numerical verification for forward/backward/double-backward complete. Integration into `scalar.py` started.
+
+**Key Findings and Fixes:**
+1.  **Bit-Identical Parity**: Achieved 100% test pass rate for `test_scalar.py` using the generic framework path. This was achieved by:
+    *   Adding ping-pong swap logic to the forward pass of the generic framework.
+    *   Fixing a bug in `ScalarEquation` where backward auxiliary wavefields were being re-initialized instead of swapped.
+2.  **Forward/Backward Unification**: The generic framework now handles the entire lifecycle (Forward -> Backward -> Double Backward) by delegating specific backend calls and state management (swaps, zeroing) to the equation strategies.
+
+**Next Steps:**
+- Replace `scalar_func` in `scalar.py` with the generic implementation.
+- Remove `ScalarForwardFunc` and `ScalarBackwardFunc` classes from `scalar.py`.
+- Proceed to Phase 4 (Acoustic Migration).

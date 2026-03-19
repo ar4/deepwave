@@ -25,6 +25,8 @@ import torch
 import deepwave.backend_utils
 import deepwave.common
 import deepwave.regular_grid
+from deepwave.generic_forward_func import GenericForwardFunc
+from deepwave.scalar_equation import ScalarEquation
 
 
 class Scalar(torch.nn.Module):
@@ -2307,19 +2309,14 @@ def scalar_python(
 def scalar_func(
     python_backend: Union[Literal["eager", "jit", "compile"], bool], *args: Any
 ) -> Tuple[torch.Tensor, ...]:
-    """Helper function to apply the ScalarForwardFunc.
-
-    This function serves as a convenient wrapper to call the `apply` method
-    of `ScalarForwardFunc`, which is the entry point for the autograd graph
-    for scalar wave propagation.
+    """Helper function to apply the GenericForwardFunc with ScalarEquation.
 
     Args:
         python_backend: Bool or string specifying whether to use Python backend.
-        *args: Variable length argument list to be passed directly to
-            `ScalarForwardFunc.apply`.
+        *args: Variable length argument list.
 
     Returns:
-        The results of the forward pass from `ScalarForwardFunc.apply`.
+        The results of the forward pass.
 
     """
     global _forward_step_jit, _forward_step_compile, _forward_step_opt
@@ -2348,9 +2345,50 @@ def scalar_func(
             raise ValueError(f"Unknown python_backend value {mode!r}.")
         return scalar_python(*args)
 
-    func = ScalarForwardFunc.apply
+    v = args[0]
+    source_amplitudes = args[1]
+    pml_profiles = args[2]
+    sources_i = args[3]
+    receivers_i = args[4]
+    grid_spacing = args[5]
+    dt = args[6]
+    nt = args[7]
+    step_ratio = args[8]
+    accuracy = args[9]
+    pml_width = args[10]
+    n_shots = args[11]
+    forward_callback = args[12]
+    backward_callback = args[13]
+    callback_frequency = args[14]
+    storage_mode = args[15]
+    storage_path = args[16]
+    storage_compression = args[17]
+    wavefields = args[18:]
 
-    return cast(
-        "Tuple[torch.Tensor, ...]",
-        func(*args),  # type: ignore[no-untyped-call]
+    equation = ScalarEquation()
+    packed_args = equation.pack_args(
+        [v],
+        [source_amplitudes],
+        pml_profiles,
+        [sources_i],
+        [receivers_i],
+        list(wavefields),
+    )
+
+    return GenericForwardFunc.apply(
+        equation,
+        grid_spacing,
+        dt,
+        nt,
+        step_ratio,
+        accuracy,
+        pml_width,
+        n_shots,
+        forward_callback,
+        backward_callback,
+        callback_frequency,
+        storage_mode,
+        storage_path,
+        storage_compression,
+        *packed_args,
     )

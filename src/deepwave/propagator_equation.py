@@ -276,15 +276,61 @@ class PropagatorEquation(ABC):
         ...
 
     @abstractmethod
+    def call_born_backend(
+        self,
+        backend_func: Any,
+        models: List[torch.Tensor],
+        grad_models: List[torch.Tensor],
+        source_amplitudes: List[torch.Tensor],
+        grad_source_amplitudes: List[torch.Tensor],
+        wavefields: List[torch.Tensor],
+        grad_wavefields: List[torch.Tensor],
+        aux_wavefields: List[torch.Tensor],
+        grad_aux_wavefields: List[torch.Tensor],
+        receiver_amplitudes: List[torch.Tensor],
+        grad_receiver_amplitudes: List[torch.Tensor],
+        storage_manager: Any,
+        pml_profiles: List[torch.Tensor],
+        sources_i: List[torch.Tensor],
+        receivers_i: List[torch.Tensor],
+        grad_receivers_i: List[torch.Tensor],
+        grid_spacing: Sequence[float],
+        dt: float,
+        step_nt: int,
+        n_shots: int,
+        model_shape: torch.Size,
+        n_sources_per_shot: List[int],
+        n_receivers_per_shot: List[int],
+        n_grad_receivers_per_shot: List[int],
+        step_ratio: int,
+        models_requires_grad: List[bool],
+        model_batched: List[bool],
+        grad_model_batched: List[bool],
+        storage_compression: bool,
+        step: int,
+        pml_b: List[int],
+        pml_e: List[int],
+        aux: int,
+        stream: Any,
+    ) -> int:
+        """Call the C/CUDA Born backend function.
+
+        Used for double backward (Hessian-vector product).
+        Returns 0 on success.
+        """
+        ...
+
+    @abstractmethod
     def create_aux_wavefields(
         self,
-        grad_wavefields: List[torch.Tensor],
+        wavefields: List[torch.Tensor],
         ndim: int,
+        is_backward: bool = False,
     ) -> List[torch.Tensor]:
-        """Create auxiliary wavefields for backward odd-step swap.
+        """Create auxiliary wavefields for odd-step swap.
 
-        Scalar: creates psin + zetan (2*ndim temp vars).
-        Acoustic: creates ndim zero tensors.
+        Scalar: creates psin (+ zetan if backward).
+        Acoustic: creates ndim zero tensors (backward only).
         Elastic: dimension-dependent.
         """
         ...
@@ -292,13 +338,14 @@ class PropagatorEquation(ABC):
     @abstractmethod
     def swap_odd_step_wavefields(
         self,
-        grad_wavefields: List[torch.Tensor],
+        wavefields: List[torch.Tensor],
         aux_wavefields: List[torch.Tensor],
         ndim: int,
+        is_backward: bool = False,
     ) -> Tuple[List[torch.Tensor], List[torch.Tensor]]:
-        """Swap wavefields after odd number of backward steps.
+        """Swap wavefields after odd number of steps.
 
-        Returns updated (grad_wavefields, aux_wavefields).
+        Returns updated (wavefields, aux_wavefields).
         """
         ...
 

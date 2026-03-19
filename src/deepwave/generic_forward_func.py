@@ -67,7 +67,7 @@ class GenericForwardFunc(torch.autograd.Function):
         storage_mode = deepwave.common.get_storage_mode(storage_mode_str, device)
 
         models_requires_grad = [m.requires_grad for m in models]
-        storage_requires_grad = equation.get_storage_requires_grad(models)
+        storage_requires_grad = equation.get_storage_requires_grad(models, ndim)
 
         storage_manager = deepwave.common.setup_storage(
             model_shape,
@@ -147,6 +147,10 @@ class GenericForwardFunc(torch.autograd.Function):
                 receiver_amplitudes[i].resize_(nt, n_shots, n_per_shot)
                 receiver_amplitudes[i].fill_(0)
 
+        aux_wavefields = equation.create_aux_wavefields(
+            wavefields, ndim, is_backward=False
+        )
+
         stream, aux = deepwave.common.get_stream_or_aux(device, is_cuda, n_shots)
 
         forward_func = deepwave.backend_utils.get_backend_function(
@@ -187,7 +191,9 @@ class GenericForwardFunc(torch.autograd.Function):
                         models,
                         source_amplitudes,
                         wavefields,
+                        aux_wavefields,
                         receiver_amplitudes,
+                        storage_manager,
                         pml_profiles,
                         sources_i,
                         receivers_i,
@@ -199,7 +205,6 @@ class GenericForwardFunc(torch.autograd.Function):
                         n_sources_per_shot,
                         n_receivers_per_shot,
                         step_ratio,
-                        storage_manager,
                         models_requires_grad,
                         model_batched,
                         storage_compression,
@@ -212,6 +217,11 @@ class GenericForwardFunc(torch.autograd.Function):
                     != 0
                 ):
                     raise RuntimeError("Compiled backend failed.")
+
+                if (step_nt * step_ratio) % 2 != 0:
+                    wavefields, aux_wavefields = equation.swap_odd_step_wavefields(
+                        wavefields, aux_wavefields, ndim, is_backward=False
+                    )
 
         # Slice off fd_pad from wavefields
         fd_pad = accuracy // 2
@@ -227,9 +237,6 @@ class GenericForwardFunc(torch.autograd.Function):
             )
 
         # Downsample receiver amplitudes
-        # The last ndim receiver outputs are velocity components that need
-        # downsampling (for acoustic and elastic). For scalar there's 1
-        # receiver type and it needs downsampling.
         outputs: List[torch.Tensor] = [w[s] for w in wavefields]
         outputs.extend(receiver_amplitudes)
         return tuple(outputs)
@@ -293,46 +300,93 @@ class GenericForwardFunc(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx: Any, *args: torch.Tensor) -> Tuple[Optional[torch.Tensor], ...]:
-        """Generic backward pass.
-
-        Delegates equation-specific logic via ctx.equation.
-        Returns gradients matching forward's tensor arguments.
-        """
+        """Generic backward pass."""
         equation = ctx.equation
-        ndim = len(ctx.grid_spacing)
+        counts = [
+            ctx.n_models,
+            ctx.n_source_types,
+            ctx.n_pml_profiles,
+            ctx.n_source_locs,
+            ctx.n_receiver_locs,
+            ctx.n_wavefields,
+        ]
+        
+        return GenericBackwardFunc.apply(
+            equation,
+            ctx.grid_spacing,
+            ctx.dt,
+            ctx.nt,
+            ctx.n_shots,
+            ctx.step_ratio,
+            ctx.accuracy,
+            ctx.pml_width,
+            ctx.source_amplitudes_requires_grad,
+            ctx.models_requires_grad,
+            ctx.backward_callback,
+            ctx.callback_frequency,
+            ctx.storage_manager,
+            counts,
+            *ctx.saved_tensors,
+            *args,
+        )
 
-        # Split grad outputs into wavefield grads and receiver grads
-        n_wf = ctx.n_wavefields
-        grad_wavefields = list(args[:n_wf])
-        grad_r = list(args[n_wf:])
-        del args
 
-        # Unpack saved tensors
-        saved = list(ctx.saved_tensors)
+class GenericBackwardFunc(torch.autograd.Function):
+    """Autograd function for the backward pass (and double backward)."""
+
+    @staticmethod
+    def forward(
+        ctx: Any,
+        equation: Any,
+        grid_spacing: Sequence[float],
+        dt: float,
+        nt: int,
+        n_shots: int,
+        step_ratio: int,
+        accuracy: int,
+        pml_width: List[int],
+        source_amplitudes_requires_grad: List[bool],
+        models_requires_grad: List[bool],
+        backward_callback: Optional[deepwave.common.Callback],
+        callback_frequency: int,
+        storage_manager: deepwave.common.StorageManager,
+        counts: List[int],
+        *tensors: torch.Tensor,
+    ) -> Tuple[Optional[torch.Tensor], ...]:
+        ctx.equation = equation
+        ctx.grid_spacing = grid_spacing
+        ctx.dt = dt
+        ctx.nt = nt
+        ctx.n_shots = n_shots
+        ctx.step_ratio = step_ratio
+        ctx.accuracy = accuracy
+        ctx.pml_width = pml_width
+        ctx.source_amplitudes_requires_grad = source_amplitudes_requires_grad
+        ctx.models_requires_grad = models_requires_grad
+        ctx.storage_manager = storage_manager
+        ctx.counts = counts
+
         pos = 0
-        models = saved[pos : pos + ctx.n_models]
-        pos += ctx.n_models
-        source_amplitudes = saved[pos : pos + ctx.n_source_types]
-        pos += ctx.n_source_types
-        pml_profiles = saved[pos : pos + ctx.n_pml_profiles]
-        pos += ctx.n_pml_profiles
-        sources_i = saved[pos : pos + ctx.n_source_locs]
-        pos += ctx.n_source_locs
-        receivers_i = saved[pos : pos + ctx.n_receiver_locs]
-        pos += ctx.n_receiver_locs
-        wavefields = saved[pos : pos + ctx.n_wavefields]
+        n_models, n_source_types, n_pml_profiles, n_source_locs, n_receiver_locs, n_wavefields = counts
+        models = list(tensors[pos : pos + n_models])
+        pos += n_models
+        source_amplitudes = list(tensors[pos : pos + n_source_types])
+        pos += n_source_types
+        pml_profiles = list(tensors[pos : pos + n_pml_profiles])
+        pos += n_pml_profiles
+        sources_i = list(tensors[pos : pos + n_source_locs])
+        pos += n_source_locs
+        receivers_i = list(tensors[pos : pos + n_receiver_locs])
+        pos += n_receiver_locs
+        wavefields = list(tensors[pos : pos + n_wavefields])
+        pos += n_wavefields
+        # grad_wavefields has same length as wavefields
+        grad_wavefields = list(tensors[pos : pos + n_wavefields])
+        pos += n_wavefields
+        grad_r = list(tensors[pos:])
 
-        dt = ctx.dt
-        nt = ctx.nt
-        n_shots = ctx.n_shots
-        step_ratio = ctx.step_ratio
-        accuracy = ctx.accuracy
-        pml_width = ctx.pml_width
-        source_amplitudes_requires_grad = ctx.source_amplitudes_requires_grad
-        models_requires_grad = ctx.models_requires_grad
-        backward_callback = ctx.backward_callback
-        callback_frequency = ctx.callback_frequency
-        storage_manager = ctx.storage_manager
+        if any(t.requires_grad for t in tensors):
+            ctx.save_for_backward(*tensors)
 
         (
             grad_r,
@@ -342,6 +396,7 @@ class GenericForwardFunc(torch.autograd.Function):
             sources_i,
             receivers_i,
             wavefields,
+            grad_wavefields
         ) = deepwave.common.ensure_contiguous(
             grad_r,
             models,
@@ -350,21 +405,19 @@ class GenericForwardFunc(torch.autograd.Function):
             sources_i,
             receivers_i,
             wavefields,
+            grad_wavefields
         )
 
         device = models[0].device
         dtype = models[0].dtype
         is_cuda = models[0].is_cuda
+        ndim = len(grid_spacing)
         model_shape = models[0].shape[-ndim:]
         n_sources_per_shot = [
             locs.numel() // n_shots if locs.numel() > 0 else 0 for locs in sources_i
         ]
-        n_receivers_per_shot = [
-            locs.numel() // n_shots if locs.numel() > 0 else 0 for locs in receivers_i
-        ]
 
         model_batched = [m.ndim == ndim + 1 and m.shape[0] > 1 for m in models]
-
         stream, aux = deepwave.common.get_stream_or_aux(device, is_cuda, n_shots)
 
         (
@@ -400,9 +453,10 @@ class GenericForwardFunc(torch.autograd.Function):
             for w in grad_wavefields
         ]
 
-        aux_wavefields = equation.create_aux_wavefields(grad_wavefields, ndim)
+        aux_wavefields = equation.create_aux_wavefields(
+            grad_wavefields, ndim, is_backward=True
+        )
 
-        # Zero edges/interiors (equation-specific)
         equation.zero_backward_wavefields(
             grad_wavefields, ndim, accuracy, pml_width, fd_pad_list
         )
@@ -413,12 +467,7 @@ class GenericForwardFunc(torch.autograd.Function):
         )
 
         backward_func = deepwave.backend_utils.get_backend_function(
-            equation.name,
-            ndim,
-            "backward",
-            accuracy,
-            dtype,
-            device,
+            equation.name, ndim, "backward", accuracy, dtype, device
         )
 
         if backward_callback is None:
@@ -433,55 +482,54 @@ class GenericForwardFunc(torch.autograd.Function):
         if grad_wavefields[0].numel() > 0 and nt > 0:
             for step in range(nt // step_ratio, 0, -callback_frequency):
                 step_nt = min(step, callback_frequency)
-
                 n_sources_per_shot_for_grad = [
                     n * r
                     for n, r in zip(n_sources_per_shot, source_amplitudes_requires_grad)
                 ]
+                n_receivers_per_shot = [
+                    locs.numel() // n_shots if locs.numel() > 0 else 0 for locs in receivers_i
+                ]
 
-                if (
-                    equation.call_backward_backend(
-                        backward_func,
-                        models,
-                        grad_wavefields,
-                        aux_wavefields,
-                        grad_r,
-                        grad_f_list,
-                        grad_models,
-                        grad_models_tmp_ptr,
-                        storage_manager,
-                        pml_profiles,
-                        sources_i,
-                        receivers_i,
-                        ctx.grid_spacing,
-                        dt,
-                        step_nt * step_ratio,
-                        n_shots,
-                        model_shape,
-                        n_sources_per_shot_for_grad,
-                        n_receivers_per_shot,
-                        step_ratio,
-                        models_requires_grad,
-                        model_batched,
-                        storage_manager.storage_compression,
-                        step * step_ratio,
-                        pml_b,
-                        pml_e,
-                        aux,
-                        stream,
-                    )
-                    != 0
-                ):
+                if equation.call_backward_backend(
+                    backward_func,
+                    models,
+                    grad_wavefields,
+                    aux_wavefields,
+                    grad_r,
+                    grad_f_list,
+                    grad_models,
+                    grad_models_tmp_ptr,
+                    storage_manager,
+                    pml_profiles,
+                    sources_i,
+                    receivers_i,
+                    grid_spacing,
+                    dt,
+                    step_nt * step_ratio,
+                    n_shots,
+                    model_shape,
+                    n_sources_per_shot_for_grad,
+                    n_receivers_per_shot,
+                    step_ratio,
+                    models_requires_grad,
+                    model_batched,
+                    storage_manager.storage_compression,
+                    step * step_ratio,
+                    pml_b,
+                    pml_e,
+                    aux,
+                    stream,
+                ) != 0:
                     raise RuntimeError("Compiled backend failed.")
 
                 if (step_nt * step_ratio) % 2 != 0:
                     grad_wavefields, aux_wavefields = equation.swap_odd_step_wavefields(
-                        grad_wavefields, aux_wavefields, ndim
+                        grad_wavefields, aux_wavefields, ndim, is_backward=True
                     )
-
+                
                 if backward_callback is not None:
-                    callback_wavefields = dict(zip(wf_names, grad_wavefields))
-                    backward_callback(
+                     callback_wavefields = dict(zip(wf_names, grad_wavefields))
+                     backward_callback(
                         deepwave.common.CallbackState(
                             dt,
                             step - step_nt,
@@ -493,29 +541,252 @@ class GenericForwardFunc(torch.autograd.Function):
                         )
                     )
 
-        s = (
-            slice(None),
-            *(slice(fd_pad, shape - (fd_pad - 1)) for shape in model_shape),
-        )
-        n_non_tensor_args = (
-            1  # equation
-            + 1  # grid_spacing (Sequence[float])
-            + 5  # dt, nt, step_ratio, accuracy, pml_width
-            + 2  # n_shots, forward_callback
-            + 2  # backward_callback, callback_frequency
-            + 3  # storage_mode_str, storage_path, storage_compression
-        )
+        if equation.grid_type == "staggered":
+             s = (slice(None), *(slice(fd_pad, shape - (fd_pad - 1)) for shape in model_shape))
+        else:
+             s = (slice(None), *(slice(fd_pad, -fd_pad) for _ in range(ndim)))
+
+        n_non_tensor_args = 14
+        
         return (
-            # None for non-tensor args (equation, grid_spacing, dt, ...)
             *([None] * n_non_tensor_args),
-            # Gradient for models
             *grad_models,
-            # Gradient for source_amplitudes
             *grad_f_list,
-            # None for pml_profiles, sources_i, receivers_i
             *[None] * len(pml_profiles),
             *[None] * len(sources_i),
             *[None] * len(receivers_i),
-            # Gradient for wavefields
             *[w[s] for w in grad_wavefields],
+            *[None] * n_wavefields,
+            *[None] * len(grad_r)
+        )
+    
+    @staticmethod
+    def backward(ctx: Any, *args: torch.Tensor) -> Tuple[Optional[torch.Tensor], ...]:
+        """Generic double backward pass (Born)."""
+        equation = ctx.equation
+        ndim = len(ctx.grid_spacing)
+        
+        # Unpack args (gradients w.r.t forward outputs)
+        # outputs: grad_models, grad_f_list, (pml, src, recv None), grad_wavefields
+        pos = 0
+        gg_models = list(args[pos : pos + ctx.n_models])
+        pos += ctx.n_models
+        gg_source_amplitudes = list(args[pos : pos + ctx.n_source_types])
+        pos += ctx.n_source_types
+        # Skip Nones
+        pos += ctx.n_pml_profiles
+        pos += ctx.n_source_locs
+        pos += ctx.n_receiver_locs
+        gg_grad_wavefields = list(args[pos : pos + ctx.n_wavefields])
+        del args
+
+        # Unpack saved tensors
+        saved = list(ctx.saved_tensors)
+        pos = 0
+        models = saved[pos : pos + ctx.n_models]
+        pos += ctx.n_models
+        source_amplitudes = saved[pos : pos + ctx.n_source_types]
+        pos += ctx.n_source_types
+        pml_profiles = saved[pos : pos + ctx.n_pml_profiles]
+        pos += ctx.n_pml_profiles
+        sources_i = saved[pos : pos + ctx.n_source_locs]
+        pos += ctx.n_source_locs
+        receivers_i = saved[pos : pos + ctx.n_receiver_locs]
+        pos += ctx.n_receiver_locs
+        wavefields = saved[pos : pos + ctx.n_wavefields]
+
+        dt = ctx.dt
+        nt = ctx.nt
+        n_shots = ctx.n_shots
+        step_ratio = ctx.step_ratio
+        accuracy = ctx.accuracy
+        pml_width = ctx.pml_width
+        source_amplitudes_requires_grad = ctx.source_amplitudes_requires_grad
+        models_requires_grad = ctx.models_requires_grad
+        backward_callback = ctx.backward_callback # Not used in Born?
+        callback_frequency = ctx.callback_frequency
+        storage_manager = ctx.storage_manager
+
+        (
+            gg_models,
+            gg_source_amplitudes,
+            gg_grad_wavefields,
+            models,
+            source_amplitudes,
+            pml_profiles,
+            sources_i,
+            receivers_i,
+            wavefields,
+        ) = deepwave.common.ensure_contiguous(
+            gg_models,
+            gg_source_amplitudes,
+            gg_grad_wavefields,
+            models,
+            source_amplitudes,
+            pml_profiles,
+            sources_i,
+            receivers_i,
+            wavefields,
+        )
+
+        device = models[0].device
+        dtype = models[0].dtype
+        is_cuda = models[0].is_cuda
+        model_shape = models[0].shape[-ndim:]
+        n_sources_per_shot = [
+            locs.numel() // n_shots if locs.numel() > 0 else 0 for locs in sources_i
+        ]
+        n_receivers_per_shot = [
+            locs.numel() // n_shots if locs.numel() > 0 else 0 for locs in receivers_i
+        ]
+        
+        # gg_grad_wavefields are at t=0. We need to pad them as inputs to Born.
+        size_with_batch = (n_shots, *model_shape)
+        fd_pad = accuracy // 2
+        fd_pad_list = equation.get_fd_pad(accuracy, ndim)
+        
+        grad_wavefields = [
+            deepwave.common.create_or_pad(
+                w,
+                fd_pad_list if equation.grid_type == "staggered" else fd_pad,
+                device,
+                dtype,
+                size_with_batch,
+            )
+            for w in gg_grad_wavefields
+        ]
+        
+        # Wavefields (forward) also need padding if they were saved unpadded?
+        # GenericForwardFunc saves wavefields unpadded (sliced).
+        # So we need to pad them too.
+        wavefields = [
+            deepwave.common.create_or_pad(
+                w,
+                fd_pad_list if equation.grid_type == "staggered" else fd_pad,
+                device,
+                dtype,
+                size_with_batch,
+            )
+            for w in wavefields
+        ]
+
+        model_batched = [m.ndim == ndim + 1 and m.shape[0] > 1 for m in models]
+        grad_model_batched = [m.ndim == ndim + 1 and m.shape[0] > 1 for m in gg_models]
+
+        stream, aux = deepwave.common.get_stream_or_aux(device, is_cuda, n_shots)
+        
+        # Born outputs
+        grad_receiver_amplitudes = [
+            torch.zeros(
+                nt, n_shots, n_per_shot, device=device, dtype=dtype
+            )
+            for n_per_shot in n_receivers_per_shot
+        ]
+        # n_grad_receivers_per_shot is same as n_receivers_per_shot?
+        # ScalarBackwardFunc uses n_ggreceivers_per_shot.
+        # It comes from fwd_ggreceivers_i which is receivers_i (since grad_r has same locs).
+        n_grad_receivers_per_shot = n_receivers_per_shot
+
+        # Aux for Born
+        # Scalar uses psin (forward aux) and gpsin (backward aux).
+        aux_wavefields = equation.create_aux_wavefields(
+            wavefields, ndim, is_backward=False
+        )
+        grad_aux_wavefields = equation.create_aux_wavefields(
+            grad_wavefields, ndim, is_backward=False # Born is forward-like
+        )
+
+        pml_b, pml_e = deepwave.common.get_pml_bounds(
+            pml_width, accuracy, model_shape, ndim, staggered=equation.grid_type == "staggered"
+        )
+
+        # We reuse "scalar_born" backend which is usually "forward" mode of Born.
+        # But PropagatorEquation.call_born_backend handles the name.
+        born_func = deepwave.backend_utils.get_backend_function(
+            equation.name + "_born", ndim, "forward", accuracy, dtype, device
+        )
+        
+        # Scalar Born uses step=0 and step_nt=nt (no chunking in original scalar.py).
+        # But we can chunk it if the kernel supports it.
+        # Scalar Born kernel signature: ... step_nt ... step ...
+        # So we can chunk.
+        
+        callback_frequency = nt // step_ratio
+        
+        if wavefields[0].numel() > 0 and nt > 0:
+            for step in range(0, nt // step_ratio, callback_frequency):
+                step_nt = min(nt // step_ratio - step, callback_frequency)
+                
+                if equation.call_born_backend(
+                    born_func,
+                    models,
+                    gg_models,
+                    source_amplitudes,
+                    gg_source_amplitudes,
+                    wavefields,
+                    grad_wavefields,
+                    aux_wavefields,
+                    grad_aux_wavefields,
+                    [torch.empty(0)], # receiver_amplitudes (unused in Born forward usually?)
+                    # ScalarBornForwardFunc uses receiver_amplitudes for what?
+                    # It computes u (background) and du (scattered).
+                    # receiver_amplitudes captures u. grad_receiver_amplitudes captures du.
+                    # We only care about du (grad_grad_r).
+                    # But if we pass empty, we might crash if it tries to write.
+                    # ScalarBackwardFunc passes receiver_amplitudes.data_ptr().
+                    # receiver_amplitudes in ScalarBackwardFunc comes from `wavefields`?
+                    # No, it creates `receiver_amplitudes` (zeros).
+                    # So we should create dummy receiver_amplitudes.
+                    grad_receiver_amplitudes,
+                    storage_manager,
+                    pml_profiles,
+                    sources_i,
+                    receivers_i,
+                    receivers_i, # grad_receivers_i is same as receivers_i
+                    ctx.grid_spacing,
+                    dt,
+                    step_nt * step_ratio,
+                    n_shots,
+                    model_shape,
+                    n_sources_per_shot,
+                    n_receivers_per_shot,
+                    n_grad_receivers_per_shot,
+                    step_ratio,
+                    models_requires_grad,
+                    model_batched,
+                    grad_model_batched,
+                    storage_manager.storage_compression,
+                    step * step_ratio,
+                    pml_b,
+                    pml_e,
+                    aux,
+                    stream,
+                ) != 0:
+                     raise RuntimeError("Compiled backend failed.")
+
+                if (step_nt * step_ratio) % 2 != 0:
+                    wavefields, aux_wavefields = equation.swap_odd_step_wavefields(
+                        wavefields, aux_wavefields, ndim, is_backward=False
+                    )
+                    grad_wavefields, grad_aux_wavefields = equation.swap_odd_step_wavefields(
+                        grad_wavefields, grad_aux_wavefields, ndim, is_backward=False
+                    )
+
+        if equation.grid_type == "staggered":
+             s = (slice(None), *(slice(fd_pad, shape - (fd_pad - 1)) for shape in model_shape))
+        else:
+             s = (slice(None), *(slice(fd_pad, -fd_pad) for _ in range(ndim)))
+        
+        n_non_tensor_args = 14
+        
+        return (
+            *([None] * n_non_tensor_args),
+            *[None] * ctx.n_models, # grad w.r.t models
+            *[None] * ctx.n_source_types, # grad w.r.t source_amps
+            *[None] * ctx.n_pml_profiles,
+            *[None] * ctx.n_source_locs,
+            *[None] * ctx.n_receiver_locs,
+            *[None] * ctx.n_wavefields, # grad w.r.t wavefields
+            *[w[s] for w in grad_wavefields], # grad w.r.t grad_wavefields
+            *grad_receiver_amplitudes # grad w.r.t grad_r
         )
