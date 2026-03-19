@@ -6,6 +6,8 @@ Refactor the Deepwave library to dramatically reduce code duplication across pro
 
 **Highest priority:** Code quality. The public Python API must remain **unchanged**.
 
+Keep the log in PROGRESS_LOG.md updated with progress so that if work is interrupted, another agent can continue from where you left off. You should record both what parts of the instructions have been completed, and any important decisions or learnings you make that would be useful for an agent continuing the work to know.
+
 ## Verified Architecture
 
 This section contains facts verified by reading the source. Trust these and do not re-investigate.
@@ -256,7 +258,7 @@ The task is divided into very small steps. After EVERY step:
 1. Run `ruff format src/deepwave/`
 2. Run `ruff check --fix src/deepwave/`
 3. Run `mypy --strict src/`
-4. Run `pytest tests/ -x` (stops at first failure)
+4. Run `pytest tests/ -x` (stops at first failure) (since the full test suite takes at least one hour to run, after a small change you should generally only run tests that might have been affected)
 
 If ANY step fails, STOP. Fix the issue before proceeding. Do not accumulate broken states.
 
