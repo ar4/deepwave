@@ -130,7 +130,7 @@ class PropagatorEquation(ABC):
     ) -> List[bool]:
         """Which model params require gradient storage allocation.
 
-        Uses raw (unprepared) models and ndim to compute the flags
+        Uses prepared models and ndim to compute the flags
         needed by setup_storage.
         """
         ...
@@ -202,6 +202,7 @@ class PropagatorEquation(ABC):
         models: List[torch.Tensor],
         source_amplitudes: List[torch.Tensor],
         wavefields: List[torch.Tensor],
+        aux_wavefields: List[torch.Tensor],
         receiver_amplitudes: List[torch.Tensor],
         storage_manager: Any,
         pml_profiles: List[torch.Tensor],
@@ -251,6 +252,7 @@ class PropagatorEquation(ABC):
         receivers_i: List[torch.Tensor],
         grid_spacing: Sequence[float],
         dt: float,
+        nt: int,
         step_nt: int,
         n_shots: int,
         model_shape: torch.Size,
@@ -296,6 +298,7 @@ class PropagatorEquation(ABC):
         grad_receivers_i: List[torch.Tensor],
         grid_spacing: Sequence[float],
         dt: float,
+        nt: int,
         step_nt: int,
         n_shots: int,
         model_shape: torch.Size,
@@ -319,6 +322,22 @@ class PropagatorEquation(ABC):
         Returns 0 on success.
         """
         ...
+
+    def prepare_backward(
+        self,
+        grad_wavefields: List[torch.Tensor],
+        ndim: int,
+    ) -> None:
+        """Prepare gradient wavefields for backprop (e.g. negation)."""
+        _ = (grad_wavefields, ndim)
+
+    def finalize_backward(
+        self,
+        grad_wavefields: List[torch.Tensor],
+        ndim: int,
+    ) -> None:
+        """Finalize gradient wavefields after backprop."""
+        _ = (grad_wavefields, ndim)
 
     @abstractmethod
     def create_aux_wavefields(

@@ -13,6 +13,8 @@ import torch
 import deepwave.backend_utils
 import deepwave.common
 import deepwave.regular_grid
+from deepwave.generic_forward_func import GenericForwardFunc
+from deepwave.scalar_born_equation import ScalarBornEquation
 
 
 class ScalarBorn(torch.nn.Module):
@@ -591,759 +593,6 @@ def scalar_born(
     return tuple(outputs)
 
 
-class ScalarBornForwardFunc(torch.autograd.Function):
-    """Forward propagation function for scalar Born modeling."""
-
-    @staticmethod
-    def forward(
-        ctx: Any,
-        v: torch.Tensor,
-        scatter: torch.Tensor,
-        source_amplitudes: torch.Tensor,
-        source_amplitudessc: torch.Tensor,
-        pml_profiles: List[torch.Tensor],
-        sources_i: torch.Tensor,
-        unused_tensor: torch.Tensor,
-        receivers_i: torch.Tensor,
-        receiverssc_i: torch.Tensor,
-        grid_spacing: Sequence[float],
-        dt: float,
-        nt: int,
-        step_ratio: int,
-        accuracy: int,
-        pml_width: List[int],
-        n_shots: int,
-        forward_callback: Optional[deepwave.common.Callback],
-        backward_callback: Optional[deepwave.common.Callback],
-        callback_frequency: int,
-        storage_mode_str: str,
-        storage_path: str,
-        storage_compression: bool,
-        *wavefields_tuple: torch.Tensor,
-    ) -> Tuple[torch.Tensor, ...]:
-        """Forward propagation of the scalar Born wave equation."""
-        del unused_tensor  # Unused.
-        device = v.device
-        dtype = v.dtype
-        storage_mode = deepwave.common.get_storage_mode(storage_mode_str, device)
-
-        ndim = len(grid_spacing)
-        is_cuda = v.is_cuda
-        model_shape = v.shape[-ndim:]
-        n_sources_per_shot = sources_i.numel() // n_shots
-        n_receivers_per_shot = receivers_i.numel() // n_shots
-        n_receiverssc_per_shot = receiverssc_i.numel() // n_shots
-
-        v_requires_grad = v.requires_grad
-        scatter_requires_grad = scatter.requires_grad
-
-        # Storage allocation
-        storage_manager = deepwave.common.setup_storage(
-            model_shape,
-            dtype,
-            n_shots,
-            nt,
-            step_ratio,
-            storage_mode,
-            storage_compression,
-            storage_path,
-            device,
-            is_cuda,
-            [v_requires_grad or scatter_requires_grad, v_requires_grad],
-        )
-
-        bg_wavefield_requires_grad = any(
-            wavefield.requires_grad for wavefield in wavefields_tuple[: 2 + 2 * ndim]
-        )
-        wavefield_requires_grad = any(
-            wavefield.requires_grad for wavefield in wavefields_tuple
-        )
-        if (
-            v_requires_grad
-            or scatter_requires_grad
-            or source_amplitudes.requires_grad
-            or source_amplitudessc.requires_grad
-            or wavefield_requires_grad
-        ):
-            ctx.save_for_backward(
-                v,
-                scatter,
-                sources_i,
-                receivers_i,
-                receiverssc_i,
-                *pml_profiles,
-            )
-            ctx.grid_spacing = grid_spacing
-            ctx.dt = dt
-            ctx.nt = nt
-            ctx.n_shots = n_shots
-            ctx.step_ratio = step_ratio
-            ctx.accuracy = accuracy
-            ctx.pml_width = pml_width
-            ctx.source_amplitudes_requires_grad = source_amplitudes.requires_grad
-            ctx.source_amplitudessc_requires_grad = source_amplitudessc.requires_grad
-            ctx.backward_callback = backward_callback
-            ctx.callback_frequency = callback_frequency
-            ctx.non_sc = (
-                v_requires_grad
-                or source_amplitudes.requires_grad
-                or bg_wavefield_requires_grad
-            )
-            ctx.storage_manager = storage_manager
-
-        (
-            v,
-            scatter,
-            source_amplitudes,
-            source_amplitudessc,
-            pml_profiles,
-            sources_i,
-            receivers_i,
-            receiverssc_i,
-        ) = deepwave.common.ensure_contiguous(
-            v,
-            scatter,
-            source_amplitudes,
-            source_amplitudessc,
-            pml_profiles,
-            sources_i,
-            receivers_i,
-            receiverssc_i,
-        )
-
-        size_with_batch = (n_shots, *model_shape)
-        wavefields = deepwave.common.prepare_initial_wavefields(
-            list(wavefields_tuple),
-            ndim,
-            accuracy,
-            device,
-            dtype,
-            size_with_batch,
-            pml_width,
-        )
-
-        wfc, wfp, *pml_wavefields = wavefields[: 2 + 2 * ndim]
-        wfcsc, wfpsc, *pml_wavefields_sc = wavefields[2 + 2 * ndim :]
-        psi = list(pml_wavefields[:ndim])
-        zeta = list(pml_wavefields[ndim:])
-        psisc = list(pml_wavefields_sc[:ndim])
-        zetasc = list(pml_wavefields_sc[ndim:])
-
-        for i in range(ndim):
-            psi[i] = deepwave.common.zero_interior(psi[i], accuracy // 2, pml_width, i)
-            zeta[i] = deepwave.common.zero_interior(
-                zeta[i], accuracy // 2, pml_width, i
-            )
-            psisc[i] = deepwave.common.zero_interior(
-                psisc[i], accuracy // 2, pml_width, i
-            )
-            zetasc[i] = deepwave.common.zero_interior(
-                zetasc[i], accuracy // 2, pml_width, i
-            )
-
-        psin = [torch.zeros_like(wf) for wf in psi]
-        psinsc = [torch.zeros_like(wf) for wf in psisc]
-        pml_b, pml_e = deepwave.common.get_pml_bounds(
-            pml_width, accuracy, model_shape, ndim
-        )
-
-        v_batched = v.ndim == ndim + 1 and v.shape[0] > 1
-        scatter_batched = scatter.ndim == ndim + 1 and scatter.shape[0] > 1
-
-        receiver_amplitudes = torch.empty(0, device=device, dtype=dtype)
-        receiver_amplitudessc = torch.empty(0, device=device, dtype=dtype)
-        if receivers_i.numel() > 0:
-            receiver_amplitudes.resize_(nt, n_shots, n_receivers_per_shot)
-            receiver_amplitudes.fill_(0)
-        if receiverssc_i.numel() > 0:
-            receiver_amplitudessc.resize_(nt, n_shots, n_receiverssc_per_shot)
-            receiver_amplitudessc.fill_(0)
-
-        stream, aux = deepwave.common.get_stream_or_aux(device, is_cuda, n_shots)
-
-        forward = deepwave.backend_utils.get_backend_function(
-            "scalar_born",
-            ndim,
-            "forward",
-            accuracy,
-            dtype,
-            v.device,
-        )
-
-        rdx = [1 / dx for dx in grid_spacing]
-        rdx2 = [1 / dx**2 for dx in grid_spacing]
-
-        if forward_callback is None:
-            callback_frequency = nt // step_ratio
-
-        dim_names = ["z", "y", "x"]
-        if wfc.numel() > 0 and nt > 0:
-            for step in range(0, nt // step_ratio, callback_frequency):
-                if forward_callback is not None:
-                    callback_wavefields = {
-                        "wavefield_0": wfc,
-                        "wavefield_m1": wfp,
-                        "wavefield_sc_0": wfcsc,
-                        "wavefield_sc_m1": wfpsc,
-                    }
-                    for i in range(ndim):
-                        callback_wavefields[f"psi{dim_names[-ndim + i]}_m1"] = psi[i]
-                        callback_wavefields[f"zeta{dim_names[-ndim + i]}_m1"] = zeta[i]
-                        callback_wavefields[f"psi{dim_names[-ndim + i]}_sc_m1"] = psisc[
-                            i
-                        ]
-                        callback_wavefields[f"zeta{dim_names[-ndim + i]}_sc_m1"] = (
-                            zetasc[i]
-                        )
-                    forward_callback(
-                        deepwave.common.CallbackState(
-                            dt,
-                            step,
-                            callback_wavefields,
-                            {"v": v, "scatter": scatter},
-                            {},
-                            [accuracy // 2] * 2 * ndim,
-                            pml_width,
-                        )
-                    )
-                step_nt = min(nt // step_ratio - step, callback_frequency)
-                if (
-                    forward(
-                        v.data_ptr(),
-                        scatter.data_ptr(),
-                        source_amplitudes.data_ptr(),
-                        source_amplitudessc.data_ptr(),
-                        wfc.data_ptr(),
-                        wfp.data_ptr(),
-                        *[field.data_ptr() for field in psi],
-                        *[field.data_ptr() for field in psin],
-                        *[field.data_ptr() for field in zeta],
-                        wfcsc.data_ptr(),
-                        wfpsc.data_ptr(),
-                        *[field.data_ptr() for field in psisc],
-                        *[field.data_ptr() for field in psinsc],
-                        *[field.data_ptr() for field in zetasc],
-                        *storage_manager.storage_ptrs,
-                        receiver_amplitudes.data_ptr(),
-                        receiver_amplitudessc.data_ptr(),
-                        *[profile.data_ptr() for profile in pml_profiles],
-                        sources_i.data_ptr(),
-                        receivers_i.data_ptr(),
-                        receiverssc_i.data_ptr(),
-                        *rdx,
-                        *rdx2,
-                        dt**2,
-                        step_nt * step_ratio,
-                        n_shots,
-                        *model_shape,
-                        n_sources_per_shot,
-                        n_receivers_per_shot,
-                        n_receiverssc_per_shot,
-                        step_ratio,
-                        storage_mode,
-                        storage_manager.shot_bytes_uncomp,
-                        storage_manager.shot_bytes_comp,
-                        v_requires_grad
-                        and storage_mode != deepwave.common.StorageMode.NONE,
-                        scatter_requires_grad
-                        and storage_mode != deepwave.common.StorageMode.NONE,
-                        v_batched,
-                        scatter_batched,
-                        storage_compression,
-                        step * step_ratio,
-                        *pml_b,
-                        *pml_e,
-                        aux,
-                        stream,
-                    )
-                    != 0
-                ):
-                    raise RuntimeError("Compiled backend failed.")
-                if (step_nt * step_ratio) % 2 != 0:
-                    wfc, wfp = wfp, wfc
-                    psi, psin = psin, psi
-                    wfcsc, wfpsc = wfpsc, wfcsc
-                    psisc, psinsc = psinsc, psisc
-
-        fd_pad = accuracy // 2
-        s = (slice(None),) + (slice(fd_pad, -fd_pad),) * ndim
-        return (
-            wfc[s],
-            wfp[s],
-            *[field[s] for field in psi],
-            *[field[s] for field in zeta],
-            wfcsc[s],
-            wfpsc[s],
-            *[field[s] for field in psisc],
-            *[field[s] for field in zetasc],
-            receiver_amplitudes,
-            receiver_amplitudessc,
-        )
-
-    @staticmethod
-    @torch.autograd.function.once_differentiable
-    def backward(
-        ctx: Any,
-        *args: torch.Tensor,
-    ) -> Tuple[Optional[torch.Tensor], ...]:
-        """Backward propagation of the scalar Born wave equation."""
-        grad_r = args[-2]
-        grad_rsc = args[-1]
-        grad_wavefields_list = list(args[:-2])
-        del args
-
-        (
-            v,
-            scatter,
-            sources_i,
-            receivers_i,
-            receiverssc_i,
-            *pml_profiles,
-        ) = ctx.saved_tensors
-
-        grid_spacing = ctx.grid_spacing
-        ndim = len(grid_spacing)
-        dt = ctx.dt
-        nt = ctx.nt
-        n_shots = ctx.n_shots
-        step_ratio = ctx.step_ratio
-        accuracy = ctx.accuracy
-        pml_width = ctx.pml_width
-        source_amplitudes_requires_grad = ctx.source_amplitudes_requires_grad
-        source_amplitudessc_requires_grad = ctx.source_amplitudessc_requires_grad
-        non_sc = ctx.non_sc
-
-        (
-            v,
-            scatter,
-            grad_r,
-            grad_rsc,
-            grad_wavefields_list,
-            pml_profiles,
-            sources_i,
-            receivers_i,
-            receiverssc_i,
-        ) = deepwave.common.ensure_contiguous(
-            v,
-            scatter,
-            grad_r,
-            grad_rsc,
-            grad_wavefields_list,
-            pml_profiles,
-            sources_i,
-            receivers_i,
-            receiverssc_i,
-        )
-
-        device = v.device
-        dtype = v.dtype
-        is_cuda = v.is_cuda
-        model_shape = v.shape[-ndim:]
-        n_sources_per_shot = sources_i.numel() // n_shots
-        n_receivers_per_shot = receivers_i.numel() // n_shots
-        n_receiverssc_per_shot = receiverssc_i.numel() // n_shots
-        fd_pad = accuracy // 2
-        storage_manager = ctx.storage_manager
-
-        v_requires_grad = v.requires_grad
-        scatter_requires_grad = scatter.requires_grad
-
-        size_with_batch = (n_shots, *model_shape)
-        grad_wavefieldssc = deepwave.common.prepare_initial_wavefields(
-            grad_wavefields_list[2 + 2 * ndim :],
-            ndim,
-            accuracy,
-            device,
-            dtype,
-            size_with_batch,
-            pml_width,
-        )
-        grad_wfcsc, grad_wfpsc, *grad_pml_wavefieldssc = grad_wavefieldssc
-        grad_psisc = list(grad_pml_wavefieldssc[:ndim])
-        grad_zetasc = list(grad_pml_wavefieldssc[ndim:])
-        for i in range(ndim):
-            grad_psisc[i] = deepwave.common.zero_interior(
-                grad_psisc[i], fd_pad, pml_width, i
-            )
-            grad_zetasc[i] = deepwave.common.zero_interior(
-                grad_zetasc[i], fd_pad, pml_width, i
-            )
-        grad_psinsc = [torch.zeros_like(gwf) for gwf in grad_psisc]
-        grad_zetansc = [torch.zeros_like(gwf) for gwf in grad_zetasc]
-
-        if non_sc:
-            grad_wavefields_non_sc = deepwave.common.prepare_initial_wavefields(
-                grad_wavefields_list[: 2 + 2 * ndim],
-                ndim,
-                accuracy,
-                device,
-                dtype,
-                size_with_batch,
-                pml_width,
-            )
-            grad_wfc, grad_wfp, *grad_pml_wavefields = grad_wavefields_non_sc
-            grad_psi = list(grad_pml_wavefields[:ndim])
-            grad_zeta = list(grad_pml_wavefields[ndim:])
-            for i in range(ndim):
-                grad_psi[i] = deepwave.common.zero_interior(
-                    grad_psi[i], fd_pad, pml_width, i
-                )
-                grad_zeta[i] = deepwave.common.zero_interior(
-                    grad_zeta[i], fd_pad, pml_width, i
-                )
-            grad_psin = [torch.zeros_like(gwf) for gwf in grad_psi]
-            grad_zetan = [torch.zeros_like(gwf) for gwf in grad_zeta]
-
-        pml_b, pml_e = deepwave.common.get_pml_bounds(
-            pml_width, accuracy, model_shape, ndim, multiplier=3
-        )
-
-        v_batched = v.ndim == ndim + 1 and v.shape[0] > 1
-        scatter_batched = scatter.ndim == ndim + 1 and scatter.shape[0] > 1
-
-        stream, aux = deepwave.common.get_stream_or_aux(device, is_cuda, n_shots)
-
-        (
-            grad_models,
-            _grad_models_tmp,
-            grad_models_tmp_ptr,
-            grad_f_list,
-        ) = deepwave.common.setup_backward_gradients(
-            [v, scatter],
-            [v_batched, scatter_batched],
-            n_shots,
-            model_shape,
-            storage_manager.storage_mode,
-            is_cuda,
-            aux,
-            nt,
-            [source_amplitudes_requires_grad, source_amplitudessc_requires_grad],
-            [n_sources_per_shot, n_sources_per_shot],
-        )
-        grad_v = grad_models[0]
-        grad_scatter = grad_models[1]
-        grad_v_tmp_ptr = grad_models_tmp_ptr[0]
-        grad_scatter_tmp_ptr = grad_models_tmp_ptr[1]
-        grad_f = grad_f_list[0]
-        grad_fsc = grad_f_list[1]
-
-        backward_callback = ctx.backward_callback
-        callback_frequency = ctx.callback_frequency
-
-        backward = deepwave.backend_utils.get_backend_function(
-            "scalar_born",
-            ndim,
-            "backward",
-            accuracy,
-            dtype,
-            v.device,
-        )
-        backward_sc = deepwave.backend_utils.get_backend_function(
-            "scalar_born",
-            ndim,
-            "backward",
-            accuracy,
-            dtype,
-            v.device,
-            extra="_sc",
-        )
-
-        rdx = [1 / dx for dx in grid_spacing]
-        rdx2 = [1 / dx**2 for dx in grid_spacing]
-
-        if non_sc:
-            grad_wfp = -grad_wfp
-        grad_wfpsc = -grad_wfpsc
-
-        if backward_callback is None:
-            callback_frequency = nt // step_ratio
-
-        dim_names = ["z", "y", "x"]
-
-        if grad_wfcsc.numel() > 0 and nt > 0:
-            if non_sc:
-                for step in range(nt // step_ratio, 0, -callback_frequency):
-                    step_nt = min(step, callback_frequency)
-                    if (
-                        backward(
-                            v.data_ptr(),
-                            scatter.data_ptr(),
-                            grad_r.data_ptr(),
-                            grad_rsc.data_ptr(),
-                            grad_wfc.data_ptr(),
-                            grad_wfp.data_ptr(),
-                            *[field.data_ptr() for field in grad_psi],
-                            *[field.data_ptr() for field in grad_psin],
-                            *[field.data_ptr() for field in grad_zeta],
-                            *[field.data_ptr() for field in grad_zetan],
-                            grad_wfcsc.data_ptr(),
-                            grad_wfpsc.data_ptr(),
-                            *[field.data_ptr() for field in grad_psisc],
-                            *[field.data_ptr() for field in grad_psinsc],
-                            *[field.data_ptr() for field in grad_zetasc],
-                            *[field.data_ptr() for field in grad_zetansc],
-                            *storage_manager.storage_ptrs,
-                            grad_f.data_ptr(),
-                            grad_fsc.data_ptr(),
-                            grad_v.data_ptr(),
-                            grad_scatter.data_ptr(),
-                            grad_v_tmp_ptr,
-                            grad_scatter_tmp_ptr,
-                            *[profile.data_ptr() for profile in pml_profiles],
-                            sources_i.data_ptr(),
-                            receivers_i.data_ptr(),
-                            receiverssc_i.data_ptr(),
-                            *rdx,
-                            *rdx2,
-                            dt**2,
-                            step_nt * step_ratio,
-                            n_shots,
-                            *model_shape,
-                            n_sources_per_shot * source_amplitudes_requires_grad,
-                            n_sources_per_shot * source_amplitudessc_requires_grad,
-                            n_receivers_per_shot,
-                            n_receiverssc_per_shot,
-                            step_ratio,
-                            storage_manager.storage_mode,
-                            storage_manager.shot_bytes_uncomp,
-                            storage_manager.shot_bytes_comp,
-                            v_requires_grad
-                            and storage_manager.storage_mode
-                            != deepwave.common.StorageMode.NONE,
-                            scatter_requires_grad
-                            and storage_manager.storage_mode
-                            != deepwave.common.StorageMode.NONE,
-                            v_batched,
-                            scatter_batched,
-                            storage_manager.storage_compression,
-                            step * step_ratio,
-                            *pml_b,
-                            *pml_e,
-                            aux,
-                            stream,
-                        )
-                        != 0
-                    ):
-                        raise RuntimeError("Compiled backend failed.")
-                    if (step_nt * step_ratio) % 2 != 0:
-                        (
-                            grad_wfc,
-                            grad_wfp,
-                            grad_psi,
-                            grad_psin,
-                            grad_zeta,
-                            grad_zetan,
-                        ) = (
-                            grad_wfp,
-                            grad_wfc,
-                            grad_psin,
-                            grad_psi,
-                            grad_zetan,
-                            grad_zeta,
-                        )
-                        (
-                            grad_wfcsc,
-                            grad_wfpsc,
-                            grad_psisc,
-                            grad_psinsc,
-                            grad_zetasc,
-                            grad_zetansc,
-                        ) = (
-                            grad_wfpsc,
-                            grad_wfcsc,
-                            grad_psinsc,
-                            grad_psisc,
-                            grad_zetansc,
-                            grad_zetasc,
-                        )
-                    if backward_callback is not None:
-                        callback_wavefields = {
-                            "wavefield_0": grad_wfc,
-                            "wavefield_m1": grad_wfp,
-                            "wavefield_sc_0": grad_wfcsc,
-                            "wavefield_sc_m1": grad_wfpsc,
-                        }
-                        for i in range(ndim):
-                            callback_wavefields[f"psi{dim_names[-ndim + i]}_m1"] = (
-                                grad_psi[i]
-                            )
-                            callback_wavefields[f"zeta{dim_names[-ndim + i]}_m1"] = (
-                                grad_zeta[i]
-                            )
-                            callback_wavefields[f"psi{dim_names[-ndim + i]}_sc_m1"] = (
-                                grad_psisc[i]
-                            )
-                            callback_wavefields[f"zeta{dim_names[-ndim + i]}_sc_m1"] = (
-                                grad_zetasc[i]
-                            )
-                        backward_callback(
-                            deepwave.common.CallbackState(
-                                dt,
-                                step - step_nt,
-                                callback_wavefields,
-                                {"v": v, "scatter": scatter},
-                                {"v": grad_v, "scatter": grad_scatter},
-                                [fd_pad] * 2 * ndim,
-                                pml_width,
-                            )
-                        )
-            else:
-                for step in range(nt // step_ratio, 0, -callback_frequency):
-                    step_nt = min(step, callback_frequency)
-                    if (
-                        backward_sc(
-                            v.data_ptr(),
-                            grad_rsc.data_ptr(),
-                            grad_wfcsc.data_ptr(),
-                            grad_wfpsc.data_ptr(),
-                            *[field.data_ptr() for field in grad_psisc],
-                            *[field.data_ptr() for field in grad_psinsc],
-                            *[field.data_ptr() for field in grad_zetasc],
-                            *[field.data_ptr() for field in grad_zetansc],
-                            *storage_manager.storage_ptrs[:5],  # Not scattered
-                            grad_fsc.data_ptr(),
-                            grad_scatter.data_ptr(),
-                            grad_scatter_tmp_ptr,
-                            *[profile.data_ptr() for profile in pml_profiles],
-                            sources_i.data_ptr(),
-                            receiverssc_i.data_ptr(),
-                            *rdx,
-                            *rdx2,
-                            dt**2,
-                            step_nt * step_ratio,
-                            n_shots,
-                            *model_shape,
-                            n_sources_per_shot * source_amplitudessc_requires_grad,
-                            n_receiverssc_per_shot,
-                            step_ratio,
-                            storage_manager.storage_mode,
-                            storage_manager.shot_bytes_uncomp,
-                            storage_manager.shot_bytes_comp,
-                            scatter.requires_grad
-                            and storage_manager.storage_mode
-                            != deepwave.common.StorageMode.NONE,
-                            v_batched,
-                            scatter_batched,
-                            storage_manager.storage_compression,
-                            step * step_ratio,
-                            *pml_b,
-                            *pml_e,
-                            aux,
-                            stream,
-                        )
-                        != 0
-                    ):
-                        raise RuntimeError("Compiled backend failed.")
-                    if (step_nt * step_ratio) % 2 != 0:
-                        (
-                            grad_wfcsc,
-                            grad_wfpsc,
-                            grad_psisc,
-                            grad_psinsc,
-                            grad_zetasc,
-                            grad_zetansc,
-                        ) = (
-                            grad_wfpsc,
-                            grad_wfcsc,
-                            grad_psinsc,
-                            grad_psisc,
-                            grad_zetansc,
-                            grad_zetasc,
-                        )
-                    if backward_callback is not None:
-                        callback_wavefields = {
-                            "wavefield_sc_0": grad_wfcsc,
-                            "wavefield_sc_m1": grad_wfpsc,
-                        }
-                        for i in range(ndim):
-                            callback_wavefields[f"psi{dim_names[-ndim + i]}_sc_m1"] = (
-                                grad_psisc[i]
-                            )
-                            callback_wavefields[f"zeta{dim_names[-ndim + i]}_sc_m1"] = (
-                                grad_zetasc[i]
-                            )
-                        backward_callback(
-                            deepwave.common.CallbackState(
-                                dt,
-                                step - step_nt,
-                                callback_wavefields,
-                                {"v": v, "scatter": scatter},
-                                {"scatter": grad_scatter},
-                                [fd_pad] * 2 * ndim,
-                                pml_width,
-                            )
-                        )
-
-        s = (
-            slice(None),
-            *(slice(fd_pad, dim - fd_pad) for dim in model_shape),
-        )
-        grad_wfpsc = -grad_wfpsc
-        if non_sc:
-            grad_wfp = -grad_wfp
-            return (
-                grad_v,
-                grad_scatter,
-                grad_f,
-                grad_fsc,
-                None,  # pml_profiles
-                None,  # sources_i
-                None,  # unused_tensor
-                None,  # receivers_i
-                None,  # receiverssc_i
-                None,  # grid_spacing
-                None,  # dt
-                None,  # nt
-                None,  # step_ratio
-                None,  # accuracy
-                None,  # pml_width
-                None,  # n_shots
-                None,  # forward_callback
-                None,  # backward_callback
-                None,  # callback_frequency
-                None,  # storage_mode
-                None,  # storage_path
-                None,  # storage_compression
-                grad_wfc[s],
-                grad_wfp[s],
-                *[gwf[s] for gwf in grad_psi],
-                *[gwf[s] for gwf in grad_zeta],
-                grad_wfcsc[s],
-                grad_wfpsc[s],
-                *[gwf[s] for gwf in grad_psisc],
-                *[gwf[s] for gwf in grad_zetasc],
-            )
-        return (
-            None,
-            grad_scatter,
-            None,
-            grad_fsc,
-            None,  # pml_profiles
-            None,  # sources_i
-            None,  # unused_tensor
-            None,  # receivers_i
-            None,  # receiverssc_i
-            None,  # grid_spacing
-            None,  # dt
-            None,  # nt
-            None,  # step_ratio
-            None,  # accuracy
-            None,  # pml_width
-            None,  # n_shots
-            None,  # forward_callback
-            None,  # backward_callback
-            None,  # callback_frequency
-            None,  # storage_mode
-            None,  # storage_path
-            None,  # storage_compression
-            *[None] * (2 + 2 * ndim),
-            grad_wfcsc[s],
-            grad_wfpsc[s],
-            *[gwf[s] for gwf in grad_psisc],
-            *[gwf[s] for gwf in grad_zetasc],
-        )
-
-
 def _forward_step(
     v: torch.Tensor,
     scatter: torch.Tensor,
@@ -1662,22 +911,16 @@ def scalar_born_python(
 
 
 def scalar_born_func(
-    python_backend: Union[Literal["eager", "jit", "compile"], bool] = False,
-    *args: Any,
+    python_backend: Union[Literal["eager", "jit", "compile"], bool], *args: Any
 ) -> Tuple[torch.Tensor, ...]:
-    """Helper function to apply the ScalarBornForwardFunc.
-
-    This function serves as a convenient wrapper to call the `apply` method
-    of `ScalarBornForwardFunc`, which is the entry point for the autograd graph
-    for scalar Born wave propagation.
+    """Helper function to apply the GenericForwardFunc with ScalarBornEquation.
 
     Args:
         python_backend: Bool or string specifying whether to use Python backend.
-        *args: Variable length argument list to be passed directly to
-            `ScalarBornForwardFunc.apply`.
+        *args: Variable length argument list.
 
     Returns:
-        The results of the forward pass from `ScalarBornForwardFunc.apply`.
+        The results of the forward pass.
 
     """
     global _forward_step_jit, _forward_step_compile, _forward_step_opt
@@ -1706,9 +949,54 @@ def scalar_born_func(
             raise ValueError(f"Unknown python_backend value {mode!r}.")
         return scalar_born_python(*args)
 
-    func = ScalarBornForwardFunc.apply
+    v = args[0]
+    scatter = args[1]
+    source_amplitudes = args[2]
+    source_amplitudessc = args[3]
+    pml_profiles = args[4]
+    sources_i = args[5]
+    unused_tensor = args[6]
+    receivers_i = args[7]
+    receiverssc_i = args[8]
+    grid_spacing = args[9]
+    dt = args[10]
+    nt = args[11]
+    step_ratio = args[12]
+    accuracy = args[13]
+    pml_width = args[14]
+    n_shots = args[15]
+    forward_callback = args[16]
+    backward_callback = args[17]
+    callback_frequency = args[18]
+    storage_mode = args[19]
+    storage_path = args[20]
+    storage_compression = args[21]
+    wavefields = args[22:]
 
-    return cast(
-        "Tuple[torch.Tensor, ...]",
-        func(*args),  # type: ignore[no-untyped-call]
+    equation = ScalarBornEquation()
+    packed_args = equation.pack_args(
+        [v, scatter],
+        [source_amplitudes, source_amplitudessc],
+        pml_profiles,
+        [sources_i, unused_tensor],
+        [receivers_i, receiverssc_i],
+        list(wavefields),
+    )
+
+    return GenericForwardFunc.apply(
+        equation,
+        grid_spacing,
+        dt,
+        nt,
+        step_ratio,
+        accuracy,
+        pml_width,
+        n_shots,
+        forward_callback,
+        backward_callback,
+        callback_frequency,
+        storage_mode,
+        storage_path,
+        storage_compression,
+        *packed_args,
     )

@@ -11,10 +11,94 @@ import torch
 import deepwave.backend_utils
 import deepwave.common
 import deepwave.staggered_grid
-from deepwave.elastic import zero_edges_and_interiors as _elastic_zero_edges
+from deepwave.propagator_equation import PropagatorEquation
 
 
-class ElasticEquation:
+def zero_edges_and_interiors(
+    wavefields: List[torch.Tensor],
+    ndim: int,
+    fd_pad: int,
+    fd_pad_list: List[int],
+    pml_width: List[int],
+    interior: bool = True,
+) -> None:
+    """Zeros the edges and/or interiors of wavefields.
+
+    This function modifies the input `wavefields` in-place.
+
+    Args:
+        wavefields: A list of wavefield tensors to modify.
+        ndim: The number of spatial dimensions.
+        fd_pad: The finite difference padding.
+        fd_pad_list: A list of finite difference padding for each dimension.
+        pml_width: A list of PML widths for each dimension.
+        interior: If True, zeros the interior of the wavefields.
+    """
+    num_vars = len(wavefields)
+    half_grid_mask: List[List[int]] = [[] for _ in range(num_vars)]
+    interior_mask: List[Tuple[int, int]] = []
+    if ndim == 3:
+        for i in [0, 2, 3, 5, 6, 7, 8, 9, 10, 11]:
+            half_grid_mask[i].append(0)
+        for i in [2, 5, 7, 12, 14, 16, 18, 19, 20, 22]:
+            half_grid_mask[i].append(1)
+        for i in [3, 6, 8, 13, 16, 18, 19, 21, 23, 26]:
+            half_grid_mask[i].append(2)
+        if interior:
+            interior_mask = [
+                (4, 0),
+                (7, 0),
+                (8, 0),
+                (9, 0),
+                (12, 0),
+                (13, 0),
+                (5, 1),
+                (10, 1),
+                (17, 1),
+                (19, 1),
+                (20, 1),
+                (21, 1),
+                (6, 2),
+                (11, 2),
+                (18, 2),
+                (22, 2),
+                (25, 2),
+                (26, 2),
+            ]
+    elif ndim == 2:
+        for i in [0, 2, 4, 5, 6, 8]:
+            half_grid_mask[i].append(0)
+        for i in [2, 4, 5, 7, 9, 12]:
+            half_grid_mask[i].append(1)
+        if interior:
+            interior_mask = [
+                (3, 0),
+                (5, 0),
+                (6, 0),
+                (7, 0),
+                (4, 1),
+                (8, 1),
+                (11, 1),
+                (12, 1),
+            ]
+    elif ndim == 1:
+        for i in [0, 3]:
+            half_grid_mask[i].append(0)
+        if interior:
+            interior_mask = [(2, 0), (3, 0)]
+
+    deepwave.common.zero_edges_and_interiors(
+        wavefields,
+        ndim,
+        fd_pad,
+        fd_pad_list,
+        pml_width,
+        half_grid_mask,
+        interior_mask,
+    )
+
+
+class ElasticEquation(PropagatorEquation):
     """Equation class for elastic wave propagation on a staggered grid.
 
     Encapsulates all equation-specific logic needed by the generic
@@ -384,16 +468,21 @@ class ElasticEquation:
         return ndim + 1
 
     def get_storage_requires_grad(
-        self, raw_models: List[torch.Tensor], ndim: int
+        self, prepared_models: List[torch.Tensor], ndim: int
     ) -> List[bool]:
         """Which model params require gradient storage.
 
         Elastic storage slots are dimension-dependent, combining
         lamb, mu, and buoyancy gradient requirements.
+
+        Note: prepared_models is [lamb, mu, *parameters] where
+        parameters includes buoyancy variants. Buoyancy is the last
+        one in parameters.
         """
-        lamb_requires_grad = raw_models[0].requires_grad
-        mu_requires_grad = raw_models[1].requires_grad
-        buoyancy_requires_grad = raw_models[2].requires_grad
+        lamb_requires_grad = prepared_models[0].requires_grad
+        mu_requires_grad = prepared_models[1].requires_grad
+        # Buoyancy is the last model in the list
+        buoyancy_requires_grad = prepared_models[-1].requires_grad
         if ndim == 3:
             return [
                 buoyancy_requires_grad,
@@ -430,7 +519,7 @@ class ElasticEquation:
         pml_width: List[int],
     ) -> List[torch.Tensor]:
         """Prepare wavefields for the C kernel (staggered grid)."""
-        return deepwave.common.prepare_initial_wavefields(
+        wavefields = deepwave.common.prepare_initial_wavefields(
             wavefields,
             ndim,
             accuracy,
@@ -440,6 +529,10 @@ class ElasticEquation:
             pml_width,
             staggered=True,
         )
+        fd_pad = accuracy // 2
+        fd_pad_list = [fd_pad, fd_pad - 1] * ndim
+        zero_edges_and_interiors(wavefields, ndim, fd_pad, fd_pad_list, pml_width)
+        return wavefields
 
     def get_callback_wavefield_names(self, ndim: int) -> List[str]:
         """Names for the callback wavefield dict."""
@@ -582,6 +675,7 @@ class ElasticEquation:
         models: List[torch.Tensor],
         source_amplitudes: List[torch.Tensor],
         wavefields: List[torch.Tensor],
+        aux_wavefields: List[torch.Tensor],
         receiver_amplitudes: List[torch.Tensor],
         storage_manager: Any,
         pml_profiles: List[torch.Tensor],
@@ -631,9 +725,9 @@ class ElasticEquation:
             *[
                 models_requires_grad[i]
                 and storage_mode != deepwave.common.StorageMode.NONE
-                for i in range(min(len(models_requires_grad), 3))
+                for i in [0, 1, -1]
             ],
-            *model_batched,
+            *[model_batched[i] for i in [0, 1, -1]],
             storage_compression,
             step,
             *pml_b,
@@ -658,6 +752,7 @@ class ElasticEquation:
         receivers_i: List[torch.Tensor],
         grid_spacing: Sequence[float],
         dt: float,
+        nt: int,
         step_nt: int,
         n_shots: int,
         model_shape: torch.Size,
@@ -694,10 +789,7 @@ class ElasticEquation:
             step_nt,
             n_shots,
             *model_shape,
-            *[
-                n_sources_per_shot[i] * models_requires_grad[i]
-                for i in range(len(n_sources_per_shot))
-            ],
+            *n_sources_per_shot,
             *n_receivers_per_shot,
             step_ratio,
             storage_mode,
@@ -706,9 +798,9 @@ class ElasticEquation:
             *[
                 models_requires_grad[i]
                 and storage_mode != deepwave.common.StorageMode.NONE
-                for i in range(min(len(models_requires_grad), 3))
+                for i in [0, 1, -1]
             ],
-            *model_batched,
+            *[model_batched[i] for i in [0, 1, -1]],
             storage_compression,
             step,
             *pml_b,
@@ -737,6 +829,7 @@ class ElasticEquation:
         grad_receivers_i: List[torch.Tensor],
         grid_spacing: Sequence[float],
         dt: float,
+        nt: int,
         step_nt: int,
         n_shots: int,
         model_shape: torch.Size,
@@ -833,4 +926,4 @@ class ElasticEquation:
     ) -> None:
         """Zero elastic backward wavefields using staggered half-grid masks."""
         fd_pad = accuracy // 2
-        _elastic_zero_edges(grad_wavefields, ndim, fd_pad, fd_pad_list, pml_width)
+        zero_edges_and_interiors(grad_wavefields, ndim, fd_pad, fd_pad_list, pml_width)

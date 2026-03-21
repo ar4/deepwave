@@ -18,6 +18,8 @@ import torch
 import deepwave.backend_utils
 import deepwave.common
 import deepwave.staggered_grid
+from deepwave.elastic_equation import ElasticEquation, zero_edges_and_interiors
+from deepwave.generic_forward_func import GenericForwardFunc
 
 
 def prepare_parameters(mu: torch.Tensor, buoyancy: torch.Tensor) -> List[torch.Tensor]:
@@ -1076,841 +1078,6 @@ def elastic(
     return (*outputs[: -1 - ndim], outputs[-1], *outputs[-1 - ndim : -1])
 
 
-def zero_edges_and_interiors(
-    wavefields: List[torch.Tensor],
-    ndim: int,
-    fd_pad: int,
-    fd_pad_list: List[int],
-    pml_width: List[int],
-    interior: bool = True,
-) -> None:
-    """Zeros the edges and/or interiors of wavefields.
-
-    This function modifies the input `wavefields` in-place.
-
-    Args:
-        wavefields: A list of wavefield tensors to modify.
-        ndim: The number of spatial dimensions.
-        fd_pad: The finite difference padding.
-        fd_pad_list: A list of finite difference padding for each dimension.
-        pml_width: A list of PML widths for each dimension.
-        interior: If True, zeros the interior of the wavefields.
-    """
-    num_vars = len(wavefields)
-    half_grid_mask: List[List[int]] = [[] for _ in range(num_vars)]
-    interior_mask: List[Tuple[int, int]] = []
-    if ndim == 3:
-        for i in [0, 2, 3, 5, 6, 7, 8, 9, 10, 11]:
-            half_grid_mask[i].append(0)
-        for i in [2, 5, 7, 12, 14, 16, 18, 19, 20, 22]:
-            half_grid_mask[i].append(1)
-        for i in [3, 6, 8, 13, 16, 18, 19, 21, 23, 26]:
-            half_grid_mask[i].append(2)
-        if interior:
-            interior_mask = [
-                (4, 0),
-                (7, 0),
-                (8, 0),
-                (9, 0),
-                (12, 0),
-                (13, 0),
-                (5, 1),
-                (10, 1),
-                (17, 1),
-                (19, 1),
-                (20, 1),
-                (21, 1),
-                (6, 2),
-                (11, 2),
-                (18, 2),
-                (22, 2),
-                (25, 2),
-                (26, 2),
-            ]
-    elif ndim == 2:
-        for i in [0, 2, 4, 5, 6, 8]:
-            half_grid_mask[i].append(0)
-        for i in [2, 4, 5, 7, 9, 12]:
-            half_grid_mask[i].append(1)
-        if interior:
-            interior_mask = [
-                (3, 0),
-                (5, 0),
-                (6, 0),
-                (7, 0),
-                (4, 1),
-                (8, 1),
-                (11, 1),
-                (12, 1),
-            ]
-    elif ndim == 1:
-        for i in [0, 3]:
-            half_grid_mask[i].append(0)
-        if interior:
-            interior_mask = [(2, 0), (3, 0)]
-
-    deepwave.common.zero_edges_and_interiors(
-        wavefields,
-        ndim,
-        fd_pad,
-        fd_pad_list,
-        pml_width,
-        half_grid_mask,
-        interior_mask,
-    )
-
-
-class ElasticForwardFunc(torch.autograd.Function):
-    """Forward propagation of the elastic wave equation."""
-
-    @staticmethod
-    def forward(
-        ctx: Any,
-        pml_profiles: List[torch.Tensor],
-        grid_spacing: List[float],
-        dt: float,
-        nt: int,
-        step_ratio: int,
-        accuracy: int,
-        pml_width: List[int],
-        n_shots: int,
-        forward_callback: Optional[deepwave.common.Callback],
-        backward_callback: Optional[deepwave.common.Callback],
-        callback_frequency: int,
-        storage_mode_str: str,
-        storage_path: str,
-        storage_compression: bool,
-        *args: torch.Tensor,
-    ) -> Tuple[torch.Tensor, ...]:
-        """Performs the forward propagation of the elastic wave equation.
-
-        This method is called by PyTorch during the forward pass. It prepares
-        the input tensors, calls the appropriate C/CUDA function for wave
-        propagation, and saves necessary tensors for the backward pass.
-
-        Args:
-            ctx: A context object for saving information for the backward pass.
-            pml_profiles: List of PML profiles.
-            grid_spacing: Grid spacing for each spatial dimension.
-            dt: Time step interval.
-            nt: Total number of time steps.
-            step_ratio: Ratio between user dt and internal dt.
-            accuracy: Finite difference accuracy order.
-            pml_width: List of PML widths for each side.
-            n_shots: Number of shots in the batch.
-            forward_callback: The forward callback.
-            backward_callback: The backward callback.
-            callback_frequency: The callback frequency.
-            storage_mode_str: Storage mode ("device", "cpu", "disk", "none").
-            storage_path: Path for disk storage.
-            storage_compression: Whether to use compression.
-            args: Property models, source amplitudes, source locations (1D),
-                  receiver locations (1D), and initial wavefields.
-
-        Returns:
-            A tuple containing the final wavefields, memory variables, and
-            receiver amplitudes.
-
-        """
-        ndim = len(grid_spacing)
-        args_list = list(args)
-
-        # Determine number of models, sources_i, receivers_i, source_amplitudes,
-        # wavefields based on ndim
-        num_wavefields = 0
-        num_receivers_i = 0
-        num_sources_i = 0
-        num_source_amplitudes = 0
-        num_models = 0
-        if ndim == 3:
-            num_wavefields = 14 + 9 + 4  # vz_0...m_sigmaxxx_0
-            num_receivers_i = 4  # z,y,x,p
-            num_sources_i = 4  # z,y,x,p
-            num_source_amplitudes = 4  # z,y,x,p
-            num_models = (
-                2 + 3 + 3
-            )  # lamb,mu + mu_zy,mu_zx,mu_yx + buoyancy_z,buoyancy_y,buoyancy_x
-        elif ndim == 2:
-            num_wavefields = 9 + 4
-            num_receivers_i = 3
-            num_sources_i = 3
-            num_source_amplitudes = 3
-            num_models = 2 + 1 + 2  # lamb,mu + mu_yx + buoyancy_y,buoyancy_x
-        else:  # ndim == 1
-            num_wavefields = 4
-            num_receivers_i = 2
-            num_sources_i = 2
-            num_source_amplitudes = 2
-            num_models = 2 + 1  # lamb,mu + buoyancy_x
-
-        wavefields = args_list[-num_wavefields:]
-        del args_list[-num_wavefields:]
-        receivers_i = args_list[-num_receivers_i:]
-        del args_list[-num_receivers_i:]
-        sources_i = args_list[-num_sources_i:]
-        del args_list[-num_sources_i:]
-        source_amplitudes = args_list[-num_source_amplitudes:]
-        del args_list[-num_source_amplitudes:]
-        models = args_list[-num_models:]
-        del args_list[-num_models:]
-
-        if len(args_list) != 0:
-            raise AssertionError(
-                "Error parsing arguments for ElasticForwardFunc.forward"
-            )
-
-        device = models[0].device
-        dtype = models[0].dtype
-        storage_mode = deepwave.common.get_storage_mode(storage_mode_str, device)
-
-        is_cuda = models[0].is_cuda
-        model_shape = models[0].shape[-ndim:]
-        n_sources_per_shot = [locs.numel() // n_shots for locs in sources_i]
-        n_receivers_per_shot = [locs.numel() // n_shots for locs in receivers_i]
-
-        lamb_requires_grad = models[0].requires_grad
-        mu_requires_grad = models[1].requires_grad
-        buoyancy_requires_grad = models[-1].requires_grad
-
-        # Define which storage variables are relevant based on ndim
-        # Backend expects 5 pointers for each of these:
-        requires_grad_list = []
-        if ndim == 3:
-            # dvzdbuoyancy, dvzdz_store, dvzdx_plus_dvxdz_store, dvzdy_plus_dvydz_store
-            # dvydbuoyancy, dvydy_store, dvydx_plus_dvxdy_store
-            # dvxdbuoyancy, dvxdx_store
-            requires_grad_list = [
-                buoyancy_requires_grad,
-                lamb_requires_grad or mu_requires_grad,
-                mu_requires_grad,
-                mu_requires_grad,
-                buoyancy_requires_grad,
-                lamb_requires_grad or mu_requires_grad,
-                mu_requires_grad,
-                buoyancy_requires_grad,
-                lamb_requires_grad or mu_requires_grad,
-            ]
-        elif ndim == 2:
-            # dvydbuoyancy, dvydy_store, dvydx_plus_dvxdy_store
-            # dvxdbuoyancy, dvxdx_store
-            requires_grad_list = [
-                buoyancy_requires_grad,
-                lamb_requires_grad or mu_requires_grad,
-                mu_requires_grad,
-                buoyancy_requires_grad,
-                lamb_requires_grad or mu_requires_grad,
-            ]
-        else:  # ndim == 1
-            # dvxdbuoyancy, dvxdx_store
-            requires_grad_list = [
-                buoyancy_requires_grad,
-                lamb_requires_grad or mu_requires_grad,
-            ]
-
-        storage_manager = deepwave.common.setup_storage(
-            model_shape,
-            dtype,
-            n_shots,
-            nt,
-            step_ratio,
-            storage_mode,
-            storage_compression,
-            storage_path,
-            device,
-            is_cuda,
-            requires_grad_list,
-        )
-
-        if (
-            lamb_requires_grad
-            or mu_requires_grad
-            or buoyancy_requires_grad
-            or any(amp.requires_grad for amp in source_amplitudes)
-            or any(wavefield.requires_grad for wavefield in wavefields)
-        ):
-            ctx.save_for_backward(
-                *models,
-                *sources_i,
-                *receivers_i,
-                *source_amplitudes,
-                *pml_profiles,
-            )
-            ctx.grid_spacing = grid_spacing
-            ctx.dt = dt
-            ctx.nt = nt
-            ctx.n_shots = n_shots
-            ctx.step_ratio = step_ratio
-            ctx.accuracy = accuracy
-            ctx.pml_width = pml_width
-            ctx.source_amplitudes_requires_grad = [
-                amp.requires_grad for amp in source_amplitudes
-            ]
-            ctx.backward_callback = backward_callback
-            ctx.callback_frequency = callback_frequency
-            ctx.storage_manager = storage_manager
-
-        (
-            models,
-            source_amplitudes,
-            pml_profiles,
-            sources_i,
-            receivers_i,
-        ) = deepwave.common.ensure_contiguous(
-            models,
-            source_amplitudes,
-            pml_profiles,
-            sources_i,
-            receivers_i,
-        )
-
-        size_with_batch = (n_shots, *model_shape)
-        wavefields = deepwave.common.prepare_initial_wavefields(
-            wavefields,
-            ndim,
-            accuracy,
-            device,
-            dtype,
-            size_with_batch,
-            pml_width,
-            staggered=True,
-        )
-
-        zero_edges_and_interiors(
-            wavefields,
-            ndim,
-            accuracy // 2,
-            [accuracy // 2, accuracy // 2 - 1] * ndim,
-            pml_width,
-        )
-
-        pml_b, pml_e = deepwave.common.get_pml_bounds(
-            pml_width, accuracy, model_shape, ndim, staggered=True
-        )
-
-        lamb_batched = models[0].ndim == ndim + 1 and models[0].shape[0] > 1
-        mu_batched = models[1].ndim == ndim + 1 and models[1].shape[0] > 1
-        buoyancy_batched = models[-1].ndim == ndim + 1 and models[-1].shape[0] > 1
-
-        rdx = [1 / dx for dx in grid_spacing]
-
-        receiver_amplitudes: List[torch.Tensor] = [
-            torch.empty(0, device=device, dtype=dtype) for _ in range(ndim + 1)
-        ]
-
-        for i, loc in enumerate(receivers_i):
-            if loc.numel() > 0:
-                receiver_amplitudes[i].resize_(nt, n_shots, n_receivers_per_shot[i])
-                receiver_amplitudes[i].fill_(0)
-
-        stream, aux = deepwave.common.get_stream_or_aux(device, is_cuda, n_shots)
-        forward = deepwave.backend_utils.get_backend_function(
-            "elastic",
-            ndim,
-            "forward",
-            accuracy,
-            dtype,
-            device,
-        )
-
-        if forward_callback is None:
-            callback_frequency = nt // step_ratio
-
-        wavefield_names = []
-        model_names = []
-        if ndim >= 3:
-            wavefield_names.extend(
-                [
-                    "vz_0",
-                    "sigmazz_0",
-                    "sigmayz_0",
-                    "sigmaxz_0",
-                    "m_vzz_0",
-                    "m_vzy_0",
-                    "m_vzx_0",
-                    "m_vyz_0",
-                    "m_vxz_0",
-                    "m_sigmazzz_0",
-                    "m_sigmayzy_0",
-                    "m_sigmaxzx_0",
-                    "m_sigmayzz_0",
-                    "m_sigmaxzz_0",
-                ]
-            )
-            model_names = [
-                "lamb",
-                "mu",
-                "mu_zy",
-                "mu_zx",
-                "mu_yx",
-                "buoyancy_z",
-                "buoyancy_y",
-                "buoyancy_x",
-            ]
-        if ndim >= 2:
-            wavefield_names.extend(
-                [
-                    "vy_0",
-                    "sigmayy_0",
-                    "sigmaxy_0",
-                    "m_vyy_0",
-                    "m_vyx_0",
-                    "m_vxy_0",
-                    "m_sigmayyy_0",
-                    "m_sigmaxyy_0",
-                    "m_sigmaxyx_0",
-                ]
-            )
-            model_names = ["lamb", "mu", "mu_yx", "buoyancy_y", "buoyancy_x"]
-        if ndim == 1:
-            model_names = ["lamb", "mu", "buoyancy_x"]
-        wavefield_names.extend(
-            [
-                "vx_0",
-                "sigmaxx_0",
-                "m_vxx_0",
-                "m_sigmaxxx_0",
-            ]
-        )
-        callback_models = dict(zip(model_names, models))
-        callback_wavefields = {}
-
-        if wavefields[0].numel() > 0 and nt > 0:
-            for step in range(0, nt // step_ratio, callback_frequency):
-                if forward_callback is not None:
-                    callback_wavefields = dict(zip(wavefield_names, wavefields))
-                    forward_callback(
-                        deepwave.common.CallbackState(
-                            dt,
-                            step,
-                            callback_wavefields,
-                            callback_models,
-                            {},
-                            [accuracy // 2, accuracy // 2 - 1] * ndim,
-                            pml_width,
-                        )
-                    )
-                step_nt = min(nt // step_ratio - step, callback_frequency)
-
-                if (
-                    forward(
-                        *[model.data_ptr() for model in models],
-                        *[amp.data_ptr() for amp in source_amplitudes],
-                        *[field.data_ptr() for field in wavefields],
-                        *storage_manager.storage_ptrs,
-                        *[amp.data_ptr() for amp in receiver_amplitudes],
-                        *[profile.data_ptr() for profile in pml_profiles],
-                        *[locs.data_ptr() for locs in sources_i],
-                        *[locs.data_ptr() for locs in receivers_i],
-                        *rdx,
-                        dt,
-                        step_nt * step_ratio,
-                        n_shots,
-                        *model_shape,
-                        *n_sources_per_shot,
-                        *n_receivers_per_shot,
-                        step_ratio,
-                        storage_manager.storage_mode,
-                        storage_manager.shot_bytes_uncomp,
-                        storage_manager.shot_bytes_comp,
-                        lamb_requires_grad
-                        and storage_manager.storage_mode
-                        != deepwave.common.StorageMode.NONE,
-                        mu_requires_grad
-                        and storage_manager.storage_mode
-                        != deepwave.common.StorageMode.NONE,
-                        buoyancy_requires_grad
-                        and storage_manager.storage_mode
-                        != deepwave.common.StorageMode.NONE,
-                        lamb_batched,
-                        mu_batched,
-                        buoyancy_batched,
-                        storage_manager.storage_compression,
-                        step * step_ratio,
-                        *pml_b,
-                        *pml_e,
-                        aux,
-                        stream,
-                    )
-                    != 0
-                ):
-                    raise RuntimeError("Compiled backend failed.")
-
-        fd_pad = accuracy // 2
-        s = (
-            slice(None),
-            *(slice(fd_pad, shape - (fd_pad - 1)) for shape in model_shape),
-        )
-        return (
-            *[field[s] for field in wavefields],
-            *receiver_amplitudes,
-        )
-
-    @staticmethod
-    @torch.autograd.function.once_differentiable
-    def backward(
-        ctx: Any,
-        *args: torch.Tensor,
-    ) -> Tuple[Optional[torch.Tensor], ...]:
-        """Computes the gradients during the backward pass.
-
-        This method is called by PyTorch during the backward pass to compute
-        gradients with respect to the inputs of the forward pass.
-
-        Args:
-            ctx: A context object with saved information from the forward pass.
-            args: Gradients of the outputs of the forward pass.
-
-        Returns:
-            A tuple containing the gradients with respect to the inputs of the
-            forward pass.
-
-        """
-        grid_spacing = ctx.grid_spacing
-        ndim = len(grid_spacing)
-        grad_r = list(args[-ndim - 1 :])
-        grad_wavefields = list(args[: -ndim - 1])
-        del args
-
-        saved_tensors = list(ctx.saved_tensors)
-
-        num_models = 0
-        num_sources_i = 0
-        num_receivers_i = 0
-        num_source_amplitudes = 0
-        num_pml_profiles = 0
-
-        if ndim == 3:
-            num_models = 8
-            num_sources_i = 4
-            num_receivers_i = 4
-            num_source_amplitudes = 4
-            num_pml_profiles = 12
-        elif ndim == 2:
-            num_models = 5
-            num_sources_i = 3
-            num_receivers_i = 3
-            num_source_amplitudes = 3
-            num_pml_profiles = 8
-        else:
-            num_models = 3
-            num_sources_i = 2
-            num_receivers_i = 2
-            num_source_amplitudes = 2
-            num_pml_profiles = 4
-
-        models = saved_tensors[:num_models]
-        del saved_tensors[:num_models]
-        sources_i = saved_tensors[:num_sources_i]
-        del saved_tensors[:num_sources_i]
-        receivers_i = saved_tensors[:num_receivers_i]
-        del saved_tensors[:num_receivers_i]
-        source_amplitudes = saved_tensors[:num_source_amplitudes]
-        del saved_tensors[:num_source_amplitudes]
-        pml_profiles = saved_tensors[:num_pml_profiles]
-        del saved_tensors[:num_pml_profiles]
-
-        dt = ctx.dt
-        nt = ctx.nt
-        n_shots = ctx.n_shots
-        step_ratio = ctx.step_ratio
-        accuracy = ctx.accuracy
-        pml_width = ctx.pml_width
-        source_amplitudes_requires_grad = ctx.source_amplitudes_requires_grad
-        storage_manager = ctx.storage_manager
-
-        (
-            grad_r,
-            models,
-            sources_i,
-            receivers_i,
-            source_amplitudes,
-            pml_profiles,
-        ) = deepwave.common.ensure_contiguous(
-            grad_r,
-            models,
-            sources_i,
-            receivers_i,
-            source_amplitudes,
-            pml_profiles,
-        )
-
-        device = models[0].device
-
-        dtype = models[0].dtype
-        is_cuda = models[0].is_cuda
-        model_shape = models[0].shape[-ndim:]
-        n_sources_per_shot = [loc.numel() // n_shots for loc in sources_i]
-        n_receivers_per_shot = [locs.numel() // n_shots for locs in receivers_i]
-
-        stream, aux = deepwave.common.get_stream_or_aux(device, is_cuda, n_shots)
-
-        model_batched_list = [
-            model.ndim == ndim + 1 and model.shape[0] > 1 for model in models
-        ]
-        (
-            grad_models,
-            _grad_models_tmp,
-            grad_models_tmp_ptr,
-            grad_f_list,
-        ) = deepwave.common.setup_backward_gradients(
-            models,
-            model_batched_list,
-            n_shots,
-            model_shape,
-            storage_manager.storage_mode,
-            is_cuda,
-            aux,
-            nt,
-            source_amplitudes_requires_grad,
-            n_sources_per_shot,
-        )
-
-        lamb_requires_grad = models[0].requires_grad
-        mu_requires_grad = models[1].requires_grad
-        buoyancy_requires_grad = models[-1].requires_grad
-        lamb_batched = model_batched_list[0]
-        mu_batched = model_batched_list[1]
-        buoyancy_batched = model_batched_list[-1]
-
-        size_with_batch = (n_shots, *model_shape)
-        fd_pad = accuracy // 2
-        fd_pad_list = [fd_pad, fd_pad - 1] * ndim
-        grad_wavefields = [
-            deepwave.common.create_or_pad(
-                wavefield,
-                fd_pad_list,
-                device,
-                dtype,
-                size_with_batch,
-            )
-            for wavefield in grad_wavefields
-        ]
-        aux_wavefields = []
-        if ndim >= 3:
-            aux_wavefields.extend(
-                [torch.zeros_like(grad_wavefields[0]) for _ in range(5)]
-            )
-        if ndim >= 2:
-            aux_wavefields.extend(
-                [torch.zeros_like(grad_wavefields[0]) for _ in range(3)]
-            )
-        aux_wavefields.append(torch.zeros_like(grad_wavefields[0]))
-
-        zero_edges_and_interiors(grad_wavefields, ndim, fd_pad, fd_pad_list, pml_width)
-
-        pml_b, pml_e = deepwave.common.get_pml_bounds(
-            pml_width, accuracy, model_shape, ndim, multiplier=3, staggered=True
-        )
-
-        rdx = [1 / dx for dx in grid_spacing]
-
-        backward = deepwave.backend_utils.get_backend_function(
-            "elastic",
-            ndim,
-            "backward",
-            accuracy,
-            dtype,
-            device,
-        )
-
-        backward_callback = ctx.backward_callback
-        callback_frequency = ctx.callback_frequency
-        if backward_callback is None:
-            callback_frequency = nt // step_ratio
-
-        wavefield_names = []
-        model_names = []
-        if ndim >= 3:
-            wavefield_names.extend(
-                [
-                    "vz_0",
-                    "sigmazz_0",
-                    "sigmayz_0",
-                    "sigmaxz_0",
-                    "m_vzz_0",
-                    "m_vzy_0",
-                    "m_vzx_0",
-                    "m_vyz_0",
-                    "m_vxz_0",
-                    "m_sigmazzz_0",
-                    "m_sigmayzy_0",
-                    "m_sigmaxzx_0",
-                    "m_sigmayzz_0",
-                    "m_sigmaxzz_0",
-                ]
-            )
-            model_names = [
-                "lamb",
-                "mu",
-                "mu_zy",
-                "mu_zx",
-                "mu_yx",
-                "buoyancy_z",
-                "buoyancy_y",
-                "buoyancy_x",
-            ]
-        if ndim >= 2:
-            wavefield_names.extend(
-                [
-                    "vy_0",
-                    "sigmayy_0",
-                    "sigmaxy_0",
-                    "m_vyy_0",
-                    "m_vyx_0",
-                    "m_vxy_0",
-                    "m_sigmayyy_0",
-                    "m_sigmaxyy_0",
-                    "m_sigmaxyx_0",
-                ]
-            )
-            model_names = ["lamb", "mu", "mu_yx", "buoyancy_y", "buoyancy_x"]
-        if ndim == 1:
-            model_names = ["lamb", "mu", "buoyancy_x"]
-        wavefield_names.extend(
-            [
-                "vx_0",
-                "sigmaxx_0",
-                "m_vxx_0",
-                "m_sigmaxxx_0",
-            ]
-        )
-        callback_models = dict(zip(model_names, models))
-        callback_grad_models = dict(zip(model_names, grad_models))
-
-        if grad_wavefields[0].numel() > 0 and nt > 0:
-            for step in range(nt // step_ratio, 0, -callback_frequency):
-                step_nt = min(step, callback_frequency)
-                if (
-                    backward(
-                        *[model.data_ptr() for model in models],
-                        *[amp.data_ptr() for amp in grad_r],
-                        *[field.data_ptr() for field in grad_wavefields],
-                        *[field.data_ptr() for field in aux_wavefields],
-                        *storage_manager.storage_ptrs,
-                        *[amp.data_ptr() for amp in grad_f_list],
-                        *[model.data_ptr() for model in grad_models],
-                        *grad_models_tmp_ptr,
-                        *[profile.data_ptr() for profile in pml_profiles],
-                        *[locs.data_ptr() for locs in sources_i],
-                        *[locs.data_ptr() for locs in receivers_i],
-                        *rdx,
-                        dt,
-                        step_nt * step_ratio,
-                        n_shots,
-                        *model_shape,
-                        *[
-                            n_sources_per_shot[i] * source_amplitudes_requires_grad[i]
-                            for i in range(len(n_sources_per_shot))
-                        ],
-                        *n_receivers_per_shot,
-                        step_ratio,
-                        storage_manager.storage_mode,
-                        storage_manager.shot_bytes_uncomp,
-                        storage_manager.shot_bytes_comp,
-                        lamb_requires_grad
-                        and storage_manager.storage_mode
-                        != deepwave.common.StorageMode.NONE,
-                        mu_requires_grad
-                        and storage_manager.storage_mode
-                        != deepwave.common.StorageMode.NONE,
-                        buoyancy_requires_grad
-                        and storage_manager.storage_mode
-                        != deepwave.common.StorageMode.NONE,
-                        lamb_batched,
-                        mu_batched,
-                        buoyancy_batched,
-                        storage_manager.storage_compression,
-                        step * step_ratio,
-                        *pml_b,
-                        *pml_e,
-                        aux,
-                        stream,
-                    )
-                    != 0
-                ):
-                    raise RuntimeError("Compiled backend failed.")
-                if (step_nt * step_ratio) % 2 != 0:
-                    if ndim == 3:
-                        (
-                            grad_wavefields[9:14],
-                            aux_wavefields[-9:-4],
-                        ) = (
-                            aux_wavefields[-9:-4],
-                            grad_wavefields[9:14],
-                        )
-                        (
-                            grad_wavefields[20:23],
-                            aux_wavefields[-4:-1],
-                        ) = (
-                            aux_wavefields[-4:-1],
-                            grad_wavefields[20:23],
-                        )
-                        grad_wavefields[26], aux_wavefields[-1] = (
-                            aux_wavefields[-1],
-                            grad_wavefields[26],
-                        )
-                    elif ndim == 2:
-                        (
-                            grad_wavefields[6:9],
-                            aux_wavefields[-4:-1],
-                        ) = (
-                            aux_wavefields[-4:-1],
-                            grad_wavefields[6:9],
-                        )
-                        grad_wavefields[12], aux_wavefields[-1] = (
-                            aux_wavefields[-1],
-                            grad_wavefields[12],
-                        )
-                    else:
-                        grad_wavefields[3], aux_wavefields[-1] = (
-                            aux_wavefields[-1],
-                            grad_wavefields[3],
-                        )
-
-                if backward_callback is not None:
-                    callback_wavefields = dict(
-                        zip(wavefield_names, grad_wavefields[:-1])
-                    )
-                    backward_callback(
-                        deepwave.common.CallbackState(
-                            dt,
-                            step - step_nt,
-                            callback_wavefields,
-                            callback_models,
-                            callback_grad_models,
-                            fd_pad_list,
-                            pml_width,
-                        )
-                    )
-
-        fd_pad = accuracy // 2
-        s = (
-            slice(None),
-            *(slice(fd_pad, shape - (fd_pad - 1)) for shape in model_shape),
-        )
-        return (
-            None,  # pml_profiles
-            None,  # grid_spacing
-            None,  # dt
-            None,  # nt
-            None,  # step_ratio
-            None,  # accuracy
-            None,  # pml_width
-            None,  # n_shots
-            None,  # forward_callback
-            None,  # backward_callback
-            None,  # callback_frequency
-            None,  # storage_mode
-            None,  # storage_path
-            None,  # storage_compression
-            *grad_models,
-            *grad_f_list,
-            *[None] * len(sources_i),  # sources_i
-            *[None] * len(receivers_i),  # receivers_i
-            *[field[s] for field in grad_wavefields],
-        )
-
-
 def update_velocities(
     models: List[torch.Tensor],
     normal_stresses: List[torch.Tensor],
@@ -2677,27 +1844,31 @@ _update_stresses_opt = update_stresses
 
 
 def elastic_func(
-    python_backend: Union[Literal["eager", "jit", "compile"], bool] = False, *args: Any
+    python_backend: Union[Literal["eager", "jit", "compile"], bool],
+    pml_profiles: List[torch.Tensor],
+    grid_spacing: List[float],
+    dt: float,
+    nt: int,
+    step_ratio: int,
+    accuracy: int,
+    pml_width: List[int],
+    n_shots: int,
+    forward_callback: Optional[deepwave.common.Callback],
+    backward_callback: Optional[deepwave.common.Callback],
+    callback_frequency: int,
+    storage_mode: str,
+    storage_path: str,
+    storage_compression: bool,
+    *args: torch.Tensor,
 ) -> Tuple[torch.Tensor, ...]:
-    """A helper function to apply the ElasticForwardFunc.
-
-    This function serves as a convenient wrapper to call the `apply` method
-    of `ElasticForwardFunc`, which is the entry point for the autograd graph
-    for elastic wave propagation.
-
-    Args:
-        python_backend: Bool or string specifying whether to use Python backend.
-        *args: Variable length argument list to be passed directly to
-            `ElasticForwardFunc.apply`.
-
-    Returns:
-        The results of the forward pass from `ElasticForwardFunc.apply`.
-
-    """
-    global _update_velocities_jit, _update_velocities_compile, _update_velocities_opt
-    global _update_stresses_jit, _update_stresses_compile, _update_stresses_opt
+    """A helper function to apply the ElasticForwardFunc."""
+    ndim = len(grid_spacing)
+    equation = ElasticEquation()
 
     if python_backend:
+        global _update_velocities_jit, _update_velocities_compile, _update_velocities_opt
+        global _update_stresses_jit, _update_stresses_compile, _update_stresses_opt
+
         if python_backend is True:
             mode = "compile" if deepwave.backend_utils.USE_OPENMP else "jit"
         elif isinstance(python_backend, str):
@@ -2730,9 +1901,57 @@ def elastic_func(
             _update_stresses_opt = update_stresses
         else:
             raise ValueError(f"Unknown python_backend value {mode!r}.")
-        return elastic_python(*args)
 
-    return cast(
-        "Tuple[torch.Tensor, ...]",
-        ElasticForwardFunc.apply(*args),  # type: ignore[no-untyped-call]
+        return elastic_python(
+            pml_profiles,
+            grid_spacing,
+            dt,
+            nt,
+            step_ratio,
+            accuracy,
+            pml_width,
+            n_shots,
+            forward_callback,
+            backward_callback,
+            callback_frequency,
+            storage_mode,
+            storage_path,
+            storage_compression,
+            *args,
+        )
+
+    # For GenericForwardFunc, pml_profiles must be inside args
+    # Args contains: models, source_amplitudes, sources_i, receivers_i, wavefields
+    # We need to insert pml_profiles after source_amplitudes
+
+    if ndim == 3:
+        num_models = 8
+        num_source_amplitudes = 4
+    elif ndim == 2:
+        num_models = 5
+        num_source_amplitudes = 3
+    else:  # 1D
+        num_models = 3
+        num_source_amplitudes = 2
+
+    # args is a tuple, so we can construct new args
+    split_point = num_models + num_source_amplitudes
+    new_args = args[:split_point] + tuple(pml_profiles) + args[split_point:]
+
+    return GenericForwardFunc.apply(
+        equation,
+        grid_spacing,
+        dt,
+        nt,
+        step_ratio,
+        accuracy,
+        pml_width,
+        n_shots,
+        forward_callback,
+        backward_callback,
+        callback_frequency,
+        storage_mode,
+        storage_path,
+        storage_compression,
+        *new_args,
     )

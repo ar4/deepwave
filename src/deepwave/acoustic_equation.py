@@ -11,10 +11,62 @@ import torch
 import deepwave.backend_utils
 import deepwave.common
 import deepwave.staggered_grid
-from deepwave.acoustic import zero_edges_and_interiors as _acoustic_zero_edges
+from deepwave.propagator_equation import PropagatorEquation
 
 
-class AcousticEquation:
+def zero_edges_and_interiors(
+    wavefields: List[torch.Tensor],
+    ndim: int,
+    fd_pad: int,
+    fd_pad_list: List[int],
+    pml_width: List[int],
+    interior: bool = True,
+) -> None:
+    """Zeros the edges and/or interiors of wavefields."""
+    num_vars = len(wavefields)
+    half_grid_mask: List[List[int]] = [[] for _ in range(num_vars)]
+    interior_mask: List[Tuple[int, int]] = []
+
+    if ndim == 3:
+        # vz (1), psiz (7) -> shifted z (dim 0)
+        half_grid_mask[1] = [0]
+        half_grid_mask[7] = [0]
+        # vy (2), psiy (8) -> shifted y (dim 1)
+        half_grid_mask[2] = [1]
+        half_grid_mask[8] = [1]
+        # vx (3), psix (9) -> shifted x (dim 2)
+        half_grid_mask[3] = [2]
+        half_grid_mask[9] = [2]
+        if interior:
+            interior_mask = [(4, 0), (7, 0), (5, 1), (8, 1), (6, 2), (9, 2)]
+    elif ndim == 2:
+        # vy (1), psiy (5) -> shifted y (dim 0)
+        half_grid_mask[1] = [0]
+        half_grid_mask[5] = [0]
+        # vx (2), psix (6) -> shifted x (dim 1)
+        half_grid_mask[2] = [1]
+        half_grid_mask[6] = [1]
+        if interior:
+            interior_mask = [(3, 0), (5, 0), (4, 1), (6, 1)]
+    elif ndim == 1:
+        # vx (1), psix (3) -> shifted x (dim 0)
+        half_grid_mask[1] = [0]
+        half_grid_mask[3] = [0]
+        if interior:
+            interior_mask = [(2, 0), (3, 0)]
+
+    deepwave.common.zero_edges_and_interiors(
+        wavefields,
+        ndim,
+        fd_pad,
+        fd_pad_list,
+        pml_width,
+        half_grid_mask,
+        interior_mask,
+    )
+
+
+class AcousticEquation(PropagatorEquation):
     """Equation class for acoustic wave propagation on a staggered grid.
 
     Encapsulates all equation-specific logic needed by the generic
@@ -267,7 +319,7 @@ class AcousticEquation:
         return 1 + ndim
 
     def get_storage_requires_grad(
-        self, raw_models: List[torch.Tensor], ndim: int
+        self, prepared_models: List[torch.Tensor], ndim: int
     ) -> List[bool]:
         """Which model params require gradient storage.
 
@@ -275,9 +327,9 @@ class AcousticEquation:
         The pattern is: [K_requires_grad, rho_requires_grad] * n_slots
         where n_slots = ndim + 1 (K + buoyancy per dim).
         """
-        v_requires_grad = raw_models[0].requires_grad
-        rho_requires_grad = raw_models[1].requires_grad
-        return [v_requires_grad] + [rho_requires_grad] * ndim
+        k_requires_grad = prepared_models[0].requires_grad
+        rho_requires_grad = prepared_models[-1].requires_grad
+        return [k_requires_grad] + [rho_requires_grad] * ndim
 
     def prepare_wavefields(
         self,
@@ -290,7 +342,7 @@ class AcousticEquation:
         pml_width: List[int],
     ) -> List[torch.Tensor]:
         """Prepare wavefields for the C kernel (staggered grid)."""
-        return deepwave.common.prepare_initial_wavefields(
+        wavefields = deepwave.common.prepare_initial_wavefields(
             wavefields,
             ndim,
             accuracy,
@@ -300,6 +352,10 @@ class AcousticEquation:
             pml_width,
             staggered=True,
         )
+        fd_pad = accuracy // 2
+        fd_pad_list = [fd_pad, fd_pad - 1] * ndim
+        zero_edges_and_interiors(wavefields, ndim, fd_pad, fd_pad_list, pml_width)
+        return wavefields
 
     def get_callback_wavefield_names(self, ndim: int) -> List[str]:
         """Names for the callback wavefield dict."""
@@ -401,6 +457,7 @@ class AcousticEquation:
         models: List[torch.Tensor],
         source_amplitudes: List[torch.Tensor],
         wavefields: List[torch.Tensor],
+        aux_wavefields: List[torch.Tensor],
         receiver_amplitudes: List[torch.Tensor],
         storage_manager: Any,
         pml_profiles: List[torch.Tensor],
@@ -451,7 +508,7 @@ class AcousticEquation:
                 req and storage_mode != deepwave.common.StorageMode.NONE
                 for req in models_requires_grad[:2]
             ],
-            *model_batched,
+            *model_batched[:2],
             storage_compression,
             step,
             *pml_b,
@@ -476,6 +533,7 @@ class AcousticEquation:
         receivers_i: List[torch.Tensor],
         grid_spacing: Sequence[float],
         dt: float,
+        nt: int,
         step_nt: int,
         n_shots: int,
         model_shape: torch.Size,
@@ -522,7 +580,7 @@ class AcousticEquation:
                 req and storage_mode != deepwave.common.StorageMode.NONE
                 for req in models_requires_grad[:2]
             ],
-            *model_batched,
+            *model_batched[:2],
             storage_compression,
             step,
             *pml_b,
@@ -551,6 +609,7 @@ class AcousticEquation:
         grad_receivers_i: List[torch.Tensor],
         grid_spacing: Sequence[float],
         dt: float,
+        nt: int,
         step_nt: int,
         n_shots: int,
         model_shape: torch.Size,
@@ -615,4 +674,4 @@ class AcousticEquation:
     ) -> None:
         """Zero acoustic backward wavefields using staggered half-grid masks."""
         fd_pad = accuracy // 2
-        _acoustic_zero_edges(grad_wavefields, ndim, fd_pad, fd_pad_list, pml_width)
+        zero_edges_and_interiors(grad_wavefields, ndim, fd_pad, fd_pad_list, pml_width)

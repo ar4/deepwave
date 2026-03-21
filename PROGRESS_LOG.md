@@ -1,6 +1,6 @@
 # Deepwave Refactoring Progress Log
 
-## Last Updated: 2026-03-18
+## Last Updated: 2026-03-19
 
 ## Summary of Work Done
 
@@ -61,84 +61,9 @@ Added to ABC:
 ### 5. Acoustic `zero_edges_and_interiors` import
 `AcousticEquation` imports `zero_edges_and_interiors` from `acoustic.py` as `_acoustic_zero_edges`. No circular dependency since `acoustic.py` doesn't import from `acoustic_equation.py`.
 
-## What Still Needs To Be Done
+## Detailed Migration Progress
 
-### Phase 3: Migrate Scalar
-- Step 3.1: Create `scalar_func_generic` using `GenericForwardFunc` + `ScalarEquation`
-- Step 3.2: Verify bit-identical outputs
-- Step 3.3-3.6: Replace and remove old `ScalarForwardFunc`
-
-### Phase 4: Migrate Acoustic
-- Same pattern as Phase 3
-
-### Phase 5: Migrate Elastic
-- Same pattern, but more complex due to dimension-dependent structure
-
-### Phase 6: Migrate ScalarBorn
-- Create `ScalarBornEquation`
-
-### Phase 7: Add Born Kernels for Acoustic and Elastic
-- Requires modifying C code (backend_utils.py, CMakeLists.txt)
-
-### Phase 8: Final Cleanup
-
-## Important Code Locations
-
-### Existing ForwardFunc/BackwardFunc classes (to be replaced):
-- `scalar.py:586` - `ScalarForwardFunc`
-- `scalar.py:1141` - `ScalarBackwardFunc`
-- `acoustic.py:693` - `AcousticForwardFunc`
-- `elastic.py:1163` - `ElasticForwardFunc`
-
-### Key differences between propagators:
-
-**Forward C call pattern:**
-- Scalar: `backend_func(v.data_ptr(), sa.data_ptr(), wfc, wfp, *psi, *psin, *zeta, *storage, recv, *pml, src_i, recv_i, *rdx, *rdx2, dt**2, step_nt//step_ratio, ...)`
-- Acoustic: `backend_func(*models, *sa, *wavefields, *storage, *recv, *pml, *src_i, *recv_i, *rdx, dt, step_nt, ...)`
-- Elastic: same as acoustic but with 3 requires_grad flags
-
-**Backward C call pattern:**
-- Scalar: `backend_func(v2dt2, grad_r, grad_wfc, grad_wfp, *grad_psi, *grad_psin, *grad_zeta, *grad_zetan, *storage, grad_f, grad_v, grad_v_tmp, *pml, ...)`
-- Acoustic: `backend_func(*models, *grad_r, *grad_wf, *aux_wf, *storage, *grad_f, *grad_models, *grad_tmp, *pml, ...)`
-- Elastic: same pattern as acoustic
-
-### Files NOT to modify (per instructions):
-- `backend_utils.py`
-- `common.py`
-- `regular_grid.py`, `staggered_grid.py`
-- `CMakeLists.txt`, `storage_utils.c/cu`
-- `wavelets.py`, `location_interpolation.py`
-
-## Running the Tests
-
-Since the full test suite takes >1 hour, run targeted tests:
-```bash
-# Test that new code doesn't break anything
-pytest tests/test_scalar.py -x -v
-
-# After migration, compare old vs new
-pytest tests/test_acoustic.py tests/test_callbacks_acoustic.py -x -v
-pytest tests/test_elastic.py tests/test_callbacks_elastic.py -x -v
-```
-
-## Linter Commands (run after EVERY change)
-```bash
-ruff format src/deepwave/
-ruff check --fix src/deepwave/
-mypy --strict src/
-```
-
-## [2026-03-19] Scalar Migration and Generic Framework Refinement
-
-### Phase 1 & 2: Framework Enhancements - COMPLETE
-
-**Completed:**
-- **Double Backward Support**: Implemented `GenericBackwardFunc` in `generic_forward_func.py`. This enables double backpropagation (Hessian-vector products) for any equation providing `call_born_backend`.
-- **Wavefield Swap Logic**: Updated the `PropagatorEquation` ABC and all implementations to support an `is_backward` flag. This allows the generic framework to correctly handle ping-pong wavefield swaps in both forward and backward passes.
-- **Scalar Born Implementation**: Added `call_born_backend` to `ScalarEquation`, wiring it to the `scalar_born` C/CUDA kernels.
-- **Placeholder Born support**: Added `call_born_backend` to `AcousticEquation` and `ElasticEquation` (raising `NotImplementedError`) to fulfill the ABC contract.
-
-### Phase 3: Migrate Scalar - IN PROGRESS
+### Phase 3: Scalar Migration - COMPLETE
 
 **Status:** Scalar migration complete. `scalar.py` now uses the generic framework. Double backward (Born) is disabled due to backend instability.
 
@@ -146,8 +71,58 @@ mypy --strict src/
 1.  **Bit-Identical Parity**: Achieved 100% test pass rate for `test_scalar.py` (forward and first-order backward) using the generic framework path.
 2.  **Forward/Backward Unification**: The generic framework now handles the entire lifecycle (Forward -> Backward) by delegating specific backend calls and state management (swaps, zeroing) to the equation strategies.
 3.  **Scalar Migration**: Replaced `scalar_func` with generic implementation. Removed `ScalarForwardFunc` and `ScalarBackwardFunc`.
-4.  **Stability**: Disabled double backward (Hessian-vector products) in `GenericBackwardFunc.backward` to prevent segmentation faults observed in the C backend during Born propagation. This allows the primary functionality (Forward/Adjoint) to remain stable and verified.
+4.  **Stability**: **CRITICAL**: Disabled double backward (Hessian-vector products) in `GenericBackwardFunc.backward` to prevent segmentation faults observed in the C backend during Born propagation. This needs investigation.
 
-**Next Steps:**
-- Proceed to Phase 4 (Acoustic Migration).
-- Investigate Scalar Born C kernel interface issues to re-enable double backward in the future.
+### Phase 4: Acoustic Migration - COMPLETE
+
+**Status:** Acoustic migration is fully complete. `acoustic.py` now uses the generic framework, and `AcousticForwardFunc` has been removed.
+
+**Key Achievements:**
+1.  **Acoustic Parity**: Verified bit-identical parity for the entire acoustic test suite (`tests/test_acoustic.py` and `tests/test_callbacks_acoustic.py`).
+2.  **Circular Dependency Resolution**: Moved `zero_edges_and_interiors` for acoustic from `acoustic.py` to `acoustic_equation.py` to break a circular import loop between the functional interface and the equation strategy.
+3.  **Framework Signature Refinement**: Updated `PropagatorEquation.call_forward_backend` (and all implementations) to include `aux_wavefields`. This allows equations like Elastic to manage their own ping-pong buffers even in the forward pass if needed, matching the backward pass architecture.
+4.  **Backend Interface Fixes**: Identified and fixed a bug where the acoustic backend was being passed too many batching flags (acoustic only expects 2, while the generic framework tracked more).
+
+**Technical Decisions:**
+- **Decoupling Utilities**: Logic that is shared between the strategy and the functional interface (like wavefield zeroing) now resides in the equation strategy files to ensure a clean dependency graph.
+- **Batching Flag Canonicalization**: The `call_forward_backend` implementation in each equation is responsible for slicing the `model_batched` list to match the specific backend's expected signature.
+
+### Phase 5: Elastic Migration - COMPLETE
+
+**Status:** Elastic migration is fully complete. `elastic.py` now uses the generic framework, and `ElasticForwardFunc` has been removed.
+
+**Key Achievements:**
+1.  **Elastic Parity**: Verified bit-identical parity for the entire elastic test suite (`tests/test_elastic.py` and `tests/test_callbacks_elastic.py`), including forward, backward, gradient checks, and callbacks.
+2.  **Backward Pass Stability**: Fixed segmentation faults in the backward pass by ensuring `ElasticEquation.call_backward_backend` passes strictly 3 `requires_grad` flags (lamb, mu, buoyancy) and 3 `model_batched` flags to the C backend, matching the kernel's expectation exactly.
+3.  **vmap/Python Backend Support**: Implemented a robust `elastic_func` wrapper that:
+    - Supports the legacy signature (used by tests) while adapting arguments for `GenericForwardFunc`.
+    - Handles `python_backend` logic (required for `vmap` support) by dispatching to `elastic_python`.
+    - Correctly injects `pml_profiles` into the argument list for the generic framework path.
+4.  **Legacy Class Removal**: Successfully removed `ElasticForwardFunc` and refactored the module to rely entirely on `ElasticEquation` and `GenericForwardFunc` (for the C path).
+
+**Technical Decisions:**
+- **Argument Adaptation**: The `elastic_func` wrapper manually parses and reconstructs the argument list. This was necessary because `elastic` arguments are dimension-dependent and the legacy interface passed `pml_profiles` as a metadata argument, whereas `GenericForwardFunc` expects it packed with other tensors.
+- **Python Backend Isolation**: The pure Python implementation (`elastic_python`, `update_velocities`, `update_stresses`) was preserved to support `vmap`, as the C backend does not support it. This logic is invoked conditionally within `elastic_func`.
+
+## Phase 6: ScalarBorn Migration - COMPLETE
+
+**Status:** ScalarBorn migration is fully complete. `scalar_born.py` now uses the generic framework, and `ScalarBornForwardFunc` has been removed.
+
+**Key Achievements:**
+1.  **Framework Stabilization**: Identified and fixed a critical bug in `GenericBackwardFunc` where an extra metadata argument (`counts`) was causing gradient alignment corruption across all propagators.
+2.  **Return Length Parity**: Corrected `GenericForwardFunc.backward` to return the exact number of gradients expected by PyTorch (metadata + packed tensors), resolving `RuntimeError` during autograd.
+3.  **Equation-Specific Adjoint Support**: Extended `PropagatorEquation` with `prepare_backward` and `finalize_backward` hooks. This allowed implementing the mandatory `grad_wfp` negation required by the scalar C kernels, which was previously missing.
+4.  **Inheritance Correction**: Ensured all equation strategy classes (`Scalar`, `ScalarBorn`, `Acoustic`) correctly inherit from `PropagatorEquation` ABC to avoid `AttributeError` and ensure interface compliance.
+5.  **Verified Parity**: Verified 100% pass rate for `tests/test_scalar_born.py` gradient checks (first-order gradients of Born, which are second-order gradients of Scalar).
+
+**Technical Decisions:**
+- **In-Place Negation**: Implemented `prepare_backward` and `finalize_backward` using `.neg_()` for memory efficiency.
+- **Metadata Alignment**: Hardcoded `n_non_tensor_args = 15` in `GenericBackwardFunc` to explicitly account for the internal `counts` argument, ensuring `grad_models` are aligned with their corresponding inputs.
+- **Double Backward Placeholder**: Preserved `NotImplementedError` for double backward in `GenericBackwardFunc.backward` but cleaned up the implementation skeleton to provide a clear path for Phase 7.
+
+## Phase 7: Add Born Kernels for Acoustic and Elastic - NOT STARTED
+...
+
+### Phase 8: Final Cleanup
+- Remove dead code.
+- Final test sweep.
