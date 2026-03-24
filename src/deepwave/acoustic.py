@@ -558,17 +558,17 @@ def acoustic(
         receiver_locations_x,
     )
 
-    models = prepare_models(models[0], models[1])
+    prepared_models = prepare_models(models[0], models[1])
 
     # Scale source amplitudes
     # Pressure update: p(t+1) = p(t) - dt * K * (div(v) - s) -> Add dt * K * s
     # Velocity update: v(t+1/2) = v(t-1/2) - dt * B * (grad(p) - f) -> Add dt * B * f
     # models order: K, B_z (3D), B_y (2D/3D), B_x (1D/2D/3D) matches target indices
-    model_shape = models[0].shape[-ndim:]
+    model_shape = prepared_models[0].shape[-ndim:]
     flat_model_shape = int(torch.prod(torch.tensor(model_shape)).item())
 
     for i, (src_amp, src_loc, model) in enumerate(
-        zip(source_amplitudes_out, sources_i, models)
+        zip(source_amplitudes_out, sources_i, prepared_models)
     ):
         if src_amp.numel() > 0:
             mask = src_loc == deepwave.common.IGNORE_LOCATION
@@ -1055,7 +1055,14 @@ def acoustic_func_generic(
             _update_pressure_opt = update_pressure
         else:
             raise ValueError(f"Unknown python_backend value {mode!r}.")
-        return acoustic_python(*args)
+        
+        # Prepare models for Python backend
+        # args[13] is v, args[14] is rho
+        v = args[13]
+        rho = args[14]
+        prepared = prepare_models(v, rho)
+        new_args = args[:13] + tuple(prepared) + args[15:]
+        return acoustic_python(*new_args)
 
     grid_spacing = args[0]
     dt = args[1]

@@ -468,21 +468,16 @@ class ElasticEquation(PropagatorEquation):
         return ndim + 1
 
     def get_storage_requires_grad(
-        self, prepared_models: List[torch.Tensor], ndim: int
+        self, raw_models: List[torch.Tensor], ndim: int
     ) -> List[bool]:
         """Which model params require gradient storage.
 
         Elastic storage slots are dimension-dependent, combining
         lamb, mu, and buoyancy gradient requirements.
-
-        Note: prepared_models is [lamb, mu, *parameters] where
-        parameters includes buoyancy variants. Buoyancy is the last
-        one in parameters.
         """
-        lamb_requires_grad = prepared_models[0].requires_grad
-        mu_requires_grad = prepared_models[1].requires_grad
-        # Buoyancy is the last model in the list
-        buoyancy_requires_grad = prepared_models[-1].requires_grad
+        lamb_requires_grad = raw_models[0].requires_grad
+        mu_requires_grad = raw_models[1].requires_grad
+        buoyancy_requires_grad = raw_models[2].requires_grad
         if ndim == 3:
             return [
                 buoyancy_requires_grad,
@@ -506,6 +501,40 @@ class ElasticEquation(PropagatorEquation):
         return [
             buoyancy_requires_grad,
             lamb_requires_grad or mu_requires_grad,
+        ]
+
+    def get_model_batched(
+        self, raw_models: List[torch.Tensor], ndim: int
+    ) -> List[bool]:
+        """Which prepared model params are batched."""
+        v_batched = raw_models[0].ndim == ndim + 1 and raw_models[0].shape[0] > 1
+        rho_batched = raw_models[1].ndim == ndim + 1 and raw_models[1].shape[0] > 1
+        buoyancy_batched = (
+            raw_models[2].ndim == ndim + 1 and raw_models[2].shape[0] > 1
+        )
+        if ndim == 3:
+            return [
+                buoyancy_batched,
+                v_batched or rho_batched,
+                rho_batched,
+                rho_batched,
+                buoyancy_batched,
+                v_batched or rho_batched,
+                rho_batched,
+                buoyancy_batched,
+                v_batched or rho_batched,
+            ]
+        if ndim == 2:
+            return [
+                buoyancy_batched,
+                v_batched or rho_batched,
+                rho_batched,
+                buoyancy_batched,
+                v_batched or rho_batched,
+            ]
+        return [
+            buoyancy_batched,
+            v_batched or rho_batched,
         ]
 
     def prepare_wavefields(
@@ -637,14 +666,7 @@ class ElasticEquation(PropagatorEquation):
         sources_i, receivers_i, wavefields.
         """
         pos = 0
-        n_mod = self.n_models + (ndim - 1) if ndim >= 2 else self.n_models
-        # After prepare_models: 1D=3, 2D=5, 3D=8
-        if ndim == 3:
-            n_mod = 8
-        elif ndim == 2:
-            n_mod = 5
-        else:
-            n_mod = 3
+        n_mod = self.n_models
         n_src = ndim + 1
         n_pml = 4 * ndim
         n_wf = self.n_wavefields(ndim)
@@ -789,7 +811,7 @@ class ElasticEquation(PropagatorEquation):
             step_nt,
             n_shots,
             *model_shape,
-            *n_sources_per_shot,
+            *[n * (g.numel() > 0) for n, g in zip(n_sources_per_shot, grad_f_list)],
             *n_receivers_per_shot,
             step_ratio,
             storage_mode,

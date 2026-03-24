@@ -136,6 +136,13 @@ class PropagatorEquation(ABC):
         ...
 
     @abstractmethod
+    def get_model_batched(
+        self, raw_models: List[torch.Tensor], ndim: int
+    ) -> List[bool]:
+        """Which prepared model params are batched."""
+        ...
+
+    @abstractmethod
     def prepare_wavefields(
         self,
         wavefields: List[torch.Tensor],

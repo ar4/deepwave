@@ -222,6 +222,19 @@ class ScalarBornEquation(PropagatorEquation):
         scatter_rg = raw_models[1].requires_grad
         return [v_rg or scatter_rg, v_rg]
 
+    def get_model_batched(
+        self, raw_models: List[torch.Tensor], ndim: int
+    ) -> List[bool]:
+        """Which prepared model params are batched."""
+        v_batched = (
+            raw_models[0].ndim == ndim + 1 and raw_models[0].shape[0] > 1
+        )
+        scatter_batched = (
+            raw_models[1].ndim == ndim + 1 and raw_models[1].shape[0] > 1
+        )
+        # Match get_storage_requires_grad logic for batching flags
+        return [v_batched or scatter_batched, v_batched]
+
     def prepare_wavefields(
         self,
         wavefields: List[torch.Tensor],
@@ -433,7 +446,7 @@ class ScalarBornEquation(PropagatorEquation):
             *rdx,
             *rdx2,
             dt**2,
-            step_nt,
+            step_nt // step_ratio,
             n_shots,
             *model_shape,
             n_sources_per_shot[0],
@@ -448,7 +461,7 @@ class ScalarBornEquation(PropagatorEquation):
             model_batched[0],
             model_batched[1],
             storage_compression,
-            step,
+            step // step_ratio,
             *pml_b,
             *pml_e,
             aux,
@@ -554,7 +567,7 @@ class ScalarBornEquation(PropagatorEquation):
             *rdx,
             *rdx2,
             dt**2,
-            step_nt,
+            step_nt // step_ratio,
             n_shots,
             *model_shape,
             n_sources * int(sa_req_grad),
@@ -570,7 +583,7 @@ class ScalarBornEquation(PropagatorEquation):
             model_batched[0],
             model_batched[1],
             storage_compression,
-            step,
+            step // step_ratio,
             *pml_b,
             *pml_e,
             aux,
@@ -708,3 +721,44 @@ class ScalarBornEquation(PropagatorEquation):
             deepwave.common.zero_interior(grad_zeta[i], fd_pad, pml_width, i)
             deepwave.common.zero_interior(grad_psi_sc[i], fd_pad, pml_width, i)
             deepwave.common.zero_interior(grad_zeta_sc[i], fd_pad, pml_width, i)
+
+    def call_born_backend(
+        self,
+        backend_func: Any,
+        models: List[torch.Tensor],
+        grad_models: List[torch.Tensor],
+        source_amplitudes: List[torch.Tensor],
+        grad_source_amplitudes: List[torch.Tensor],
+        wavefields: List[torch.Tensor],
+        grad_wavefields: List[torch.Tensor],
+        aux_wavefields: List[torch.Tensor],
+        grad_aux_wavefields: List[torch.Tensor],
+        receiver_amplitudes: List[torch.Tensor],
+        grad_receiver_amplitudes: List[torch.Tensor],
+        storage_manager: Any,
+        pml_profiles: List[torch.Tensor],
+        sources_i: List[torch.Tensor],
+        receivers_i: List[torch.Tensor],
+        grad_receivers_i: List[torch.Tensor],
+        grid_spacing: Sequence[float],
+        dt: float,
+        nt: int,
+        step_nt: int,
+        n_shots: int,
+        model_shape: torch.Size,
+        n_sources_per_shot: List[int],
+        n_receivers_per_shot: List[int],
+        n_grad_receivers_per_shot: List[int],
+        step_ratio: int,
+        models_requires_grad: List[bool],
+        model_batched: List[bool],
+        grad_model_batched: List[bool],
+        storage_compression: bool,
+        step: int,
+        pml_b: List[int],
+        pml_e: List[int],
+        aux: int,
+        stream: Any,
+    ) -> int:
+        """Call scalar Born Born backend (Not Implemented)."""
+        raise NotImplementedError("Scalar Born Born not implemented.")

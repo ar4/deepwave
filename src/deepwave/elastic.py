@@ -920,6 +920,7 @@ def elastic(
     )
     del source_amplitudes, source_locations, receiver_locations
 
+    raw_models = list(models)
     models.extend(prepare_parameters(models[1], models[2]))
     del models[2]  # Remove buoyancy as it is no longer needed
 
@@ -1015,7 +1016,7 @@ def elastic(
             storage_mode,
             storage_path,
             storage_compression,
-            *models,
+            *raw_models,
             *source_amplitudes_out,
             *sources_i,
             *receivers_i,
@@ -1902,6 +1903,13 @@ def elastic_func(
         else:
             raise ValueError(f"Unknown python_backend value {mode!r}.")
 
+        # Prepare models for Python backend
+        lamb = args[0]
+        mu = args[1]
+        buoyancy = args[2]
+        prepared = prepare_parameters(mu, buoyancy)
+        new_args_list = [lamb, mu] + prepared + list(args[3:])
+
         return elastic_python(
             pml_profiles,
             grid_spacing,
@@ -1917,7 +1925,7 @@ def elastic_func(
             storage_mode,
             storage_path,
             storage_compression,
-            *args,
+            *new_args_list,
         )
 
     # For GenericForwardFunc, pml_profiles must be inside args

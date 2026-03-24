@@ -319,17 +319,28 @@ class AcousticEquation(PropagatorEquation):
         return 1 + ndim
 
     def get_storage_requires_grad(
-        self, prepared_models: List[torch.Tensor], ndim: int
+        self, raw_models: List[torch.Tensor], ndim: int
     ) -> List[bool]:
         """Which model params require gradient storage.
 
         Acoustic has K (from v) and buoyancy components (from rho).
-        The pattern is: [K_requires_grad, rho_requires_grad] * n_slots
-        where n_slots = ndim + 1 (K + buoyancy per dim).
+        The pattern is: [K_requires_grad] + [rho_requires_grad] * ndim.
         """
-        k_requires_grad = prepared_models[0].requires_grad
-        rho_requires_grad = prepared_models[-1].requires_grad
+        k_requires_grad = raw_models[0].requires_grad or raw_models[1].requires_grad
+        rho_requires_grad = raw_models[1].requires_grad
         return [k_requires_grad] + [rho_requires_grad] * ndim
+
+    def get_model_batched(
+        self, raw_models: List[torch.Tensor], ndim: int
+    ) -> List[bool]:
+        """Which prepared model params are batched."""
+        v_batched = (
+            raw_models[0].ndim == ndim + 1 and raw_models[0].shape[0] > 1
+        )
+        rho_batched = (
+            raw_models[1].ndim == ndim + 1 and raw_models[1].shape[0] > 1
+        )
+        return [v_batched or rho_batched] + [rho_batched] * ndim
 
     def prepare_wavefields(
         self,
@@ -427,7 +438,7 @@ class AcousticEquation(PropagatorEquation):
         wavefields[1+3*ndim].
         """
         pos = 0
-        n_mod = ndim + 1
+        n_mod = self.n_models
         n_src = ndim + 1
         n_pml = 4 * ndim
         n_wf = 1 + 3 * ndim
@@ -504,11 +515,12 @@ class AcousticEquation(PropagatorEquation):
             storage_mode,
             storage_manager.shot_bytes_uncomp,
             storage_manager.shot_bytes_comp,
-            *[
-                req and storage_mode != deepwave.common.StorageMode.NONE
-                for req in models_requires_grad[:2]
-            ],
-            *model_batched[:2],
+            models_requires_grad[0]
+            and storage_mode != deepwave.common.StorageMode.NONE,
+            models_requires_grad[1]
+            and storage_mode != deepwave.common.StorageMode.NONE,
+            model_batched[0],
+            model_batched[1],
             storage_compression,
             step,
             *pml_b,
@@ -553,41 +565,78 @@ class AcousticEquation(PropagatorEquation):
         rdx = [1 / dx for dx in grid_spacing]
         storage_mode = storage_manager.storage_mode
 
-        return backend_func(  # type: ignore[no-any-return]
-            *[m.data_ptr() for m in models],
-            *[g.data_ptr() for g in grad_r],
-            *[field.data_ptr() for field in grad_wavefields],
-            *[field.data_ptr() for field in aux_wavefields],
-            *storage_manager.storage_ptrs,
-            *[g.data_ptr() for g in grad_f_list],
-            *[g.data_ptr() for g in grad_models],
-            *grad_models_tmp_ptr,
-            *[p.data_ptr() for p in pml_profiles],
-            *[loc.data_ptr() for loc in sources_i],
-            *[loc.data_ptr() for loc in receivers_i],
-            *rdx,
-            dt,
-            step_nt,
-            n_shots,
-            *model_shape,
-            *n_sources_per_shot,
-            *n_receivers_per_shot,
-            step_ratio,
-            storage_mode,
-            storage_manager.shot_bytes_uncomp,
-            storage_manager.shot_bytes_comp,
-            *[
-                req and storage_mode != deepwave.common.StorageMode.NONE
-                for req in models_requires_grad[:2]
-            ],
-            *model_batched[:2],
-            storage_compression,
-            step,
-            *pml_b,
-            *pml_e,
-            aux,
-            stream,
+        models_ptr = [m.data_ptr() for m in models]
+        grad_r_ptr = [g.data_ptr() for g in grad_r]
+        grad_wavefields_ptr = [field.data_ptr() for field in grad_wavefields]
+        aux_wavefields_ptr = [field.data_ptr() for field in aux_wavefields]
+        grad_f_list_ptr = [g.data_ptr() for g in grad_f_list]
+        grad_models_ptr = [g.data_ptr() for g in grad_models]
+        pml_profiles_ptr = [p.data_ptr() for p in pml_profiles]
+        sources_i_ptr = [loc.data_ptr() for loc in sources_i]
+        receivers_i_ptr = [loc.data_ptr() for loc in receivers_i]
+        n_sources = [n * (g.numel() > 0) for n, g in zip(n_sources_per_shot, grad_f_list)]
+
+        print(f"DEBUG: ndim={len(grid_spacing)}")
+        print(f"DEBUG: len(models_ptr)={len(models_ptr)}")
+        print(f"DEBUG: len(grad_r_ptr)={len(grad_r_ptr)}")
+        print(f"DEBUG: len(grad_wavefields_ptr)={len(grad_wavefields_ptr)}")
+        print(f"DEBUG: len(aux_wavefields_ptr)={len(aux_wavefields_ptr)}")
+        print(f"DEBUG: len(storage_manager.storage_ptrs)={len(storage_manager.storage_ptrs)}")
+        print(f"DEBUG: len(grad_f_list_ptr)={len(grad_f_list_ptr)}")
+        print(f"DEBUG: len(grad_models_ptr)={len(grad_models_ptr)}")
+        print(f"DEBUG: len(grad_models_tmp_ptr)={len(grad_models_tmp_ptr)}")
+        print(f"DEBUG: len(pml_profiles_ptr)={len(pml_profiles_ptr)}")
+        print(f"DEBUG: len(sources_i_ptr)={len(sources_i_ptr)}")
+        print(f"DEBUG: len(receivers_i_ptr)={len(receivers_i_ptr)}")
+        print(f"DEBUG: len(rdx)={len(rdx)}")
+        print(f"DEBUG: len(model_shape)={len(model_shape)}")
+        print(f"DEBUG: len(n_sources)={len(n_sources)}")
+        print(f"DEBUG: len(n_receivers_per_shot)={len(n_receivers_per_shot)}")
+        print(f"DEBUG: len(pml_b)={len(pml_b)}")
+        print(f"DEBUG: len(pml_e)={len(pml_e)}")
+
+        final_args = []
+        final_args.extend(models_ptr)
+        final_args.extend(grad_r_ptr)
+        final_args.extend(grad_wavefields_ptr)
+        final_args.extend(aux_wavefields_ptr)
+        final_args.extend(storage_manager.storage_ptrs)
+        final_args.extend(grad_f_list_ptr)
+        final_args.extend(grad_models_ptr)
+        final_args.extend(grad_models_tmp_ptr)
+        final_args.extend(pml_profiles_ptr)
+        final_args.extend(sources_i_ptr)
+        final_args.extend(receivers_i_ptr)
+        final_args.extend(rdx)
+        final_args.append(dt)
+        final_args.append(step_nt)
+        final_args.append(n_shots)
+        final_args.extend(model_shape)
+        final_args.extend(n_sources)
+        final_args.extend(n_receivers_per_shot)
+        final_args.append(step_ratio)
+        final_args.append(storage_mode)
+        final_args.append(storage_manager.shot_bytes_uncomp)
+        final_args.append(storage_manager.shot_bytes_comp)
+        final_args.append(
+            models_requires_grad[0]
+            and storage_mode != deepwave.common.StorageMode.NONE
         )
+        final_args.append(
+            models_requires_grad[1]
+            and storage_mode != deepwave.common.StorageMode.NONE
+        )
+        final_args.append(model_batched[0])
+        final_args.append(model_batched[1])
+        final_args.append(storage_compression)
+        final_args.append(step)
+        final_args.extend(pml_b)
+        final_args.extend(pml_e)
+        final_args.append(aux)
+        final_args.append(stream)
+
+        print(f"DEBUG: final_args has {len(final_args)} elements")
+        return backend_func(*final_args)
 
     def call_born_backend(
         self,

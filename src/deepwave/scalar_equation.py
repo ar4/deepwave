@@ -116,24 +116,8 @@ class ScalarEquation(PropagatorEquation):
         dt: float,
         n_shots: int,
     ) -> List[torch.Tensor]:
-        """Scale source amplitudes: -source * v^2 * dt^2 at source locations."""
-        v = prepared_models[0]
-        model_shape = v.shape[1:]
-        flat_model_shape = int(torch.prod(torch.tensor(model_shape)).item())
-        mask = sources_i[0] == deepwave.common.IGNORE_LOCATION
-        sources_i_masked = sources_i[0].clone()
-        sources_i_masked[mask] = 0
-        scaled = (
-            -source_amplitudes[0]
-            * (
-                v.view(-1, flat_model_shape)
-                .expand(n_shots, -1)
-                .gather(1, sources_i_masked)
-            )
-            ** 2
-            * dt**2
-        )
-        return [scaled]
+        """Identity transform: source amplitudes are already scaled in scalar()."""
+        return list(source_amplitudes)
 
     def set_pml_profiles(
         self,
@@ -191,12 +175,19 @@ class ScalarEquation(PropagatorEquation):
         return 1
 
     def get_storage_requires_grad(
-        self, prepared_models: List[torch.Tensor], ndim: int
+        self, raw_models: List[torch.Tensor], ndim: int
     ) -> List[bool]:
-        """Which model params require gradient storage."""
-        return [prepared_models[0].requires_grad]
+        """Which model params require gradient storage allocation."""
+        return [raw_models[0].requires_grad]
+
+    def get_model_batched(
+        self, raw_models: List[torch.Tensor], ndim: int
+    ) -> List[bool]:
+        """Which prepared model params are batched."""
+        return [raw_models[0].ndim == ndim + 1 and raw_models[0].shape[0] > 1]
 
     def prepare_wavefields(
+
         self,
         wavefields: List[torch.Tensor],
         ndim: int,
@@ -367,7 +358,7 @@ class ScalarEquation(PropagatorEquation):
             *rdx,
             *rdx2,
             dt**2,
-            step_nt,
+            step_nt // step_ratio,
             n_shots,
             *model_shape,
             n_sources_per_shot[0],
@@ -379,7 +370,7 @@ class ScalarEquation(PropagatorEquation):
             v_requires_grad and storage_mode != deepwave.common.StorageMode.NONE,
             model_batched[0],
             storage_compression,
-            step,
+            step // step_ratio,
             *pml_b,
             *pml_e,
             aux,
@@ -459,7 +450,7 @@ class ScalarEquation(PropagatorEquation):
             step_nt,
             n_shots,
             *model_shape,
-            n_sources_per_shot[0],
+            n_sources_per_shot[0] * int(grad_f_list[0].numel() > 0),
             n_receivers_per_shot[0],
             step_ratio,
             storage_mode,
@@ -469,7 +460,7 @@ class ScalarEquation(PropagatorEquation):
             and storage_mode != deepwave.common.StorageMode.NONE,
             model_batched[0],
             storage_compression,
-            step,
+            step // step_ratio,
             *pml_b,
             *pml_e,
             aux,
@@ -560,7 +551,7 @@ class ScalarEquation(PropagatorEquation):
             *rdx,
             *rdx2,
             dt**2,
-            step_nt,
+            step_nt // step_ratio,
             n_shots,
             *model_shape,
             n_sources_per_shot[0],
@@ -575,7 +566,7 @@ class ScalarEquation(PropagatorEquation):
             model_batched[0],
             grad_model_batched[0],
             storage_compression,
-            step,
+            step // step_ratio,
             *pml_b,
             *pml_e,
             aux,
