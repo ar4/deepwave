@@ -1,7 +1,7 @@
 """Tests for deepwave.utils."""
 
 import math
-from typing import Dict, Optional, Tuple, Union
+from typing import Callable, Dict, Optional, Tuple, Union
 
 import pytest
 import scipy.special
@@ -565,3 +565,51 @@ def run_reciprocity_check(
     rec2 = outputs2[src_idx]
 
     assert torch.allclose(rec1, rec2, atol=5e-3)
+
+
+def run_checkpoint_equivalence(
+    model: torch.Tensor,
+    call: Callable[[torch.Tensor], Tuple[torch.Tensor, ...]],
+    use_reentrant: bool,
+    atol: float = 1e-6,
+    rtol: float = 1e-5,
+) -> None:
+    """Assert that ``torch.utils.checkpoint`` does not change a gradient.
+
+    This is a regression guard for issue #120, where wrapping a propagator in
+    ``torch.utils.checkpoint`` (the pattern in ``docs/example_checkpointing.py``)
+    silently produced a wrong gradient. ``call(m)`` runs a propagator and
+    returns its tuple of output Tensors; the gradient of the sum of squares of
+    those outputs w.r.t. ``model`` must be identical whether or not the call is
+    wrapped in a checkpoint, because checkpointing only trades compute for
+    memory.
+
+    It catches the two ways of breaking checkpointing:
+
+    * A propagator returning a ``list`` rather than a ``tuple``. Reentrant
+      checkpoint wraps the call in an autograd ``Function`` whose outputs only
+      get ``requires_grad`` propagated when forward returns a Tensor or a tuple
+      of Tensors, so a list detaches every output and ``backward`` raises here.
+    * A ``backward`` that reads ``ctx.saved_tensors`` more than once, which
+      makes the non-reentrant checkpoint unpack hook raise.
+    """
+    import torch.utils.checkpoint
+
+    def grad(checkpointed: bool) -> torch.Tensor:
+        leaf = model.clone().requires_grad_(True)
+        if checkpointed:
+            outputs = torch.utils.checkpoint.checkpoint(
+                call, leaf, use_reentrant=use_reentrant
+            )
+        else:
+            outputs = call(leaf)
+        loss = sum((output**2).sum() for output in outputs)
+        loss.backward()
+        assert leaf.grad is not None
+        return leaf.grad.clone()
+
+    reference = grad(checkpointed=False)
+    checkpointed = grad(checkpointed=True)
+    # A non-trivial reference gradient ensures the comparison is meaningful.
+    assert reference.norm() > 0
+    assert torch.allclose(reference, checkpointed, atol=atol, rtol=rtol)

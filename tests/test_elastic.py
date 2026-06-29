@@ -12,6 +12,7 @@ from test_utils import (
     direct_1d,
     direct_2d_approx,
     direct_3d,
+    run_checkpoint_equivalence,
     run_reciprocity_check,
     scattered,
 )
@@ -2673,3 +2674,47 @@ def test_vmap_error_check() -> None:
 
     with pytest.raises(NotImplementedError, match="Only property models"):
         vmap(prop)(source_amplitudes_batch)
+
+
+@pytest.mark.parametrize("use_reentrant", [True, False])
+def test_checkpoint_gradient(use_reentrant: bool) -> None:
+    """Gradient checkpointing must not change the gradient (issue #120)."""
+    ny, nx, dx = 25, 25, 5.0
+    nt, freq, dt0, max_vel = 60, 25.0, 0.004, 3300.0
+    n_shots = 2
+
+    lamb = (2500.0**2 * 2200.0) * torch.ones(ny, nx)
+    mu = (1400.0**2 * 2200.0) * torch.ones(ny, nx)
+    buoyancy = (1 / 2200.0) * torch.ones(ny, nx)
+
+    source_locations = torch.zeros(n_shots, 1, 2, dtype=torch.long)
+    source_locations[..., 1] = 5
+    source_locations[:, 0, 0] = torch.tensor([ny // 4, 3 * ny // 4])
+    # The staggered grid requires receivers strictly inside the model edge.
+    receiver_locations = torch.zeros(n_shots, nx - 1, 2, dtype=torch.long)
+    receiver_locations[..., 1] = 5
+    receiver_locations[:, :, 0] = torch.arange(nx - 1).repeat(n_shots, 1)
+
+    dt, step_ratio = cfl_condition(dx, dx, dt0, max_vel)
+    source_amplitudes = upsample(
+        ricker(freq, nt, dt0, 1.5 / freq).repeat(n_shots, 1, 1), step_ratio
+    )
+
+    def call(model: torch.Tensor) -> Tuple[torch.Tensor, ...]:
+        # Differentiate w.r.t. buoyancy: with this homogeneous model it has a
+        # healthy gradient (lamb's huge magnitude makes its gradient negligible).
+        return elastic(
+            lamb,
+            mu,
+            model,
+            dx,
+            dt,
+            source_amplitudes_y=source_amplitudes,
+            source_locations_y=source_locations,
+            receiver_locations_y=receiver_locations,
+            pml_freq=freq,
+            max_vel=max_vel,
+            model_gradient_sampling_interval=step_ratio,
+        )
+
+    run_checkpoint_equivalence(buoyancy, call, use_reentrant=use_reentrant)

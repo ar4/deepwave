@@ -187,7 +187,7 @@ class Acoustic(torch.nn.Module):
         backward_callback: Optional[deepwave.common.Callback] = None,
         callback_frequency: int = 1,
         python_backend: Union[Literal["eager", "jit", "compile"], bool] = False,
-    ) -> List[torch.Tensor]:
+    ) -> Tuple[torch.Tensor, ...]:
         """Performs forward propagation/modelling.
 
         See :func:`acoustic` for details.
@@ -285,7 +285,7 @@ def acoustic(
     storage_mode: Literal["device", "cpu", "disk", "none"] = "device",
     storage_path: str = ".",
     storage_compression: bool = False,
-) -> List[torch.Tensor]:
+) -> Tuple[torch.Tensor, ...]:
     """Acoustic wave propagation (functional interface).
 
     This function performs forward modelling with the variable-density acoustic
@@ -635,7 +635,12 @@ def acoustic(
             time_taper,
         )
 
-    return outputs
+    # Return a tuple, not a list: ``torch.utils.checkpoint(use_reentrant=True)``
+    # wraps the propagator in an autograd Function, and that Function's output
+    # only has ``requires_grad`` propagated to it when forward returns a Tensor
+    # or a tuple of Tensors. Returning a list silently detaches every output,
+    # which broke gradient checkpointing (see issue #120).
+    return tuple(outputs)
 
 
 def zero_edge(tensor: torch.Tensor, fd_pad: int, dim: int) -> torch.Tensor:

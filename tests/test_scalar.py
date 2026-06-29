@@ -708,6 +708,160 @@ def test_gradcheck_chained() -> None:
     run_gradcheck(propagator=scalarpropchained)
 
 
+@pytest.mark.parametrize("use_reentrant", [True, False])
+def test_checkpoint_gradient(use_reentrant: bool) -> None:
+    """Gradient checkpointing must not change the gradient (issue #120).
+
+    The propagation is run in time segments, threading the full wavefield
+    state (wavefield_0/m1, psi*, zeta*) from one segment to the next, with the
+    non-final segment wrapped in ``torch.utils.checkpoint`` -- the pattern used
+    in ``docs/example_checkpointing.py``. Checkpointing only trades compute for
+    memory, so the gradient w.r.t. the velocity model must be identical to the
+    single-segment (non-checkpointed) gradient. This guards against the
+    propagator returning a ``list`` (which silently detaches every output of a
+    reentrant checkpoint) and against reading ``ctx.saved_tensors`` more than
+    once (which breaks the non-reentrant checkpoint unpack hook).
+    """
+    import torch.utils.checkpoint
+
+    ny, nx, dx = 25, 25, 5.0
+    nt, freq, dt0, max_vel = 80, 25.0, 0.004, 1600.0
+    n_shots, pml = 2, 20
+
+    v = 1500.0 * torch.ones(ny, nx)
+    v[ny // 2 :] = 1600.0
+
+    source_locations = torch.zeros(n_shots, 1, 2, dtype=torch.long)
+    source_locations[..., 1] = 5
+    source_locations[:, 0, 0] = torch.tensor([ny // 4, 3 * ny // 4])
+    receiver_locations = torch.zeros(n_shots, nx, 2, dtype=torch.long)
+    receiver_locations[..., 1] = 5
+    receiver_locations[:, :, 0] = torch.arange(nx).repeat(n_shots, 1)
+
+    dt, step_ratio = cfl_condition(dx, dx, dt0, max_vel)
+    source_amplitudes = upsample(
+        ricker(freq, nt, dt0, 1.5 / freq).repeat(n_shots, 1, 1),
+        step_ratio,
+    )
+    nt_up = source_amplitudes.shape[-1]
+
+    def segment(v, chunk, wf0, wfm1, psiy, psix, zetay, zetax):
+        return scalar(
+            v,
+            dx,
+            dt,
+            source_amplitudes=chunk,
+            source_locations=source_locations,
+            receiver_locations=receiver_locations,
+            pml_freq=freq,
+            max_vel=max_vel,
+            wavefield_0=wf0,
+            wavefield_m1=wfm1,
+            psiy_m1=psiy,
+            psix_m1=psix,
+            zetay_m1=zetay,
+            zetax_m1=zetax,
+            model_gradient_sampling_interval=step_ratio,
+        )
+
+    def grad_of(n_segments):
+        v_in = v.clone().requires_grad_(True)
+        state = [torch.zeros(n_shots, ny + 2 * pml, nx + 2 * pml) for _ in range(6)]
+        rec = torch.zeros(n_shots, nx, nt_up)
+        k = 0
+        chunks = torch.chunk(source_amplitudes, n_segments, dim=-1)
+        for i, chunk in enumerate(chunks):
+            args = (v_in, chunk, *state)
+            if i == len(chunks) - 1:
+                out = segment(*args)
+            else:
+                out = torch.utils.checkpoint.checkpoint(
+                    segment, *args, use_reentrant=use_reentrant
+                )
+            *state, r = out
+            rec[..., k : k + chunk.shape[-1]] = r
+            k += chunk.shape[-1]
+        (rec**2).sum().backward()
+        return v_in.grad.clone()
+
+    reference = grad_of(1)
+    checkpointed = grad_of(2)
+    assert reference.norm() > 0
+    assert torch.allclose(reference, checkpointed, atol=1e-6, rtol=1e-5)
+
+
+@pytest.mark.parametrize("python_backend", [False, "eager", "jit"])
+def test_checkpoint_double_backprop(
+    python_backend: Union[bool, str],
+) -> None:
+    """Double backprop must work through non-reentrant checkpoint (issue #120).
+
+    Second-order gradients (here a Hessian-vector product) are differentiated
+    through the double-backward node ``ScalarBackwardFunc.backward``, which also
+    reads ``ctx.saved_tensors`` and so must read it exactly once. The Hessian-
+    vector product is compared against the non-checkpointed value, which must be
+    identical because checkpointing only trades compute for memory.
+
+    ``use_reentrant=True`` is deliberately not tested: reentrant checkpoint is
+    incompatible with second-order autograd in PyTorch itself (it raises when
+    ``torch.autograd.grad`` / ``create_graph`` is used). The ``"compile"``
+    backend is likewise excluded because ``torch.compile`` does not support
+    double backward.
+    """
+    import torch.utils.checkpoint
+
+    ny, nx, dx = 20, 20, 5.0
+    nt, freq, dt0, max_vel = 40, 25.0, 0.004, 1600.0
+    n_shots = 1
+
+    v = 1500.0 * torch.ones(ny, nx)
+    v[ny // 2 :] = 1550.0
+    torch.manual_seed(0)
+    vec = torch.randn(ny, nx)
+
+    source_locations = torch.zeros(n_shots, 1, 2, dtype=torch.long)
+    source_locations[..., 0] = ny // 2
+    source_locations[..., 1] = 4
+    receiver_locations = torch.zeros(n_shots, nx, 2, dtype=torch.long)
+    receiver_locations[..., 1] = 4
+    receiver_locations[:, :, 0] = torch.arange(nx).repeat(n_shots, 1)
+
+    dt, step_ratio = cfl_condition(dx, dx, dt0, max_vel)
+    source_amplitudes = upsample(
+        ricker(freq, nt, dt0, 1.5 / freq).repeat(n_shots, 1, 1),
+        step_ratio,
+    )
+
+    def run(model: torch.Tensor) -> torch.Tensor:
+        return scalar(
+            model,
+            dx,
+            dt,
+            source_amplitudes=source_amplitudes,
+            source_locations=source_locations,
+            receiver_locations=receiver_locations,
+            pml_freq=freq,
+            max_vel=max_vel,
+            model_gradient_sampling_interval=step_ratio,
+            python_backend=python_backend,
+        )[-1]
+
+    def hessian_vector_product(checkpointed: bool) -> torch.Tensor:
+        model = v.clone().requires_grad_(True)
+        if checkpointed:
+            rec = torch.utils.checkpoint.checkpoint(run, model, use_reentrant=False)
+        else:
+            rec = run(model)
+        (grad,) = torch.autograd.grad((rec**2).sum(), model, create_graph=True)
+        (hvp,) = torch.autograd.grad((grad * vec).sum(), model)
+        return hvp
+
+    reference = hessian_vector_product(checkpointed=False)
+    checkpointed = hessian_vector_product(checkpointed=True)
+    assert reference.norm() > 0
+    assert torch.allclose(reference, checkpointed, atol=1e-5, rtol=1e-4)
+
+
 def test_gradcheck_negative() -> None:
     """Test gradcheck with negative velocity."""
     run_gradcheck(c=-1500, propagator=scalarprop)

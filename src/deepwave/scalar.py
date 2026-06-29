@@ -102,7 +102,7 @@ class Scalar(torch.nn.Module):
         backward_callback: Optional[deepwave.common.Callback] = None,
         callback_frequency: int = 1,
         python_backend: Union[Literal["eager", "jit", "compile"], bool] = False,
-    ) -> List[torch.Tensor]:
+    ) -> Tuple[torch.Tensor, ...]:
         """Performs forward propagation/modelling.
 
         See :func:`scalar` for details.
@@ -176,7 +176,7 @@ def scalar(
     storage_mode: Literal["device", "cpu", "disk", "none"] = "device",
     storage_path: str = ".",
     storage_compression: bool = False,
-) -> List[torch.Tensor]:
+) -> Tuple[torch.Tensor, ...]:
     """Scalar wave propagation (functional interface).
 
     This function performs forward modelling with the scalar wave equation.
@@ -388,7 +388,7 @@ def scalar(
             compiled C/CUDA.
 
     Returns:
-        List[torch.Tensor]:
+        Tuple[torch.Tensor, ...]:
 
             - wavefield_nt: The wavefield at the final time step.
             - wavefield_ntm1: The wavefield at the second-to-last time step.
@@ -580,7 +580,12 @@ def scalar(
         time_taper,
     )
 
-    return outputs
+    # Return a tuple, not a list: ``torch.utils.checkpoint(use_reentrant=True)``
+    # wraps the propagator in an autograd Function, and that Function's output
+    # only has ``requires_grad`` propagated to it when forward returns a Tensor
+    # or a tuple of Tensors. Returning a list silently detaches every output,
+    # which broke gradient checkpointing (see issue #120).
+    return tuple(outputs)
 
 
 class ScalarForwardFunc(torch.autograd.Function):
@@ -948,9 +953,13 @@ class ScalarForwardFunc(torch.autograd.Function):
         grad_r = args[-1]
         grad_wavefields = list(args[:-1])
         del args
-        v, sources_i, receivers_i, source_amplitudes = ctx.saved_tensors[:4]
-        wavefields = ctx.saved_tensors[4 : 6 + 2 * ndim]
-        pml_profiles = ctx.saved_tensors[6 + 2 * ndim : 6 + 5 * ndim]
+        # Read ``ctx.saved_tensors`` exactly once: under ``torch.utils.checkpoint``
+        # each access re-triggers the saved-tensor unpack hook, which errors
+        # (non-reentrant) or silently returns wrong gradients (reentrant).
+        saved_tensors = ctx.saved_tensors
+        v, sources_i, receivers_i, source_amplitudes = saved_tensors[:4]
+        wavefields = saved_tensors[4 : 6 + 2 * ndim]
+        pml_profiles = saved_tensors[6 + 2 * ndim : 6 + 5 * ndim]
 
         grid_spacing = ctx.grid_spacing
         dt = ctx.dt
@@ -1392,16 +1401,20 @@ class ScalarBackwardFunc(torch.autograd.Function):
         ggf = args[1]
         gradgrad_wavefields = list(args[2:])
         del args
+        # Read ``ctx.saved_tensors`` exactly once (see the note in
+        # ``ScalarForwardFunc.backward``): repeated access breaks
+        # ``torch.utils.checkpoint``.
+        saved_tensors = ctx.saved_tensors
         (
             v,
             sources_i,
             receivers_i,
             source_amplitudes,
             grad_r,
-        ) = ctx.saved_tensors[:5]
-        wavefields = ctx.saved_tensors[5 : 7 + 2 * ndim]
-        grad_wavefields = ctx.saved_tensors[7 + 2 * ndim : 9 + 4 * ndim]
-        pml_profiles = ctx.saved_tensors[9 + 4 * ndim : 9 + 7 * ndim]
+        ) = saved_tensors[:5]
+        wavefields = saved_tensors[5 : 7 + 2 * ndim]
+        grad_wavefields = saved_tensors[7 + 2 * ndim : 9 + 4 * ndim]
+        pml_profiles = saved_tensors[9 + 4 * ndim : 9 + 7 * ndim]
         # Retrieve scalar variables from the context.
         grid_spacing = ctx.grid_spacing
         dt = ctx.dt

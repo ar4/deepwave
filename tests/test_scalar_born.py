@@ -4,7 +4,12 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import pytest
 import torch
-from test_utils import _set_coords, _set_sources, scattered
+from test_utils import (
+    _set_coords,
+    _set_sources,
+    run_checkpoint_equivalence,
+    scattered,
+)
 from torch.func import jvp, vmap
 
 from deepwave import IGNORE_LOCATION, ScalarBorn, scalar_born
@@ -1829,3 +1834,43 @@ def test_vmap_error_check() -> None:
 
     with pytest.raises(NotImplementedError, match="Only property models"):
         vmap(prop)(source_amplitudes_batch)
+
+
+@pytest.mark.parametrize("use_reentrant", [True, False])
+def test_checkpoint_gradient(use_reentrant: bool) -> None:
+    """Gradient checkpointing must not change the gradient (issue #120)."""
+    ny, nx, dx = 25, 25, 5.0
+    nt, freq, dt0, max_vel = 60, 25.0, 0.004, 1600.0
+    n_shots = 2
+
+    v = 1500.0 * torch.ones(ny, nx)
+    v[ny // 2 :] = 1600.0
+    scatter = 100.0 * torch.ones(ny, nx)
+
+    source_locations = torch.zeros(n_shots, 1, 2, dtype=torch.long)
+    source_locations[..., 1] = 5
+    source_locations[:, 0, 0] = torch.tensor([ny // 4, 3 * ny // 4])
+    receiver_locations = torch.zeros(n_shots, nx, 2, dtype=torch.long)
+    receiver_locations[..., 1] = 5
+    receiver_locations[:, :, 0] = torch.arange(nx).repeat(n_shots, 1)
+
+    dt, step_ratio = cfl_condition(dx, dx, dt0, max_vel)
+    source_amplitudes = upsample(
+        ricker(freq, nt, dt0, 1.5 / freq).repeat(n_shots, 1, 1), step_ratio
+    )
+
+    def call(model: torch.Tensor) -> Tuple[torch.Tensor, ...]:
+        return scalar_born(
+            model,
+            scatter,
+            dx,
+            dt,
+            source_amplitudes=source_amplitudes,
+            source_locations=source_locations,
+            receiver_locations=receiver_locations,
+            pml_freq=freq,
+            max_vel=max_vel,
+            model_gradient_sampling_interval=step_ratio,
+        )
+
+    run_checkpoint_equivalence(v, call, use_reentrant=use_reentrant)
