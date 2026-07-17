@@ -1199,8 +1199,14 @@ def run_elasticfunc(nt: int = 3) -> None:
         pml_profiles[i] = torch.randn_like(profile) * mask
 
     def wrap(python):
+        # Use "eager" (not True/"compile") as the independent Python reference.
+        # python_backend=True maps to torch.compile, whose codegen can depend
+        # on process-global dynamo cache state (e.g. automatic dynamic shapes
+        # left by earlier tests), producing ~1e-6 relative FP differences that
+        # break default allclose against the C/CUDA backend.
+        backend = "eager" if python else False
         inputs = (
-            python,
+            backend,
             pml_profiles,
             [
                 dy,
