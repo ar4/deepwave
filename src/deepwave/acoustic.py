@@ -1362,6 +1362,10 @@ def acoustic_python(
         raise RuntimeError(
             "Specifying storage mode is not supported in Python backend."
         )
+    if storage_compression:
+        raise RuntimeError(
+            "Storage compression is not supported in the Python backend."
+        )
 
     is_batched = any(deepwave.common.is_inside_vmap(x) for x in args)
     ndim = len(grid_spacing)

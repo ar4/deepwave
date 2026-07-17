@@ -1919,7 +1919,7 @@ class ElasticForwardFunc(torch.autograd.Function):
 
                 if backward_callback is not None:
                     callback_wavefields = dict(
-                        zip(wavefield_names, grad_wavefields[:-1])
+                        zip(wavefield_names, grad_wavefields)
                     )
                     backward_callback(
                         deepwave.common.CallbackState(
@@ -2504,20 +2504,52 @@ def elastic_python(
         if forward_callback is not None and step % callback_frequency == 0:
             callback_wavefields = dict(zip(v_names, velocities))
             callback_wavefields.update(dict(zip(normal_s_names, normal_stresses)))
-            for i in range(len(shear_s_names)):
-                callback_wavefields.update(
-                    dict(zip(shear_s_names[i], shear_stresses[i]))
+            # The shear names are flattened in the same order as the
+            # upper-triangular (i < j) entries of the symmetric shear
+            # stress matrix, whose diagonal contains empty placeholders.
+            callback_wavefields.update(
+                dict(
+                    zip(
+                        [name for names in shear_s_names for name in names],
+                        [
+                            shear_stresses[i][j]
+                            for i in range(ndim)
+                            for j in range(i + 1, ndim)
+                        ],
+                    )
                 )
+            )
             callback_wavefields.update(dict(zip(v_mem_normal_names, v_mem_vars_normal)))
-            for i in range(len(v_mem_shear_names)):
-                callback_wavefields.update(
-                    dict(zip(v_mem_shear_names[i], v_mem_vars_shear[i]))
+            # The memory variable names are flattened row by row, matching
+            # the non-placeholder entries of the shear matrices (the
+            # diagonal entries are empty placeholders).
+            callback_wavefields.update(
+                dict(
+                    zip(
+                        [name for names in v_mem_shear_names for name in names],
+                        [
+                            var
+                            for row in v_mem_vars_shear
+                            for var in row
+                            if var.numel() > 0
+                        ],
+                    )
                 )
+            )
             callback_wavefields.update(dict(zip(s_mem_normal_names, s_mem_vars_normal)))
-            for i in range(len(s_mem_shear_names)):
-                callback_wavefields.update(
-                    dict(zip(s_mem_shear_names[i], s_mem_vars_shear[i]))
+            callback_wavefields.update(
+                dict(
+                    zip(
+                        [name for names in s_mem_shear_names for name in names],
+                        [
+                            var
+                            for row in s_mem_vars_shear
+                            for var in row
+                            if var.numel() > 0
+                        ],
+                    )
                 )
+            )
             forward_callback(
                 deepwave.common.CallbackState(
                     dt,
