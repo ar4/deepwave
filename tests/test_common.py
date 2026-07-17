@@ -1233,6 +1233,29 @@ def test_check_locations_within_extents_outside() -> None:
         check_locations_within_extents(extents, [location])
 
 
+def test_check_locations_within_extents_partial_ignore() -> None:
+    """Partially ignored points are still checked on valid coordinates.
+
+    A point with only some coordinates set to IGNORE_LOCATION is not a
+    fully ignored location, so its remaining coordinates must still lie
+    within the survey extents.
+    """
+    extents = [(2, 8), (2, 8)]
+    # One fully ignored point (skipped) and one valid in-bounds point.
+    mixed_ok = torch.tensor(
+        [[[IGNORE_LOCATION, IGNORE_LOCATION], [3, 4]]],
+        dtype=torch.long,
+    )
+    check_locations_within_extents(extents, [mixed_ok])
+    # One coordinate ignored, the other out of bounds → still an error.
+    partial_bad = torch.tensor([[[IGNORE_LOCATION, 0]]], dtype=torch.long)
+    with pytest.raises(
+        RuntimeError,
+        match=re.escape("Locations are not within survey extents."),
+    ):
+        check_locations_within_extents(extents, [partial_bad])
+
+
 def test_cfl_condition_n_different_grid_spacing() -> None:
     """Test cfl_condition_n with different grid spacings in dimensions."""
     grid_spacing = [5.0, 10.0]

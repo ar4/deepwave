@@ -1924,24 +1924,28 @@ def check_locations_within_extents(
 
     """
     for location in locations:
-        if location is not None:
-            for dim in range(location.shape[-1]):
-                dim_location = location[..., dim]
-                dim_location = dim_location[dim_location != IGNORE_LOCATION]
-                if dim_location.numel() == 0:
-                    continue
-                if (
-                    dim_location.min() < extents[dim][0]
-                    or extents[dim][1] <= dim_location.max()
-                ):
-                    raise RuntimeError(
-                        "Locations are not within "
-                        "survey extents. This probably occurred "
-                        "because you provided an "
-                        "initial wavefield that does not cover all "
-                        "source and receiver locations, given the "
-                        "specified origin.",
-                    )
+        if location is None or location.numel() == 0:
+            continue
+        # Drop points whose every coordinate is IGNORE_LOCATION. Skip the
+        # whole tensor when nothing remains (empty or fully ignored).
+        flat = location.reshape(-1, location.shape[-1])
+        valid = flat[~(flat == IGNORE_LOCATION).all(dim=-1)]
+        if valid.shape[0] == 0:
+            continue
+        for dim in range(valid.shape[-1]):
+            dim_location = valid[:, dim]
+            if (
+                dim_location.min() < extents[dim][0]
+                or extents[dim][1] <= dim_location.max()
+            ):
+                raise RuntimeError(
+                    "Locations are not within "
+                    "survey extents. This probably occurred "
+                    "because you provided an "
+                    "initial wavefield that does not cover all "
+                    "source and receiver locations, given the "
+                    "specified origin.",
+                )
 
 
 def check_extents_match_wavefields_shape(

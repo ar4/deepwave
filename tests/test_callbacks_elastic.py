@@ -602,7 +602,7 @@ def _elastic_survey(ndim, nt, device=None):
     return source_amplitudes_y, source_locations_y
 
 
-@pytest.mark.parametrize("python_backend", [True, False])
+@pytest.mark.parametrize("python_backend", [False, "eager"])
 @pytest.mark.parametrize("ndim", [2, 3])
 def test_elastic_callback_wavefield_names(python_backend, ndim) -> None:
     """Check that callbacks expose the full set of non-empty wavefields."""
@@ -625,6 +625,8 @@ def test_elastic_callback_wavefield_names(python_backend, ndim) -> None:
             for name in expected:
                 assert state.get_wavefield(name).numel() > 0
 
+    # Use "eager" rather than True/"compile" so name checks are not coupled
+    # to process-global torch.compile state.
     out = deepwave.elastic(
         lamb,
         mu,
@@ -667,8 +669,10 @@ def test_elastic_callback_wavefield_backend_consistency(ndim) -> None:
                 }
             )
 
+    # Compare the C/CUDA backend against the eager Python reference, not
+    # python_backend=True (torch.compile), which can be order-dependent.
     recorders = {}
-    for python_backend in [False, True]:
+    for python_backend in [False, "eager"]:
         recorder = Recorder()
         deepwave.elastic(
             lamb,
@@ -685,7 +689,7 @@ def test_elastic_callback_wavefield_backend_consistency(ndim) -> None:
         recorders[python_backend] = recorder
 
     compiled_records = recorders[False].records
-    python_records = recorders[True].records
+    python_records = recorders["eager"].records
     assert len(compiled_records) == len(python_records)
     assert len(compiled_records) > 1
     for compiled_step, python_step in zip(compiled_records, python_records):
