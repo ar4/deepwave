@@ -547,3 +547,155 @@ def test_elastic_backward_callback_only_call_count() -> None:
     )
     out[-2].sum().backward()
     assert backward_counter.count == (nt + 2) // 3
+
+
+EXPECTED_WAVEFIELD_NAMES_2D = {
+    "vy_0",
+    "sigmayy_0",
+    "sigmaxy_0",
+    "m_vyy_0",
+    "m_vyx_0",
+    "m_vxy_0",
+    "m_sigmayyy_0",
+    "m_sigmaxyy_0",
+    "m_sigmaxyx_0",
+    "vx_0",
+    "sigmaxx_0",
+    "m_vxx_0",
+    "m_sigmaxxx_0",
+}
+
+EXPECTED_WAVEFIELD_NAMES_3D = {
+    "vz_0",
+    "sigmazz_0",
+    "sigmayz_0",
+    "sigmaxz_0",
+    "m_vzz_0",
+    "m_vzy_0",
+    "m_vzx_0",
+    "m_vyz_0",
+    "m_vxz_0",
+    "m_sigmazzz_0",
+    "m_sigmayzy_0",
+    "m_sigmaxzx_0",
+    "m_sigmayzz_0",
+    "m_sigmaxzz_0",
+    *EXPECTED_WAVEFIELD_NAMES_2D,
+}
+
+
+def _elastic_models(ndim, device=None):
+    """Create constant elastic models for the given number of dimensions."""
+    shape = (10,) * ndim
+    lamb = torch.ones(*shape, device=device) * 2200
+    mu = torch.ones(*shape, device=device) * 1000
+    buoyancy = torch.ones(*shape, device=device) * 1 / 2200
+    return lamb, mu, buoyancy
+
+
+def _elastic_survey(ndim, nt, device=None):
+    """Create a central y-directed point source for the given ndim."""
+    source_amplitudes_y = torch.zeros(1, 1, nt, device=device)
+    source_amplitudes_y[0, 0, 5] = 1
+    source_locations_y = torch.zeros(1, 1, ndim, dtype=torch.long, device=device)
+    source_locations_y[0, 0, :] = 5
+    return source_amplitudes_y, source_locations_y
+
+
+@pytest.mark.parametrize("python_backend", [True, False])
+@pytest.mark.parametrize("ndim", [2, 3])
+def test_elastic_callback_wavefield_names(python_backend, ndim) -> None:
+    """Check that callbacks expose the full set of non-empty wavefields."""
+    lamb, mu, buoyancy = _elastic_models(ndim)
+    lamb.requires_grad_()
+    mu.requires_grad_()
+    buoyancy.requires_grad_()
+    dx = 5.0
+    dt = 0.004
+    nt = 10
+    source_amplitudes_y, source_locations_y = _elastic_survey(ndim, nt)
+    expected = EXPECTED_WAVEFIELD_NAMES_3D if ndim == 3 else EXPECTED_WAVEFIELD_NAMES_2D
+
+    class Checker:
+        """Checks the names and contents of the callback wavefields."""
+
+        def __call__(self, state: deepwave.common.CallbackState) -> None:
+            """Check that all expected wavefields are present and non-empty."""
+            assert set(state._wavefields.keys()) == expected  # noqa: SLF001
+            for name in expected:
+                assert state.get_wavefield(name).numel() > 0
+
+    out = deepwave.elastic(
+        lamb,
+        mu,
+        buoyancy,
+        dx,
+        dt,
+        source_amplitudes_y=source_amplitudes_y,
+        source_locations_y=source_locations_y,
+        forward_callback=Checker(),
+        backward_callback=None if python_backend else Checker(),
+        callback_frequency=1,
+        python_backend=python_backend,
+    )
+    if not python_backend:
+        out[-1].sum().backward()
+
+
+@pytest.mark.parametrize("ndim", [2, 3])
+def test_elastic_callback_wavefield_backend_consistency(ndim) -> None:
+    """Check that both backends expose the same wavefields in callbacks."""
+    lamb, mu, buoyancy = _elastic_models(ndim)
+    dx = 5.0
+    dt = 0.004
+    nt = 10
+    source_amplitudes_y, source_locations_y = _elastic_survey(ndim, nt)
+    expected = EXPECTED_WAVEFIELD_NAMES_3D if ndim == 3 else EXPECTED_WAVEFIELD_NAMES_2D
+
+    class Recorder:
+        """Records the inner view of every wavefield at each callback."""
+
+        def __init__(self) -> None:
+            self.records = []
+
+        def __call__(self, state: deepwave.common.CallbackState) -> None:
+            """Record a clone of every wavefield."""
+            self.records.append(
+                {
+                    name: state.get_wavefield(name).clone()
+                    for name in state._wavefields  # noqa: SLF001
+                }
+            )
+
+    recorders = {}
+    for python_backend in [False, True]:
+        recorder = Recorder()
+        deepwave.elastic(
+            lamb,
+            mu,
+            buoyancy,
+            dx,
+            dt,
+            source_amplitudes_y=source_amplitudes_y,
+            source_locations_y=source_locations_y,
+            forward_callback=recorder,
+            callback_frequency=3,
+            python_backend=python_backend,
+        )
+        recorders[python_backend] = recorder
+
+    compiled_records = recorders[False].records
+    python_records = recorders[True].records
+    assert len(compiled_records) == len(python_records)
+    assert len(compiled_records) > 1
+    for compiled_step, python_step in zip(compiled_records, python_records):
+        assert set(compiled_step.keys()) == expected
+        assert set(python_step.keys()) == expected
+        for name in expected:
+            assert torch.allclose(compiled_step[name], python_step[name]), name
+    # The simulation should have propagated non-zero shear wavefields, so
+    # the comparison above is not trivially comparing zeros.
+    shear_name = "sigmaxz_0" if ndim == 3 else "sigmaxy_0"
+    assert any(
+        step[shear_name].abs().max() > 0 for step in python_records[1:]
+    )

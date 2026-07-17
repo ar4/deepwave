@@ -5,8 +5,10 @@ import re
 import pytest
 import torch
 
+from deepwave import IGNORE_LOCATION
 from deepwave.common import (
     cfl_condition_n,
+    check_locations_within_extents,
     check_points_per_wavelength,
     check_source_amplitudes_locations_match,
     cosine_taper_end,
@@ -1199,6 +1201,36 @@ def test_cfl_condition_n_negative_dt() -> None:
     inner_dt, step_ratio = cfl_condition_n(grid_spacing, dt, max_vel)
     assert step_ratio == 1
     assert inner_dt == pytest.approx(-0.001)
+
+
+def test_cfl_condition_n_zero_dt() -> None:
+    """Test cfl_condition_n with zero dt (should raise error)."""
+    with pytest.raises(
+        ValueError,
+        match=re.escape("dt must be non-zero."),
+    ):
+        cfl_condition_n([5.0, 5.0], 0.0, 1500.0)
+
+
+# Tests for check_locations_within_extents
+def test_check_locations_within_extents_empty_locations() -> None:
+    """Test check_locations_within_extents with no valid locations."""
+    extents = [(2, 8), (2, 8)]
+    empty_location = torch.zeros(1, 0, 2, dtype=torch.long)
+    ignored_location = torch.full((1, 2, 2), IGNORE_LOCATION)
+    # Should not raise
+    check_locations_within_extents(extents, [empty_location, ignored_location])
+
+
+def test_check_locations_within_extents_outside() -> None:
+    """Test check_locations_within_extents with a location outside extents."""
+    extents = [(2, 8), (2, 8)]
+    location = torch.tensor([[[1, 5]]])
+    with pytest.raises(
+        RuntimeError,
+        match=re.escape("Locations are not within survey extents."),
+    ):
+        check_locations_within_extents(extents, [location])
 
 
 def test_cfl_condition_n_different_grid_spacing() -> None:

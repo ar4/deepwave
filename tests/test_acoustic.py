@@ -1357,3 +1357,59 @@ def test_checkpoint_gradient(use_reentrant: bool) -> None:
         )
 
     run_checkpoint_equivalence(v, call, use_reentrant=use_reentrant)
+
+
+def test_initial_wavefield_empty_receiver_locations() -> None:
+    """Check initial wavefields with no valid receiver locations.
+
+    Receiver locations that are empty or all IGNORE_LOCATION should not
+    cause an error when initial wavefields are provided.
+    """
+    torch.manual_seed(0)
+    v = 1500 * torch.ones(10, 10)
+    rho = 1000 * torch.ones(10, 10)
+    pressure_0 = torch.zeros(1, 10, 10)
+    pressure_0[0, 5, 5] = 1
+    ignored_receiver_locations = torch.full((1, 1, 2), IGNORE_LOCATION)
+    empty_receiver_locations = torch.zeros(1, 0, 2, dtype=torch.long)
+
+    for receiver_locations_p in [
+        ignored_receiver_locations,
+        empty_receiver_locations,
+    ]:
+        acousticprop(
+            v,
+            rho,
+            5.0,
+            0.001,
+            receiver_locations_p=receiver_locations_p,
+            pressure_0=pressure_0,
+            nt=5,
+            pml_width=0,
+        )
+
+
+def test_python_backend_storage_compression() -> None:
+    """Check that storage_compression with the Python backend raises."""
+    v = 1500 * torch.ones(10, 10)
+    rho = 1000 * torch.ones(10, 10)
+    source_amplitudes = torch.zeros(1, 1, 10)
+    source_amplitudes[0, 0, 5] = 1
+    source_locations = torch.zeros(1, 1, 2, dtype=torch.long)
+    source_locations[0, 0, 0] = 5
+    source_locations[0, 0, 1] = 5
+
+    with pytest.raises(
+        RuntimeError,
+        match="Storage compression is not supported in the Python backend.",
+    ):
+        acoustic(
+            v,
+            rho,
+            5.0,
+            0.001,
+            source_amplitudes_p=source_amplitudes,
+            source_locations_p=source_locations,
+            python_backend=True,
+            storage_compression=True,
+        )

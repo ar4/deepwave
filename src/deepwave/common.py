@@ -1928,6 +1928,8 @@ def check_locations_within_extents(
             for dim in range(location.shape[-1]):
                 dim_location = location[..., dim]
                 dim_location = dim_location[dim_location != IGNORE_LOCATION]
+                if dim_location.numel() == 0:
+                    continue
                 if (
                     dim_location.min() < extents[dim][0]
                     or extents[dim][1] <= dim_location.max()
@@ -2375,6 +2377,8 @@ def cfl_condition_n(
         dt = float(dt)
     except (TypeError, ValueError) as e:
         raise TypeError("dt must be a float.") from e
+    if dt == 0:
+        raise ValueError("dt must be non-zero.")
     try:
         max_abs_vel = float(max_abs_vel)
     except (TypeError, ValueError) as e:
