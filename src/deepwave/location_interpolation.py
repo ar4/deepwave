@@ -68,8 +68,15 @@ def _get_hicks_for_one_location_dim(
             - location
             + int(location)
         )
-        locations = (location + x).long()
-
+        locations = (
+            torch.arange(
+                -halfwidth + 1,
+                halfwidth + 1,
+                device=beta.device,
+            )
+            + int(location)
+        )
+        
         if key in hicks_weight_cache:
             weights = hicks_weight_cache[key].clone()
         else:
