@@ -1,5 +1,8 @@
 """Demonstrates the Graph Space Optimal Transport (GSOT) method."""
 
+import math
+import os
+
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -7,6 +10,10 @@ from scipy.optimize import linear_sum_assignment
 from scipy.signal import butter, sosfilt
 
 import deepwave
+
+# ``DEEPWAVE_SMOKE=1`` shrinks this example so that it can be run quickly as
+# an automated check; the default sizes are the ones the text describes.
+smoke = os.environ.get("DEEPWAVE_SMOKE") == "1"
 
 
 def gsot(y_pred: torch.Tensor, y: torch.Tensor, eta: float):
@@ -52,22 +59,21 @@ def gsot(y_pred: torch.Tensor, y: torch.Tensor, eta: float):
 
 freq = 25
 dt = 0.004
-nt = 100
+nt = 40 if smoke else 100
 
 source_amplitudes = deepwave.wavelets.ricker(freq, nt, dt, (nt // 2) * dt)
 
-shifts = list(range(-30, 31))
-gsot_losses = []
-for shift in shifts:
-    gsot_losses.append(
-        gsot(
-            deepwave.wavelets.ricker(freq, nt, dt, (nt // 2 + shift) * dt)[
-                None, None
-            ],
-            source_amplitudes[None, None],
-            0.003,
-        ),
+shifts = list(range(-8, 9)) if smoke else list(range(-30, 31))
+gsot_losses = [
+    gsot(
+        deepwave.wavelets.ricker(freq, nt, dt, (nt // 2 + shift) * dt)[
+            None, None
+        ],
+        source_amplitudes[None, None],
+        0.003,
     )
+    for shift in shifts
+]
 
 l2_losses = []
 for shift in shifts:
@@ -109,11 +115,11 @@ plt.savefig("example_gsot_shift_loss.png")
 
 # Inversion
 
-ny = 100
-nx = 216
+ny = 60 if smoke else 100
+nx = 90 if smoke else 216
 freq = 25
 dt = 0.004
-nt = 200
+nt = 60 if smoke else 200
 v_true = 1600 * torch.ones(ny, nx)
 
 source_amplitudes = deepwave.wavelets.ricker(
@@ -135,9 +141,10 @@ observed_data = deepwave.scalar(
     source_amplitudes=source_amplitudes,
     source_locations=source_locations,
     receiver_locations=receiver_locations,
-)[-1]
+).receiver_amplitudes
 
 vs = []
+loss_histories: dict[str, list[float]] = {}
 for loss_type in ["gsot", "l2"]:
     # Starting model
     v = 1500 * torch.ones(ny, nx)
@@ -147,7 +154,7 @@ for loss_type in ["gsot", "l2"]:
     optimiser = torch.optim.Adam([v], lr=10)
 
     # Run optimisation/inversion
-    n_epochs = 250
+    n_epochs = 8 if smoke else 250
 
     for _epoch in range(n_epochs):
 
@@ -161,12 +168,15 @@ for loss_type in ["gsot", "l2"]:
                 source_amplitudes=source_amplitudes,
                 source_locations=source_locations,
                 receiver_locations=receiver_locations,
-            )[-1]
+            ).receiver_amplitudes
             if loss_type == "gsot":
                 loss = gsot(pred_data, observed_data, 0.003)
             else:
                 loss = 2e2 * torch.nn.MSELoss()(pred_data, observed_data)
             loss.backward()
+            loss_histories.setdefault(loss_type, []).append(
+                float(loss.detach())
+            )
             return loss
 
         optimiser.step(closure)
@@ -183,7 +193,7 @@ initial_data = deepwave.scalar(
     source_amplitudes=source_amplitudes,
     source_locations=source_locations,
     receiver_locations=receiver_locations,
-)[-1]
+).receiver_amplitudes
 
 gsot_data = deepwave.scalar(
     vs[0],
@@ -192,7 +202,7 @@ gsot_data = deepwave.scalar(
     source_amplitudes=source_amplitudes,
     source_locations=source_locations,
     receiver_locations=receiver_locations,
-)[-1]
+).receiver_amplitudes
 
 l2_data = deepwave.scalar(
     vs[1],
@@ -201,7 +211,7 @@ l2_data = deepwave.scalar(
     source_amplitudes=source_amplitudes,
     source_locations=source_locations,
     receiver_locations=receiver_locations,
-)[-1]
+).receiver_amplitudes
 
 plt.figure(figsize=(10.5, 5))
 plt.plot(observed_data.flatten()[100:180], c="b", lw=2, label="Target")
@@ -215,3 +225,9 @@ plt.ylabel("Amplitude")
 plt.legend()
 plt.tight_layout()
 plt.savefig("example_gsot_inversion.png")
+
+assert all(
+    math.isfinite(loss) for hist in loss_histories.values() for loss in hist
+), "a loss history contains non-finite values"
+for _loss_type, _hist in loss_histories.items():
+    assert _hist[-1] < _hist[0], f"{_loss_type} loss did not decrease"

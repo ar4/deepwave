@@ -1,331 +1,132 @@
-"""Utility functions for staggered grid PML setup.
+"""Compatibility shim for the ``deepwave.staggered_grid`` spelling.
 
-This module provides functions to set up Perfectly Matched Layers (PML)
-profiles for wave propagation simulations on a staggered grid.
+Deepwave 0.0.27 exposed this module at the package's top level. It holds
+the staggered-grid finite-difference stencils and the PML profile builder
+that the ``acoustic`` and ``elastic`` families' pure-PyTorch time loop uses
+-- internal machinery, not a designed interface, and its contents track
+whatever the eager backend currently needs. It *was*
+importable, though, and Deepwave 0.1.0 removes nothing that 0.0.27 shipped,
+so the spelling is kept until 0.4.0 over the private
+``deepwave._staggered_grid``.
+
+**Deprecated.** Every attribute access here emits a
+:class:`deepwave.DeepwaveFutureWarning`
+naming the private module. The shim is removed in Deepwave 0.4.0.
+Importing :mod:`deepwave` does not warn -- only touching one of these names
+does.
+
+**What is covered.** Deepwave 0.0.27's module had no ``__all__`` and
+14 names that do not start with an underscore. The nine it
+defined itself are carried, and are listed in ``__all__`` so that
+``from deepwave.staggered_grid import *`` binds them and warns about each; the rest
+were ``typing`` imports and imported modules that its import statements
+happened to re-export, and have their own canonical homes. Every carried
+name has the same signature it had in 0.0.27.
 """
 
-from typing import List, Optional, Tuple
+import importlib as _importlib
+from typing import TYPE_CHECKING as _TYPE_CHECKING
+from typing import Any as _Any
 
-import torch
+from deepwave._exceptions import (
+    warn_deprecated_name as _warn_deprecated_name,
+)
 
-import deepwave
+#: The names Deepwave 0.0.27's ``deepwave.staggered_grid`` defined itself, confirmed
+#: against a 0.0.27 install. Each resolves to the same attribute of
+#: ``deepwave._staggered_grid``, so the shim cannot drift from the private module
+#: it forwards to.
+_FORWARDED: tuple[str, ...] = (
+    "diff1",
+    "diff1h",
+    "diffx1",
+    "diffxh1",
+    "diffy1",
+    "diffyh1",
+    "diffz1",
+    "diffzh1",
+    "set_pml_profiles",
+)
+
+# Kept in step with ``_FORWARDED`` by a test. Written out rather than computed
+# from it so that static tooling can read the exported surface without running
+# the module.
+__all__ = [
+    "diff1",
+    "diff1h",
+    "diffx1",
+    "diffxh1",
+    "diffy1",
+    "diffyh1",
+    "diffz1",
+    "diffzh1",
+    "set_pml_profiles",
+]
+
+if _TYPE_CHECKING:  # pragma: no cover -- lets mypy resolve the forwards
+    from deepwave._staggered_grid import (
+        diff1 as diff1,
+    )
+    from deepwave._staggered_grid import (
+        diff1h as diff1h,
+    )
+    from deepwave._staggered_grid import (
+        diffx1 as diffx1,
+    )
+    from deepwave._staggered_grid import (
+        diffxh1 as diffxh1,
+    )
+    from deepwave._staggered_grid import (
+        diffy1 as diffy1,
+    )
+    from deepwave._staggered_grid import (
+        diffyh1 as diffyh1,
+    )
+    from deepwave._staggered_grid import (
+        diffz1 as diffz1,
+    )
+    from deepwave._staggered_grid import (
+        diffzh1 as diffzh1,
+    )
+    from deepwave._staggered_grid import (
+        set_pml_profiles as set_pml_profiles,
+    )
 
 
-def set_pml_profiles(
-    pml_width: List[int],
-    accuracy: int,
-    fd_pad: List[int],
-    dt: float,
-    grid_spacing: List[float],
-    max_vel: float,
-    dtype: torch.dtype,
-    device: torch.device,
-    pml_freq: float,
-    shape: Tuple[int, ...],
-) -> List[torch.Tensor]:
-    """Sets up PML profiles for a staggered grid.
+def __getattr__(name: str) -> _Any:
+    """Resolves a ``deepwave.staggered_grid`` name, with a warning.
 
-    Args:
-        pml_width: A list of integers specifying the width of the PML
-            on each side (e.g., for 2D: top, bottom, left, right).
-        accuracy: The finite-difference accuracy order.
-        fd_pad: A list of integers specifying the padding for finite-difference.
-        dt: The time step.
-        grid_spacing: A list of floats specifying the grid spacing in
-            y and x directions.
-        max_vel: The maximum velocity in the model.
-        dtype: The data type of the tensors (e.g., torch.float32).
-        device: The device on which the tensors will be (e.g., 'cuda', 'cpu').
-        pml_freq: The PML frequency.
-        shape: The number of grid points in each spatial dimension.
-
-    Returns:
-        A list of torch.Tensors representing the PML profiles (e.g., in 2D:
-        ay, ayh, ax, axh, by, byh, bx, bxh).
-
+    Looked up lazily (PEP 562) rather than imported eagerly, so that
+    ``import deepwave`` does not warn. ``stacklevel=2`` attributes the
+    warning to the line that touched the name, for a plain attribute access
+    and for ``from deepwave.staggered_grid import diff1`` alike.
     """
-    ndim = len(shape)
-    pml_start: List[List[int]] = [
-        [
-            fd_pad[dim * 2] + pml_width[dim * 2],
-            shape[dim] - 1 - fd_pad[dim * 2 + 1] - pml_width[dim * 2 + 1],
-        ]
-        for dim in range(ndim)
-    ]
-    physical_widths: List[float] = []
-    for dim in range(ndim):
-        physical_widths.append(pml_width[dim * 2] * grid_spacing[dim])
-        physical_widths.append(pml_width[dim * 2 + 1] * grid_spacing[dim])
-    max_pml = max(physical_widths)
-
-    pml_profiles: List[torch.Tensor] = []
-    for dim in range(ndim):
-        a, b = deepwave.common.setup_pml(
-            pml_width[2 * dim : 2 * dim + 2],
-            [float(v) for v in pml_start[dim]],
-            max_pml,
-            dt,
-            shape[dim],
-            max_vel,
-            dtype,
-            device,
-            pml_freq,
-            start=0.0,
+    if name not in _FORWARDED:
+        raise AttributeError(
+            f"module 'deepwave.staggered_grid' has no attribute {name!r}. It is a "
+            "compatibility shim carrying the nine names that Deepwave "
+            "0.0.27's deepwave.staggered_grid defined itself: "
+            f"{', '.join(_FORWARDED)}. The other names 0.0.27 happened to "
+            "expose here were typing imports and imported modules, which "
+            "have their own canonical homes. None of this is a supported "
+            "interface; it is the eager backend's internal machinery, and it "
+            "now lives in deepwave._staggered_grid."
         )
-        ah, bh = deepwave.common.setup_pml(
-            pml_width[2 * dim : 2 * dim + 2],
-            [float(v) for v in pml_start[dim]],
-            max_pml,
-            dt,
-            shape[dim],
-            max_vel,
-            dtype,
-            device,
-            pml_freq,
-            start=0.5,
-        )
-        s_list: List[Optional[slice]] = [None] * (ndim + 1)
-        s_list[1 + dim] = slice(None)
-        s: Tuple[Optional[slice], ...] = tuple(s_list)
-        pml_profiles.extend([a[tuple(s)], b[tuple(s)], ah[tuple(s)], bh[tuple(s)]])
-    return pml_profiles
-
-
-def diffz1(a: torch.Tensor, accuracy: int, rdz: float) -> torch.Tensor:
-    """Calculates the first z derivative at integer grid points."""
-    if accuracy == 2:
-        return torch.nn.functional.pad(
-            (a[..., 1:, :, :] - a[..., :-1, :, :]) * rdz, (0, 0, 0, 0, 1, 0)
-        )
-    if accuracy == 4:
-        return torch.nn.functional.pad(
-            (
-                9 / 8 * (a[..., 2:-1, :, :] - a[..., 1:-2, :, :])
-                + -1 / 24 * (a[..., 3:, :, :] - a[..., :-3, :, :])
-            )
-            * rdz,
-            (0, 0, 0, 0, 2, 1),
-        )
-    if accuracy == 6:
-        return torch.nn.functional.pad(
-            (
-                75 / 64 * (a[..., 3:-2, :, :] - a[..., 2:-3, :, :])
-                + -25 / 384 * (a[..., 4:-1, :, :] - a[..., 1:-4, :, :])
-                + 3 / 640 * (a[..., 5:, :, :] - a[..., :, :-5, :, :])
-            )
-            * rdz,
-            (0, 0, 0, 0, 3, 2),
-        )
-    return torch.nn.functional.pad(
-        (
-            1225 / 1024 * (a[..., 4:-3, :, :] - a[..., 3:-4, :, :])
-            + -245 / 3072 * (a[..., 5:-2, :, :] - a[..., 2:-5, :, :])
-            + 49 / 5120 * (a[..., 6:-1, :, :] - a[..., 1:-6, :, :])
-            + -5 / 7168 * (a[..., 7:, :, :] - a[..., :, :-7, :, :])
-        )
-        * rdz,
-        (0, 0, 0, 0, 4, 3),
+    _warn_deprecated_name(
+        f"deepwave.staggered_grid.{name}",
+        f"deepwave._staggered_grid.{name}",
+        stacklevel=2,
+        detail=(
+            "deepwave.staggered_grid was never a supported interface -- it is the "
+            "eager backend's finite-difference machinery -- so the private "
+            "module's contents may change in any release."
+        ),
     )
+    # Deliberately not cached: every access should warn.
+    module = _importlib.import_module("deepwave._staggered_grid")
+    return getattr(module, name)
 
 
-def diffy1(a: torch.Tensor, accuracy: int, rdy: float) -> torch.Tensor:
-    """Calculates the first y derivative at integer grid points."""
-    if accuracy == 2:
-        return torch.nn.functional.pad(
-            (a[..., 1:, :] - a[..., :-1, :]) * rdy, (0, 0, 1, 0)
-        )
-    if accuracy == 4:
-        return torch.nn.functional.pad(
-            (
-                9 / 8 * (a[..., 2:-1, :] - a[..., 1:-2, :])
-                + -1 / 24 * (a[..., 3:, :] - a[..., :-3, :])
-            )
-            * rdy,
-            (0, 0, 2, 1),
-        )
-    if accuracy == 6:
-        return torch.nn.functional.pad(
-            (
-                75 / 64 * (a[..., 3:-2, :] - a[..., 2:-3, :])
-                + -25 / 384 * (a[..., 4:-1, :] - a[..., 1:-4, :])
-                + 3 / 640 * (a[..., 5:, :] - a[..., :-5, :])
-            )
-            * rdy,
-            (0, 0, 3, 2),
-        )
-    return torch.nn.functional.pad(
-        (
-            1225 / 1024 * (a[..., 4:-3, :] - a[..., 3:-4, :])
-            + -245 / 3072 * (a[..., 5:-2, :] - a[..., 2:-5, :])
-            + 49 / 5120 * (a[..., 6:-1, :] - a[..., 1:-6, :])
-            + -5 / 7168 * (a[..., 7:, :] - a[..., :-7, :])
-        )
-        * rdy,
-        (0, 0, 4, 3),
-    )
-
-
-def diffx1(a: torch.Tensor, accuracy: int, rdx: float) -> torch.Tensor:
-    """Calculates the first x derivative at integer grid points."""
-    if accuracy == 2:
-        return torch.nn.functional.pad((a[..., 1:] - a[..., :-1]) * rdx, (1, 0))
-    if accuracy == 4:
-        return torch.nn.functional.pad(
-            (
-                9 / 8 * (a[..., 2:-1] - a[..., 1:-2])
-                + -1 / 24 * (a[..., 3:] - a[..., :-3])
-            )
-            * rdx,
-            (2, 1),
-        )
-    if accuracy == 6:
-        return torch.nn.functional.pad(
-            (
-                75 / 64 * (a[..., 3:-2] - a[..., 2:-3])
-                + -25 / 384 * (a[..., 4:-1] - a[..., 1:-4])
-                + 3 / 640 * (a[..., 5:] - a[..., :-5])
-            )
-            * rdx,
-            (3, 2),
-        )
-    return torch.nn.functional.pad(
-        (
-            1225 / 1024 * (a[..., 4:-3] - a[..., 3:-4])
-            + -245 / 3072 * (a[..., 5:-2] - a[..., 2:-5])
-            + 49 / 5120 * (a[..., 6:-1] - a[..., 1:-6])
-            + -5 / 7168 * (a[..., 7:] - a[..., :-7])
-        )
-        * rdx,
-        (4, 3),
-    )
-
-
-def diffzh1(a: torch.Tensor, accuracy: int, rdz: float) -> torch.Tensor:
-    """Calculates the first z derivative at half integer grid points."""
-    if accuracy == 2:
-        return torch.nn.functional.pad(
-            (a[..., 2:, :, :] - a[..., 1:-1, :, :]) * rdz, (0, 0, 0, 0, 1, 1)
-        )
-    if accuracy == 4:
-        return torch.nn.functional.pad(
-            (
-                9 / 8 * (a[..., 3:-1, :, :] - a[..., 2:-2, :, :])
-                + -1 / 24 * (a[..., 4:, :, :] - a[..., 1:-3, :, :])
-            )
-            * rdz,
-            (0, 0, 0, 0, 2, 2),
-        )
-    if accuracy == 6:
-        return torch.nn.functional.pad(
-            (
-                75 / 64 * (a[..., 4:-2, :, :] - a[..., 3:-3, :, :])
-                + -25 / 384 * (a[..., 5:-1, :, :] - a[..., 2:-4, :, :])
-                + 3 / 640 * (a[..., 6:, :, :] - a[..., 1:-5, :, :])
-            )
-            * rdz,
-            (0, 0, 0, 0, 3, 3),
-        )
-    return torch.nn.functional.pad(
-        (
-            1225 / 1024 * (a[..., 5:-3, :, :] - a[..., 4:-4, :, :])
-            + -245 / 3072 * (a[..., 6:-2, :, :] - a[..., 3:-5, :, :])
-            + 49 / 5120 * (a[..., 7:-1, :, :] - a[..., 2:-6, :, :])
-            + -5 / 7168 * (a[..., 8:, :, :] - a[..., 1:-7, :, :])
-        )
-        * rdz,
-        (0, 0, 0, 0, 4, 4),
-    )
-
-
-def diffyh1(a: torch.Tensor, accuracy: int, rdy: float) -> torch.Tensor:
-    """Calculates the first y derivative at half integer grid points."""
-    if accuracy == 2:
-        return torch.nn.functional.pad(
-            (a[..., 2:, :] - a[..., 1:-1, :]) * rdy, (0, 0, 1, 1)
-        )
-    if accuracy == 4:
-        return torch.nn.functional.pad(
-            (
-                9 / 8 * (a[..., 3:-1, :] - a[..., 2:-2, :])
-                + -1 / 24 * (a[..., 4:, :] - a[..., 1:-3, :])
-            )
-            * rdy,
-            (0, 0, 2, 2),
-        )
-    if accuracy == 6:
-        return torch.nn.functional.pad(
-            (
-                75 / 64 * (a[..., 4:-2, :] - a[..., 3:-3, :])
-                + -25 / 384 * (a[..., 5:-1, :] - a[..., 2:-4, :])
-                + 3 / 640 * (a[..., 6:, :] - a[..., 1:-5, :])
-            )
-            * rdy,
-            (0, 0, 3, 3),
-        )
-    return torch.nn.functional.pad(
-        (
-            1225 / 1024 * (a[..., 5:-3, :] - a[..., 4:-4, :])
-            + -245 / 3072 * (a[..., 6:-2, :] - a[..., 3:-5, :])
-            + 49 / 5120 * (a[..., 7:-1, :] - a[..., 2:-6, :])
-            + -5 / 7168 * (a[..., 8:, :] - a[..., 1:-7, :])
-        )
-        * rdy,
-        (0, 0, 4, 4),
-    )
-
-
-def diffxh1(a: torch.Tensor, accuracy: int, rdx: float) -> torch.Tensor:
-    """Calculates the first x derivative at half integer grid points."""
-    if accuracy == 2:
-        return torch.nn.functional.pad((a[..., 2:] - a[..., 1:-1]) * rdx, (1, 1))
-    if accuracy == 4:
-        return torch.nn.functional.pad(
-            (
-                9 / 8 * (a[..., 3:-1] - a[..., 2:-2])
-                + -1 / 24 * (a[..., 4:] - a[..., 1:-3])
-            )
-            * rdx,
-            (2, 2),
-        )
-    if accuracy == 6:
-        return torch.nn.functional.pad(
-            (
-                75 / 64 * (a[..., 4:-2] - a[..., 3:-3])
-                + -25 / 384 * (a[..., 5:-1] - a[..., 2:-4])
-                + 3 / 640 * (a[..., 6:] - a[..., 1:-5])
-            )
-            * rdx,
-            (3, 3),
-        )
-    return torch.nn.functional.pad(
-        (
-            1225 / 1024 * (a[..., 5:-3] - a[..., 4:-4])
-            + -245 / 3072 * (a[..., 6:-2] - a[..., 3:-5])
-            + 49 / 5120 * (a[..., 7:-1] - a[..., 2:-6])
-            + -5 / 7168 * (a[..., 8:] - a[..., 1:-7])
-        )
-        * rdx,
-        (4, 4),
-    )
-
-
-def diff1(
-    wf: torch.Tensor, dim: int, accuracy: int, rdx: float, ndim: int
-) -> torch.Tensor:
-    """Perform first-order differentiation on a staggered grid."""
-    if ndim - dim == 3:
-        return diffz1(wf, accuracy, rdx)
-    if ndim - dim == 2:
-        return diffy1(wf, accuracy, rdx)
-    return diffx1(wf, accuracy, rdx)
-
-
-def diff1h(
-    wf: torch.Tensor, dim: int, accuracy: int, rdx: float, ndim: int
-) -> torch.Tensor:
-    """Perform first-order differentiation on a staggered grid (half-step)."""
-    if ndim - dim == 3:
-        return diffzh1(wf, accuracy, rdx)
-    if ndim - dim == 2:
-        return diffyh1(wf, accuracy, rdx)
-    return diffxh1(wf, accuracy, rdx)
+def __dir__() -> list[str]:
+    """The deprecated names, so that tab-completion still finds them."""
+    return sorted(_FORWARDED)

@@ -1,10 +1,46 @@
 Acoustic Wave Equation
 ======================
 
+This page derives the variable-density acoustic wave equation that
+:func:`deepwave.acoustic` solves and describes the staggered-grid scheme used
+to discretise it. It is reference material for readers who already know the
+:doc:`scalar <scalar>` propagator and need variable density, or who want the
+exact numerics; the example below is enough to get a first result running.
+
+Minimal example
+----------------
+
+:func:`deepwave.acoustic` takes wavespeed and density models, a grid spacing,
+a time step, and a source, and returns the final wavefields, one opaque
+``auxiliary_state`` holding the absorbing boundary's memory variables, and the
+recorded receiver data. Passing the whole output back in as ``initial_state``
+continues the propagation in a later call (see :doc:`usage`):
+
+.. code-block:: python
+
+    import torch
+    import deepwave
+
+    v = 1500 * torch.ones(40, 40)
+    rho = 2200 * torch.ones(40, 40)
+    out = deepwave.acoustic(
+        v, rho, grid_spacing=5, dt=0.001,
+        source_amplitudes_volume_rate=deepwave.wavelets.ricker(25, 200, 0.001, 0.05).reshape(1, 1, -1),
+        source_locations_volume_rate=torch.tensor([[[5, 20]]]),
+        receiver_locations_p=torch.tensor([[[35, 20]]]),
+        pml_width=10,
+        pml_freq=25,
+    )
+    out.receiver_amplitudes_p  # the recorded pressure, shape [1, 1, 200]
+
+See :doc:`usage` for the full set of source/receiver components (pressure and
+each velocity component) and :doc:`units` for what the source amplitude
+physically represents.
+
 Derivation
 ----------
 
-The acoustic wave equation in a heterogeneous medium with variable density :math:`\rho(\mathbf{x})` and bulk modulus :math:`K(\mathbf{x})` is derived from the linearized equations of momentum conservation and mass conservation (continuity equation).
+The acoustic wave equation in a heterogeneous medium with variable density :math:`\rho(\mathbf{x})` and bulk modulus :math:`K(\mathbf{x})` is derived from the linearised equations of momentum conservation and mass conservation (continuity equation).
 
 **Momentum Conservation (Equation of Motion):**
 
@@ -30,12 +66,12 @@ where:
 where:
 
 *   :math:`K = \rho c^2` is the adiabatic bulk modulus, with :math:`c` being the acoustic wave speed.
-*   :math:`s` is a source term (volume injection rate).
+*   :math:`s` is a source term (volume injection rate per unit volume, so it has units of 1/time; see :doc:`units`).
 
 Implementation
 --------------
 
-The system is discretized using a finite-difference time-domain (FDTD) method on a staggered grid.
+The system is discretised using a finite-difference time-domain (FDTD) method on a staggered grid.
 
 **Staggered Grid Layout**
 
@@ -140,3 +176,28 @@ This step updates the pressure and the divergence memory variables.
     s^{t+\frac{1}{2}}
     \end{pmatrix}
     \label{acoustic_matrix_p}
+
+Specifying sources and receivers
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The channel-keyed mapping form is the canonical way to specify a
+survey::
+
+    out = deepwave.acoustic(
+        ...,
+        sources={"volume_rate": (amplitudes, source_locations)},
+        receivers={"p": receiver_locations},
+    )
+
+This propagator's source channels are ``volume_rate``, ``z``, ``y``, ``x`` and its
+receiver channels are ``p``, ``z``, ``y``, ``x`` (the ``z`` channel is absent in 2-D).
+``"volume_rate"`` names the quantity the scalar source injects; see
+:doc:`units`. ``"p"`` is still accepted there, with a
+:class:`deepwave.DeepwaveFutureWarning`, and is removed in ``0.4.0``.
+It is unchanged as a *receiver* channel name.
+
+The equivalent flat ``source_amplitudes_*``/``source_locations_*``/
+``receiver_locations_p`` keywords are equally permanent and
+produce bit-identical results; giving one channel in both forms
+raises. See :doc:`usage` for the full vocabulary.
+

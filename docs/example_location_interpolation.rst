@@ -3,9 +3,24 @@ Location interpolation and dipoles
 
 All of our examples so far have used monopole sources and receivers located on grid points. To make it easier to also use dipoles and points that are not on grid points, Deepwave provides an implementation of `a proposal by Hicks <https://doi.org/10.1190/1.1451454>`_. In this example we will see how to use it.
 
-Previously we only used Tensors containing the locations in integer numbers of grid cells from the origin. To allow more arbitrary positions, which is especially useful when using larger grid cells (to reduce computational cost, but which might cause desired locations to no longer be on grid points), we would like to be able to specify positions with floating point numbers. Sources can only be added to, and receiver data can only be recorded from, a discretised wavefield on grid points, however. The proposal by Hicks resolves this problem by converting points at arbitrary positions into an array of points on grid cell locations. With an appropriate weighting, this array of points produces an effect similar to a point at the arbitrary floating point location.
+Previous examples only used Tensors containing locations as integer numbers
+of grid cells from the origin. Specifying positions with floating point
+numbers instead allows more arbitrary positions, which is especially useful
+with larger grid cells (used to reduce computational cost), since the
+desired location may then no longer land on a grid point. Sources can only
+be added to, and receiver data can only be recorded from, a discretised
+wavefield on grid points, however. The Hicks method resolves this by
+converting a point at an arbitrary position into an array of points at
+grid cell locations; with an appropriate weighting, this array produces an
+effect similar to a point source at the original, arbitrary location.
 
-After setting up our model in a typical way, the interesting part in this example happens when we specify the source and receiver locations. For the sources, we create three sources in a line, with none of them located on a grid point. We also set them to be a monopole, a dipole oriented in the first dimension, and a dipole oriented in the second dimension. After creating a `Hicks` object with these, we can obtain the locations and amplitudes of the array of sources that together should approximate our desired sources but that are positioned on grid points::
+After setting up the model in a typical way, the interesting part of this
+example is how the source and receiver locations are specified. For the
+sources, we create three sources in a line, none of them located on a grid
+point: a monopole, a dipole oriented in the first dimension, and a dipole
+oriented in the second dimension. Passing these to a `Hicks` object gives
+the locations and amplitudes of the array of grid-point sources that
+together approximate the three desired sources::
 
     source_locations = torch.zeros(1, 3, 2, device=device)
     source_locations[..., 0] = ny / 2 + 0.5
@@ -17,7 +32,7 @@ After setting up our model in a typical way, the interesting part in this exampl
     source_dipole_dim = torch.zeros(1, 3, dtype=torch.int,
                                     device=device)
     source_dipole_dim[0, 2] = 1
-    hicks_source = deepwave.location_interpolation.Hicks(
+    hicks_source = deepwave.Hicks(
         source_locations,
         monopole=source_monopole,
         dipole_dim=source_dipole_dim
@@ -38,7 +53,7 @@ Similarly, we create three receivers, again a monopole and dipoles oriented in e
     receiver_dipole_dim = torch.zeros(1, 3, dtype=torch.int,
                                       device=device)
     receiver_dipole_dim[0, 2] = 1
-    hicks_receiver = deepwave.location_interpolation.Hicks(
+    hicks_receiver = deepwave.Hicks(
         receiver_locations,
         monopole=receiver_monopole,
         dipole_dim=receiver_dipole_dim
@@ -56,9 +71,14 @@ In the wavefield of the final time step of this propagation, we can see the thre
 
 .. image:: example_location_interpolation_wavefield.jpg
 
-Just as we used the `source` function of the `Hicks` object to convert the source amplitudes of our original point sources into the amplitudes for the array of grid-centred sources, we can use the `receiver` function to convert the receiver amplitudes recorded at the locations of the array of grid-centred receivers into the amplitudes that we would have recorded if we could have had receivers at our desired non-grid-centred receiver locations::
+The `source` function of the `Hicks` object converted the amplitudes of the
+original point sources into amplitudes for the array of grid-centred
+sources. The `receiver` function does the reverse for receivers: it
+converts the amplitudes recorded at the array of grid-centred receiver
+locations into the amplitudes that would have been recorded by receivers
+at the desired, non-grid-centred locations::
 
-    receiver_hicks_amplitudes = out[-1]
+    receiver_hicks_amplitudes = out.receiver_amplitudes
     receiver_amplitudes = hicks_receiver.receiver(
         receiver_hicks_amplitudes
     )
@@ -67,7 +87,12 @@ Plotting these, we see how the three different types of receivers respond differ
 
 .. image:: example_location_interpolation_receiver_data.jpg
 
-To verify the accuracy of the Hicks method, we can perform the same propagation but with the source and receiver locations rounded to a grid point, and also perform it on a grid with half the grid cell spacing so that our desired locations are on grid points. When we halve the grid spacing in both dimensions, we also need to multiply the source amplitudes by four to produce a similar effect on the wavefield::
+To verify the accuracy of the Hicks method, we perform the same propagation
+twice more: once with the source and receiver locations rounded to a grid
+point, and once on a grid with half the grid cell spacing, so that the
+desired locations land exactly on grid points there. Halving the grid
+spacing in both dimensions also means the source amplitudes must be
+multiplied by four to produce a similar effect on the wavefield::
 
     out2 = scalar(v, dx, dt,
                   source_amplitudes=source_amplitudes,
@@ -82,16 +107,20 @@ To verify the accuracy of the Hicks method, we can perform the same propagation 
                   receiver_locations=(receiver_locations*2).long(),
                   pml_freq=freq)
 
-We see that simply rounding to grid points does change the result noticeably in this case, while the Hicks method has very well approximated the result that we get with a denser grid:
+Simply rounding to grid points changes the result noticeably in this case,
+while the Hicks method approximates the denser-grid result well:
 
 .. image:: example_location_interpolation_comparison.jpg
 
 The approximation may not be as good close to the point (such as within the array), so, if you are performing optimisation, you may wish to apply a mute to receivers that are close to sources when using the Hicks method.
 
-Finally, it is important to note that if your desired non-grid-point locations are near an edge of the model, you might need to extend the model (such as by using `torch.nn.functional.pad` with `mode='replicate'`). This is because the array of grid-centred points produced by the Hicks method will surround the desired location and so some might be positioned outside the current model. If you do this, and extend the edge at the beginning of a dimension, then you will also need to shift the locations to account for the shift in origin of the model. For example, if you wish to have a point at `[0.1, 1.1]` and you use the default Hicks option of a halfwidth of 4, then you will need to pad the beginnings of both dimensions (by three and two, respectively) so that all locations are at least 0::
+Finally, it is important to note that if your desired non-grid-point locations are near an edge of the model, you might need to extend the model (such as by using `torch.nn.functional.pad` with `mode='replicate'`). This is because the array of grid-centred points produced by the Hicks method will surround the desired location and so some might be positioned outside the current model. If you do this, and extend the edge at the beginning of a dimension, then you will also need to shift the locations to account for the shift in origin of the model. For example, suppose you want a point at `[0.1, 1.1]`, using the default
+Hicks halfwidth of 4. You would need to pad the beginnings of both
+dimensions, by three and two cells respectively, so that all locations are
+at least 0::
 
     source_locations = torch.tensor([[[0.1, 1.1]]])
-    hicks = deepwave.location_interpolation.Hicks(source_locations)
+    hicks = deepwave.Hicks(source_locations)
     hicks_source_locations = hicks.get_locations()
     hicks_source_locations[..., 0] += 3
     hicks_source_locations[..., 1] += 2
@@ -100,7 +129,13 @@ Finally, it is important to note that if your desired non-grid-point locations a
 
 If you specify an edge as being a free surface, however, then the array of points will not extend beyond that edge.
 
-We can also simulate sources and receivers oriented in arbitrary directions by combining two at the same location with weights determined by the orientation. For example, if we wish to make a circle of sources, with all of the sources oriented away from the centre of the circle, we could weight the amplitude of the source at each location that is oriented in the first dimension by :math:`\sin(angle)` and the one in the second dimension by :math:`\cos(angle)`, and then use the Hicks method to combine them::
+Sources and receivers oriented in arbitrary directions can also be
+simulated, by combining two at the same location with weights determined
+by the orientation. For example, to make a circle of sources all oriented
+away from the centre of the circle, weight the amplitude of the source
+oriented in the first dimension by :math:`\sin(angle)`, and the one in the
+second dimension by :math:`\cos(angle)`, then combine them with the Hicks
+method::
 
     for l in range(n_source_locations):
         angle = l / n_source_locations * 2 * math.pi
@@ -119,7 +154,7 @@ We can also simulate sources and receivers oriented in arbitrary directions by c
                                     dtype=torch.int, device=device)
 
     source_dipole_dim[0, 1::2] = 1  # every second source is x-orientated
-    hicks_source = deepwave.location_interpolation.Hicks(
+    hicks_source = deepwave.Hicks(
         source_locations,
         monopole=source_monopole,
         dipole_dim=source_dipole_dim,

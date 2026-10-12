@@ -4,6 +4,8 @@ Results with and without tapering and padding are compared to show the
 reduction in wraparound and ringing artefacts in receiver data.
 """
 
+import os
+
 import matplotlib.pyplot as plt
 import torch
 
@@ -11,8 +13,11 @@ import deepwave
 from deepwave import scalar
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# ``DEEPWAVE_SMOKE=1`` shrinks this example so that it can be run quickly as
+# an automated check; the default sizes are the ones the text describes.
+smoke = os.environ.get("DEEPWAVE_SMOKE") == "1"
 ny = 20
-nx = 100
+nx = 40 if smoke else 100
 dx = 4.0
 v = torch.ones(ny, nx, device=device) * 1500
 
@@ -47,7 +52,7 @@ out = scalar(
     receiver_locations=receiver_locations,
     pml_freq=freq,
 )
-receiver_amplitudes_1 = out[-1][0].detach().clone()
+receiver_amplitudes_1 = out.receiver_amplitudes[0].detach().clone()
 
 # Propagate with taper and pad
 out = scalar(
@@ -61,7 +66,7 @@ out = scalar(
     freq_taper_frac=0.2,
     time_pad_frac=0.2,
 )
-receiver_amplitudes_2 = out[-1][0].detach().clone()
+receiver_amplitudes_2 = out.receiver_amplitudes[0].detach().clone()
 
 # Plot receiver amplitudes
 vmin, vmax = torch.quantile(
@@ -89,3 +94,8 @@ ax[1].imshow(
 ax[1].set_title("0.2 taper and pad")
 plt.tight_layout()
 plt.savefig("example_taper_and_pad.jpg")
+
+assert torch.isfinite(receiver_amplitudes_2).all(), (
+    "receiver data is not finite"
+)
+assert receiver_amplitudes_2.abs().max() > 0, "receiver data is all zeros"

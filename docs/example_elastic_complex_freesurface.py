@@ -1,5 +1,8 @@
 """Demonstrates elastic wave propagation with a complex free surface."""
 
+import os
+from pathlib import Path
+
 import matplotlib
 import torch
 import torchvision
@@ -13,13 +16,21 @@ import matplotlib.pyplot as plt
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 dx = 1.0
 dt = 0.004
-nt = 100
+# ``DEEPWAVE_SMOKE=1`` shrinks this example so that it can be run quickly as
+# an automated check; the default sizes are the ones the text describes.
+smoke = os.environ.get("DEEPWAVE_SMOKE") == "1"
+nt = 40 if smoke else 100
 n_shots = 1
 freq = 25
 peak_time = 1.5 / freq
+# Resolved relative to this script's own location, not the working
+# directory, so the example runs correctly from any current directory.
+mask_path = Path(__file__).resolve().parent / (
+    "example_elastic_complex_freesurface.png"
+)
 mask = (
     torchvision.io.read_image(
-        "example_elastic_complex_freesurface.png",
+        str(mask_path),
         torchvision.io.ImageReadMode.GRAY,
     ).float()[0]
     / 255
@@ -36,13 +47,15 @@ callback_frequency = 1
 snapshots = []
 
 out = deepwave.elastic(
-    *deepwave.common.vpvsrho_to_lambmubuoyancy(vp, vs, rho),
+    *deepwave.vpvsrho_to_lambmubuoyancy(vp, vs, rho),
     grid_spacing=dx,
     dt=dt,
     source_amplitudes_y=(
-        deepwave.wavelets.ricker(freq, nt, dt, peak_time).reshape(1, 1, -1)
+        deepwave.wavelets.ricker(freq, nt, dt, peak_time)
+        .reshape(1, 1, -1)
+        .to(device)
     ),
-    source_locations_y=torch.tensor([[[ny // 2, nx // 2]]]),
+    source_locations_y=torch.tensor([[[ny // 2, nx // 2]]], device=device),
     pml_width=0,
     forward_callback=lambda x: snapshots.append(
         x.get_wavefield("vy_0")[0].cpu().clone()
@@ -90,3 +103,6 @@ ani = animation.FuncAnimation(
 )
 
 ani.save("example_elastic_complex_freesurface.gif", writer="pillow", dpi=72)
+
+assert torch.isfinite(snapshots[-1]).all(), "final snapshot is not finite"
+assert snapshots[-1].abs().max() > 0, "final snapshot is all zeros"

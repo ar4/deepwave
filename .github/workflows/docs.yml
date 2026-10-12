@@ -1,0 +1,172 @@
+name: Docs
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build CPU wheel
+    uses: ./.github/workflows/_build-cpu.yml
+
+  build_docs:
+    name: Build Sphinx docs
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - name: Download the CPU wheel built by the "build" job
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: deepwave-cpu-wheel
+          path: dist
+
+      - name: Install torch (CPU)
+        # docs/usage.rst uses autoclass/autofunction on deepwave.* objects,
+        # and sphinx.ext.napoleon (docs/conf.py's extensions) pulls in
+        # sphinx.ext.autodoc automatically, so Sphinx must be able to
+        # `import deepwave`, which in turn needs torch installed.
+        run: pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Install Deepwave and documentation dependencies (from the prebuilt wheel)
+        run: |
+          for wheel in dist/*.whl; do
+            python -m pip install "${wheel}[docs]"
+          done
+          python -m pip install pytest
+
+      - name: Check documentation version diagnostics
+        run: python -m pytest tests/test_docs_build_setup.py
+
+      - name: "Build docs (-W: warnings are errors)"
+        run: |
+          mkdir -p /tmp/deepwave-docs-build
+          python -m sphinx -M html docs /tmp/deepwave-docs-build -W --keep-going
+
+      - name: Install jupytext
+        run: pip install jupytext
+
+      - name: Check paired notebooks are in sync (jupytext --diff)
+        # The four Colab notebooks under docs/ are jupytext-paired with
+        # their canonical .py sources (see CONTRIBUTING.md's "Example
+        # notebooks" section); this catches drift automatically instead of
+        # relying on a contributor remembering to run `jupytext --sync`.
+        run: |
+          status=0
+          for py in docs/example_generated_model.py docs/example_elastic.py \
+                    docs/example_photoacoustic.py docs/example_fwi_recipes.py; do
+            ipynb="${py%.py}.ipynb"
+            diff_output=$(jupytext --diff "$py" "$ipynb")
+            if [ -n "$diff_output" ]; then
+              echo "::error file=$ipynb::$py and $ipynb have drifted apart; run \`jupytext --sync $py\`."
+              echo "$diff_output"
+              status=1
+            fi
+          done
+          exit $status
+
+      - name: linkcheck
+        # Known non-fixable external issues (bot-blocked DOIs, four new
+        # example pages not yet on the released `master` branch that GitHub
+        # "view source" links point at, and docs.pytorch.org's client-side
+        # anchor rendering) are allowlisted in docs/conf.py's
+        # linkcheck_ignore / linkcheck_anchors_ignore_for_url, not silently
+        # dropped here.
+        run: |
+          mkdir -p /tmp/deepwave-linkcheck
+          python -m sphinx -b linkcheck docs /tmp/deepwave-linkcheck
+
+      - name: Retain the rendered documentation for release
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: docs-html-a${{ github.run_attempt }}
+          path: /tmp/deepwave-docs-build/html/
+          retention-days: 90
+          if-no-files-found: error
+
+  examples:
+    name: Run examples (smoke)
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - name: Download the CPU wheel built by the "build" job
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: deepwave-cpu-wheel
+          path: dist
+
+      - name: Install torch (CPU)
+        run: pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Install Deepwave (from the prebuilt wheel)
+        run: pip install dist/*.whl
+
+      - name: Install example dependencies
+        # torchvision and torchaudio are published on the same CPU wheel
+        # index as torch; matplotlib, scipy and numpy come from PyPI. This
+        # list is exactly the set of third-party packages imported by
+        # docs/example_*.py.
+        run: |
+          pip install torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+          pip install matplotlib scipy numpy
+
+      - name: Run examples in smoke mode
+        # scripts/run_examples_smoke.py runs every docs/example_*.py listed
+        # in scripts/examples_manifest.json with category "cpu" (the
+        # default selection), setting DEEPWAVE_SMOKE=1 per example itself.
+        # Smoke mode supplies generated data for the Marmousi examples.
+        # GPU and multi-GPU examples require an explicit runner selection;
+        # every skipped example and its reason are recorded in the log.
+        env:
+          MPLBACKEND: Agg
+        run: python scripts/run_examples_smoke.py --timeout 600
+
+      - name: Check the optional geomloss recipe
+        # The sweep above exercises the pure-torch fallback. Users installing
+        # deepwave[examples] get geomloss, so exercise that branch as well.
+        env:
+          MPLBACKEND: Agg
+        run: |
+          python -m pip install geomloss
+          python -c "from geomloss import SamplesLoss"
+          python scripts/run_examples_smoke.py --only docs/example_fwi_recipes.py --timeout 600
+
+  qualification:
+    name: Record required qualification
+    if: always()
+    needs: [build, build_docs, examples]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - name: Require every gate and record the actual tree
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: python scripts/release_artifacts.py record --kind docs --directory evidence --needs "$NEEDS_JSON"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: qualification-docs-a${{ github.run_attempt }}
+          path: evidence/receipt.json
+          retention-days: 90
+          if-no-files-found: error

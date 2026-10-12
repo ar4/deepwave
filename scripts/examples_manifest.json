@@ -1,0 +1,204 @@
+{
+  "examples": [
+    {
+      "path": "docs/example_acoustic_born.py",
+      "category": "cpu",
+      "reason": ""
+    },
+    {
+      "path": "docs/example_batched_models.py",
+      "category": "cpu",
+      "reason": ""
+    },
+    {
+      "path": "docs/example_boundary_faces.py",
+      "category": "cpu",
+      "reason": ""
+    },
+    {
+      "path": "docs/example_callback_animation.py",
+      "category": "cpu",
+      "reason": ""
+    },
+    {
+      "path": "docs/example_checkpointing.py",
+      "category": "cpu",
+      "reason": ""
+    },
+    {
+      "path": "docs/example_custom_imaging_condition.py",
+      "category": "cpu",
+      "reason": ""
+    },
+    {
+      "path": "docs/example_distributed_ddp.py",
+      "category": "multi_gpu",
+      "reason": "Demonstrates multi-GPU training with torch.nn.parallel.DistributedDataParallel, so it needs two or more CUDA devices to demonstrate anything, which no CI runner here provides."
+    },
+    {
+      "path": "docs/example_distributed_dp.py",
+      "category": "multi_gpu",
+      "reason": "Demonstrates multi-GPU training with torch.nn.DataParallel, so it needs two or more CUDA devices to demonstrate anything, which no CI runner here provides."
+    },
+    {
+      "path": "docs/example_elastic.py",
+      "category": "cpu",
+      "reason": ""
+    },
+    {
+      "path": "docs/example_elastic_born_recipe.py",
+      "category": "cpu",
+      "reason": ""
+    },
+    {
+      "path": "docs/example_elastic_complex_freesurface.py",
+      "category": "cpu",
+      "reason": ""
+    },
+    {
+      "path": "docs/example_elastic_groundroll.py",
+      "category": "cpu",
+      "reason": ""
+    },
+    {
+      "path": "docs/example_elastic_source.py",
+      "category": "cpu",
+      "reason": ""
+    },
+    {
+      "path": "docs/example_flagship_3d.py",
+      "category": "multi_gpu",
+      "reason": "Uses a synthetic model (no external data required), but composes torch.nn.parallel.DistributedDataParallel shot-splitting with checkpoint_segments/storage_mode/storage_compression, so it needs two or more CUDA devices to demonstrate anything, which no CI runner here provides."
+    },
+    {
+      "path": "docs/example_forward_model.py",
+      "category": "cpu",
+      "reason": ""
+    },
+    {
+      "path": "docs/example_fwi.py",
+      "category": "cpu",
+      "reason": ""
+    },
+    {
+      "path": "docs/example_fwi_generated.py",
+      "category": "cpu",
+      "reason": ""
+    },
+    {
+      "path": "docs/example_fwi_recipes.py",
+      "category": "cpu",
+      "reason": ""
+    },
+    {
+      "path": "docs/example_generated_model.py",
+      "category": "cpu",
+      "reason": ""
+    },
+    {
+      "path": "docs/example_gsot.py",
+      "category": "cpu",
+      "reason": ""
+    },
+    {
+      "path": "docs/example_hessian.py",
+      "category": "cpu",
+      "reason": ""
+    },
+    {
+      "path": "docs/example_joint_migration_inversion.py",
+      "category": "cpu",
+      "reason": ""
+    },
+    {
+      "path": "docs/example_large_edge_gradient.py",
+      "category": "cpu",
+      "reason": ""
+    },
+    {
+      "path": "docs/example_location_interpolation.py",
+      "category": "cpu",
+      "reason": ""
+    },
+    {
+      "path": "docs/example_location_interpolation_circle.py",
+      "category": "cpu",
+      "reason": ""
+    },
+    {
+      "path": "docs/example_lsrtm.py",
+      "category": "cpu",
+      "reason": ""
+    },
+    {
+      "path": "docs/example_moment_tensor.py",
+      "category": "cpu",
+      "reason": ""
+    },
+    {
+      "path": "docs/example_parameterisation.py",
+      "category": "cpu",
+      "reason": ""
+    },
+    {
+      "path": "docs/example_photoacoustic.py",
+      "category": "cpu",
+      "reason": ""
+    },
+    {
+      "path": "docs/example_rtm.py",
+      "category": "cpu",
+      "reason": ""
+    },
+    {
+      "path": "docs/example_source_encoding.py",
+      "category": "cpu",
+      "reason": ""
+    },
+    {
+      "path": "docs/example_storage.py",
+      "category": "cpu",
+      "reason": ""
+    },
+    {
+      "path": "docs/example_taper_and_pad.py",
+      "category": "cpu",
+      "reason": ""
+    },
+    {
+      "path": "docs/example_target_wavefield.py",
+      "category": "cpu",
+      "reason": ""
+    },
+    {
+      "path": "docs/example_time_dispersion.py",
+      "category": "cpu",
+      "reason": ""
+    },
+    {
+      "path": "docs/example_topography.py",
+      "category": "cpu",
+      "reason": ""
+    },
+    {
+      "path": "docs/example_torch_func.py",
+      "category": "cpu",
+      "reason": ""
+    },
+    {
+      "path": "docs/example_ultrasound.py",
+      "category": "cpu",
+      "reason": ""
+    },
+    {
+      "path": "docs/example_viscoacoustic.py",
+      "category": "cpu",
+      "reason": ""
+    },
+    {
+      "path": "docs/example_vti.py",
+      "category": "cpu",
+      "reason": ""
+    }
+  ]
+}

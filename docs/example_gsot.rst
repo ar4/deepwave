@@ -44,4 +44,12 @@ Running FWI on a simple model with a single source and receiver, we see that the
 
 .. image:: example_gsot_inversion.png
 
+GSOT is one way to make an FWI objective more robust to cycle-skipping, but it is not the only, or the cheapest, one. Because a misfit function is just another differentiable operation applied to ``pred_data``/``observed_data`` before ``.backward()``, swapping it for a different one is a one-line change, and :mod:`deepwave.misfits` provides two lighter-weight alternatives worth trying before reaching for GSOT's linear sum assignment problem. :func:`deepwave.misfits.envelope` compares the Hilbert envelopes of the predicted and observed data rather than the raw, oscillatory waveforms, which reduces sensitivity to the phase/traveltime errors that cause cycle-skipping in the first place, at the cost of discarding most phase information (so it is best combined with, or followed by, a phase-sensitive misfit). :func:`deepwave.misfits.normalised_cross_correlation` instead normalises away each trace's amplitude before comparing it with the target, which helps when the initial model gets the traveltimes roughly right but the amplitudes wrong (for example, because of an inaccurate source wavelet or missing attenuation), a case that a squared-error misfit penalises even though it says little about whether the wavespeed model is close. Both cost about the same as the squared-error misfit itself (no assignment problem to solve), so swapping in either is simply::
+
+    loss = deepwave.misfits.envelope(pred_data, observed_data)
+    # or
+    loss = deepwave.misfits.normalised_cross_correlation(pred_data, observed_data)
+
+in place of the ``loss_fn(...)``/``gsot(...)`` call above. As with GSOT, whether one of these -- or the frequency-continuation approach used in :doc:`the FWI example <example_fwi>` -- resolves cycle-skipping for a given dataset depends on how far the initial model is from the truth and how noisy the data is, so it is worth experimenting with more than one.
+
 `Full example code <https://github.com/ar4/deepwave/blob/master/docs/example_gsot.py>`_

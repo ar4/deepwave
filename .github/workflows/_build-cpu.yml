@@ -1,0 +1,58 @@
+name: Build CPU wheel (reusable)
+
+# Builds a single CPU-only (DW_SKIP_CUDA), py3-none wheel (see pyproject.toml's
+# wheel.py-api = "py3") and uploads it as an artifact named
+# "deepwave-cpu-wheel". Called by tests.yml and docs.yml so the C extension is
+# compiled once per workflow run instead of once per consuming job -- both
+# callers then download the same wheel rather than rebuilding from source.
+# Not intended to be triggered directly (workflow_call only).
+
+on:
+  workflow_call:
+
+# The caller owns concurrency. A reusable workflow inherits github.workflow
+# from its caller, so repeating the caller's group here can cancel the caller.
+
+jobs:
+  build:
+    name: Build CPU-only wheel
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - name: ccache
+        uses: hendrikmuhs/ccache-action@d62db5f07c26379fc4b4e0916f098a92573c3b03 # v1.2.23
+        with:
+          key: build-cpu-wheel
+
+      - name: Install torch (CPU)
+        run: pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Build a CPU-only wheel from the sdist (DW_SKIP_CUDA)
+        # --no-build-isolation means pip does not auto-install
+        # [build-system].requires; scikit-build-core, cmake, and ninja are
+        # installed explicitly rather than relying on the runner image's
+        # ambient tooling. CMakeLists.txt's ccache wiring picks up the
+        # ccache binary installed by the step above automatically (it is a
+        # no-op if ccache is not on PATH, so this stays correct even if that
+        # step's install method ever changes). --no-deps keeps the built
+        # artifact scoped to deepwave's own wheel only -- without it, pip
+        # would also resolve and download wheels for every dependency
+        # (including a full CUDA torch build from PyPI, clobbering the
+        # CPU-only torch installed above); each consuming job installs its
+        # own dependencies separately.
+        run: |
+          pip install build 'scikit-build-core>=1.0' cmake ninja
+          python -m build --sdist --outdir sdist/
+          pip wheel sdist/*.tar.gz --no-build-isolation --no-deps -w dist/ -Ccmake.define.DW_SKIP_CUDA=ON
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: deepwave-cpu-wheel
+          path: dist/*.whl

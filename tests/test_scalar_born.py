@@ -1,34 +1,68 @@
 """Tests for deepwave.scalar_born."""
 
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Optional, Union
 
 import pytest
 import torch
-from test_utils import (
+from helpers import (
+    _default_wavefield_size,
+    _normalize_pml_width,
     _set_coords,
     _set_sources,
+    _zero_scalar_style_wavefields,
+    auxiliary_state_arg,
+    compute_backend_parity_grad,
+    compute_backend_parity_nt,
+    element_tensors,
+    output_tensors,
     run_checkpoint_equivalence,
+    run_python_vs_compiled_backend_parity,
+    run_reciprocity_check,
     scattered,
 )
 from torch.func import jvp, vmap
 
-from deepwave import IGNORE_LOCATION, ScalarBorn, scalar_born
-from deepwave.backend_utils import USE_OPENMP
-from deepwave.common import cfl_condition, downsample, upsample
+import deepwave
+from deepwave import IGNORE_LOCATION, ScalarBorn, scalar, scalar_born
+from deepwave._backend_utils import USE_OPENMP
+from deepwave._common import set_boundary
+from deepwave.discretisation import cfl_condition, downsample, upsample
+from deepwave.scalar_born import scalar_born_output_names
 from deepwave.wavelets import ricker
 
-torch._dynamo.config.cache_size_limit = 256  # noqa: SLF001
-torch.autograd.set_detect_anomaly(True)
+
+@pytest.fixture(scope="module", autouse=True)
+def _detect_anomaly():
+    """Runs this module's tests with autograd anomaly detection enabled.
+
+    Anomaly mode is a global of the interpreter, so enabling it at import
+    time would leave it on for every other test module collected into the
+    same process, where it costs an order of magnitude in run time for no
+    benefit. Scoping it to this module and restoring the previous setting
+    afterwards keeps it where it is wanted.
+    """
+    previous = torch.is_anomaly_enabled()
+    torch.autograd.set_detect_anomaly(True)
+    try:
+        yield
+    finally:
+        torch.autograd.set_detect_anomaly(previous)
 
 
-def test_python_backends() -> None:
+# ``python_backend=True`` selects torch.compile on an OpenMP build and the
+# eager backend otherwise -- what v0.0.27 did, save that its non-OpenMP
+# choice, torch.jit.script, no longer exists. Tests below that loop over "a
+# Python backend vs the compiled C backend" use that same resolution rather
+# than hardcoding one, so they exercise whichever path this build actually
+# takes.
+_PYTHON_BACKEND_TRUE_EQUIVALENT = "torch_compile" if USE_OPENMP else "eager"
+
+
+def test_backends() -> None:
     """Verify that Python backends can be called without error."""
     if USE_OPENMP:
         run_born_scatter(
-            propagator=scalarbornprop, prop_kwargs={"python_backend": "jit"}
-        )
-        run_born_scatter(
-            propagator=scalarbornprop, prop_kwargs={"python_backend": "compile"}
+            propagator=scalarbornprop, prop_kwargs={"backend": "torch_compile"}
         )
 
 
@@ -60,7 +94,7 @@ def test_born_scatter(nx, dx) -> None:
         }
     for accuracy in [2, 4, 6, 8]:
         actuals = {}
-        for python in [True, False]:
+        for python in [_PYTHON_BACKEND_TRUE_EQUIVALENT, "compiled"]:
             expected, actual = run_born_scatter(
                 propagator=scalarbornprop,
                 dt=0.001 if accuracy == 4 else 0.0001,
@@ -68,15 +102,87 @@ def test_born_scatter(nx, dx) -> None:
                 dx=dx,
                 prop_kwargs={
                     "pml_width": 30,
-                    "python_backend": python,
+                    "backend": python,
                     "accuracy": accuracy,
                 },
             )
             diff = (expected - actual.cpu()).flatten()
             assert diff.norm().item() < expected_diffs[accuracy]
             actuals[python] = actual
-        print((actuals[True] - actuals[False]).abs().max().item(), flush=True)
-        assert torch.allclose(actuals[True], actuals[False], atol=1e-3)
+        assert torch.allclose(
+            actuals[_PYTHON_BACKEND_TRUE_EQUIVALENT], actuals["compiled"], atol=1e-3
+        )
+
+
+@pytest.mark.parametrize("ndim", [1, 2, 3])
+def test_born_equals_directional_fd_of_scalar(ndim: int) -> None:
+    """``dv`` is a wavespeed perturbation, not a separately-scaled potential.
+
+    ``scalar_born``'s docstring called ``dv`` "the scattering potential" while
+    ``acoustic_born``'s calls its ``dv`` a "wavespeed scattering
+    perturbation". The two are in fact the same quantity -- the kernel's
+    coupling term is ``2 * v * dt**2 * dv * w``, i.e. the first-order term of
+    ``delta(v**2) = 2 v delta v`` -- but nothing in the suite proved it, so
+    the ``d<model>`` naming convention shared by the three Born propagators
+    rested on a reading of the C source. ``acoustic_born`` has had
+    ``test_born_equals_directional_fd_of_acoustic`` for exactly this; this is
+    its ``scalar_born`` counterpart.
+
+    The scattered receiver amplitudes must equal the central finite
+    difference of ``scalar()`` with respect to ``v`` in the direction ``dv``.
+    """
+    shape = {1: (14,), 2: (12, 12), 3: (8, 8, 8)}[ndim]
+    v = torch.full(shape, 1500.0, dtype=torch.double)
+    dv = torch.zeros(shape, dtype=torch.double)
+    dv[tuple(s // 2 for s in shape)] = 10.0
+    dx, dt, nt = 6.0, 0.0004, 20
+    source_locations = torch.zeros(1, 1, ndim, dtype=torch.long)
+    for d in range(ndim):
+        source_locations[..., d] = shape[d] // 2
+    receiver_locations = source_locations.clone()
+    receiver_locations[..., -1] = shape[-1] // 2 - 2
+    torch.manual_seed(0)
+    kwargs: dict = {
+        "source_amplitudes": torch.randn(1, 1, nt, dtype=torch.double),
+        "source_locations": source_locations,
+        "receiver_locations": receiver_locations,
+        "pml_width": 4,
+        "max_vel": 2000.0,
+        "nt": nt,
+        "pml_freq": 25.0,
+        "accuracy": 4,
+    }
+
+    def scalar_run(v_: torch.Tensor) -> torch.Tensor:
+        return scalar(v_, dx, dt, **kwargs)[-1]
+
+    names = scalar_born_output_names(ndim)
+    # scalar_born names its two receiver sets explicitly; the flat
+    # `receiver_locations` in `kwargs` is for `scalar` alone.
+    born_kwargs = {
+        name: value for name, value in kwargs.items() if name != "receiver_locations"
+    }
+    out = scalar_born(
+        v,
+        dx,
+        dt,
+        dv=dv,
+        bg_receiver_locations=receiver_locations,
+        sc_receiver_locations=receiver_locations,
+        **born_kwargs,
+    )
+    scattered_receivers = dict(zip(names, out))["sc_receiver_amplitudes"]
+
+    # The background output must also match plain scalar(), or a scattered
+    # field compared against the wrong background would prove nothing.
+    background = dict(zip(names, out))["bg_receiver_amplitudes"]
+    assert torch.allclose(background, scalar_run(v), atol=1e-8, rtol=1e-8)
+
+    eps = 1e-3
+    fd = (scalar_run(v + eps * dv) - scalar_run(v - eps * dv)) / (2 * eps)
+    assert fd.abs().max() > 0, "the finite difference is zero; test is vacuous"
+    relative = (scattered_receivers - fd).abs().max() / fd.abs().max()
+    assert relative < 1e-5
 
 
 def test_born_scatter_v_batched_2d() -> None:
@@ -84,21 +190,23 @@ def test_born_scatter_v_batched_2d() -> None:
     expected_diffs = {2: 0.14, 4: 0.0025, 6: 0.003, 8: 0.00062}
     for accuracy in [2, 4, 6, 8]:
         actuals = {}
-        for python in [True, False]:
+        for python in [_PYTHON_BACKEND_TRUE_EQUIVALENT, "compiled"]:
             expected, actual = run_born_scatter(
                 c=torch.tensor([[[1500.0]], [[1600.0]]]),
                 propagator=scalarbornprop,
                 dt=0.001 if accuracy == 4 else 0.0001,
                 prop_kwargs={
                     "pml_width": 30,
-                    "python_backend": python,
+                    "backend": python,
                     "accuracy": accuracy,
                 },
             )
             diff = (expected - actual.cpu()).flatten()
             assert diff.norm().item() < expected_diffs[accuracy]
             actuals[python] = actual
-        assert torch.allclose(actuals[True], actuals[False], atol=1e-4)
+        assert torch.allclose(
+            actuals[_PYTHON_BACKEND_TRUE_EQUIVALENT], actuals["compiled"], atol=1e-4
+        )
 
 
 def test_born_scatter_scatter_batched_2d() -> None:
@@ -106,21 +214,23 @@ def test_born_scatter_scatter_batched_2d() -> None:
     expected_diffs = {2: 0.14, 4: 0.0025, 6: 0.003, 8: 0.00062}
     for accuracy in [2, 4, 6, 8]:
         actuals = {}
-        for python in [True, False]:
+        for python in [_PYTHON_BACKEND_TRUE_EQUIVALENT, "compiled"]:
             expected, actual = run_born_scatter(
                 dscatter=torch.tensor([[[50.0]], [[100.0]]]),
                 propagator=scalarbornprop,
                 dt=0.001 if accuracy == 4 else 0.0001,
                 prop_kwargs={
                     "pml_width": 30,
-                    "python_backend": python,
+                    "backend": python,
                     "accuracy": accuracy,
                 },
             )
             diff = (expected - actual.cpu()).flatten()
             assert diff.norm().item() < expected_diffs[accuracy]
             actuals[python] = actual
-        assert torch.allclose(actuals[True], actuals[False], atol=1e-4)
+        assert torch.allclose(
+            actuals[_PYTHON_BACKEND_TRUE_EQUIVALENT], actuals["compiled"], atol=1e-4
+        )
 
 
 def test_born_scatter_2d_module() -> None:
@@ -138,16 +248,16 @@ def test_born_scatter_2d_module() -> None:
 def scalarbornprop(
     model: torch.Tensor,
     scatter: torch.Tensor,
-    dx: Union[float, List[float]],
+    dx: Union[float, list[float]],
     dt: float,
     source_amplitudes: Optional[torch.Tensor] = None,
     source_locations: Optional[torch.Tensor] = None,
     receiver_locations: Optional[torch.Tensor] = None,
     bg_receiver_locations: Optional[torch.Tensor] = None,
-    prop_kwargs: Optional[Dict[str, Any]] = None,
-    pml_width: Optional[Union[int, List[int]]] = None,
-    survey_pad: Optional[Union[int, List[int]]] = None,
-    origin: Optional[List[int]] = None,
+    prop_kwargs: Optional[dict[str, Any]] = None,
+    pml_width: Optional[Union[int, list[int]]] = None,
+    survey_pad: Optional[Union[int, list[int]]] = None,
+    origin: Optional[list[int]] = None,
     wavefield_0: Optional[torch.Tensor] = None,
     wavefield_m1: Optional[torch.Tensor] = None,
     psiz_m1: Optional[torch.Tensor] = None,
@@ -167,7 +277,7 @@ def scalarbornprop(
     nt: Optional[int] = None,
     model_gradient_sampling_interval: int = 1,
     functional: bool = True,
-) -> Tuple[torch.Tensor, ...]:
+) -> tuple[torch.Tensor, ...]:
     """Wraps the scalar born propagator."""
     if prop_kwargs is None:
         prop_kwargs = {}
@@ -189,59 +299,57 @@ def scalarbornprop(
     if bg_receiver_locations is not None:
         bg_receiver_locations = bg_receiver_locations.to(device)
 
-    if functional:
-        return scalar_born(
-            model,
-            scatter,
-            dx,
-            dt,
-            source_amplitudes=source_amplitudes,
-            source_locations=source_locations,
-            receiver_locations=receiver_locations,
-            bg_receiver_locations=bg_receiver_locations,
-            wavefield_0=wavefield_0,
-            wavefield_m1=wavefield_m1,
-            psiz_m1=psiz_m1,
-            psiy_m1=psiy_m1,
-            psix_m1=psix_m1,
-            zetaz_m1=zetaz_m1,
-            zetay_m1=zetay_m1,
-            zetax_m1=zetax_m1,
-            wavefield_sc_0=wavefield_sc_0,
-            wavefield_sc_m1=wavefield_sc_m1,
-            psiz_sc_m1=psiz_sc_m1,
-            psiy_sc_m1=psiy_sc_m1,
-            psix_sc_m1=psix_sc_m1,
-            zetaz_sc_m1=zetaz_sc_m1,
-            zetay_sc_m1=zetay_sc_m1,
-            zetax_sc_m1=zetax_sc_m1,
-            nt=nt,
-            model_gradient_sampling_interval=model_gradient_sampling_interval,
-            **prop_kwargs,
-        )
-    prop = ScalarBorn(model, scatter, dx)
-    return prop(
-        dt,
-        source_amplitudes=source_amplitudes,
-        source_locations=source_locations,
-        receiver_locations=receiver_locations,
-        bg_receiver_locations=bg_receiver_locations,
-        wavefield_0=wavefield_0,
-        wavefield_m1=wavefield_m1,
+    # psi*/zeta* are the absorbing boundary's memory variables, not physical
+    # fields, so they are no longer direct keyword arguments: they travel
+    # inside the single ``auxiliary_state`` that ``initial_state`` carries.
+    # Any that are None are simply absent, and that part of the state starts
+    # from rest.
+    psi_zeta_state = auxiliary_state_arg(
         psiz_m1=psiz_m1,
         psiy_m1=psiy_m1,
         psix_m1=psix_m1,
         zetaz_m1=zetaz_m1,
         zetay_m1=zetay_m1,
         zetax_m1=zetax_m1,
-        wavefield_sc_0=wavefield_sc_0,
-        wavefield_sc_m1=wavefield_sc_m1,
         psiz_sc_m1=psiz_sc_m1,
         psiy_sc_m1=psiy_sc_m1,
         psix_sc_m1=psix_sc_m1,
         zetaz_sc_m1=zetaz_sc_m1,
         zetay_sc_m1=zetay_sc_m1,
         zetax_sc_m1=zetax_sc_m1,
+    )
+
+    if functional:
+        return scalar_born(
+            model,
+            dx,
+            dt,
+            dv=scatter,
+            source_amplitudes=source_amplitudes,
+            source_locations=source_locations,
+            sc_receiver_locations=receiver_locations,
+            bg_receiver_locations=bg_receiver_locations,
+            wavefield_0=wavefield_0,
+            wavefield_m1=wavefield_m1,
+            wavefield_sc_0=wavefield_sc_0,
+            wavefield_sc_m1=wavefield_sc_m1,
+            initial_state=psi_zeta_state,
+            nt=nt,
+            model_gradient_sampling_interval=model_gradient_sampling_interval,
+            **prop_kwargs,
+        )
+    prop = ScalarBorn(model, dx, dv=scatter)
+    return prop(
+        dt,
+        source_amplitudes=source_amplitudes,
+        source_locations=source_locations,
+        sc_receiver_locations=receiver_locations,
+        bg_receiver_locations=bg_receiver_locations,
+        wavefield_0=wavefield_0,
+        wavefield_m1=wavefield_m1,
+        wavefield_sc_0=wavefield_sc_0,
+        wavefield_sc_m1=wavefield_sc_m1,
+        initial_state=psi_zeta_state,
         nt=nt,
         model_gradient_sampling_interval=model_gradient_sampling_interval,
         **prop_kwargs,
@@ -251,16 +359,16 @@ def scalarbornprop(
 def scalarbornpropchained(
     model: torch.Tensor,
     scatter: torch.Tensor,
-    dx: Union[float, List[float]],
+    dx: Union[float, list[float]],
     dt: float,
     source_amplitudes: Optional[torch.Tensor],
     source_locations: Optional[torch.Tensor],
     receiver_locations: Optional[torch.Tensor],
     bg_receiver_locations: Optional[torch.Tensor] = None,
-    prop_kwargs: Optional[Dict[str, Any]] = None,
-    pml_width: Optional[Union[int, List[int]]] = None,
-    survey_pad: Optional[Union[int, List[int]]] = None,
-    origin: Optional[List[int]] = None,
+    prop_kwargs: Optional[dict[str, Any]] = None,
+    pml_width: Optional[Union[int, list[int]]] = None,
+    survey_pad: Optional[Union[int, list[int]]] = None,
+    origin: Optional[list[int]] = None,
     wavefield_0: Optional[torch.Tensor] = None,
     wavefield_m1: Optional[torch.Tensor] = None,
     psiz_m1: Optional[torch.Tensor] = None,
@@ -281,7 +389,7 @@ def scalarbornpropchained(
     model_gradient_sampling_interval: int = 1,
     functional: bool = True,
     n_chained: int = 2,
-) -> Tuple[torch.Tensor, ...]:
+) -> tuple[torch.Tensor, ...]:
     """Wraps multiple scalar born propagators chained sequentially."""
     if prop_kwargs is None:
         prop_kwargs = {}
@@ -325,16 +433,21 @@ def scalarbornpropchained(
 
     wfc = wavefield_0
     wfp = wavefield_m1
-    psiy = psiy_m1
-    psix = psix_m1
-    zetay = zetay_m1
-    zetax = zetax_m1
     wfcsc = wavefield_sc_0
     wfpsc = wavefield_sc_m1
-    psiysc = psiy_sc_m1
-    psixsc = psix_sc_m1
-    zetaysc = zetay_sc_m1
-    zetaxsc = zetax_sc_m1
+    # The absorbing boundary's memory variables travel as one opaque
+    # ``auxiliary_state``, so each segment hands the next its whole state
+    # object rather than eight individually named tensors.
+    auxiliary_state = auxiliary_state_arg(
+        psiy_m1=psiy_m1,
+        psix_m1=psix_m1,
+        zetay_m1=zetay_m1,
+        zetax_m1=zetax_m1,
+        psiy_sc_m1=psiy_sc_m1,
+        psix_sc_m1=psix_sc_m1,
+        zetay_sc_m1=zetay_sc_m1,
+        zetax_sc_m1=zetax_sc_m1,
+    )
 
     if receiver_locations is not None:
         if source_amplitudes is not None:
@@ -388,46 +501,31 @@ def scalarbornpropchained(
                 min(nt_per_segment * (segment_idx + 1), source_amplitudes.shape[-1])
                 - nt_per_segment * segment_idx
             )
-        (
-            wfc,
-            wfp,
-            psiy,
-            psix,
-            zetay,
-            zetax,
-            wfcsc,
-            wfpsc,
-            psiysc,
-            psixsc,
-            zetaysc,
-            zetaxsc,
-            segment_bg_receiver_amplitudes,
-            segment_receiver_amplitudes,
-        ) = scalar_born(
+        out = scalar_born(
             model,
-            scatter,
             dx,
             dt,
+            dv=scatter,
             source_amplitudes=segment_source_amplitudes,
             source_locations=source_locations,
-            receiver_locations=receiver_locations,
+            sc_receiver_locations=receiver_locations,
             bg_receiver_locations=bg_receiver_locations,
             wavefield_0=wfc,
             wavefield_m1=wfp,
-            psiy_m1=psiy,
-            psix_m1=psix,
-            zetay_m1=zetay,
-            zetax_m1=zetax,
             wavefield_sc_0=wfcsc,
             wavefield_sc_m1=wfpsc,
-            psiy_sc_m1=psiysc,
-            psix_sc_m1=psixsc,
-            zetay_sc_m1=zetaysc,
-            zetax_sc_m1=zetaxsc,
+            initial_state=auxiliary_state,
             nt=segment_nt,
             model_gradient_sampling_interval=step_ratio,
             **prop_kwargs,
         )
+        wfc = out.wavefield_0
+        wfp = out.wavefield_m1
+        wfcsc = out.wavefield_sc_0
+        wfpsc = out.wavefield_sc_m1
+        auxiliary_state = {"auxiliary_state": out.auxiliary_state}
+        segment_bg_receiver_amplitudes = out.bg_receiver_amplitudes
+        segment_receiver_amplitudes = out.sc_receiver_amplitudes
         if receiver_locations is not None:
             receiver_amplitudes[
                 ...,
@@ -450,19 +548,23 @@ def scalarbornpropchained(
     if bg_receiver_locations is not None:
         bg_receiver_amplitudes = downsample(bg_receiver_amplitudes, step_ratio)
 
+    # A flat tuple of tensors in the pre-fold order, which is what the
+    # backend-parity comparison this helper feeds expects; the boundary
+    # state is unpacked here rather than threaded on.
+    state = auxiliary_state["auxiliary_state"]
     return (
         wfc,
         wfp,
-        psiy,
-        psix,
-        zetay,
-        zetax,
+        state["psiy_m1"],
+        state["psix_m1"],
+        state["zetay_m1"],
+        state["zetax_m1"],
         wfcsc,
         wfpsc,
-        psiysc,
-        psixsc,
-        zetaysc,
-        zetaxsc,
+        state["psiy_sc_m1"],
+        state["psix_sc_m1"],
+        state["zetay_sc_m1"],
+        state["zetax_sc_m1"],
         bg_receiver_amplitudes,
         receiver_amplitudes,
     )
@@ -473,18 +575,18 @@ def run_born_scatter(
     dc: float = 150,
     dscatter: Union[float, torch.Tensor] = 150,
     freq: float = 25,
-    dx: Union[float, List[float]] = (5, 5),
+    dx: Union[float, list[float]] = (5, 5),
     dt: float = 0.0001,
-    nx: Tuple[int, ...] = (50, 50),
+    nx: tuple[int, ...] = (50, 50),
     num_shots: int = 2,
     num_sources_per_shot: int = 2,
     num_receivers_per_shot: int = 2,
     propagator: Any = None,
-    prop_kwargs: Optional[Dict[str, Any]] = None,
+    prop_kwargs: Optional[dict[str, Any]] = None,
     device: Optional[torch.device] = None,
     dtype: Optional[torch.dtype] = None,
     **kwargs: Any,
-) -> Tuple[torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor]:
     """Create the expected and actual point scattered waveform at point."""
     torch.manual_seed(1)
     if device is None:
@@ -563,19 +665,19 @@ def run_born_scatter(
 def run_born_forward(
     c: Union[float, torch.Tensor],
     freq: float,
-    dx: Union[float, List[float]],
+    dx: Union[float, list[float]],
     dt: float,
-    nx: Tuple[int, ...],
+    nx: tuple[int, ...],
     num_shots: int,
     num_sources_per_shot: int,
     num_receivers_per_shot: int,
     propagator: Any,
-    prop_kwargs: Optional[Dict[str, Any]],
+    prop_kwargs: Optional[dict[str, Any]],
     device: Optional[torch.device] = None,
     dtype: Optional[torch.dtype] = None,
     dc: float = 100,
     **kwargs: Any,
-) -> Tuple[torch.Tensor, ...]:
+) -> tuple[torch.Tensor, ...]:
     """Create a random model and forward propagate."""
     torch.manual_seed(1)
     if device is None:
@@ -611,18 +713,18 @@ def run_born_forward(
 def run_born_forward_2d(
     c: float = 1500,
     freq: float = 25,
-    dx: Tuple[float, float] = (5, 5),
+    dx: tuple[float, float] = (5, 5),
     dt: float = 0.004,
-    nx: Tuple[int, int] = (50, 50),
+    nx: tuple[int, int] = (50, 50),
     num_shots: int = 2,
     num_sources_per_shot: int = 2,
     num_receivers_per_shot: int = 2,
     propagator: Any = None,
-    prop_kwargs: Optional[Dict[str, Any]] = None,
+    prop_kwargs: Optional[dict[str, Any]] = None,
     device: Optional[torch.device] = None,
     dtype: Optional[torch.dtype] = None,
     **kwargs: Any,
-) -> Tuple[torch.Tensor, ...]:
+) -> tuple[torch.Tensor, ...]:
     """Runs run_forward with default parameters for 2D."""
     return run_born_forward(
         c,
@@ -641,22 +743,23 @@ def run_born_forward_2d(
     )
 
 
+@pytest.mark.gpu
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
 def test_forward_cpu_gpu_match() -> None:
     """Test propagation on CPU and GPU produce the same result."""
-    if torch.cuda.is_available():
-        for python in [True, False]:
-            actual_cpu = run_born_forward_2d(
-                propagator=scalarbornprop,
-                device=torch.device("cpu"),
-                prop_kwargs={"python_backend": python},
-            )
-            actual_gpu = run_born_forward_2d(
-                propagator=scalarbornprop,
-                device=torch.device("cuda"),
-                prop_kwargs={"python_backend": python},
-            )
-            for cpui, gpui in zip(actual_cpu, actual_gpu):
-                assert torch.allclose(cpui, gpui.cpu(), atol=5e-5)
+    for python in [_PYTHON_BACKEND_TRUE_EQUIVALENT, "compiled"]:
+        actual_cpu = run_born_forward_2d(
+            propagator=scalarbornprop,
+            device=torch.device("cpu"),
+            prop_kwargs={"backend": python},
+        )
+        actual_gpu = run_born_forward_2d(
+            propagator=scalarbornprop,
+            device=torch.device("cuda"),
+            prop_kwargs={"backend": python},
+        )
+        for cpui, gpui in zip(output_tensors(actual_cpu), output_tensors(actual_gpu)):
+            assert torch.allclose(cpui, gpui.cpu(), atol=5e-5)
 
 
 def test_unused_source_receiver(
@@ -683,14 +786,14 @@ def test_unused_source_receiver(
     nx = torch.tensor(nx, dtype=torch.long)
     dx = torch.tensor(dx, dtype=dtype)
 
-    for python in [True, False]:
+    for python in [_PYTHON_BACKEND_TRUE_EQUIVALENT, "compiled"]:
         torch.manual_seed(1)
         if device is None:
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         if prop_kwargs is None:
             prop_kwargs = {}
-        prop_kwargs["python_backend"] = python
+        prop_kwargs["backend"] = python
 
         model = (
             torch.ones(*nx, device=device, dtype=dtype) * c
@@ -709,29 +812,47 @@ def test_unused_source_receiver(
         )
         sources = _set_sources(x_s, freq, dt, nt, dtype)
 
-        # Forward with source and receiver ignored
-        modeli = model.clone()
-        modeli.requires_grad_()
-        scatteri = scatter.clone()
-        scatteri.requires_grad_()
-        for i in range(num_shots):
-            x_s[i, i, :] = IGNORE_LOCATION
-            x_r[i, i, :] = IGNORE_LOCATION
-            x_rsc[i, i + 1, :] = IGNORE_LOCATION
-        sources["locations"] = x_s
-        out_ignored = propagator(
-            modeli,
-            scatteri,
-            dx.tolist(),
-            dt,
-            sources["amplitude"],
-            sources["locations"],
-            x_rsc,
-            x_r,
-            prop_kwargs=prop_kwargs,
-        )
+        # The two constructions below must be compared on an equally
+        # "warmed-up" backend. A ``torch.compile``d step function is compiled
+        # on its first call and can be recompiled on a later one (automatic
+        # dynamic-shape promotion), and the generated kernel reassociates the
+        # same arithmetic and so rounds differently: the first construction
+        # would otherwise be computed partly by one artefact and the second
+        # entirely by another. In this test's default float32
+        # that difference is ~1e-6 absolute on traces of amplitude ~1 (it
+        # falls to ~1e-15 in float64, i.e. it tracks eps and is pure
+        # rounding, not a semantic difference in IGNORE_LOCATION handling),
+        # but it lands on final wavefields that have decayed to ~1e-3, where
+        # allclose's relative test sees it as ~1e-3. Repeating the first
+        # construction until the executor has settled removes the artefact
+        # instead of tolerating it. Same warmup as
+        # test_scalar/test_acoustic's copies of this test.
+        n_warmup = 3 if python != "compiled" else 1
 
-        ((out_ignored[-1] ** 2).sum() + (out_ignored[-2] ** 2).sum()).backward()
+        for _warmup in range(n_warmup):
+            # Forward with source and receiver ignored
+            modeli = model.clone()
+            modeli.requires_grad_()
+            scatteri = scatter.clone()
+            scatteri.requires_grad_()
+            for i in range(num_shots):
+                x_s[i, i, :] = IGNORE_LOCATION
+                x_r[i, i, :] = IGNORE_LOCATION
+                x_rsc[i, i + 1, :] = IGNORE_LOCATION
+            sources["locations"] = x_s
+            out_ignored = propagator(
+                modeli,
+                scatteri,
+                dx.tolist(),
+                dt,
+                sources["amplitude"],
+                sources["locations"],
+                x_rsc,
+                x_r,
+                prop_kwargs=prop_kwargs,
+            )
+
+            ((out_ignored[-1] ** 2).sum() + (out_ignored[-2] ** 2).sum()).backward()
 
         # Forward with amplitudes of sources that will be ignored set to zero
         modelf = model.clone()
@@ -767,8 +888,11 @@ def test_unused_source_receiver(
 
         ((out_filled[-1] ** 2).sum() + (out_filled[-2] ** 2).sum()).backward()
 
+        # Every element is a Tensor except auxiliary_state, which holds
+        # several; compare the tensors either way.
         for ofi, oii in zip(out_filled, out_ignored):
-            assert torch.allclose(ofi, oii)
+            for filled, ignored in zip(element_tensors(ofi), element_tensors(oii)):
+                assert torch.allclose(filled, ignored)
 
         assert torch.allclose(modelf.grad, modeli.grad)
         assert torch.allclose(scatterf.grad, scatteri.grad)
@@ -890,21 +1014,17 @@ def run_scalarbornfunc(nt: int = 3) -> None:
         def wrap(python):
             inputs = (
                 python,
-                c,
-                scatter,
-                sa,
-                source_amplitudessc,
                 [ay, by, dbydy, ax, bx, dbxdx],
-                sources_i,
-                None,
-                receivers_i,
-                receiverssc_i,
                 [dy, dx],
                 dt,
                 nt,
                 step_ratio,
                 accuracy,
                 pml_width,
+                # ``boundary`` config arg (all-PML here): scalar_born_func
+                # expects it right after ``pml_width`` (see the ``scalar_born``
+                # entry point).
+                set_boundary(None, pml_width, 2),
                 n_batch,
                 None,
                 None,
@@ -912,6 +1032,14 @@ def run_scalarbornfunc(nt: int = 3) -> None:
                 "device",
                 ".",
                 False,
+                c,
+                scatter,
+                sa,
+                source_amplitudessc,
+                sources_i,
+                sources_i,
+                receivers_i,
+                receiverssc_i,
                 wfc,
                 wfp,
                 psiy,
@@ -936,7 +1064,7 @@ def run_scalarbornfunc(nt: int = 3) -> None:
         torch.manual_seed(1)
         out_compiled = wrap(False)
         torch.manual_seed(1)
-        out_python = wrap(True)
+        out_python = wrap("eager")
         for oc, op in zip(out_compiled, out_python):
             assert torch.allclose(oc, op)
 
@@ -947,9 +1075,9 @@ def test_scalarbornfunc() -> None:
     run_scalarbornfunc(nt=5)
 
 
-def test_born_gradcheck() -> None:
-    """Test gradcheck in a 2D model with Born propagator."""
-    run_born_gradcheck(propagator=scalarbornprop)
+def test_born_backend_parity() -> None:
+    """Test backend parity in a 2D model with Born propagator."""
+    run_born_backend_parity(propagator=scalarbornprop)
 
 
 @pytest.mark.parametrize(
@@ -960,26 +1088,28 @@ def test_born_gradcheck() -> None:
         ((4, 3, 3), (6, 6, 6)),
     ],
 )
-def test_born_gradcheck_2nd_order(nx, dx) -> None:
-    """Test gradcheck with a 2nd order accurate propagator."""
-    run_born_gradcheck(
+def test_born_backend_parity_2nd_order(nx, dx) -> None:
+    """Test backend parity with a 2nd order accurate propagator."""
+    run_born_backend_parity(
         propagator=scalarbornprop, dx=dx, nx=nx, prop_kwargs={"accuracy": 2}
     )
 
 
-def test_born_gradcheck_6th_order() -> None:
-    """Test gradcheck with a 6th order accurate propagator."""
-    run_born_gradcheck(propagator=scalarbornprop, prop_kwargs={"accuracy": 6})
+def test_born_backend_parity_6th_order() -> None:
+    """Test backend parity with a 6th order accurate propagator."""
+    run_born_backend_parity(propagator=scalarbornprop, prop_kwargs={"accuracy": 6})
 
 
-def test_born_gradcheck_8th_order() -> None:
-    """Test gradcheck with a 8th order accurate propagator."""
-    run_born_gradcheck(propagator=scalarbornprop, prop_kwargs={"accuracy": 8})
+def test_born_backend_parity_8th_order() -> None:
+    """Test backend parity with a 8th order accurate propagator."""
+    run_born_backend_parity(
+        propagator=scalarbornprop, nx=(4, 4), prop_kwargs={"accuracy": 8}
+    )
 
 
-def test_born_gradcheck_cfl() -> None:
-    """Test gradcheck with a timestep greater than the CFL limit."""
-    run_born_gradcheck(
+def test_born_backend_parity_cfl() -> None:
+    """Test backend parity with a timestep greater than the CFL limit."""
+    run_born_backend_parity(
         propagator=scalarbornprop,
         dt=0.002,
         atol=2e-7,
@@ -988,43 +1118,43 @@ def test_born_gradcheck_cfl() -> None:
     )
 
 
-def test_born_gradcheck_odd_timesteps() -> None:
-    """Test gradcheck with one more timestep."""
-    run_born_gradcheck(propagator=scalarbornprop, nt_add=1)
+def test_born_backend_parity_odd_timesteps() -> None:
+    """Test backend parity with one more timestep."""
+    run_born_backend_parity(propagator=scalarbornprop, nt_add=1)
 
 
-def test_born_gradcheck_one_shot() -> None:
-    """Test gradcheck with one shot."""
-    run_born_gradcheck(propagator=scalarbornprop, num_shots=1)
+def test_born_backend_parity_one_shot() -> None:
+    """Test backend parity with one shot."""
+    run_born_backend_parity(propagator=scalarbornprop, num_shots=1)
 
 
-def test_born_gradcheck_no_sources() -> None:
-    """Test gradcheck with no sources."""
-    run_born_gradcheck(propagator=scalarbornprop, num_sources_per_shot=0)
+def test_born_backend_parity_no_sources() -> None:
+    """Test backend parity with no sources."""
+    run_born_backend_parity(propagator=scalarbornprop, num_sources_per_shot=0)
 
 
-def test_born_gradcheck_no_receivers() -> None:
-    """Test gradcheck with no receivers."""
-    run_born_gradcheck(propagator=scalarbornprop, num_receivers_per_shot=0)
+def test_born_backend_parity_no_receivers() -> None:
+    """Test backend parity with no receivers."""
+    run_born_backend_parity(propagator=scalarbornprop, num_receivers_per_shot=0)
 
 
-def test_gradcheck_no_scatter_receivers() -> None:
-    """Test gradcheck with no scatter receivers."""
-    run_born_gradcheck(propagator=scalarbornprop, num_scatter_receivers_per_shot=0)
+def test_backend_parity_no_scatter_receivers() -> None:
+    """Test backend parity with no scatter receivers."""
+    run_born_backend_parity(propagator=scalarbornprop, num_scatter_receivers_per_shot=0)
 
 
-def test_born_gradcheck_survey_pad() -> None:
-    """Test gradcheck with survey_pad."""
-    run_born_gradcheck(
+def test_born_backend_parity_survey_pad() -> None:
+    """Test backend parity with survey_pad."""
+    run_born_backend_parity(
         propagator=scalarbornprop,
         survey_pad=0,
         provide_wavefields=False,
     )
 
 
-def test_born_gradcheck_partial_wavefields() -> None:
-    """Test gradcheck with wavefields that do not cover the model."""
-    run_born_gradcheck(
+def test_born_backend_parity_partial_wavefields() -> None:
+    """Test backend parity with wavefields that do not cover the model."""
+    run_born_backend_parity(
         propagator=scalarbornprop,
         origin=(0, 4),
         nx=(12, 9),
@@ -1032,41 +1162,46 @@ def test_born_gradcheck_partial_wavefields() -> None:
     )
 
 
-def test_born_gradcheck_chained() -> None:
-    """Test gradcheck when two propagators are chained."""
-    run_born_gradcheck(propagator=scalarbornpropchained)
+def test_born_backend_parity_chained() -> None:
+    """Test backend parity when two propagators are chained."""
+    run_born_backend_parity(propagator=scalarbornpropchained)
 
 
-def test_born_gradcheck_negative() -> None:
-    """Test gradcheck with negative velocity."""
-    run_born_gradcheck(c=-1500, propagator=scalarbornprop)
+def test_born_backend_parity_negative() -> None:
+    """Reject negative background speed before stepping."""
+    with pytest.raises(ValueError, match="v > 0"):
+        run_born_backend_parity(c=-1500, propagator=scalarbornprop)
 
 
-def test_born_gradcheck_zero() -> None:
-    """Test gradcheck with zero velocity."""
-    run_born_gradcheck(c=0, dc=0, propagator=scalarbornprop)
+def test_born_backend_parity_zero() -> None:
+    """Reject zero background speed before stepping."""
+    with pytest.raises(ValueError, match="v > 0"):
+        run_born_backend_parity(c=0, dc=0, propagator=scalarbornprop)
 
 
-def test_born_gradcheck_different_pml() -> None:
-    """Test gradcheck with different pml widths."""
-    run_born_gradcheck(propagator=scalarbornprop, pml_width=[0, 1, 5, 10], atol=5e-8)
+def test_born_backend_parity_different_pml() -> None:
+    """Test backend parity with different pml widths."""
+    run_born_backend_parity(
+        propagator=scalarbornprop, pml_width=[0, 1, 5, 10], atol=5e-8
+    )
 
 
-def test_born_gradcheck_no_pml() -> None:
-    """Test gradcheck with no pml."""
-    run_born_gradcheck(propagator=scalarbornprop, pml_width=0, atol=2e-8)
+def test_born_backend_parity_no_pml() -> None:
+    """Test backend parity with no pml."""
+    run_born_backend_parity(propagator=scalarbornprop, pml_width=0, atol=2e-8)
 
 
-def test_born_gradcheck_different_dx() -> None:
-    """Test gradcheck with different dx values."""
-    run_born_gradcheck(propagator=scalarbornprop, dx=(4, 5), atol=5e-8)
+def test_born_backend_parity_different_dx() -> None:
+    """Test backend parity with different dx values."""
+    run_born_backend_parity(propagator=scalarbornprop, dx=(4, 5), atol=5e-8)
 
 
-def test_born_gradcheck_single_cell() -> None:
-    """Test gradcheck with a single model cell."""
-    run_born_gradcheck(
+def test_born_backend_parity_single_cell() -> None:
+    """Test backend parity with a single model cell."""
+    run_born_backend_parity(
         propagator=scalarbornprop,
         nx=(1, 1),
+        prop_kwargs={"accuracy": 2},
         num_shots=1,
         num_sources_per_shot=1,
         num_receivers_per_shot=1,
@@ -1074,9 +1209,9 @@ def test_born_gradcheck_single_cell() -> None:
     )
 
 
-def test_born_gradcheck_big() -> None:
-    """Test gradcheck with a big model."""
-    run_born_gradcheck(
+def test_born_backend_parity_big() -> None:
+    """Test backend parity with a big model."""
+    run_born_backend_parity(
         propagator=scalarbornprop,
         nx=(5 + 2 * (3 + 3 * 2), 4 + 2 * (3 + 3 * 2)),
     )
@@ -1101,14 +1236,14 @@ def test_negative_vel(
     nx = torch.tensor(nx, dtype=torch.long)
     dx = torch.tensor(dx, dtype=dtype)
 
-    for python in [True, False]:
+    for python in [_PYTHON_BACKEND_TRUE_EQUIVALENT, "compiled"]:
         torch.manual_seed(1)
         if device is None:
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         if prop_kwargs is None:
             prop_kwargs = {}
-        prop_kwargs["python_backend"] = python
+        prop_kwargs["backend"] = python
 
         nt = int((2 * torch.norm(nx.float() * dx) / c + 0.35 + 2 / freq) / dt)
         x_s = _set_coords(num_shots, num_sources_per_shot, nx.tolist())
@@ -1133,21 +1268,19 @@ def test_negative_vel(
             prop_kwargs=prop_kwargs,
         )
 
-        # Negative velocity
-        out = propagator(
-            -model,
-            scatter,
-            dx.tolist(),
-            dt,
-            sources["amplitude"],
-            sources["locations"],
-            x_r,
-            x_r,
-            prop_kwargs=prop_kwargs,
-        )
-        assert torch.allclose(out_positive[0], out[0])
-        assert torch.allclose(out_positive[6], -out[6])
-        assert torch.allclose(out_positive[-1], -out[-1])
+        # Negative physical background speed is outside the material domain.
+        with pytest.raises(ValueError, match="v > 0"):
+            propagator(
+                -model,
+                scatter,
+                dx.tolist(),
+                dt,
+                sources["amplitude"],
+                sources["locations"],
+                x_r,
+                x_r,
+                prop_kwargs=prop_kwargs,
+            )
 
         # Negative dt
         out = propagator(
@@ -1161,29 +1294,30 @@ def test_negative_vel(
             x_r,
             prop_kwargs=prop_kwargs,
         )
-        assert torch.allclose(out_positive[0], out[0])
-        assert torch.allclose(out_positive[6], out[6])
-        assert torch.allclose(out_positive[-1], out[-1])
-
-        # Zero velocity
-        out = propagator(
-            torch.zeros_like(model),
-            scatter,
-            dx.tolist(),
-            -dt,
-            sources["amplitude"],
-            sources["locations"],
-            x_r,
-            x_r,
-            prop_kwargs=prop_kwargs,
+        assert torch.allclose(out_positive.wavefield_0, out.wavefield_0)
+        assert torch.allclose(out_positive.wavefield_sc_0, out.wavefield_sc_0)
+        assert torch.allclose(
+            out_positive.sc_receiver_amplitudes, out.sc_receiver_amplitudes
         )
-        assert torch.allclose(out[0], torch.zeros_like(out[0]))
-        assert torch.allclose(out[6], torch.zeros_like(out[6]))
+
+        # Scalar zero speed is also rejected; signed Born directions remain valid.
+        with pytest.raises(ValueError, match="v > 0"):
+            propagator(
+                torch.zeros_like(model),
+                scatter,
+                dx.tolist(),
+                -dt,
+                sources["amplitude"],
+                sources["locations"],
+                x_r,
+                x_r,
+                prop_kwargs=prop_kwargs,
+            )
 
 
-def test_born_gradcheck_only_v_2d() -> None:
-    """Test gradcheck with only v requiring gradient."""
-    run_born_gradcheck(
+def test_born_backend_parity_only_v_2d() -> None:
+    """Test backend parity with only v requiring gradient."""
+    run_born_backend_parity(
         propagator=scalarbornprop,
         scatter_requires_grad=False,
         source_requires_grad=False,
@@ -1198,9 +1332,9 @@ def test_born_gradcheck_only_v_2d() -> None:
     )
 
 
-def test_born_gradcheck_only_scatter_2d() -> None:
-    """Test gradcheck with only scatter requiring gradient."""
-    run_born_gradcheck(
+def test_born_backend_parity_only_scatter_2d() -> None:
+    """Test backend parity with only scatter requiring gradient."""
+    run_born_backend_parity(
         propagator=scalarbornprop,
         v_requires_grad=False,
         source_requires_grad=False,
@@ -1215,9 +1349,9 @@ def test_born_gradcheck_only_scatter_2d() -> None:
     )
 
 
-def test_born_gradcheck_only_source_2d() -> None:
-    """Test gradcheck with only source requiring gradient."""
-    run_born_gradcheck(
+def test_born_backend_parity_only_source_2d() -> None:
+    """Test backend parity with only source requiring gradient."""
+    run_born_backend_parity(
         propagator=scalarbornprop,
         v_requires_grad=False,
         scatter_requires_grad=False,
@@ -1233,9 +1367,9 @@ def test_born_gradcheck_only_source_2d() -> None:
     )
 
 
-def test_born_gradcheck_only_wavefield_0_2d() -> None:
-    """Test gradcheck with only wavefield_0 requiring gradient."""
-    run_born_gradcheck(
+def test_born_backend_parity_only_wavefield_0_2d() -> None:
+    """Test backend parity with only wavefield_0 requiring gradient."""
+    run_born_backend_parity(
         propagator=scalarbornprop,
         v_requires_grad=False,
         scatter_requires_grad=False,
@@ -1250,9 +1384,9 @@ def test_born_gradcheck_only_wavefield_0_2d() -> None:
     )
 
 
-def test_born_gradcheck_only_wavefieldsc_0_2d() -> None:
-    """Test gradcheck with only wavefieldsc_0 requiring gradient."""
-    run_born_gradcheck(
+def test_born_backend_parity_only_wavefieldsc_0_2d() -> None:
+    """Test backend parity with only wavefieldsc_0 requiring gradient."""
+    run_born_backend_parity(
         propagator=scalarbornprop,
         v_requires_grad=False,
         scatter_requires_grad=False,
@@ -1267,17 +1401,17 @@ def test_born_gradcheck_only_wavefieldsc_0_2d() -> None:
     )
 
 
-def test_born_gradcheck_v_batched() -> None:
-    """Test gradcheck using a different velocity for each shot."""
-    run_born_gradcheck(
+def test_born_backend_parity_v_batched() -> None:
+    """Test backend parity using a different velocity for each shot."""
+    run_born_backend_parity(
         propagator=scalarbornprop,
         c=torch.tensor([[[1500.0]], [[1600.0]]]),
     )
 
 
-def test_born_gradcheck_scatter_batched() -> None:
-    """Test gradcheck using a different scatter for each shot."""
-    run_born_gradcheck(
+def test_born_backend_parity_scatter_batched() -> None:
+    """Test backend parity using a different scatter for each shot."""
+    run_born_backend_parity(
         propagator=scalarbornprop,
         dscatter=torch.tensor([[[150.0]], [[100.0]]]),
     )
@@ -1294,12 +1428,29 @@ def test_born_gradcheck_scatter_batched() -> None:
         ((5, 3, 3), (6, 6, 6)),
     ],
 )
+@pytest.mark.parametrize(
+    "device",
+    [
+        pytest.param(torch.device("cpu"), id="cpu"),
+        pytest.param(
+            torch.device("cuda"),
+            id="cuda",
+            marks=[
+                pytest.mark.gpu,
+                pytest.mark.skipif(
+                    not torch.cuda.is_available(), reason="CUDA unavailable"
+                ),
+            ],
+        ),
+    ],
+)
 def test_storage(
     v_requires_grad,
     scatter_requires_grad,
     num_shots,
     nx,
     dx,
+    device,
     c=1500,
     dc=100,
     freq=25,
@@ -1309,7 +1460,6 @@ def test_storage(
     num_scatter_receivers_per_shot=2,
     propagator=scalarbornprop,
     prop_kwargs=None,
-    device=None,
     dtype=None,
 ):
     """Test gradients with different storage options."""
@@ -1327,11 +1477,11 @@ def test_storage(
     if "pml_width" not in prop_kwargs:
         prop_kwargs["pml_width"] = 3
 
-    model = (
-        torch.ones(*nx, device=device, dtype=dtype) * c
-        + torch.randn(*nx, device=device, dtype=dtype) * dc
-    )
-    scatter = torch.randn(*nx, dtype=dtype).to(device) * dc
+    # Material draws must not change source timing or depend on the device's
+    # RNG algorithm: both backends should run the same physical experiment.
+    generator = torch.Generator().manual_seed(1)
+    model = (c + torch.randn(*nx, dtype=dtype, generator=generator) * dc).to(device)
+    scatter = torch.randn(*nx, dtype=dtype, generator=generator).to(device) * dc
 
     nt = int((2 * torch.norm(nx.float() * dx) / c + 0.35 + 2 / freq) / dt)
     x_s = _set_coords(num_shots, num_sources_per_shot, nx.tolist())
@@ -1363,12 +1513,38 @@ def test_storage(
 
     ((out[-1] ** 2).sum() + (out[-2] ** 2).sum()).backward()
 
-    modes = ["device", "disk", "none"]
+    # ``storage_mode="none"`` is deliberately NOT in this list. It retains no
+    # forward wavefield history, so no model gradient can be formed from it;
+    # the engine now raises rather than returning the plausible-looking but
+    # wrong gradient the propagators' own front-end reparameterisation used to
+    # produce. This loop runs models that require grad, so it cannot include
+    # "none". That rejection, and the fact that source-amplitude gradients and
+    # forward-only runs still work in "none" mode, are covered by
+    # tests/test_storage_mode_none_model_gradient.py.
+    modes = ["device", "disk"]
     if model.is_cuda:
         modes.append("cpu")
 
     atol_model = [4, 0.02, 2e-3]
     atol_scatter = [2e-3, 1e-4, 4e-5]
+    # The outermost cells of `dv` are extended into the padding, so their
+    # gradient is the cell's own term plus one from every padded cell beyond
+    # it. Inside the absorbing layer those terms are individually much larger
+    # than the value they sum to, so the quantisation error of the compressed
+    # history is amplified there while the signal cancels; measured at 0.070
+    # in 1-D, 1.4e-4 in 2-D and 1e-5 in 3-D, against interiors of 8.4e-4,
+    # 2e-5 and below 1e-5. The interior keeps the tight bound, so this
+    # allowance cannot hide a change there.
+    atol_scatter_edge = [0.2, 1e-3, 1e-4]
+
+    def assert_scatter_grad_close(expected, actual, atol, atol_edge):
+        """`torch.allclose`, with a looser bound on the outermost cells."""
+        edge = torch.ones_like(expected, dtype=torch.bool)
+        edge[tuple(slice(1, -1) if size > 2 else slice(None) for size in nx)] = False
+        difference = (actual - expected).abs()
+        assert difference[edge].max() <= atol_edge
+        if (~edge).any():
+            assert difference[~edge].max() <= atol
 
     for mode in modes:
         for compression in [False, True]:
@@ -1395,49 +1571,51 @@ def test_storage(
 
             ((out[-1] ** 2).sum() + (out[-2] ** 2).sum()).backward()
 
-            if mode != "none":
-                if compression:
-                    if v_requires_grad:
-                        assert torch.allclose(
-                            modeld.grad, modeli.grad, atol=atol_model[len(nx) - 1]
-                        )
-                    if scatter_requires_grad:
-                        assert torch.allclose(
-                            scatterd.grad, scatteri.grad, atol=atol_scatter[len(nx) - 1]
-                        )
-                else:
-                    if v_requires_grad:
-                        assert torch.allclose(
-                            modeld.grad,
-                            modeli.grad,
-                            atol=modeld.grad.detach().abs().max().item() * 1e-5,
-                        )
-                    if scatter_requires_grad:
-                        assert torch.allclose(
-                            scatterd.grad,
-                            scatteri.grad,
-                            atol=scatterd.grad.detach().abs().max().item() * 1e-5,
-                        )
+            if compression:
+                if v_requires_grad:
+                    assert torch.allclose(
+                        modeld.grad, modeli.grad, atol=atol_model[len(nx) - 1]
+                    )
+                if scatter_requires_grad:
+                    assert_scatter_grad_close(
+                        scatterd.grad,
+                        scatteri.grad,
+                        atol_scatter[len(nx) - 1],
+                        atol_scatter_edge[len(nx) - 1],
+                    )
+            else:
+                if v_requires_grad:
+                    assert torch.allclose(
+                        modeld.grad,
+                        modeli.grad,
+                        atol=modeld.grad.detach().abs().max().item() * 1e-5,
+                    )
+                if scatter_requires_grad:
+                    assert torch.allclose(
+                        scatterd.grad,
+                        scatteri.grad,
+                        atol=scatterd.grad.detach().abs().max().item() * 1e-5,
+                    )
 
 
-def run_born_gradcheck(
+def run_born_backend_parity(
     c: Union[float, torch.Tensor] = 1500,
     dc: float = 100,
     dscatter: Union[float, torch.Tensor] = 100,
     freq: float = 25,
-    dx: Union[float, List[float]] = (5, 5),
+    dx: Union[float, list[float]] = (5, 5),
     dt: float = 0.001,
-    nx: Tuple[int, ...] = (4, 3),
+    nx: tuple[int, ...] = (4, 3),
     num_shots: int = 2,
     num_sources_per_shot: int = 2,
     num_receivers_per_shot: int = 2,
     num_scatter_receivers_per_shot: int = 2,
     propagator: Any = None,
-    prop_kwargs: Optional[Dict[str, Any]] = None,
-    pml_width: Union[int, List[int]] = 3,
-    survey_pad: Optional[Union[int, List[int]]] = None,
-    origin: Optional[List[int]] = None,
-    wavefield_size: Optional[Tuple[int, ...]] = None,
+    prop_kwargs: Optional[dict[str, Any]] = None,
+    pml_width: Union[int, list[int]] = 3,
+    survey_pad: Optional[Union[int, list[int]]] = None,
+    origin: Optional[list[int]] = None,
+    wavefield_size: Optional[tuple[int, ...]] = None,
     device: Optional[torch.device] = None,
     dtype: Optional[torch.dtype] = torch.double,
     v_requires_grad: bool = True,
@@ -1456,7 +1634,7 @@ def run_born_gradcheck(
     rtol: float = 1e-5,
     nt_add: int = 0,
 ) -> None:
-    """Run PyTorch's gradcheck."""
+    """Compare eager and compiled backend gradients (no finite differencing)."""
     torch.manual_seed(1)
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -1473,11 +1651,7 @@ def run_born_gradcheck(
     dx = torch.tensor(dx, dtype=dtype)
     ndim = len(nx)
 
-    if min_c != 0:
-        nt = int((2 * torch.norm(nx.float() * dx) / min_c + 0.1 + 2 / freq) / dt)
-    else:
-        nt = int((2 * torch.norm(nx.float() * dx) / 1500 + 0.1 + 2 / freq) / dt)
-    nt += nt_add
+    nt = compute_backend_parity_nt(nx, dx, min_c, freq, dt, nt_add)
 
     if num_sources_per_shot > 0:
         x_s = _set_coords(num_shots, num_sources_per_shot, nx.tolist())
@@ -1494,49 +1668,35 @@ def run_born_gradcheck(
         x_r_sc = _set_coords(num_shots, num_scatter_receivers_per_shot, nx.tolist())
     else:
         x_r_sc = None
-    if isinstance(pml_width, int):
-        pml_width = [pml_width for _ in range(2 * ndim)]
-    if provide_wavefields:
-        if wavefield_size is None:
-            wavefield_size = tuple(
-                nx[i] + pml_width[2 * i] + pml_width[2 * i + 1] for i in range(ndim)
-            )
-        wavefield_0 = torch.zeros(
+    pml_width = _normalize_pml_width(pml_width, ndim)
+    if provide_wavefields and wavefield_size is None:
+        wavefield_size = _default_wavefield_size(nx, pml_width, ndim)
+    wavefield_0, wavefield_m1, psi_m1, zeta_m1 = _zero_scalar_style_wavefields(
+        provide_wavefields,
+        wavefield_size,
+        num_shots,
+        ndim,
+        dtype,
+        device,
+        wavefield_0_requires_grad,
+        wavefield_m1_requires_grad,
+        psi_m1_requires_grad,
+        zeta_m1_requires_grad,
+    )
+    wavefield_sc_0, wavefield_sc_m1, psi_sc_m1, zeta_sc_m1 = (
+        _zero_scalar_style_wavefields(
+            provide_wavefields,
+            wavefield_size,
             num_shots,
-            *wavefield_size,
-            dtype=dtype,
-            device=device,
+            ndim,
+            dtype,
+            device,
+            wavefieldsc_0_requires_grad,
+            wavefieldsc_m1_requires_grad,
+            psisc_m1_requires_grad,
+            zetasc_m1_requires_grad,
         )
-        wavefield_m1 = torch.zeros_like(wavefield_0)
-        psi_m1 = [torch.zeros_like(wavefield_0) for _ in range(ndim)]
-        zeta_m1 = [torch.zeros_like(wavefield_0) for _ in range(ndim)]
-        wavefield_sc_0 = torch.zeros_like(wavefield_0)
-        wavefield_sc_m1 = torch.zeros_like(wavefield_0)
-        psi_sc_m1 = [torch.zeros_like(wavefield_0) for _ in range(ndim)]
-        zeta_sc_m1 = [torch.zeros_like(wavefield_0) for _ in range(ndim)]
-        wavefield_0.requires_grad_(wavefield_0_requires_grad)
-        wavefield_m1.requires_grad_(wavefield_m1_requires_grad)
-        wavefield_sc_0.requires_grad_(wavefieldsc_0_requires_grad)
-        wavefield_sc_m1.requires_grad_(wavefieldsc_m1_requires_grad)
-        for i in range(ndim):
-            psi_m1[i].requires_grad_(psi_m1_requires_grad)
-            zeta_m1[i].requires_grad_(zeta_m1_requires_grad)
-            psi_sc_m1[i].requires_grad_(psisc_m1_requires_grad)
-            zeta_sc_m1[i].requires_grad_(zetasc_m1_requires_grad)
-    else:
-        wavefield_0 = None
-        wavefield_m1 = None
-        psi_m1 = []
-        zeta_m1 = []
-        wavefield_sc_0 = None
-        wavefield_sc_m1 = None
-        psi_sc_m1 = []
-        zeta_sc_m1 = []
-
-    psi_m1 = [None] * (3 - len(psi_m1)) + psi_m1
-    zeta_m1 = [None] * (3 - len(zeta_m1)) + zeta_m1
-    psi_sc_m1 = [None] * (3 - len(psi_sc_m1)) + psi_sc_m1
-    zeta_sc_m1 = [None] * (3 - len(zeta_sc_m1)) + zeta_sc_m1
+    )
 
     model.requires_grad_(v_requires_grad)
     scatter.requires_grad_(scatter_requires_grad)
@@ -1546,7 +1706,7 @@ def run_born_gradcheck(
     out_idxs = []
 
     def wrap(python):
-        prop_kwargs["python_backend"] = python
+        prop_kwargs["backend"] = python
         inputs = (
             model,
             scatter,
@@ -1573,24 +1733,11 @@ def run_born_gradcheck(
             True,
         )
         out = propagator(*inputs)
-        if len(out_idxs) == 0:
-            for i, o in enumerate(out):
-                if o.requires_grad:
-                    out_idxs.append(i)
-        out = [out[i] for i in out_idxs]
-        v = [torch.randn_like(o.contiguous()) for o in out]
-        return tuple(out) + torch.autograd.grad(
-            out,
-            [p for p in inputs if isinstance(p, torch.Tensor) and p.requires_grad],
-            grad_outputs=v,
-        )
+        # The auxiliary state is one output element holding several tensors;
+        # the parity comparison is over tensors.
+        return compute_backend_parity_grad(output_tensors(out), inputs, out_idxs)
 
-    torch.manual_seed(1)
-    out_python = wrap(True)
-    torch.manual_seed(1)
-    out_compiled = wrap(False)
-    for oc, op in zip(out_compiled, out_python):
-        assert torch.allclose(oc, op, atol=atol, rtol=rtol)
+    run_python_vs_compiled_backend_parity(wrap, "eager", atol=atol, rtol=rtol)
 
 
 @pytest.mark.parametrize(
@@ -1627,34 +1774,22 @@ def test_reciprocity(nx, dx):
 
     prop_kwargs = {"accuracy": 4}
 
-    """Helper for test_reciprocity."""
-    # Run 1: src_comp at A, rec_comp at B
-    kwargs1 = {
-        "source_amplitudes": source_amplitudes,
-        "source_locations": loc_a,
-        "bg_receiver_locations": loc_b,
-    }
-
-    outputs1 = scalarbornprop(
-        model, scatter, list(dx), dt, **kwargs1, prop_kwargs=prop_kwargs
+    run_reciprocity_check(
+        [model, scatter],
+        dx,
+        dt,
+        source_amplitudes,
+        "",
+        "",
+        -2,
+        -2,
+        loc_a,
+        loc_b,
+        prop_kwargs,
+        scalarbornprop,
+        receiver_kwarg="bg_receiver_locations",
+        atol=1e-3,
     )
-
-    rec1 = outputs1[-2]
-
-    # Run 2: rec_comp at B, src_comp at A
-    kwargs2 = {
-        "source_amplitudes": source_amplitudes,
-        "source_locations": loc_b,
-        "bg_receiver_locations": loc_a,
-    }
-
-    outputs2 = scalarbornprop(
-        model, scatter, list(dx), dt, **kwargs2, prop_kwargs=prop_kwargs
-    )
-
-    rec2 = outputs2[-2]
-
-    assert torch.allclose(rec1, rec2, atol=1e-3)
 
 
 def test_vmap_born_props() -> None:
@@ -1693,25 +1828,24 @@ def test_vmap_born_props() -> None:
     def prop(v, scatter):
         return scalar_born(
             v,
-            scatter,
             dx,
             dt,
+            dv=scatter,
             source_amplitudes=source_amplitudes,
             source_locations=source_locations,
-            receiver_locations=receiver_locations,
+            sc_receiver_locations=receiver_locations,
             pml_width=3,
             max_vel=2000.0,
-            python_backend="eager",
+            backend="eager",
         )[-1]  # Return scattered receiver amplitudes
 
     # Run vmap
     res_vmap = vmap(prop)(v_batch, scatter_batch)
 
     # Run loop
-    res_loop = []
-    for i in range(batch_size):
-        res_loop.append(prop(v_batch[i], scatter_batch[i]))
-    res_loop = torch.stack(res_loop)
+    res_loop = torch.stack(
+        [prop(v_batch[i], scatter_batch[i]) for i in range(batch_size)]
+    )
 
     assert torch.allclose(res_vmap, res_loop, atol=1e-5)
 
@@ -1740,23 +1874,20 @@ def test_vmap_born_partial() -> None:
     def prop(s):
         return scalar_born(
             v,
-            s,
             dx,
             dt,
+            dv=s,
             source_amplitudes=source_amplitudes,
             source_locations=source_locations,
-            receiver_locations=receiver_locations,
+            sc_receiver_locations=receiver_locations,
             pml_width=3,
             max_vel=2000.0,
-            python_backend="eager",
+            backend="eager",
         )[-1]
 
     res_vmap = vmap(prop)(scatter_batch)
 
-    res_loop = []
-    for i in range(batch_size):
-        res_loop.append(prop(scatter_batch[i]))
-    res_loop = torch.stack(res_loop)
+    res_loop = torch.stack([prop(scatter_batch[i]) for i in range(batch_size)])
 
     assert torch.allclose(res_vmap, res_loop, atol=1e-5)
 
@@ -1786,15 +1917,15 @@ def test_jvp_born() -> None:
         # We check the scattered wavefield output
         return scalar_born(
             v,
-            s,
             dx,
             dt,
+            dv=s,
             source_amplitudes=source_amplitudes,
             source_locations=source_locations,
-            receiver_locations=receiver_locations,
+            sc_receiver_locations=receiver_locations,
             pml_width=3,
             max_vel=2000.0,
-            python_backend="eager",
+            backend="eager",
         )[-1]
 
     _, jvp_out = jvp(prop, (v0, scatter0), (v_tangent, scatter_tangent))
@@ -1822,18 +1953,289 @@ def test_vmap_error_check() -> None:
     def prop(amps):
         return scalar_born(
             v,
-            scatter,
             5.0,
             0.004,
+            dv=scatter,
             source_amplitudes=amps,
             source_locations=torch.zeros(1, 1, 2, dtype=torch.long, device=device),
             pml_width=3,
             max_vel=2000.0,
-            python_backend="eager",
+            backend="eager",
         )
 
     with pytest.raises(NotImplementedError, match="Only property models"):
         vmap(prop)(source_amplitudes_batch)
+
+
+def _born_jvp_problem(ndim, device, dtype, pml_width=4, n=24):
+    """Build a scalar/scalar_born problem for the Born=JVP equivalence tests.
+
+    The velocity perturbation (the Born ``scatter``) is a small box centred on
+    the (single) source cell, i.e. it deliberately *overlaps the source* and
+    lies entirely in the physical interior (clear of the PML). Returns the
+    keyword arguments common to ``scalar`` and ``scalar_born`` plus ``v`` and
+    the perturbation ``dv``.
+    """
+    dx = 5.0
+    dt = 0.004
+    nt = 40
+    freq = 25.0
+    shape = (n,) * ndim
+    centre = tuple(s // 2 for s in shape)
+
+    v = torch.full(shape, 1500.0, device=device, dtype=dtype)
+    # A mild, non-constant background so the test is not trivially symmetric.
+    if ndim >= 1:
+        v[..., n // 2 :] += 200.0
+
+    # Perturbation: a small interior box that includes the source cell.
+    dv = torch.zeros_like(v)
+    sl = tuple(slice(c - 2, c + 3) for c in centre)
+    torch.manual_seed(0)
+    dv[sl] = torch.randn(dv[sl].shape, device=device, dtype=dtype) * 20.0
+    assert dv[centre] != 0  # genuinely overlaps the source
+
+    n_shots = 1
+    source_locations = torch.zeros(n_shots, 1, ndim, dtype=torch.long, device=device)
+    receiver_locations = torch.zeros(n_shots, 4, ndim, dtype=torch.long, device=device)
+    for d in range(ndim):
+        source_locations[..., d] = centre[d]
+        # Receivers near (but inside) the boundary, spread along the last dim.
+        receiver_locations[..., d] = centre[d]
+    receiver_locations[..., -1] = torch.linspace(
+        pml_width + 1, n - pml_width - 2, 4, device=device
+    ).long()
+
+    source_amplitudes = (
+        ricker(freq, nt, dt, 1.5 / freq, dtype=dtype).to(device).reshape(1, 1, -1)
+    )
+
+    kwargs = {
+        "grid_spacing": dx,
+        "dt": dt,
+        "source_amplitudes": source_amplitudes,
+        "source_locations": source_locations,
+        "receiver_locations": receiver_locations,
+        "pml_width": pml_width,
+        "pml_freq": freq,
+        "max_vel": 2000.0,
+    }
+    return v, dv, kwargs
+
+
+@pytest.mark.parametrize("ndim", [1, 2])
+def test_born_is_jvp_of_scalar(ndim) -> None:
+    """scalar_born is the exact discrete forward-mode derivative (JVP) of scalar.
+
+    Differentiating the nonlinear ``scalar`` propagator with respect to the
+    velocity model in the direction ``dv`` (forward-mode AD) must reproduce,
+    to machine precision, the scattered field that ``scalar_born`` computes
+    with ``scatter = dv``. This includes the subtle source-cell term
+    ``-2 v dv dt^2 f`` that arises because ``scalar`` pre-scales each source by
+    ``-v^2 dt^2``: the perturbation box here overlaps the source, so that term
+    is exercised. It is already supplied by Born's second (scattered) source.
+
+    The background (primal) receivers must likewise equal ``scalar`` run on the
+    unperturbed model. The perturbation is confined to the interior here;
+    test_born_jvp_model_edge covers one that is not.
+    """
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    dtype = torch.double
+    v, dv, kwargs = _born_jvp_problem(ndim, device, dtype)
+
+    def scalar_receivers(vv):
+        return scalar(vv, backend="eager", **kwargs)[-1]
+
+    primal, tangent = jvp(scalar_receivers, (v,), (dv,))
+
+    # scalar_born with the eager and with the (default) compiled C backend must
+    # both equal the forward-mode derivative of scalar. Record background
+    # receivers at the same locations to also check the primal output. The
+    # eager backend reproduces the JVP exactly (same float ops); the compiled C
+    # backend is built with -Ofast / --use_fast_math, so it is compared at a
+    # looser backend-consistency tolerance rather than to machine precision.
+    # scalar_born names its two receiver sets explicitly; the flat
+    # `receiver_locations` in `kwargs` is for `scalar` alone.
+    born_kwargs = {
+        name: value for name, value in kwargs.items() if name != "receiver_locations"
+    }
+    for backend, tol in (("eager", 1e-12), ("compiled", 1e-6)):
+        out = scalar_born(
+            v,
+            dv=dv,
+            bg_receiver_locations=kwargs["receiver_locations"],
+            sc_receiver_locations=kwargs["receiver_locations"],
+            backend=backend,
+            **born_kwargs,
+        )
+        bg_receivers, sc_receivers = out[-2], out[-1]
+        assert (sc_receivers - tangent).abs().max() <= tol * tangent.abs().max()
+        assert (bg_receivers - primal).abs().max() <= tol * primal.abs().max()
+
+
+def test_born_jvp_model_edge() -> None:
+    """Born equals the JVP of scalar for a perturbation of the model's edge.
+
+    The outermost cells of the model are extended outwards to fill the
+    absorbing layer and the finite-difference halo, and that is true of the
+    scattering model as well as of the background velocity. So a perturbation
+    that lives on the edge of the model perturbs the layer too, and the Born
+    = JVP equivalence is exact for it, as it is for a perturbation of the
+    interior and for an arbitrary one when there is no absorbing layer at
+    all. A scattering model that was zeroed outside the model region instead
+    would disagree with the JVP here by a large fraction of the signal.
+    """
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    dtype = torch.double
+    n = 24
+    pml_width = 4
+    v, _, kwargs = _born_jvp_problem(2, device, dtype, pml_width=pml_width, n=n)
+
+    def scalar_receivers(vv, kw):
+        return scalar(vv, backend="eager", **kw)[-1]
+
+    def born_scatter(dv, kw):
+        # scalar_born names its receiver sets explicitly; the flat
+        # `receiver_locations` in `kw` is for `scalar` alone.
+        born_kw = {
+            name: value for name, value in kw.items() if name != "receiver_locations"
+        }
+        return scalar_born(
+            v,
+            backend="eager",
+            dv=dv,
+            sc_receiver_locations=kw["receiver_locations"],
+            **born_kw,
+        )[-1]
+
+    # 1. Perturbation on the model's outermost rows, which the absorbing
+    #    layer and the finite-difference halo are filled from.
+    dv_edge = torch.zeros_like(v)
+    torch.manual_seed(2)
+    dv_edge[0] = torch.randn(n, device=device, dtype=dtype) * 20.0
+    dv_edge[-1] = torch.randn(n, device=device, dtype=dtype) * 20.0
+    _, tangent_edge = jvp(lambda vv: scalar_receivers(vv, kwargs), (v,), (dv_edge,))
+    born_edge = born_scatter(dv_edge, kwargs)
+    assert tangent_edge.abs().max() > 0
+    rel = (tangent_edge - born_edge).abs().max() / tangent_edge.abs().max()
+    assert rel <= 1e-12
+
+    # 2. With pml_width=0 the equivalence is exact for an arbitrary perturbation.
+    kwargs0 = {**kwargs, "pml_width": 0}
+    dv_any = torch.randn_like(v) * 10.0
+    _, tangent0 = jvp(lambda vv: scalar_receivers(vv, kwargs0), (v,), (dv_any,))
+    born0 = born_scatter(dv_any, kwargs0)
+    assert torch.allclose(born0, tangent0, atol=1e-11, rtol=0)
+
+
+def test_born_linear_in_scatter() -> None:
+    """The Born scattered field is linear in the scattering potential.
+
+    Born modelling linearises the wave equation, so the scattered output is a
+    linear operator applied to ``scatter``: for scalars a, b and potentials
+    m1, m2, born(a*m1 + b*m2) == a*born(m1) + b*born(m2). This is the defining
+    property of the Born/linearised forward map and is independent of the JVP
+    relationship above.
+    """
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    dtype = torch.double
+    v, m1, kwargs = _born_jvp_problem(2, device, dtype)
+    torch.manual_seed(3)
+    m2 = torch.zeros_like(v)
+    m2[6:18, 6:18] = torch.randn(12, 12, device=device, dtype=dtype) * 15.0
+    a, b = 1.7, -0.6
+
+    # scalar_born names its receiver sets explicitly; the flat
+    # `receiver_locations` in `kwargs` is for `scalar` alone.
+    born_kwargs = {
+        name: value for name, value in kwargs.items() if name != "receiver_locations"
+    }
+
+    def born_scatter(m):
+        return scalar_born(
+            v,
+            backend="eager",
+            dv=m,
+            sc_receiver_locations=kwargs["receiver_locations"],
+            **born_kwargs,
+        )[-1]
+
+    combined = born_scatter(a * m1 + b * m2)
+    superposed = a * born_scatter(m1) + b * born_scatter(m2)
+    assert torch.allclose(combined, superposed, atol=1e-12, rtol=0)
+
+
+def test_second_order_raises() -> None:
+    """Double-backward through scalar_born raises a clear error.
+
+    The scalar_born backward has no analytic second-order path. A
+    Hessian-vector product would silently return an incorrect (often zero)
+    result, so :func:`deepwave._engine.no_second_order` makes it raise instead.
+    The non-Born ``scalar`` propagator should be used when a Hessian-vector
+    product is required.
+    """
+    ny, nx = 12, 12
+    dx = 5.0
+    dt = 0.004
+    nt = 25
+    source_amplitudes = ricker(25.0, nt, dt, 0.04).reshape(1, 1, nt).double()
+    source_locations = torch.tensor([[[ny // 2, nx // 2]]])
+    receiver_locations = torch.tensor([[[ny // 2, nx // 2 + 3]]])
+    v = (torch.ones(ny, nx, dtype=torch.float64) * 1500.0).requires_grad_(True)
+    scatter = torch.zeros(ny, nx, dtype=torch.float64)
+    scatter[ny // 2, nx // 2 + 1] = 100.0
+
+    out = scalar_born(
+        v,
+        dx,
+        dt,
+        dv=scatter,
+        source_amplitudes=source_amplitudes,
+        source_locations=source_locations,
+        sc_receiver_locations=receiver_locations,
+        pml_width=3,
+        accuracy=2,
+    )[-1]
+    loss = out.pow(2).sum()
+    # Building a second-order graph (create_graph=True) invokes the backward
+    # with grad enabled, which is where the guard fires -- on this very call,
+    # before a second .grad() is even needed.
+    with pytest.raises(RuntimeError, match="Second-order differentiation"):
+        torch.autograd.grad(loss, v, create_graph=True)
+
+
+def test_first_order_unaffected_by_second_order_guard() -> None:
+    """Plain first-order scalar_born gradients are unchanged by the guard."""
+    ny, nx = 12, 12
+    dx = 5.0
+    dt = 0.004
+    nt = 25
+    source_amplitudes = ricker(25.0, nt, dt, 0.04).reshape(1, 1, nt).double()
+    source_locations = torch.tensor([[[ny // 2, nx // 2]]])
+    receiver_locations = torch.tensor([[[ny // 2, nx // 2 + 3]]])
+
+    def grad_v() -> torch.Tensor:
+        v = (torch.ones(ny, nx, dtype=torch.float64) * 1500.0).requires_grad_(True)
+        scatter = torch.zeros(ny, nx, dtype=torch.float64)
+        scatter[ny // 2, nx // 2 + 1] = 100.0
+        out = scalar_born(
+            v,
+            dx,
+            dt,
+            dv=scatter,
+            source_amplitudes=source_amplitudes,
+            source_locations=source_locations,
+            sc_receiver_locations=receiver_locations,
+            pml_width=3,
+            accuracy=2,
+        )[-1]
+        return torch.autograd.grad(out.pow(2).sum(), v)[0]
+
+    g0 = grad_v()
+    g1 = grad_v()
+    assert torch.isfinite(g0).all()
+    assert g0.abs().sum() > 0
+    assert torch.equal(g0, g1)
 
 
 @pytest.mark.parametrize("use_reentrant", [True, False])
@@ -1859,18 +2261,218 @@ def test_checkpoint_gradient(use_reentrant: bool) -> None:
         ricker(freq, nt, dt0, 1.5 / freq).repeat(n_shots, 1, 1), step_ratio
     )
 
-    def call(model: torch.Tensor) -> Tuple[torch.Tensor, ...]:
+    def call(model: torch.Tensor) -> tuple[torch.Tensor, ...]:
         return scalar_born(
             model,
-            scatter,
             dx,
             dt,
+            dv=scatter,
             source_amplitudes=source_amplitudes,
             source_locations=source_locations,
-            receiver_locations=receiver_locations,
+            sc_receiver_locations=receiver_locations,
             pml_freq=freq,
             max_vel=max_vel,
             model_gradient_sampling_interval=step_ratio,
         )
 
     run_checkpoint_equivalence(v, call, use_reentrant=use_reentrant)
+
+
+def test_eager_rejects_storage_compression() -> None:
+    """backend="eager" rejects storage_compression=True (see PR #121)."""
+    nz, ny = 8, 8
+    v = torch.ones(nz, ny) * 1500.0
+    dv = torch.zeros(nz, ny)
+    source_amplitudes = torch.zeros(1, 1, 8)
+    source_locations = torch.zeros(1, 1, 2, dtype=torch.long)
+    receiver_locations = torch.zeros(1, 1, 2, dtype=torch.long)
+    with pytest.raises(RuntimeError, match="Storage compression"):
+        scalar_born(
+            v,
+            5.0,
+            0.001,
+            dv=dv,
+            source_amplitudes=source_amplitudes,
+            source_locations=source_locations,
+            sc_receiver_locations=receiver_locations,
+            max_vel=2000.0,
+            backend="eager",
+            storage_compression=True,
+        )
+
+
+@pytest.mark.parametrize("ndim", [2, 3])
+def test_scalar_born_output_names(ndim) -> None:
+    """The returned PropagatorOutput's field names match scalar_born_output_names.
+
+    ``out._names`` (set by ``_engine.named_output`` from ``SPEC.output_names``)
+    must equal ``scalar_born_output_names(ndim)`` exactly, in order: this is
+    the contract that lets ``out.sc_receiver_amplitudes`` and the other named
+    fields resolve to the correct positional tensor for every ``ndim``.
+    """
+    from deepwave.scalar_born import scalar_born_output_names
+
+    n = 8
+    shape = (n,) * ndim
+    v = torch.full(shape, 1500.0)
+    scatter = torch.full(shape, 1.0)
+    source_amplitudes = torch.zeros(1, 1, 8)
+    source_amplitudes[0, 0, 3] = 1
+    loc = torch.zeros(1, 1, ndim, dtype=torch.long)
+    loc[0, 0, :] = n // 2
+
+    out = scalar_born(
+        v,
+        5.0,
+        0.004,
+        dv=scatter,
+        source_amplitudes=source_amplitudes,
+        source_locations=loc,
+        sc_receiver_locations=loc,
+        bg_receiver_locations=loc,
+        pml_width=3,
+    )
+    assert out._names == tuple(scalar_born_output_names(ndim))
+    for name in out._names:
+        assert hasattr(out, name)
+
+
+# ---------------------------------------------------------------------------
+# The scatter -> dv rename: `dv` is the name everywhere (constructor argument,
+# stored attribute, and CallbackState model/gradient key), with `scatter`
+# retained as a deprecated alias in each of those three places because
+# v0.0.27 shipped all three.
+# ---------------------------------------------------------------------------
+
+
+def _tiny_born_kwargs() -> dict:
+    source_amplitudes = torch.zeros(1, 1, 20)
+    source_amplitudes[0, 0, 5] = 1
+    locations = torch.full((1, 1, 2), 5, dtype=torch.long)
+    return {
+        "source_amplitudes": source_amplitudes,
+        "source_locations": locations,
+        "sc_receiver_locations": locations,
+    }
+
+
+def test_scalarborn_stores_dv_attribute() -> None:
+    """The stored scattering-potential attribute is ``dv``."""
+    v = 1500 * torch.ones(10, 10)
+    dv = torch.ones(10, 10)
+    prop = ScalarBorn(v, 5.0, dv=dv)
+    assert torch.equal(prop.dv, dv)
+    assert "dv" in dict(prop.named_parameters())
+
+
+def test_scalarborn_scatter_attribute_is_deprecated_alias() -> None:
+    """``.scatter`` still reads the same tensor, with a deprecation warning."""
+    v = 1500 * torch.ones(10, 10)
+    dv = torch.ones(10, 10)
+    prop = ScalarBorn(v, 5.0, dv=dv)
+    with pytest.warns(deepwave.DeepwaveFutureWarning, match="scatter is deprecated"):
+        scatter = prop.scatter
+    assert scatter is prop.dv
+
+
+def test_scalarborn_scatter_attribute_is_read_only() -> None:
+    """``.scatter`` cannot be assigned to: it is a read-only alias for ``dv``."""
+    v = 1500 * torch.ones(10, 10)
+    prop = ScalarBorn(v, 5.0, dv=torch.ones(10, 10))
+    with pytest.raises(AttributeError):
+        prop.scatter = torch.zeros(10, 10)
+
+
+def test_scalarborn_scatter_constructor_alias_sets_dv() -> None:
+    """The deprecated ``scatter=`` constructor argument warns and populates ``dv``."""
+    v = 1500 * torch.ones(10, 10)
+    dv = torch.ones(10, 10)
+    with pytest.warns(deepwave.DeepwaveFutureWarning, match="scatter is deprecated"):
+        prop = ScalarBorn(v, 5.0, scatter=dv)
+    assert torch.equal(prop.dv, dv)
+
+
+def test_scalar_born_model_names_use_dv() -> None:
+    """``scalar_born``'s callback model key is ``dv``, not ``scatter``."""
+    from deepwave.scalar_born import scalar_born_model_names
+
+    assert scalar_born_model_names(2) == ["v", "dv"]
+
+
+def test_callback_model_scatter_key_is_deprecated_alias() -> None:
+    """``get_model("scatter")`` still resolves to ``dv``, with a warning."""
+    v = 1500 * torch.ones(10, 10)
+    dv = torch.ones(10, 10)
+    seen: list[torch.Tensor] = []
+
+    def callback(state: Any) -> None:
+        if not seen:
+            with pytest.warns(
+                deepwave.DeepwaveFutureWarning, match="'scatter' is deprecated"
+            ):
+                seen.append(state.get_model("scatter", "full"))
+            seen.append(state.get_model("dv", "full"))
+
+    scalar_born(
+        v,
+        5.0,
+        0.004,
+        dv=dv,
+        forward_callback=callback,
+        callback_frequency=20,
+        **_tiny_born_kwargs(),
+    )
+    assert len(seen) == 2
+    assert seen[0] is seen[1]
+
+
+def test_callback_gradient_scatter_key_is_deprecated_alias() -> None:
+    """``get_gradient("scatter")`` still resolves to ``dv``, with a warning."""
+    v = 1500 * torch.ones(10, 10)
+    dv = torch.ones(10, 10, requires_grad=True)
+    seen: list[bool] = []
+
+    def callback(state: Any) -> None:
+        if not seen:
+            with pytest.warns(
+                deepwave.DeepwaveFutureWarning, match="'scatter' is deprecated"
+            ):
+                alias = state.get_gradient("scatter", "full")
+            assert alias is state.get_gradient("dv", "full")
+            seen.append(True)
+
+    out = scalar_born(
+        v,
+        5.0,
+        0.004,
+        dv=dv,
+        backward_callback=callback,
+        callback_frequency=20,
+        **_tiny_born_kwargs(),
+    )
+    out[-1].sum().backward()
+    assert seen
+
+
+def test_callback_unknown_model_name_still_raises_key_error() -> None:
+    """A name that is neither current nor a deprecated alias still raises."""
+    v = 1500 * torch.ones(10, 10)
+    dv = torch.ones(10, 10)
+    errors: list[str] = []
+
+    def callback(state: Any) -> None:
+        if not errors:
+            with pytest.raises(KeyError, match="model 'bogus' is not available"):
+                state.get_model("bogus")
+            errors.append("raised")
+
+    scalar_born(
+        v,
+        5.0,
+        0.004,
+        dv=dv,
+        forward_callback=callback,
+        callback_frequency=20,
+        **_tiny_born_kwargs(),
+    )
+    assert errors

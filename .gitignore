@@ -1,1 +1,37 @@
 *~
+__pycache__/
+*.pyc
+*.so
+*.pyd
+*.dylib
+*.dll
+*.lib
+
+# Lint/type/test caches
+.mypy_cache/
+.ruff_cache/
+docs/.ruff_cache/
+.pytest_cache/
+.ipynb_checkpoints/
+.coverage
+.coverage.*
+htmlcov/
+
+# Sphinx build output
+docs/_build/
+docs/_generated/
+
+# Packaging/build artifacts
+*.egg-info/
+build/
+dist/
+wheelhouse/
+*.whl
+compile_commands.json
+exploration/**/build/
+exploration/**/outputs/
+
+# Benchmark result files (machine/run-specific, not for version control)
+benchmarks/results/*.json
+benchmarks/results/*.md
+benchmarks/results/*.txt

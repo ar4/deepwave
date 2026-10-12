@@ -1,6 +1,7 @@
 """Demonstrates location interpolation for sources/receivers in a circle."""
 
 import math
+import os
 
 import matplotlib.pyplot as plt
 import torch
@@ -9,20 +10,25 @@ import deepwave
 from deepwave import scalar
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-ny = 300
-nx = 300
+
+# ``DEEPWAVE_SMOKE=1`` shrinks this example so that it can be run quickly as
+# an automated check; the default sizes are the ones the text describes.
+smoke = os.environ.get("DEEPWAVE_SMOKE") == "1"
+
+ny = 80 if smoke else 300
+nx = 80 if smoke else 300
 dx = 4.0
 v = torch.ones(ny, nx, device=device) * 1500
 
 freq = 25
-nt = 50
+nt = 20 if smoke else 50
 dt = 0.004
 peak_time = 1.5 / freq
 
-cy, cx = (ny / 2, nx / 2)  # center of circle
+cy, cx = (ny / 2, nx / 2)  # centre of circle
 radius = ny / 3  # radius of circle
 n_shots = 1
-n_source_locations = 16
+n_source_locations = 8 if smoke else 16
 # multiply the number of sources per shot by two because we pass two
 # at each location to the Hicks function. One of these two will be
 # oriented in the y dimension and the other in the x dimension. By
@@ -71,7 +77,7 @@ source_dipole_dim = torch.zeros(
 )
 
 source_dipole_dim[0, 1::2] = 1  # every second source is x-oriented
-hicks_source = deepwave.location_interpolation.Hicks(
+hicks_source = deepwave.Hicks(
     source_locations,
     monopole=source_monopole,
     dipole_dim=source_dipole_dim,
@@ -90,7 +96,10 @@ out = scalar(
 )
 
 # Plot wavefield
-wavefield = out[0]
+wavefield = out.wavefield_0
 plt.figure(figsize=(8, 8))
 plt.imshow(wavefield[0].cpu(), cmap="gray")
 plt.savefig("example_location_interpolation_circle.jpg")
+
+assert torch.isfinite(wavefield).all(), "wavefield is not finite"
+assert wavefield.abs().max() > 0, "wavefield is all zeros"

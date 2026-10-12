@@ -1,0 +1,19 @@
+version: 2
+updates:
+  # Keep pinned GitHub Actions SHAs (actions/checkout, actions/setup-python,
+  # actions/upload-artifact, pypa/cibuildwheel, etc.) up to date. Dependabot
+  # understands the "@<sha> # <tag>" pinning convention used in this repo's
+  # workflows and will open a PR bumping both the SHA and the version
+  # comment when a new release is tagged.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+  # Deepwave's declared build requirement (scikit-build-core, see
+  # pyproject.toml [build-system]) and any pip-installed tooling referenced
+  # by the workflows in .github/workflows/.
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"

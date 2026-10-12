@@ -4,12 +4,14 @@ The script performs a simple Full-Waveform Inversion (FWI)
 using PyTorch's DistributedDataParallel for multi-GPU wave propagation.
 """
 
+import math
 import os
 
 import matplotlib.pyplot as plt
 import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
+from get_marmousi import load_data, load_vp
 from scipy.ndimage import gaussian_filter
 from scipy.signal import butter
 from torch.nn.parallel import DistributedDataParallel
@@ -101,64 +103,63 @@ def run_rank(rank, world_size):
     """Runs the FWI for a specific rank in the distributed setup."""
     print(f"Running DDP on rank {rank} / {world_size}.")
     setup(rank, world_size)
-    ny_full = 2301
-    nx_full = 751
+    # ``DEEPWAVE_SMOKE=1`` shrinks this example so that it can be run
+    # quickly as an automated check; the default sizes are the ones the
+    # text describes.
+    smoke = os.environ.get("DEEPWAVE_SMOKE") == "1"
+    # Dimension 0 is depth and dimension 1 is horizontal position, the
+    # convention used throughout this documentation.
     dx = 4.0
-    v_true_full = torch.from_file(
-        "marmousi_vp.bin", size=ny_full * nx_full
-    ).reshape(
-        ny_full,
-        nx_full,
-    )
+    # ``load_vp`` returns the 751 x 2301 Marmousi model, read from
+    # marmousi_vp.bin in the current directory and checked for the
+    # depth-first layout Deepwave 0.1.0 writes. In smoke mode it returns a
+    # generated stand-in model of the same shape and velocity range
+    # instead, so no download is needed.
+    v_true_full = load_vp(smoke=smoke)
 
     # Select portion of model for inversion
-    ny = 600
-    nx = 250
+    ny = 60 if smoke else 250
+    nx = 150 if smoke else 600
     v_true = v_true_full[:ny, :nx]
 
     # Smooth to use as starting model
     v_init = torch.tensor(1 / gaussian_filter(1 / v_true.numpy(), 40))
-
-    n_shots_full = 115
 
     n_sources_per_shot = 1
     d_source = 20  # 20 * 4m = 80m
     first_source = 10  # 10 * 4m = 40m
     source_depth = 2  # 2 * 4m = 8m
 
-    n_receivers_per_shot_full = 384
     d_receiver = 6  # 6 * 4m = 24m
     first_receiver = 0  # 0 * 4m = 0m
     receiver_depth = 2  # 2 * 4m = 8m
 
     freq = 25
-    nt_full = 750
     dt = 0.004
     peak_time = 1.5 / freq
 
-    observed_data_full = torch.from_file(
-        "marmousi_data.bin",
-        size=n_shots_full * n_receivers_per_shot_full * nt_full,
-    ).reshape(n_shots_full, n_receivers_per_shot_full, nt_full)
-
     def taper(x):
         # Taper the ends of traces
-        return deepwave.common.cosine_taper_end(x, 100)
+        return deepwave.discretisation.cosine_taper_end(x, 100)
 
     # Select portion of data for inversion
-    n_shots = 16
-    n_receivers_per_shot = 100
-    nt = 300
+    n_shots = 4 if smoke else 16
+    n_receivers_per_shot = 20 if smoke else 100
+    nt = 80 if smoke else 300
+    # ``load_data`` takes the first n_shots shots, n_receivers_per_shot
+    # receivers and nt time samples of marmousi_data.bin. In smoke mode
+    # there is no downloaded model for that file to have come from, so it
+    # instead generates the data by propagating through the model above.
     observed_data = taper(
-        observed_data_full[:n_shots, :n_receivers_per_shot, :nt]
+        load_data(v_true, n_shots, n_receivers_per_shot, nt, smoke=smoke)
     )
 
     # source_locations
     source_locations = torch.zeros(
         n_shots, n_sources_per_shot, 2, dtype=torch.long
     )
-    source_locations[..., 1] = source_depth
-    source_locations[:, 0, 0] = (
+    source_locations[..., 0] = source_depth
+    source_locations[:, 0, 1] = (
         torch.arange(n_shots) * d_source + first_source
     )
 
@@ -166,8 +167,8 @@ def run_rank(rank, world_size):
     receiver_locations = torch.zeros(
         n_shots, n_receivers_per_shot, 2, dtype=torch.long
     )
-    receiver_locations[..., 1] = receiver_depth
-    receiver_locations[:, :, 0] = (
+    receiver_locations[..., 0] = receiver_depth
+    receiver_locations[:, :, 1] = (
         torch.arange(n_receivers_per_shot) * d_receiver + first_receiver
     ).repeat(n_shots, 1)
 
@@ -180,14 +181,18 @@ def run_rank(rank, world_size):
         1,
     )
 
-    observed_data = torch.chunk(observed_data, world_size)[rank].to(rank)
-    source_amplitudes = torch.chunk(source_amplitudes, world_size)[rank].to(
+    if world_size > n_shots:
+        raise ValueError("Use at most one GPU per shot.")
+    observed_data = torch.tensor_split(observed_data, world_size)[rank].to(
         rank
     )
-    source_locations = torch.chunk(source_locations, world_size)[rank].to(
+    source_amplitudes = torch.tensor_split(source_amplitudes, world_size)[
         rank
-    )
-    receiver_locations = torch.chunk(receiver_locations, world_size)[
+    ].to(rank)
+    source_locations = torch.tensor_split(source_locations, world_size)[
+        rank
+    ].to(rank)
+    receiver_locations = torch.tensor_split(receiver_locations, world_size)[
         rank
     ].to(rank)
 
@@ -199,8 +204,9 @@ def run_rank(rank, world_size):
     loss_fn = torch.nn.MSELoss()
 
     # Run optimisation/inversion
-    n_epochs = 2
+    n_epochs = 1 if smoke else 2
 
+    loss_history: list[float] = []
     for cutoff_freq in [10, 15, 20, 25, 30]:
         sos = butter(6, cutoff_freq, fs=1 / dt, output="sos")
         sos = [
@@ -220,10 +226,24 @@ def run_rank(rank, world_size):
                 out = prop(
                     source_amplitudes, source_locations, receiver_locations
                 )
-                out_filt = filt(taper(out[-1]), sos)
-                loss = 1e6 * loss_fn(out_filt, observed_data_filt)
+                out_filt = filt(taper(out.receiver_amplitudes), sos)
+                # DDP averages gradients across ranks. Weight unequal shot
+                # partitions to obtain the full-survey mean gradient.
+                loss = (
+                    1e6
+                    * loss_fn(out_filt, observed_data_filt)
+                    * world_size
+                    * observed_data_filt.shape[0]
+                    / n_shots
+                )
                 loss.backward()
-                return loss
+                # LBFGS also uses loss changes for stopping decisions. Every
+                # rank must see the same loss and make the same calls.
+                global_loss = loss.detach().clone()
+                dist.all_reduce(global_loss)
+                global_loss /= world_size
+                loss_history.append(float(global_loss.item()))
+                return global_loss
 
             optimiser.step(closure)
 
@@ -236,11 +256,11 @@ def run_rank(rank, world_size):
             3, figsize=(10.5, 10.5), sharex=True, sharey=True
         )
         ax[0].imshow(
-            v_init.cpu().T, aspect="auto", cmap="gray", vmin=vmin, vmax=vmax
+            v_init.cpu(), aspect="auto", cmap="gray", vmin=vmin, vmax=vmax
         )
         ax[0].set_title("Initial")
         ax[1].imshow(
-            v.detach().cpu().T,
+            v.detach().cpu(),
             aspect="auto",
             cmap="gray",
             vmin=vmin,
@@ -248,13 +268,18 @@ def run_rank(rank, world_size):
         )
         ax[1].set_title("Out")
         ax[2].imshow(
-            v_true.cpu().T, aspect="auto", cmap="gray", vmin=vmin, vmax=vmax
+            v_true.cpu(), aspect="auto", cmap="gray", vmin=vmin, vmax=vmax
         )
         ax[2].set_title("True")
         plt.tight_layout()
         plt.savefig("example_distributed_ddp.jpg")
 
         v.detach().cpu().numpy().tofile("marmousi_v_inv.bin")
+
+        assert all(math.isfinite(x) for x in loss_history), (
+            "loss history contains non-finite values"
+        )
+        assert loss_history[-1] < loss_history[0], "loss did not decrease"
     cleanup()
 
 

@@ -7,7 +7,7 @@ from typing import Any, Callable
 import pytest
 import torch
 
-from deepwave.common import downsample, upsample
+from deepwave.discretisation import downsample, upsample
 
 
 def test_upsample_invalid_signal_type() -> None:
@@ -176,3 +176,65 @@ def test_shift(n=128, dtype=torch.double, device=None):
         (torch.arange(n, dtype=dtype, device=device) + 0.23456) * 2 * math.pi / n * 6,
     )[::2]
     assert torch.allclose(y, expected)
+
+
+@pytest.mark.parametrize("step_ratio", [2, 3])
+def test_downsample_preserves_constant_for_divisible_odd_and_even_lengths(
+    step_ratio: int,
+) -> None:
+    """Orthonormal FFT scaling preserves DC for supported coarse lengths."""
+    for coarse_length in (8, 9):
+        signal = torch.ones(coarse_length * step_ratio, dtype=torch.double)
+        result = downsample(signal, step_ratio)
+        assert torch.allclose(result, torch.ones(coarse_length, dtype=torch.double))
+
+
+def test_downsample_rejects_nondivisible_time_length() -> None:
+    """Downsampling requires an integer number of complete output periods."""
+    with pytest.raises(
+        ValueError,
+        match=re.escape(
+            "signal time length must be divisible by step_ratio for downsampling; "
+            "pad or trim the signal explicitly."
+        ),
+    ):
+        downsample(torch.ones(5, dtype=torch.double), 2)
+
+
+@pytest.mark.parametrize("freq_taper_frac", [0.0, 1e-12])
+def test_upsample_zeros_even_length_nyquist(
+    freq_taper_frac: float,
+) -> None:
+    """An even input's Nyquist component is removed even for tiny tapers."""
+    signal = (-1.0) ** torch.arange(8, dtype=torch.double)
+    result = upsample(signal, 2, freq_taper_frac=freq_taper_frac)
+    assert result.abs().max() < 1e-12
+
+
+@pytest.mark.parametrize("freq_taper_frac", [0.0, 1e-12])
+def test_downsample_zeros_even_output_nyquist(
+    freq_taper_frac: float,
+) -> None:
+    """An even output's Nyquist component is removed even for tiny tapers."""
+    coarse_length = 8
+    step_ratio = 2
+    sample = torch.arange(coarse_length * step_ratio, dtype=torch.double)
+    phase = 2 * math.pi * (coarse_length // 2) * sample / (coarse_length * step_ratio)
+    signal = torch.cos(phase)
+    result = downsample(signal, step_ratio, freq_taper_frac=freq_taper_frac)
+    assert result.abs().max() < 1e-12
+
+
+def test_downsample_preserves_highest_bin_for_odd_output() -> None:
+    """Odd outputs have no Nyquist bin, so their highest bin is retained."""
+    coarse_length = 9
+    step_ratio = 2
+    sample = torch.arange(coarse_length * step_ratio, dtype=torch.double)
+    phase = 2 * math.pi * (coarse_length // 2) * sample / (coarse_length * step_ratio)
+    signal = torch.cos(phase)
+    expected_sample = torch.arange(coarse_length, dtype=torch.double)
+    expected = torch.cos(
+        2 * math.pi * (coarse_length // 2) * expected_sample / coarse_length
+    )
+    result = downsample(signal, step_ratio)
+    assert torch.allclose(result, expected, atol=1e-12, rtol=1e-12)
