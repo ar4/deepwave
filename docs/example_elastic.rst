@@ -1,9 +1,27 @@
 Elastic propagation and FWI
 ===========================
 
-The regular scalar propagator has one model parameter (wavespeed). The scalar Born propagator has two (wavespeed and scattering potential). The elastic propagator has three. This makes it interesting to study as an inverse problem, because, in addition to the difficulties that already exist with scalar wave propagation inversion, there are problems caused by crosstalk between the model parameters. The ease of experimenting with different model parameterisations and loss functions makes Deepwave well suited to trying out new ideas to solve these problems. In this example we will just perform a simple forward propagation and inversion, though, to show you the basics.
+This example runs elastic forward propagation and a simple elastic FWI, a
+natural next step after the scalar examples once you need shear-wave physics
+or a free surface. The elastic propagator has three model parameters,
+compared with the scalar propagator's one (wavespeed) and the scalar Born
+propagator's two (wavespeed and scattering potential). The extra parameters
+make elastic inversion harder to study, because crosstalk between the
+parameters compounds the difficulties already present in scalar inversion.
+Deepwave's ease of experimenting with different model parameterisations and
+loss functions makes it well suited to trying out ideas to address that, but
+this example sticks to a simple forward propagation and inversion to show
+the basics.
 
-One popular way to parameterise elastic propagation is with :math:`v_p`, :math:`v_s`, and :math:`\rho` (the p and s wavespeeds and the density). Another uses :math:`\lambda`, :math:`\mu`, and buoyancy (the two Lamé parameters and the reciprocal of density). Deepwave internally uses the latter, and provides functions to convert between the two parameterisations. To demonstrate that you can parameterise the model any way that you like and use PyTorch's end-to-end forward and backward propagation to update your own model parameters, in this example we will use :math:`v_p`, :math:`v_s`, and :math:`\rho`.
+One popular way to parameterise elastic propagation is with :math:`v_p`,
+:math:`v_s`, and :math:`\rho` (the p and s wavespeeds and the density).
+Another uses :math:`\lambda`, :math:`\mu`, and buoyancy (the two Lamé
+parameters and the reciprocal of density). Deepwave internally uses the
+latter, and provides functions to convert between the two parameterisations.
+This example uses :math:`v_p`, :math:`v_s`, and :math:`\rho` instead, to
+demonstrate that you can parameterise the model however you like and still
+use PyTorch's end-to-end forward and backward propagation to update your own
+model parameters.
 
 We begin by setting up the model (both background and true, the latter of which we will use to generate the "observed" data) and acquisition::
 
@@ -64,17 +82,23 @@ We begin by setting up the model (both background and true, the latter of which 
         .repeat(n_shots, n_sources_per_shot, 1).to(device)
     )
 
-This created a model where each of the three parameters is constant except for a box, which is in a different location for each parameter. We will use eight shots, with sources spread over the top surface, and receivers covering the top surface. Deepwave treats both spatial dimensions equally, so we could have transposed our model and defined our source and receiver locations with dimension 1 corresponding to depth instead of dimension 0. As a demonstration of this, this example uses the opposite convention of the earlier Marmousi examples. We are now ready to generate data using the true model::
+This creates a model where each of the three parameters is constant except
+for a box, in a different location for each parameter. We use eight shots,
+with sources and receivers both spread over the top surface. Deepwave treats
+both spatial dimensions equally, so the model and the source/receiver
+locations could equally have been transposed to put depth along dimension 1
+instead of dimension 0. We are now ready to generate data using the true
+model::
 
     observed_data = elastic(
-        *deepwave.common.vpvsrho_to_lambmubuoyancy(vp_true, vs_true,
+        *deepwave.vpvsrho_to_lambmubuoyancy(vp_true, vs_true,
                                                    rho_true),
         dx, dt,
         source_amplitudes_y=source_amplitudes,
         source_locations_y=source_locations,
         receiver_locations_y=receiver_locations,
         pml_freq=freq,
-    )[-2]
+    ).receiver_amplitudes_y
 
 This is similar to how the scalar propagator is called, but with two differences.
 
@@ -97,13 +121,13 @@ Now let's try starting from the background models (constant, without the boxes) 
         def closure():
             optimiser.zero_grad()
             out = elastic(
-                *deepwave.common.vpvsrho_to_lambmubuoyancy(vp, vs, rho),
+                *deepwave.vpvsrho_to_lambmubuoyancy(vp, vs, rho),
                 dx, dt,
                 source_amplitudes_y=source_amplitudes,
                 source_locations_y=source_locations,
                 receiver_locations_y=receiver_locations,
                 pml_freq=freq,
-            )[-2]
+            ).receiver_amplitudes_y
             loss = 1e20*loss_fn(out, observed_data)
             loss.backward()
             return loss
@@ -114,15 +138,25 @@ This just used a standard inversion with the LBFGS optimiser, but the result loo
 
 .. image:: example_elastic.jpg
 
-The gradients flowed end-to-end, back into the `vp`, `vs`, and `rho` parameters. You can see that there is a little bit of crosstalk between the parameters, though. Maybe you can come-up with a way of parameterising the model, or a different loss function, that does better?
+The gradients flowed end-to-end, back into the `vp`, `vs`, and `rho`
+parameters. There is a little crosstalk between the parameters, though.
+Perhaps a different model parameterisation, or a different loss function,
+would do better?
 
-Another interesting aspect of the elastic wave equation is that it can produce the phenomenon known as ground-roll. We can cause it by having a free surface on our model. Since Deepwave's elastic propagator uses the `improved vacuum method <https://doi.org/10.1190/geo2011-0067.1>`_, we achieve this by setting the property models above the surface to zero (and we will also set the PML width to zero on that edge to avoid unnecessary computation, as no waves will reach the edge and so we do not need it to be absorbing)::
+Another interesting aspect of the elastic wave equation is that it can
+produce **ground-roll**, caused by a free surface on the model. Deepwave's
+elastic propagator implements a free surface with the `improved vacuum
+method <https://doi.org/10.1190/geo2011-0067.1>`_, so a free surface is
+created here by setting the property models above the surface to zero. The
+PML width on that edge is also set to zero, since no wave reaches that edge
+and so it does not need to be absorbing, which avoids unnecessary
+computation::
 
     vp[0] = 0
     vs[0] = 0
     rho[0] = 0
     out = deepwave.elastic(
-        *deepwave.common.vpvsrho_to_lambmubuoyancy(vp, vs,
+        *deepwave.vpvsrho_to_lambmubuoyancy(vp, vs,
                                                    rho),
         grid_spacing=2, dt=0.004,
         source_amplitudes_y=(
@@ -141,7 +175,7 @@ The same principle can be used to create a free surface of any shape. The follow
 
 .. image:: example_elastic_complex_freesurface.gif
 
-The elastic propagator supports three types of sources: body forces in the y and x dimensions (:math:`f_y` and :math:`f_x`), and pressure sources (:math:`f_p`). We can compare these by looking at the resulting particle velocity in the y and x dimensions (:math:`v_y` and :math:`v_x`) and the pressure field (:math:`-\sigma_{yy}-\sigma_{xx}`, denoted :math:`p`).
+The elastic propagator supports three types of sources: body forces in the y and x dimensions (:math:`f_y` and :math:`f_x`), and pressure sources (:math:`f_p`). We can compare these by looking at the resulting particle velocity in the y and x dimensions (:math:`v_y` and :math:`v_x`) and the pressure field (:math:`-(\sigma_{yy}+\sigma_{xx})/2`, denoted :math:`p`).
 
 .. image:: example_elastic_source.jpg
 

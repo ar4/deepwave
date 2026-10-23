@@ -1,5 +1,7 @@
 """Demonstrates elastic propagation with different source types."""
 
+import os
+
 import matplotlib.pyplot as plt
 import torch
 
@@ -7,17 +9,20 @@ import deepwave
 from deepwave import elastic
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-ny = 71
-nx = 71
+# ``DEEPWAVE_SMOKE=1`` shrinks this example so that it can be run quickly as
+# an automated check; the default sizes are the ones the text describes.
+smoke = os.environ.get("DEEPWAVE_SMOKE") == "1"
+ny = 41 if smoke else 71
+nx = 41 if smoke else 71
 dx = 4.0
 
 vp = torch.ones(ny, nx, device=device) * 1500
 vs = torch.ones(ny, nx, device=device) * 1000
 rho = torch.ones(ny, nx, device=device) * 2200
-lamb, mu, buoyancy = deepwave.common.vpvsrho_to_lambmubuoyancy(vp, vs, rho)
+lamb, mu, buoyancy = deepwave.vpvsrho_to_lambmubuoyancy(vp, vs, rho)
 
 freq = 15
-nt = 50
+nt = 35 if smoke else 50
 dt = 0.004
 peak_time = 1.5 / freq
 
@@ -29,7 +34,7 @@ source_amplitudes = (
 )
 
 # single body forces in y and x dimensions
-source_locations = torch.tensor([[[35, 35]]]).to(device)
+source_locations = torch.tensor([[[ny // 2, nx // 2]]]).to(device)
 # body force in y located at (35.5, 35.0)
 out = elastic(
     lamb,
@@ -41,9 +46,9 @@ out = elastic(
     source_locations_y=source_locations,
     pml_freq=freq,
 )
-sy_y = out[0][0]
-sy_x = out[1][0]
-sy_p = -(out[2][0] + out[4][0])
+sy_y = out.vy_0[0]
+sy_x = out.vx_0[0]
+sy_p = -(out.sigmayy_0[0] + out.sigmaxx_0[0])
 # body force in x located at (35.5, 35)
 out = elastic(
     lamb,
@@ -55,26 +60,28 @@ out = elastic(
     source_locations_x=source_locations,
     pml_freq=freq,
 )
-sx_y = out[0][0]
-sx_x = out[1][0]
-sx_p = -(out[2][0] + out[4][0])
+sx_y = out.vy_0[0]
+sx_x = out.vx_0[0]
+sx_p = -(out.sigmayy_0[0] + out.sigmaxx_0[0])
 
 # explosive source located at (35, 35)
-source_locations_p = torch.tensor([[[35, 35]]]).to(device)
-source_amplitudes_p = source_amplitudes.repeat(1, 1, 1)
+source_locations_pressure_rate = torch.tensor([[[ny // 2, nx // 2]]]).to(
+    device
+)
+source_amplitudes_pressure_rate = source_amplitudes.repeat(1, 1, 1)
 out = elastic(
     lamb,
     mu,
     buoyancy,
     dx,
     dt,
-    source_amplitudes_p=source_amplitudes_p,
-    source_locations_p=source_locations_p,
+    source_amplitudes_pressure_rate=source_amplitudes_pressure_rate,
+    source_locations_pressure_rate=source_locations_pressure_rate,
     pml_freq=freq,
 )
-sp_y = out[0][0]
-sp_x = out[1][0]
-sp_p = -(out[2][0] + out[4][0])
+sp_y = out.vy_0[0]
+sp_x = out.vx_0[0]
+sp_p = -(out.sigmayy_0[0] + out.sigmaxx_0[0])
 
 # Plot
 _, ax = plt.subplots(3, 3, figsize=(8, 8), sharex=True, sharey=True)
@@ -98,3 +105,6 @@ ax[2, 2].imshow(sp_p.cpu(), aspect="auto", cmap="gray")
 ax[2, 2].set_title("$f_p$ $p$")
 plt.tight_layout()
 plt.savefig("example_elastic_source.jpg")
+
+assert torch.isfinite(sp_p).all(), "explosive-source pressure is not finite"
+assert sp_p.abs().max() > 0, "explosive-source pressure is all zeros"

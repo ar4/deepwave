@@ -2,12 +2,16 @@
 
 This script performs a simple Full-Waveform Inversion (FWI), using
 PyTorch's checkpointing feature to reduce memory consumption during wave
-propagation, at the cost of increased computation.
+propagation, at the cost of increased computation. The lever is the
+``checkpoint_segments`` argument that every Deepwave propagator accepts.
 """
+
+import math
+import os
 
 import matplotlib.pyplot as plt
 import torch
-import torch.utils.checkpoint
+from get_marmousi import load_data, load_vp
 from scipy.ndimage import gaussian_filter
 from scipy.signal import butter
 from torchaudio.functional import biquad
@@ -16,19 +20,25 @@ import deepwave
 from deepwave import scalar
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-ny_full = 2301
-nx_full = 751
+# ``DEEPWAVE_SMOKE=1`` shrinks this example so that it can be run quickly as
+# an automated check; the default sizes are the ones the text describes.
+smoke = os.environ.get("DEEPWAVE_SMOKE") == "1"
+# Dimension 0 is depth and dimension 1 is horizontal position, the
+# convention used throughout this documentation.
+ny_full = 751
+nx_full = 2301
 dx = 4.0
-v_true_full = torch.from_file(
-    "marmousi_vp.bin", size=ny_full * nx_full
-).reshape(
-    ny_full,
-    nx_full,
-)
+# ``load_vp`` reads marmousi_vp.bin from the current directory and checks
+# that it is in the depth-first layout Deepwave 0.1.0 writes (row 0 is the
+# 1500 m/s water layer; an old-layout file holds the same number of floats
+# and so would reshape without error, silently giving a rotated model). In
+# smoke mode it returns a generated stand-in model of the same shape and
+# velocity range instead, so no download is needed.
+v_true_full = load_vp(smoke=smoke)
 
 # Select portion of model for inversion
-ny = 600
-nx = 250
+ny = 60 if smoke else 250
+nx = 150 if smoke else 600
 v_true = v_true_full[:ny, :nx]
 
 # Smooth to use as starting model
@@ -51,19 +61,18 @@ nt_full = 750
 dt = 0.004
 peak_time = 1.5 / freq
 
-observed_data_full = torch.from_file(
-    "marmousi_data.bin",
-    size=n_shots_full * n_receivers_per_shot_full * nt_full,
-).reshape(n_shots_full, n_receivers_per_shot_full, nt_full)
-
 
 # Select portion of data for inversion
-n_shots = 20
-n_receivers_per_shot = 100
-nt = 300
-observed_data = observed_data_full[:n_shots, :n_receivers_per_shot, :nt].to(
-    device
-)
+n_shots = 4 if smoke else 20
+n_receivers_per_shot = 20 if smoke else 100
+nt = 80 if smoke else 300
+# ``load_data`` takes the first n_shots shots, n_receivers_per_shot
+# receivers and nt time samples of marmousi_data.bin. In smoke mode there is
+# no downloaded model for that file to have come from, so it instead
+# generates the data by propagating through the model above.
+observed_data = load_data(
+    v_true, n_shots, n_receivers_per_shot, nt, smoke=smoke
+).to(device)
 
 # source_locations
 source_locations = torch.zeros(
@@ -73,8 +82,8 @@ source_locations = torch.zeros(
     dtype=torch.long,
     device=device,
 )
-source_locations[..., 1] = source_depth
-source_locations[:, 0, 0] = torch.arange(n_shots) * d_source + first_source
+source_locations[..., 0] = source_depth
+source_locations[:, 0, 1] = torch.arange(n_shots) * d_source + first_source
 
 # receiver_locations
 receiver_locations = torch.zeros(
@@ -84,8 +93,8 @@ receiver_locations = torch.zeros(
     dtype=torch.long,
     device=device,
 )
-receiver_locations[..., 1] = receiver_depth
-receiver_locations[:, :, 0] = (
+receiver_locations[..., 0] = receiver_depth
+receiver_locations[:, :, 1] = (
     torch.arange(n_receivers_per_shot) * d_receiver + first_receiver
 ).repeat(n_shots, 1)
 
@@ -96,12 +105,7 @@ source_amplitudes = (
     .to(device)
 )
 
-# Upsample source_amplitudes
 max_vel = 2500
-dt, step_ratio = deepwave.common.cfl_condition(dx, dx, dt, max_vel)
-source_amplitudes = deepwave.common.upsample(source_amplitudes, step_ratio)
-observed_data = deepwave.common.upsample(observed_data, step_ratio)
-nt = source_amplitudes.shape[-1]
 
 
 # Generate a velocity model constrained to be within a desired range
@@ -140,8 +144,8 @@ optimiser = torch.optim.LBFGS(
 loss_fn = torch.nn.MSELoss()
 
 # Run optimisation/inversion
-n_epochs = 2
-n_segments = 5
+n_epochs = 1 if smoke else 2
+n_segments = 2 if smoke else 5
 cutoff_freq = 10
 
 sos = butter(6, cutoff_freq, fs=1 / dt, output="sos")
@@ -152,7 +156,7 @@ sos = [
 
 def taper(x):
     """Applies a cosine taper to the end of the input tensor."""
-    return deepwave.common.cosine_taper_end(x, 600)
+    return deepwave.discretisation.cosine_taper_end(x, 100)
 
 
 def filt(x):
@@ -160,108 +164,30 @@ def filt(x):
     return biquad(biquad(biquad(x, *sos[0]), *sos[1]), *sos[2])
 
 
-def wrap(
-    v,
-    chunk,
-    wavefield_0,
-    wavefield_m1,
-    psiy_m1,
-    psix_m1,
-    zetay_m1,
-    zetax_m1,
-):
-    """Wraps the scalar propagation function for checkpointing."""
-    return scalar(
-        v,
-        dx,
-        dt,
-        source_amplitudes=chunk,
-        source_locations=source_locations,
-        receiver_locations=receiver_locations,
-        pml_freq=freq,
-        wavefield_0=wavefield_0,
-        wavefield_m1=wavefield_m1,
-        psiy_m1=psiy_m1,
-        psix_m1=psix_m1,
-        zetay_m1=zetay_m1,
-        zetax_m1=zetax_m1,
-        max_vel=max_vel,
-        model_gradient_sampling_interval=step_ratio,
-    )
-
-
 observed_data = filt(taper(observed_data))
 
+loss_history: list[float] = []
 for _epoch in range(n_epochs):
 
     def closure():
         """Closure function for the LBFGS optimiser."""
-        pml_width = 20
-        wavefield_size = [n_shots, ny + 2 * pml_width, nx + 2 * pml_width]
-        wavefield_0 = torch.zeros(*wavefield_size, device=device)
-        wavefield_m1 = torch.zeros(*wavefield_size, device=device)
-        psiy_m1 = torch.zeros(*wavefield_size, device=device)
-        psix_m1 = torch.zeros(*wavefield_size, device=device)
-        zetay_m1 = torch.zeros(*wavefield_size, device=device)
-        zetax_m1 = torch.zeros(*wavefield_size, device=device)
         optimiser.zero_grad()
-        receiver_amplitudes = torch.zeros(
-            n_shots,
-            n_receivers_per_shot,
-            nt,
-            device=device,
-        )
         v = model()
-        k = 0
-        for i, chunk in enumerate(
-            torch.chunk(source_amplitudes, n_segments, dim=-1)
-        ):
-            if i == n_segments - 1:
-                (
-                    wavefield_0,
-                    wavefield_m1,
-                    psiy_m1,
-                    psix_m1,
-                    zetay_m1,
-                    zetax_m1,
-                    receiver_amplitudes_chunk,
-                ) = wrap(
-                    v,
-                    chunk,
-                    wavefield_0,
-                    wavefield_m1,
-                    psiy_m1,
-                    psix_m1,
-                    zetay_m1,
-                    zetax_m1,
-                )
-            else:
-                (
-                    wavefield_0,
-                    wavefield_m1,
-                    psiy_m1,
-                    psix_m1,
-                    zetay_m1,
-                    zetax_m1,
-                    receiver_amplitudes_chunk,
-                ) = torch.utils.checkpoint.checkpoint(
-                    wrap,
-                    v,
-                    chunk,
-                    wavefield_0,
-                    wavefield_m1,
-                    psiy_m1,
-                    psix_m1,
-                    zetay_m1,
-                    zetax_m1,
-                )
-            receiver_amplitudes[..., k : k + chunk.shape[-1]] = (
-                receiver_amplitudes_chunk
-            )
-            k += chunk.shape[-1]
-        receiver_amplitudes = filt(taper(receiver_amplitudes))
+        out = scalar(
+            v,
+            dx,
+            dt,
+            source_amplitudes=source_amplitudes,
+            source_locations=source_locations,
+            receiver_locations=receiver_locations,
+            pml_freq=freq,
+            max_vel=max_vel,
+            checkpoint_segments=n_segments,
+        )
+        receiver_amplitudes = filt(taper(out.receiver_amplitudes))
         loss = 1e6 * loss_fn(receiver_amplitudes, observed_data)
         loss.backward()
+        loss_history.append(float(loss.item()))
         return loss
 
     optimiser.step(closure)
@@ -271,19 +197,20 @@ v = model()
 vmin = v_true.min()
 vmax = v_true.max()
 _, ax = plt.subplots(3, figsize=(10.5, 10.5), sharex=True, sharey=True)
-ax[0].imshow(
-    v_init.cpu().T, aspect="auto", cmap="gray", vmin=vmin, vmax=vmax
-)
+ax[0].imshow(v_init.cpu(), aspect="auto", cmap="gray", vmin=vmin, vmax=vmax)
 ax[0].set_title("Initial")
 ax[1].imshow(
-    v.detach().cpu().T, aspect="auto", cmap="gray", vmin=vmin, vmax=vmax
+    v.detach().cpu(), aspect="auto", cmap="gray", vmin=vmin, vmax=vmax
 )
 ax[1].set_title("Out")
-ax[2].imshow(
-    v_true.cpu().T, aspect="auto", cmap="gray", vmin=vmin, vmax=vmax
-)
+ax[2].imshow(v_true.cpu(), aspect="auto", cmap="gray", vmin=vmin, vmax=vmax)
 ax[2].set_title("True")
 plt.tight_layout()
 plt.savefig("example_checkpointing.jpg")
 
 v.detach().cpu().numpy().tofile("marmousi_v_inv.bin")
+
+assert all(math.isfinite(x) for x in loss_history), (
+    "loss history contains non-finite values"
+)
+assert loss_history[-1] < loss_history[0], "loss did not decrease"

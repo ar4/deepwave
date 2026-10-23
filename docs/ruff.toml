@@ -7,3 +7,16 @@ line-length = 76
 
 [lint]
 extend-ignore = ["ANN", "INP001", "ERA001", "B023"]
+
+[lint.per-file-ignores]
+# The example scripts, and their jupytext-paired notebook copies, end with
+# an `assert` that checks the example actually produced a sensible result;
+# `scripts/run_examples_smoke.py` runs the scripts as automated checks and
+# relies on those assertions firing.
+"example_*.py" = ["S101"]
+# E402 (import not at top of cell) as well, in the notebooks: jupytext pairs
+# each notebook with the `.py` above, and the notebook's first code cell
+# opens with the Colab install line and the narrative comments that the
+# paired script carries as a module docstring, so the imports necessarily
+# follow them. The `.py` source is where import order is checked.
+"example_*.ipynb" = ["S101", "E402"]

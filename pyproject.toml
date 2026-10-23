@@ -1,32 +1,106 @@
 [build-system]
-requires = ["scikit-build-core>=0.8.1"]
+# >=1.0 for [tool.scikit-build.sdist] inclusion-mode = "explicit", which is
+# what makes the sdist an allowlist rather than a deny list (see that
+# section).
+requires = ["scikit-build-core>=1.0"]
 build-backend = "scikit_build_core.build"
 
 [project]
 name = "deepwave"
-version = "0.0.27"
+# The version is single-sourced from src/deepwave/_version.py (see the
+# [tool.scikit-build.metadata.version] section below). Update it there only.
+dynamic = ["version"]
 dependencies = [
-    "torch",
-    "setuptools"
+    # PyTorch 2.4 is the oldest locally verified version for the compiled
+    # torch.func.jvp path. The older 2.0/2.1 releases lack the functorch
+    # stack-clear helper needed for native storage during that transform.
+    "torch>=2.4",
 ]
 authors = [{name = "Alan Richardson", email = "alan@ausargeo.com"}]
 description = "Wave propagation modules for PyTorch"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
-requires-python = ">=3.8"
+requires-python = ">=3.9"
+keywords = [
+    "wave propagation",
+    "FWI",
+    "full-waveform inversion",
+    "seismic",
+    "ultrasound",
+    "RTM",
+    "inversion",
+    "PyTorch",
+    "geophysics",
+    "differentiable",
+]
 classifiers = [
+    # Note: no "License :: OSI Approved :: MIT License" classifier here.
+    # project.license is an SPDX expression ("MIT"; see license-files
+    # above), and PEP 639 / pyproject-metadata *reject* the combination of
+    # an SPDX license expression with a "License ::" trove classifier as
+    # ambiguous (verified locally: pyproject_metadata.StandardMetadata
+    # .from_pyproject raises ConfigurationError on this pyproject.toml if
+    # such a classifier is added). The SPDX expression is the single
+    # source of truth for licensing metadata.
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Physics",
+    "Operating System :: OS Independent",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+
+[project.optional-dependencies]
+# Build the documentation against this checkout: pip install -e '.[docs]'
+docs = [
+    "sphinx>=7",
+    "myst-parser>=3",
+]
+
+# Everything the runnable examples in the documentation import that is
+# neither Deepwave, PyTorch nor the standard library. Deepwave itself needs
+# none of them: they draw the figures, load and filter the example data, and
+# supply the alternative misfit functions and eigensolvers a few examples
+# compare against. Installed with: pip install deepwave[examples]
+examples = [
+    "geomloss",
+    "matplotlib",
+    "numpy",
+    "scipy",
+    "torchaudio",
+    "torchvision",
 ]
 
 [project.urls]
 Homepage = "https://github.com/ar4/deepwave"
 "Bug Tracker" = "https://github.com/ar4/deepwave/issues"
+Documentation = "https://ausargeo.com/deepwave"
+Changelog = "https://github.com/ar4/deepwave/blob/master/CHANGELOG.md"
+Source = "https://github.com/ar4/deepwave"
 
 [tool.scikit-build]
 wheel.py-api = "py3"
-cmake.version = ">=3.18"
+# Matches CMakeLists.txt's own cmake_minimum_required(VERSION 3.23): that
+# floor is set by CUDA_ARCHITECTURES all, whose "all"/"all-major" special
+# values CMake only recognised starting in 3.23.
+cmake.version = ">=3.23"
 #cmake.build-type = "Debug"
+
+# Single-source the project version from src/deepwave/_version.py so that the
+# packaged metadata always matches the importable deepwave._version.__version__
+# (no more hand-syncing the version across pyproject.toml and _version.py).
+[tool.scikit-build.metadata.version]
+provider = "scikit_build_core.metadata.regex"
+input = "src/deepwave/_version.py"
+regex = '''__version__ = ['"](?P<value>[^'"]+)['"]'''
 
 [tool.cibuildwheel]
 # Only build for one python version, as the wheel is python-independent
@@ -42,30 +116,117 @@ build-verbosity = 1
 archs = ["auto64"]
 
 # Test configuration
-test-requires = "pytest scipy torch ninja"
-test-sources = "tests"
+test-requires = "pytest pytest-xdist scipy torch ninja sympy cmake"
+# Fixtures are copied from the matching public checkout, even when package-dir
+# points at the extracted sole sdist. src/deepwave is static inspection/native
+# harness input only: no editable install or src/ on PYTHONPATH.
+test-sources = [
+    "tests", "scripts", "benchmarks", "docs", "src/deepwave",
+    "pyproject.toml", "README.md", "CITATION.cff", "CHANGELOG.md",
+    "CONTRIBUTING.md", "ruff.toml", ".clang-format", ".clang-tidy",
+]
 
 [tool.cibuildwheel.linux]
-test-command = "pytest tests"
+test-command = "python scripts/platform_wheel_smoke.py --require-cuda && python -m pytest tests -q -n 2 -k \"not gradcheck and not backend_parity and not compile\" -x"
 # Don't bundle CUDA libraries with the wheel
-repair-wheel-command = "auditwheel repair -w {dest_dir} {wheel} --exclude libcuda.so.1 --exclude 'libcudart.so.*'"
+repair-wheel-command = "auditwheel repair -z 9 -w {dest_dir} {wheel} --exclude libcuda.so.1 --exclude 'libcudart.so.*'"
+# Linux is the only platform whose default PyPI torch bundles CUDA (multi-GB);
+# Windows/macOS PyPI torch is already CPU-only, so only Linux needs this pin.
 before-test = "pip install torch --index-url https://download.pytorch.org/whl/cpu"
 
 [tool.cibuildwheel.windows]
-test-command = "pytest tests/test_scalar.py"
+# test_scalar.py (regular-grid family, full suite incl. gradcheck) plus
+# test_acoustic.py's fast subset (staggered-grid family, the codebase's other
+# fundamental grid architecture) -- these two Windows/macOS runners are much
+# slower than Linux CI, so the addition is scoped to "not slow" to keep wheel
+# builds from ballooning; the full suite (covering all nine supported
+# propagators) only runs on Linux and a maintainer's/future GPU CI's box.
+test-command = "python scripts/platform_wheel_smoke.py --require-cuda && python -m pytest tests/test_scalar.py && python -m pytest tests/test_acoustic.py -m \"not slow\" && python -m pytest tests/test_native_storage_boundaries.py -k \"seek or native_compression_tiny_blocks or unicode_storage_path\""
 
 [tool.cibuildwheel.macos]
-test-command = "pytest tests/test_scalar.py"
+test-command = "python scripts/platform_wheel_smoke.py && python -m pytest tests/test_scalar.py && python -m pytest tests/test_acoustic.py -m \"not slow\" && python -m pytest tests/test_native_storage_boundaries.py -k \"seek or native_compression_tiny_blocks or unicode_storage_path\""
 
 [tool.scikit-build.sdist]
+# An explicit allowlist rather than a deny list. A deny list has to name
+# every directory that must not ship, so it silently grows stale whenever a
+# new scratch/working directory appears next to the package, and one
+# forgotten entry ships megabytes of unrelated files (or worse, something
+# that was never meant to be published). "explicit" inverts that: nothing
+# is included unless it matches one of the patterns below, so anything not
+# named here -- build directories, editor scratch, local notes, coverage
+# data, downloaded model files -- is excluded by construction.
+#
+# What ships: the sources CMake needs to build the extension, the package's
+# own Python and C/CUDA sources, and the project metadata a consumer of the
+# sdist needs (README, license, changelog, citation and contributing
+# guide). Tests, docs, benchmarks and CI configuration are
+# deliberately NOT in the sdist -- they are on GitHub, and keeping them out
+# is what keeps the sdist small. `sdist.exclude` is still applied after the
+# include patterns, and trims the one class of file an include pattern
+# would otherwise sweep in: a compiled extension left in the source tree by
+# an in-place/editable build.
+inclusion-mode = "explicit"
+include = [
+    "CMakeLists.txt",
+    "pyproject.toml",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md",
+    "CITATION.cff",
+    "CONTRIBUTING.md",
+    "src/",
+]
 exclude = [
-    "tests/*",
-    "docs/*",
-    ".github/*",
-    ".gitignore",
+    # Built extensions left behind by an in-place/editable build, and the
+    # tool caches that grow inside the source tree. "explicit" mode does not
+    # read .gitignore, so these are listed here rather than inherited.
     "src/deepwave/*.so",
-    "dist/*",
+    "src/deepwave/*.pyd",
+    "src/deepwave/*.dylib",
+    # Windows runtime binaries ship in wheels but are not needed to build
+    # them from source and must not leak into source archives.
+    "src/deepwave/*.dll",
+    "src/deepwave/*.lib",
+    "**/__pycache__/",
+    "**/.mypy_cache/",
+    "**/.ruff_cache/",
+    "**/.pytest_cache/",
+    "**/.ipynb_checkpoints/",
+    "**/*.pyc",
 ]
 
-[tool.ruff.lint.pydocstyle]
-convention = "google"
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--strict-markers"
+markers = [
+    "gpu: tests that require a CUDA device (skipped, not silently no-op'd, when none is available)",
+    "slow: long-running tests (e.g. the full gradcheck family); deselect with '-m \"not slow\"'",
+    "manual_gradcheck_anchor: manual-only finite-difference anchors; deselected by every automatic selection (see tests/conftest.py), run with '-m manual_gradcheck_anchor'",
+]
+
+# Note: ruff's own lint config lives in ruff.toml, not here. When a ruff.toml
+# (or .ruff.toml) is present, ruff ignores any [tool.ruff] table in
+# pyproject.toml entirely, so a duplicate [tool.ruff.lint.pydocstyle] table
+# here would be dead configuration -- see ruff.toml's own [lint.pydocstyle].
+
+[tool.mypy]
+# Single-sourced strict configuration: CI and CONTRIBUTING.md both invoke
+# plain `mypy src/` and get strict checking from this table, instead of
+# requiring every invocation to remember `--strict`.
+strict = true
+
+[tool.codespell]
+skip = "*.ipynb,*.json"
+# ipynb outputs embed base64-encoded binary (e.g. PNG) data that codespell
+# tokenizes as garbage words; the paired .py sources (jupytext) already carry
+# the same prose and are covered. JSON files (e.g. benchmarks/results/*.json)
+# are recorded numeric/environment data, not prose.
+ignore-words-list = "nax,siz,ans,bu,ot,trough"
+# Each is a real identifier or word in this codebase, not a typo:
+# nax  - kernel variable, "number along axis" (acoustic_vti.c and others)
+# siz  - kernel variable, e.g. `siz`/`riz` source/receiver z-index offsets
+# ans  - CUDA error-check macro parameter name (common_gpu.h's gpuErrchk(ans))
+# bu   - buoyancy variable name used throughout tests/src (e.g. `lamb, mu, bu`)
+# ot   - "OT" (optimal transport), a loss function named in example_fwi_recipes
+# trough - real English word (a physical/geometric trough), used in
+#          tests/test_elastic_pm.py's staircase topography fixtures

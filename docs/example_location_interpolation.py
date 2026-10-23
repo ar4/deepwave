@@ -5,6 +5,8 @@ and receivers not on the grid, and compares the accuracy of the Hicks
 method against simple rounding and a denser grid.
 """
 
+import os
+
 import matplotlib.pyplot as plt
 import torch
 
@@ -12,13 +14,18 @@ import deepwave
 from deepwave import scalar
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-ny = 100
-nx = 300
+
+# ``DEEPWAVE_SMOKE=1`` shrinks this example so that it can be run quickly as
+# an automated check; the default sizes are the ones the text describes.
+smoke = os.environ.get("DEEPWAVE_SMOKE") == "1"
+
+ny = 40 if smoke else 100
+nx = 100 if smoke else 300
 dx = 4.0
 v = torch.ones(ny, nx, device=device) * 1500
 
 freq = 25
-nt = 40
+nt = 20 if smoke else 40
 dt = 0.004
 peak_time = 1.5 / freq
 
@@ -39,7 +46,7 @@ source_monopole[0, 1] = False
 source_monopole[0, 2] = False
 source_dipole_dim = torch.zeros(1, 3, dtype=torch.int, device=device)
 source_dipole_dim[0, 2] = 1
-hicks_source = deepwave.location_interpolation.Hicks(
+hicks_source = deepwave.Hicks(
     source_locations,
     monopole=source_monopole,
     dipole_dim=source_dipole_dim,
@@ -56,7 +63,7 @@ receiver_monopole[0, 1] = False
 receiver_monopole[0, 2] = False
 receiver_dipole_dim = torch.zeros(1, 3, dtype=torch.int, device=device)
 receiver_dipole_dim[0, 2] = 1
-hicks_receiver = deepwave.location_interpolation.Hicks(
+hicks_receiver = deepwave.Hicks(
     receiver_locations,
     monopole=receiver_monopole,
     dipole_dim=receiver_dipole_dim,
@@ -75,13 +82,13 @@ out = scalar(
 )
 
 # Plot wavefield
-wavefield = out[0]
+wavefield = out.wavefield_0
 plt.figure(figsize=(10.5, 7))
 plt.imshow(wavefield[0].cpu(), cmap="gray")
 plt.savefig("example_location_interpolation_wavefield.jpg")
 
 # Plot receiver amplitudes
-receiver_hicks_amplitudes = out[-1]
+receiver_hicks_amplitudes = out.receiver_amplitudes
 receiver_amplitudes = hicks_receiver.receiver(receiver_hicks_amplitudes)
 plt.figure(figsize=(10.5, 7))
 plt.plot(receiver_amplitudes[0, 0].cpu(), label="Monopole")
@@ -114,8 +121,8 @@ out3 = scalar(
     pml_freq=freq,
 )
 
-receiver_amplitudes2 = out2[-1]
-receiver_amplitudes3 = out3[-1]
+receiver_amplitudes2 = out2.receiver_amplitudes
+receiver_amplitudes3 = out3.receiver_amplitudes
 plt.figure(figsize=(10.5, 7))
 plt.plot(receiver_amplitudes[0, 0].cpu(), label="Hicks", linewidth=6)
 plt.plot(receiver_amplitudes2[0, 0].cpu(), "g", label="Without Hicks")
@@ -124,3 +131,8 @@ plt.legend()
 plt.xlabel("Time sample")
 plt.ylabel("Receiver amplitude")
 plt.savefig("example_location_interpolation_comparison.jpg")
+
+assert torch.isfinite(receiver_amplitudes).all(), (
+    "receiver data is not finite"
+)
+assert receiver_amplitudes.abs().max() > 0, "receiver data is all zeros"

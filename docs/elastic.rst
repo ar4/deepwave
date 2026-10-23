@@ -1,6 +1,43 @@
 Elastic wave equation
 =====================
 
+This page derives the isotropic elastic wave equation that
+:func:`deepwave.elastic` solves and describes the staggered velocity--stress
+scheme used to discretise it. It is reference material for readers who need
+the underlying physics and numerics; the example below, and :doc:`quickstart`'s
+"Elastic in ~10 lines" section, are enough to get a first result running.
+
+Minimal example
+^^^^^^^^^^^^^^^^
+
+:func:`deepwave.elastic` takes the Lamé parameters and buoyancy (built here
+from the more familiar :math:`v_p`/:math:`v_s`/:math:`\rho` with
+:func:`deepwave.vpvsrho_to_lambmubuoyancy`), a grid spacing, a time step, and
+a source, and returns the final wavefields, one opaque ``auxiliary_state``
+holding the absorbing boundary's memory variables, and the recorded receiver
+data. Passing the whole output back in as ``initial_state`` continues the
+propagation in a later call (see :doc:`usage`):
+
+.. code-block:: python
+
+    import torch
+    import deepwave
+
+    vp = 1500 * torch.ones(40, 40)
+    vs = 1000 * torch.ones(40, 40)
+    rho = 2200 * torch.ones(40, 40)
+    lamb, mu, buoyancy = deepwave.vpvsrho_to_lambmubuoyancy(vp, vs, rho)
+
+    out = deepwave.elastic(
+        lamb, mu, buoyancy, grid_spacing=5, dt=0.001,
+        source_amplitudes_y=deepwave.wavelets.ricker(25, 200, 0.001, 0.05).reshape(1, 1, -1),
+        source_locations_y=torch.tensor([[[5, 20]]]),
+        receiver_locations_y=torch.tensor([[[35, 20]]]),
+        pml_width=10,
+        pml_freq=25,
+    )
+    out.receiver_amplitudes_y  # the vertical particle velocity, shape [1, 1, 200]
+
 Derivation
 ^^^^^^^^^^
 
@@ -9,9 +46,9 @@ As in the derivation of the :doc:`scalar <scalar>` wave equation, we use Newton'
 .. math::
     :label: newtons_2nd_law_elastic
 
-    \nabla\cdot\left(\mathbf{\sigma} + \mathbf{M}\right) + \mathbf{f} = \rho \ddot{\mathbf{u}},
+    \nabla\cdot\left(\mathbf{\sigma} - \mathbf{M}\right) + \mathbf{f} = \rho \ddot{\mathbf{u}},
 
-where :math:`\mathbf{\sigma}` is the stress tensor, :math:`\mathbf{M}` is the moment tensor, :math:`\mathbf{f}` is the body force, :math:`\rho` is the density, and :math:`\mathbf{u}` is the particle displacement.
+where :math:`\mathbf{\sigma}` is the stress tensor given by the constitutive relation below, :math:`\mathbf{M}` is the moment density tensor of any source inside the medium (a moment per unit volume, so it has the units of stress), :math:`\mathbf{f}` is the body force, :math:`\rho` is the density, and :math:`\mathbf{u}` is the particle displacement. The moment density is the source's stress glut, so the true stress is :math:`\mathbf{\sigma}-\mathbf{M}` and the moment density is equivalent to the body force :math:`f_i = -\partial_jM_{ij}` (Aki and Richards, *Quantitative Seismology: Theory and Methods*, W. H. Freeman, 1980). The minus sign matters: with the opposite sign, an explosion would radiate as an implosion.
 
 The strain can be approximated as
 
@@ -32,9 +69,9 @@ where :math:`\lambda` and :math:`\mu` are the Lamé parameters.
 Implementation
 ^^^^^^^^^^^^^^
 
-As moment tensor sources can be incorporated into body forces (but may need to be split over multiple adjacent grid cells), we will only use body sources from now on. For example, an explosion, for which the moment tensor is diagonal, can be approximated by negative body force terms in the x and y cells immediately before the source and positive terms in the x and y cells immediately after the source. 
+Moment tensor sources can be incorporated into body forces using :math:`f_i = -\partial_jM_{ij}`, though this may need splitting the source over multiple adjacent grid cells; so we will only use body sources from now on. For example, an explosion has a diagonal moment tensor with positive entries, and approximating that derivative by a difference turns it into negative body force terms in the x and y cells immediately before the source, and positive terms in the x and y cells immediately after the source, which push outwards in both directions as an explosion should. The :doc:`moment tensor example <example_moment_tensor>` does this for a general moment tensor and checks the result against Deepwave's own explosive source.
 
-Deepwave uses the velocity-stress formulation of the elastic wave equation on a staggered grid. To obtain the velocity-stress formulation, we rewrite :eq:`newtons_2nd_law_elastic` as
+Deepwave uses the velocity-stress formulation of the elastic wave equation on a staggered grid. To obtain the velocity-stress formulation, with any moment density source now expressed as part of the body force :math:`\mathbf{f}`, we rewrite :eq:`newtons_2nd_law_elastic` as
 
 .. math::
     :label: newtons_2nd_law_vel
@@ -187,3 +224,40 @@ and
 where, for conciseness, half grid cell shifts are represented by a prime, for example :math:`B^{y'x'}` is the buoyancy at locations :math:`(y+\frac{1}{2}, x+\frac{1}{2})`. :math:`\delta_{r_y}`, :math:`\delta_{r_x}`, and :math:`\delta_{r_p}`, are the locations of :math:`v_y`, :math:`v_x`, and pressure receivers, respectively. The receiver data cover the same time range as the corresponding input sources, so the velocity receiver recordings are from -half a time step earlier than the pressure recordings.
 
 A "free surface" refers to a surface where the traction is zero. For example, if the :math:`y` dimension is depth, then for the top surface to be a free surface we need :math:`\sigma_{yy}=0` and :math:`\sigma_{xy}=0` there. Different methods have been proposed to implement this. Deepwave uses the `improved vacuum method <https://doi.org/10.1190/geo2011-0067.1>`_ approach, so setting the property models to zero at any point will result in a free surface there.
+
+Free-surface method
+^^^^^^^^^^^^^^^^^^^^^
+
+The improved vacuum method (IVM) above is the default (``surface_method="ivm"``). It is simple: the interior update kernel runs everywhere, and the stress-free condition emerges from the zeroed vacuum parameters. But its accuracy degrades as Poisson's ratio increases, because it places the effective free surface half a grid cell above the intended position and does not adapt the surface constitutive relation.
+
+Passing ``surface_method="pm"`` selects the parameter-modified method of `Cao and Chen (2018) <https://doi.org/10.1190/geo2018-0098.1>`_ instead. This option is provisional (see :doc:`stability`): its accuracy characteristics are still being mapped, so a second spelling may be added alongside it, while ``surface_method="ivm"`` (the default) is stable. The value ``"pm"`` and its meaning are frozen like everything else. As with IVM, the free surface (and arbitrary staircase topography) is still specified purely through the vacuum cells (``vp = vs = rho = 0`` above the surface -- there is no separate geometry argument). In addition, the medium parameters at the solid cells lying *on* the discrete surface are modified once, before time stepping, so that the stress-free condition is satisfied adaptively for any Poisson's ratio:
+
+- The per-component normal-stress stiffnesses are replaced by their surface-reduced values. Writing the modified P-modulus as :math:`\alpha = 2\mu(\lambda+\mu)/(\lambda+2\mu)`, in 2-D a horizontal-surface cell keeps only :math:`\sigma_{xx}=\alpha\,\partial_x v_x` (and freezes :math:`\sigma_{yy}`), a vertical-surface cell keeps only :math:`\sigma_{yy}=\alpha\,\partial_y v_y` (and freezes :math:`\sigma_{xx}`), and an outer-corner/transition cell freezes both. In 3-D the same rule applies per surface-normal axis, with the two surviving normal-stress components additionally coupled by the modified cross-modulus :math:`\beta = \mu\lambda/(\lambda+2\mu)`, and both the corner and edge cells (where vacuum is adjacent along more than one axis) freeze every component. Each surface cell is classified from the vacuum geometry alone.
+- The velocity nodes lying in the discrete surface plane see half the solid density (their buoyancy is doubled). In 3-D, the shear-stress nodes lying in the discrete surface plane likewise take half the interior shear modulus (in 2-D the single shear node never lies in a surface plane, so no shear modification arises).
+
+The interior update kernel is otherwise unchanged, so PM costs nothing extra per time step -- only the one-time parameter setup differs. On rugged topography and at large Poisson's ratio PM is markedly more accurate than IVM (Cao and Chen report about 99% average accuracy in 2-D versus a spectral-element reference, against tens of percent of misfit for IVM). About 15 grid points per minimum (shear) wavelength near the surface is recommended to control staircase diffraction. ``surface_method="pm"`` requires at least one vacuum cell (there must be a surface to modify, otherwise it raises ``ValueError``), and rejects models containing fluid regions (``mu = 0`` with ``lamb != 0``, e.g. a water layer) with ``ValueError``: the vacuum-based classifier cannot distinguish fluid from air, so a fluid-solid interface would wrongly be treated as a free surface (use the default ``"ivm"`` for marine models). It is implemented in every dimensionality (1-D, 2-D and 3-D) on the eager backend (``backend="eager"``); in 1-D the modification reduces to freezing the normal stress at the discrete surface cell (the exact stress-free condition), with no density or shear modification arising. The compiled C/CUDA backend (which ``backend="auto"``, the default, resolves to for ``elastic``; ``backend="compiled"`` asserts it explicitly) currently implements PM in 2-D only (other dimensionalities raise ``NotImplementedError``). It is not available for the ``"torch_compile"`` Python mode, or, on the compiled backend, in combination with first-class boundary faces (``boundary=``), multiaxial PML (``mpml_fraction > 0``), or second-order differentiation (``create_graph=True``); those cases raise ``NotImplementedError`` (use ``backend="eager"``, which supports the model-parameter combinations). The default ``surface_method="ivm"`` is unchanged on every backend.
+
+Specifying sources and receivers
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The channel-keyed mapping form is the canonical way to specify a
+survey::
+
+    out = deepwave.elastic(
+        ...,
+        sources={"pressure_rate": (amplitudes, source_locations)},
+        receivers={"p": receiver_locations},
+    )
+
+This propagator's source channels are ``pressure_rate``, ``z``, ``y``, ``x`` and its
+receiver channels are ``p``, ``z``, ``y``, ``x`` (the ``z`` channel is absent in 2-D).
+``"pressure_rate"`` names the quantity the scalar source injects; see
+:doc:`units`. ``"p"`` is still accepted there, with a
+:class:`deepwave.DeepwaveFutureWarning`, and is removed in ``0.4.0``.
+It is unchanged as a *receiver* channel name.
+
+The equivalent flat ``source_amplitudes_*``/``source_locations_*``/
+``receiver_locations_p`` keywords are equally permanent and
+produce bit-identical results; giving one channel in both forms
+raises. See :doc:`usage` for the full vocabulary.
+
