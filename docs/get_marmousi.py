@@ -68,12 +68,12 @@ import math
 import re
 import sys
 import urllib.parse
-import urllib.request
 from pathlib import Path
 
 import numpy as np
 import numpy.typing as npt
 import torch
+from geoazur import download
 
 import deepwave
 from deepwave import scalar
@@ -209,11 +209,11 @@ def download_vp(dest: Path) -> None:
         )
     print(f"Downloading Marmousi Vp model from {url} ...")
     tmp = dest.with_suffix(dest.suffix + ".part")
-    urllib.request.urlretrieve(url, tmp)  # noqa: S310 - fixed https URL above, checksummed below
+    download(url, tmp)
     forwarded = _forwarded_url(tmp, url)
     if forwarded is not None:
         print(f"... forwarded to {forwarded}")
-        urllib.request.urlretrieve(forwarded, tmp)  # noqa: S310 - same https host, checksummed below
+        download(forwarded, tmp)
     actual_sha256 = _sha256(tmp)
     if actual_sha256 != expected_sha256:
         tmp.unlink(missing_ok=True)

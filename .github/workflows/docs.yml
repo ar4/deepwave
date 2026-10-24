@@ -49,8 +49,8 @@ jobs:
           done
           python -m pip install pytest
 
-      - name: Check documentation version diagnostics
-        run: python -m pytest tests/test_docs_build_setup.py
+      - name: Check documentation setup and HTTPS transport
+        run: python -m pytest tests/test_docs_build_setup.py tests/test_geoazur.py
 
       - name: "Build docs (-W: warnings are errors)"
         run: |

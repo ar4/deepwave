@@ -32,7 +32,7 @@ def test_docs_check_installed_version(
     app = Mock()
     if matching_version:
         conf["setup"](app)
-        assert app.connect.call_count == 3
+        assert app.connect.call_count == 4
         return
     with pytest.raises(ConfigError, match="python -m pip install") as error:
         conf["setup"](app)

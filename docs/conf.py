@@ -7,6 +7,7 @@
 
 import pathlib
 import re
+import sys
 from typing import Any
 
 from sphinx.errors import ConfigError
@@ -299,3 +300,7 @@ def setup(app: Any) -> None:
     app.connect("builder-inited", _write_capabilities_table)
     app.connect("builder-inited", _write_callback_names_table)
     app.connect("builder-inited", _write_points_per_wavelength_table)
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+    from geoazur import check_marmousi_link
+
+    app.connect("builder-inited", check_marmousi_link)
