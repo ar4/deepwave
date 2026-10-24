@@ -172,10 +172,9 @@ int main() {
             str(executable),
         ],
         check=True,
-        capture_output=True,
         text=True,
     )
-    subprocess.run([str(executable)], check=True, capture_output=True, text=True)
+    subprocess.run([str(executable)], check=True, text=True)
 
 
 def test_native_utf8_disk_history_path(tmp_path: Path) -> None:
@@ -228,13 +227,11 @@ def test_native_utf8_disk_history_path(tmp_path: Path) -> None:
                 "x64",
             ],
             check=True,
-            capture_output=True,
             text=True,
         )
         subprocess.run(
             [cmake, "--build", str(build), "--config", "Release"],
             check=True,
-            capture_output=True,
             text=True,
         )
         executable = build / "Release" / "path_check.exe"
@@ -256,14 +253,12 @@ def test_native_utf8_disk_history_path(tmp_path: Path) -> None:
                 str(executable),
             ],
             check=True,
-            capture_output=True,
             text=True,
         )
     subprocess.run(
         [str(executable)],
         cwd=tmp_path,
         check=True,
-        capture_output=True,
         text=True,
     )
     assert (tmp_path / filename).read_bytes() == b"ok"

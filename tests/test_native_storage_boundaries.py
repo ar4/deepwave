@@ -138,14 +138,12 @@ def test_compression_with_64_bit_long_double(compiler, tmp_path):
             "-DCMAKE_C_FLAGS=-mlong-double-64",
         ],
         check=True,
-        capture_output=True,
         text=True,
     )
     target = "simple_compress_1_2_double_obj"
     subprocess.run(  # noqa: S603 - trusted compiler and local source
         [cmake, "--build", str(tmp_path), "--target", target],
         check=True,
-        capture_output=True,
         text=True,
     )
     obj = next((tmp_path / "CMakeFiles" / f"{target}.dir").rglob("*.o"))
@@ -280,14 +278,12 @@ def test_storage_seek_accepts_offsets_beyond_4_gib_without_allocating_file(tmp_p
             ],
             check=True,
             cwd=tmp_path,
-            capture_output=True,
             text=True,
         )
         subprocess.run(  # noqa: S603 - local CMake and generated source
             [compiler, "--build", str(build_dir), "--config", "Release"],
             check=True,
             cwd=tmp_path,
-            capture_output=True,
             text=True,
         )
         executable = build_dir / "Release" / "seek_check.exe"
@@ -304,10 +300,10 @@ def test_storage_seek_accepts_offsets_beyond_4_gib_without_allocating_file(tmp_p
             str(executable),
         ]
         subprocess.run(  # noqa: S603 - local compiler and generated source
-            command, check=True, cwd=tmp_path, capture_output=True, text=True
+            command, check=True, cwd=tmp_path, text=True
         )
     subprocess.run(  # noqa: S603 - executable built from generated source
-        [str(executable)], check=True, cwd=tmp_path, capture_output=True, text=True
+        [str(executable)], check=True, cwd=tmp_path, text=True
     )
 
 
@@ -380,7 +376,6 @@ storage_cleanup:
             str(executable),
         ],
         check=True,
-        capture_output=True,
         text=True,
         env=_standalone_ubsan_env(),
         timeout=120,
@@ -388,7 +383,6 @@ storage_cleanup:
     subprocess.run(  # noqa: S603 - executable built from fixed local harness
         [str(executable)],
         check=True,
-        capture_output=True,
         text=True,
         env=_standalone_ubsan_env(),
         timeout=10,
@@ -483,7 +477,6 @@ int main(void) {
             str(executable),
         ],
         check=True,
-        capture_output=True,
         text=True,
         env=_standalone_ubsan_env(),
         timeout=120,
@@ -491,7 +484,6 @@ int main(void) {
     subprocess.run(  # noqa: S603 - executable built from fixed local harness
         [str(executable)],
         check=True,
-        capture_output=True,
         text=True,
         env=_standalone_ubsan_env(),
         timeout=10,

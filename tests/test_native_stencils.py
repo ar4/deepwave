@@ -63,12 +63,10 @@ def native_stencil(request, stencil_compiler, tmp_path_factory):
                 str(obj),
             ],
             check=True,
-            capture_output=True,
         )
         subprocess.run(  # noqa: S603 - link only the local probe object
             [stencil_compiler, "-shared", str(obj), "-o", str(library)],
             check=True,
-            capture_output=True,
         )
         function = ctypes.CDLL(str(library)).probe
         function.argtypes = [ctypes.POINTER(ctype), ctypes.POINTER(ctype)]

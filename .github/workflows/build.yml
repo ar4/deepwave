@@ -110,13 +110,21 @@ jobs:
           # baseline unless a builder explicitly opts in.
           CIBW_CONFIG_SETTINGS: ${{ matrix.cpu_config }}
           # Actual compiler versions are emitted in retained build logs.
-          CIBW_BEFORE_BUILD_LINUX: nvcc --version && gcc --version
+          # Prove the sanitizer toolchain links and runs before compiling the
+          # wheel. The integer-range tests require UBSan as well as a compiler.
+          CIBW_BEFORE_BUILD_LINUX: >
+            nvcc --version && gcc --version &&
+            printf 'int main(void) { volatile int n = 1; return n - 1; }\n' > /tmp/deepwave-ubsan-check.c &&
+            gcc -fsanitize=undefined -fno-sanitize-recover=all /tmp/deepwave-ubsan-check.c -o /tmp/deepwave-ubsan-check &&
+            /tmp/deepwave-ubsan-check &&
+            g++ -fsanitize=undefined -fno-sanitize-recover=all /tmp/deepwave-ubsan-check.c -o /tmp/deepwave-ubsan-check-cxx &&
+            /tmp/deepwave-ubsan-check-cxx
           CIBW_BEFORE_BUILD_WINDOWS: nvcc --version
           # For Linux, install CUDA in the container. Note that manylinux_2_28
           # is specified in pyproject.toml
           CIBW_BEFORE_ALL_LINUX: >
             curl -sL https://developer.download.nvidia.com/compute/cuda/repos/rhel8/x86_64/cuda-rhel8.repo -o /etc/yum.repos.d/cuda-rhel8.repo &&
-            dnf install -y cuda-nvcc-13-3 cuda-cudart-devel-13-3 cuda-documentation-13-3 gcc-toolset-13 &&
+            dnf install -y cuda-nvcc-13-3 cuda-cudart-devel-13-3 cuda-documentation-13-3 gcc-toolset-13 gcc-toolset-13-libubsan-devel &&
             mkdir -p {package}/runtime-notices &&
             cp /usr/share/licenses/gcc/COPYING3 {package}/runtime-notices/GNU_GPL_3.txt &&
             cp /usr/share/licenses/gcc/COPYING.RUNTIME {package}/runtime-notices/GCC_RUNTIME_EXCEPTION.txt

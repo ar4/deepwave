@@ -66,11 +66,11 @@ def test_native_integer_ranges(compiler: str, tmp_path: Path) -> None:
             str(binary),
         ],
         check=True,
-        capture_output=True,
         text=True,
+        timeout=60,
     )
     subprocess.run(  # noqa: S603 - execute only the locally built probe
-        [str(binary)], check=True, capture_output=True, text=True
+        [str(binary)], check=True, text=True, timeout=30
     )
 
 
@@ -104,7 +104,6 @@ for ndim in (1, 2, 3):
     subprocess.run(  # noqa: S603 - fixed probe and the already loaded native library
         [sys.executable, "-c", probe, str(dll._name)],
         check=True,
-        capture_output=True,
         text=True,
         timeout=60,
     )
