@@ -13,7 +13,7 @@
 static inline DW_DTYPE dw_abs(DW_DTYPE val) { return (val >= 0) ? val : -val; }
 
 /* CPU implementation */
-void SC_FUNC(compress_cpu)(void const *const input, void *const output,
+void SC_FUNC(compress_cpu)(void const* const input, void* const output,
 #if DW_NDIM >= 3
                            size_t const nz,
 #endif
@@ -22,7 +22,7 @@ void SC_FUNC(compress_cpu)(void const *const input, void *const output,
 #endif
                            size_t const nx) {
 
-  DW_DTYPE const *const in_ptr = (DW_DTYPE const *)input;
+  DW_DTYPE const* const in_ptr = (DW_DTYPE const*)input;
   size_t const nbx = (nx + BLOCK_SIZE - 1) / BLOCK_SIZE;
 #if DW_NDIM >= 2
   size_t const nby = (ny + BLOCK_SIZE - 1) / BLOCK_SIZE;
@@ -36,8 +36,8 @@ void SC_FUNC(compress_cpu)(void const *const input, void *const output,
 #endif
   size_t const n_blocks = nbz * nby * nbx;
 
-  DW_DTYPE *const max_abs_vals = (DW_DTYPE *)output;
-  uint8_t *const compressed = (uint8_t *)output + n_blocks * sizeof(DW_DTYPE);
+  DW_DTYPE* const max_abs_vals = (DW_DTYPE*)output;
+  uint8_t* const compressed = (uint8_t*)output + n_blocks * sizeof(DW_DTYPE);
 
 #if DW_NDIM >= 3
   for (size_t bz = 0; bz < nbz; ++bz) {
@@ -144,7 +144,7 @@ void SC_FUNC(compress_cpu)(void const *const input, void *const output,
 }
 
 /* CPU implementation for decompression */
-void SC_FUNC(decompress_cpu)(void const *const input, void *const output,
+void SC_FUNC(decompress_cpu)(void const* const input, void* const output,
 #if DW_NDIM >= 3
                              size_t const nz,
 #endif
@@ -152,7 +152,7 @@ void SC_FUNC(decompress_cpu)(void const *const input, void *const output,
                              size_t const ny,
 #endif
                              size_t const nx) {
-  DW_DTYPE *const out_ptr = (DW_DTYPE *)output;
+  DW_DTYPE* const out_ptr = (DW_DTYPE*)output;
   size_t const nbx = (nx + BLOCK_SIZE - 1) / BLOCK_SIZE;
 #if DW_NDIM >= 2
   size_t const nby = (ny + BLOCK_SIZE - 1) / BLOCK_SIZE;
@@ -166,9 +166,9 @@ void SC_FUNC(decompress_cpu)(void const *const input, void *const output,
 #endif
   size_t const n_blocks = nbz * nby * nbx;
 
-  DW_DTYPE const *const max_abs_vals = (const DW_DTYPE *)input;
-  uint8_t const *const compressed =
-      (const uint8_t *)input + n_blocks * sizeof(DW_DTYPE);
+  DW_DTYPE const* const max_abs_vals = (const DW_DTYPE*)input;
+  uint8_t const* const compressed =
+      (const uint8_t*)input + n_blocks * sizeof(DW_DTYPE);
 
 #if DW_NDIM >= 3
   for (size_t bz = 0; bz < nbz; ++bz) {

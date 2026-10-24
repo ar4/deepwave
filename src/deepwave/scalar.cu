@@ -98,7 +98,7 @@ __constant__ bool v_batched;
  * about half-cell P-1/2), 3=periodic (wrap, period n-2P). ``is_model`` selects
  * the even/wrap no-sign no-zero variant used to mirror-pad v^2 into the guard
  * so the (self-adjoint) adjoint's coefficient reads match. */
-__device__ inline void fill_bc_line_dev(DW_DTYPE *__restrict const wf,
+__device__ inline void fill_bc_line_dev(DW_DTYPE* __restrict const wf,
                                         int64_t const base, int64_t const nax,
                                         int64_t const stride,
                                         int64_t const bc_lo,
@@ -158,11 +158,11 @@ __device__ inline void fill_bc_line_dev(DW_DTYPE *__restrict const wf,
  * ``(L / stride) * (nax * stride) + (L % stride)`` (the axis stride equals the
  * product of all lower dims, so the flat line index splits cleanly into the
  * indices above and below the axis). */
-__global__ void fill_bc_kernel(DW_DTYPE *__restrict const wf,
+__global__ void fill_bc_kernel(DW_DTYPE* __restrict const wf,
                                int64_t const n_lines, int64_t const nax,
                                int64_t const stride, int64_t const bc_lo,
                                int64_t const bc_hi, int const is_model) {
-  int64_t const L = (int64_t)blockIdx.x * blockDim.x + threadIdx.x;
+  int64_t const L = dw_grid_index(blockIdx.x, blockDim.x, threadIdx.x);
   if (L >= n_lines) return;
   int64_t const base = (L / stride) * (nax * stride) + (L % stride);
   fill_bc_line_dev(wf, base, nax, stride, bc_lo, bc_hi, is_model);
@@ -172,7 +172,7 @@ __global__ void fill_bc_kernel(DW_DTYPE *__restrict const wf,
  * order the C reference uses, so corner cells are filled identically: a later
  * axis reads the already-filled guard of the earlier axes). ``bc`` is the
  * face-order array [z0,z1,y0,y1,x0,x1]. Kernels serialise on ``stream``. */
-static void launch_fill_bc(DW_DTYPE *__restrict const wf, int const is_model,
+static void launch_fill_bc(DW_DTYPE* __restrict const wf, int const is_model,
                            int64_t const bc[6], int64_t const total_numel,
                            int64_t const nz_, int64_t const ny_,
                            int64_t const nx_, cudaStream_t stream) {
@@ -181,20 +181,20 @@ static void launch_fill_bc(DW_DTYPE *__restrict const wf, int const is_model,
   (void)ny_;
   if (bc[4] != 0 || bc[5] != 0) {
     int64_t const n_lines = total_numel / nx_;
-    fill_bc_kernel<<<ceil_div((unsigned int)n_lines, tpb), tpb, 0, stream>>>(
+    fill_bc_kernel<<<ceil_div(n_lines, tpb), tpb, 0, stream>>>(
         wf, n_lines, nx_, 1, bc[4], bc[5], is_model);
   }
 #if DW_NDIM >= 2
   if (bc[2] != 0 || bc[3] != 0) {
     int64_t const n_lines = total_numel / ny_;
-    fill_bc_kernel<<<ceil_div((unsigned int)n_lines, tpb), tpb, 0, stream>>>(
+    fill_bc_kernel<<<ceil_div(n_lines, tpb), tpb, 0, stream>>>(
         wf, n_lines, ny_, nx_, bc[2], bc[3], is_model);
   }
 #endif
 #if DW_NDIM >= 3
   if (bc[0] != 0 || bc[1] != 0) {
     int64_t const n_lines = total_numel / nz_;
-    fill_bc_kernel<<<ceil_div((unsigned int)n_lines, tpb), tpb, 0, stream>>>(
+    fill_bc_kernel<<<ceil_div(n_lines, tpb), tpb, 0, stream>>>(
         wf, n_lines, nz_, ny_ * nx_, bc[0], bc[1], is_model);
   }
 #endif
@@ -214,11 +214,11 @@ static void launch_fill_bc(DW_DTYPE *__restrict const wf, int const is_model,
 #endif
 
 __launch_bounds__(32) __global__
-    void add_sources(DW_DTYPE *__restrict const wf,
-                     DW_DTYPE const *__restrict const f,
-                     int64_t const *__restrict const sources_i) {
-  int64_t const source_idx = blockIdx.x * blockDim.x + threadIdx.x;
-  int64_t const shot_idx = blockIdx.y * blockDim.y + threadIdx.y;
+    void add_sources(DW_DTYPE* __restrict const wf,
+                     DW_DTYPE const* __restrict const f,
+                     int64_t const* __restrict const sources_i) {
+  int64_t const source_idx = dw_grid_index(blockIdx.x, blockDim.x, threadIdx.x);
+  int64_t const shot_idx = dw_grid_index(blockIdx.y, blockDim.y, threadIdx.y);
   if (source_idx < n_sources_per_shot && shot_idx < n_shots) {
     int64_t const k = shot_idx * n_sources_per_shot + source_idx;
     if (0 <= sources_i[k]) wf[shot_idx * shot_numel + sources_i[k]] += f[k];
@@ -226,11 +226,12 @@ __launch_bounds__(32) __global__
 }
 
 __launch_bounds__(32) __global__
-    void record_receivers(DW_DTYPE *__restrict const r,
-                          DW_DTYPE const *__restrict const wf,
-                          int64_t const *__restrict receivers_i) {
-  int64_t const receiver_idx = blockIdx.x * blockDim.x + threadIdx.x;
-  int64_t const shot_idx = blockIdx.y * blockDim.y + threadIdx.y;
+    void record_receivers(DW_DTYPE* __restrict const r,
+                          DW_DTYPE const* __restrict const wf,
+                          int64_t const* __restrict receivers_i) {
+  int64_t const receiver_idx =
+      dw_grid_index(blockIdx.x, blockDim.x, threadIdx.x);
+  int64_t const shot_idx = dw_grid_index(blockIdx.y, blockDim.y, threadIdx.y);
   if (receiver_idx < n_receivers_per_shot && shot_idx < n_shots) {
     int64_t const k = shot_idx * n_receivers_per_shot + receiver_idx;
     if (0 <= receivers_i[k]) r[k] = wf[shot_idx * shot_numel + receivers_i[k]];
@@ -239,11 +240,11 @@ __launch_bounds__(32) __global__
 
 #if DW_NDIM == 3
 __launch_bounds__(128) __global__
-    void combine_grad_v(DW_DTYPE *__restrict const grad_v,
-                        DW_DTYPE const *__restrict const grad_v_shot) {
-  int64_t const x = blockIdx.x * blockDim.x + threadIdx.x + FD_PAD;
-  int64_t const y = blockIdx.y * blockDim.y + threadIdx.y + FD_PAD;
-  int64_t const z = blockIdx.z * blockDim.z + threadIdx.z + FD_PAD;
+    void combine_grad_v(DW_DTYPE* __restrict const grad_v,
+                        DW_DTYPE const* __restrict const grad_v_shot) {
+  int64_t const x = dw_grid_index(blockIdx.x, blockDim.x, threadIdx.x) + FD_PAD;
+  int64_t const y = dw_grid_index(blockIdx.y, blockDim.y, threadIdx.y) + FD_PAD;
+  int64_t const z = dw_grid_index(blockIdx.z, blockDim.z, threadIdx.z) + FD_PAD;
   if (z < nz - FD_PAD && y < ny - FD_PAD && x < nx - FD_PAD) {
     int64_t const i = z * ny * nx + y * nx + x;
     for (int64_t shot_idx = 0; shot_idx < n_shots; ++shot_idx) {
@@ -253,10 +254,10 @@ __launch_bounds__(128) __global__
 }
 #elif DW_NDIM == 2
 __launch_bounds__(128) __global__
-    void combine_grad_v(DW_DTYPE *__restrict const grad_v,
-                        DW_DTYPE const *__restrict const grad_v_shot) {
-  int64_t const x = blockIdx.x * blockDim.x + threadIdx.x + FD_PAD;
-  int64_t const y = blockIdx.y * blockDim.y + threadIdx.y + FD_PAD;
+    void combine_grad_v(DW_DTYPE* __restrict const grad_v,
+                        DW_DTYPE const* __restrict const grad_v_shot) {
+  int64_t const x = dw_grid_index(blockIdx.x, blockDim.x, threadIdx.x) + FD_PAD;
+  int64_t const y = dw_grid_index(blockIdx.y, blockDim.y, threadIdx.y) + FD_PAD;
   if (y < ny - FD_PAD && x < nx - FD_PAD) {
     int64_t const i = y * nx + x;
     for (int64_t shot_idx = 0; shot_idx < n_shots; ++shot_idx) {
@@ -266,9 +267,9 @@ __launch_bounds__(128) __global__
 }
 #else /* DW_NDIM == 1 */
 __launch_bounds__(128) __global__
-    void combine_grad_v(DW_DTYPE *__restrict const grad_v,
-                        DW_DTYPE const *__restrict const grad_v_shot) {
-  int64_t const x = blockIdx.x * blockDim.x + threadIdx.x + FD_PAD;
+    void combine_grad_v(DW_DTYPE* __restrict const grad_v,
+                        DW_DTYPE const* __restrict const grad_v_shot) {
+  int64_t const x = dw_grid_index(blockIdx.x, blockDim.x, threadIdx.x) + FD_PAD;
   if (x < nx - FD_PAD) {
     int64_t const i = x;
     for (int64_t shot_idx = 0; shot_idx < n_shots; ++shot_idx) {
@@ -320,41 +321,41 @@ __launch_bounds__(128) __global__
 #endif
 
 DW_STENCIL_LAUNCH_BOUNDS __global__ void forward_kernel(
-    DW_DTYPE const *__restrict const v, DW_DTYPE const *__restrict const wfc,
-    DW_DTYPE *__restrict const wfp, DW_DTYPE *__restrict const dwdv,
+    DW_DTYPE const* __restrict const v, DW_DTYPE const* __restrict const wfc,
+    DW_DTYPE* __restrict const wfp, DW_DTYPE* __restrict const dwdv,
 #if DW_NDIM >= 3
     /* z-dimension */
-    DW_DTYPE const *__restrict const psiz, DW_DTYPE *__restrict const psizn,
-    DW_DTYPE *__restrict const zetaz, DW_DTYPE const *__restrict const az,
-    DW_DTYPE const *__restrict const bz, DW_DTYPE const *__restrict const dbzdz,
+    DW_DTYPE const* __restrict const psiz, DW_DTYPE* __restrict const psizn,
+    DW_DTYPE* __restrict const zetaz, DW_DTYPE const* __restrict const az,
+    DW_DTYPE const* __restrict const bz, DW_DTYPE const* __restrict const dbzdz,
 #endif
 #if DW_NDIM >= 2
     /* y-dimension */
-    DW_DTYPE const *__restrict const psiy, DW_DTYPE *__restrict const psiyn,
-    DW_DTYPE *__restrict const zetay, DW_DTYPE const *__restrict const ay,
-    DW_DTYPE const *__restrict const by, DW_DTYPE const *__restrict const dbydy,
+    DW_DTYPE const* __restrict const psiy, DW_DTYPE* __restrict const psiyn,
+    DW_DTYPE* __restrict const zetay, DW_DTYPE const* __restrict const ay,
+    DW_DTYPE const* __restrict const by, DW_DTYPE const* __restrict const dbydy,
 #endif
     /* x-dimension */
-    DW_DTYPE const *__restrict const psix, DW_DTYPE *__restrict const psixn,
-    DW_DTYPE *__restrict const zetax, DW_DTYPE const *__restrict const ax,
-    DW_DTYPE const *__restrict const bx, DW_DTYPE const *__restrict const dbxdx,
+    DW_DTYPE const* __restrict const psix, DW_DTYPE* __restrict const psixn,
+    DW_DTYPE* __restrict const zetax, DW_DTYPE const* __restrict const ax,
+    DW_DTYPE const* __restrict const bx, DW_DTYPE const* __restrict const dbxdx,
     bool const v_requires_grad) {
 #if DW_NDIM == 3
-  int64_t const x = blockIdx.x * blockDim.x + threadIdx.x + FD_PAD;
-  int64_t const y = blockIdx.y * blockDim.y + threadIdx.y + FD_PAD;
-  int64_t const z = blockIdx.z * blockDim.z + threadIdx.z + FD_PAD;
+  int64_t const x = dw_grid_index(blockIdx.x, blockDim.x, threadIdx.x) + FD_PAD;
+  int64_t const y = dw_grid_index(blockIdx.y, blockDim.y, threadIdx.y) + FD_PAD;
+  int64_t const z = dw_grid_index(blockIdx.z, blockDim.z, threadIdx.z) + FD_PAD;
   if (z < nz - FD_PAD && y < ny - FD_PAD && x < nx - FD_PAD) {
     int64_t const j = z * ny * nx + y * nx + x;
     for (int64_t shot_idx = 0; shot_idx < n_shots; ++shot_idx) {
 #elif DW_NDIM == 2
-  int64_t const x = blockIdx.x * blockDim.x + threadIdx.x + FD_PAD;
-  int64_t const y = blockIdx.y * blockDim.y + threadIdx.y + FD_PAD;
-  int64_t const shot_idx = blockIdx.z * blockDim.z + threadIdx.z;
+  int64_t const x = dw_grid_index(blockIdx.x, blockDim.x, threadIdx.x) + FD_PAD;
+  int64_t const y = dw_grid_index(blockIdx.y, blockDim.y, threadIdx.y) + FD_PAD;
+  int64_t const shot_idx = dw_grid_index(blockIdx.z, blockDim.z, threadIdx.z);
   if (y < ny - FD_PAD && x < nx - FD_PAD && shot_idx < n_shots) {
     int64_t const j = y * nx + x;
 #else /* DW_NDIM == 1 */
-  int64_t const x = blockIdx.x * blockDim.x + threadIdx.x + FD_PAD;
-  int64_t const shot_idx = blockIdx.y * blockDim.y + threadIdx.y;
+  int64_t const x = dw_grid_index(blockIdx.x, blockDim.x, threadIdx.x) + FD_PAD;
+  int64_t const shot_idx = dw_grid_index(blockIdx.y, blockDim.y, threadIdx.y);
   if (x < nx - FD_PAD && shot_idx < n_shots) {
     int64_t const j = x;
 #endif
@@ -390,50 +391,50 @@ DW_STENCIL_LAUNCH_BOUNDS __global__ void forward_kernel(
 }
 
 DW_STENCIL_LAUNCH_BOUNDS __global__ void backward_kernel(
-    DW_DTYPE const *__restrict const v2dt2,
-    DW_DTYPE const *__restrict const wfc, DW_DTYPE *__restrict const wfp,
-    DW_DTYPE const *__restrict const dwdv, DW_DTYPE *__restrict const grad_v,
+    DW_DTYPE const* __restrict const v2dt2,
+    DW_DTYPE const* __restrict const wfc, DW_DTYPE* __restrict const wfp,
+    DW_DTYPE const* __restrict const dwdv, DW_DTYPE* __restrict const grad_v,
 #if DW_NDIM >= 3
     /* z-dimension */
-    DW_DTYPE const *__restrict const psiz, DW_DTYPE *__restrict const psizn,
-    DW_DTYPE *__restrict const zetaz, DW_DTYPE *__restrict const zetazn,
-    DW_DTYPE const *__restrict const az, DW_DTYPE const *__restrict const bz,
-    DW_DTYPE const *__restrict const dbzdz,
+    DW_DTYPE const* __restrict const psiz, DW_DTYPE* __restrict const psizn,
+    DW_DTYPE* __restrict const zetaz, DW_DTYPE* __restrict const zetazn,
+    DW_DTYPE const* __restrict const az, DW_DTYPE const* __restrict const bz,
+    DW_DTYPE const* __restrict const dbzdz,
 #endif
 #if DW_NDIM >= 2
     /* y-dimension */
-    DW_DTYPE const *__restrict const psiy, DW_DTYPE *__restrict const psiyn,
-    DW_DTYPE *__restrict const zetay, DW_DTYPE *__restrict const zetayn,
-    DW_DTYPE const *__restrict const ay, DW_DTYPE const *__restrict const by,
-    DW_DTYPE const *__restrict const dbydy,
+    DW_DTYPE const* __restrict const psiy, DW_DTYPE* __restrict const psiyn,
+    DW_DTYPE* __restrict const zetay, DW_DTYPE* __restrict const zetayn,
+    DW_DTYPE const* __restrict const ay, DW_DTYPE const* __restrict const by,
+    DW_DTYPE const* __restrict const dbydy,
 #endif
     /* x-dimension */
-    DW_DTYPE const *__restrict const psix, DW_DTYPE *__restrict const psixn,
-    DW_DTYPE *__restrict const zetax, DW_DTYPE *__restrict const zetaxn,
-    DW_DTYPE const *__restrict const ax, DW_DTYPE const *__restrict const bx,
-    DW_DTYPE const *__restrict const dbxdx, bool const v_requires_grad) {
+    DW_DTYPE const* __restrict const psix, DW_DTYPE* __restrict const psixn,
+    DW_DTYPE* __restrict const zetax, DW_DTYPE* __restrict const zetaxn,
+    DW_DTYPE const* __restrict const ax, DW_DTYPE const* __restrict const bx,
+    DW_DTYPE const* __restrict const dbxdx, bool const v_requires_grad) {
 #if DW_NDIM == 3
-  int64_t const x = blockIdx.x * blockDim.x + threadIdx.x + FD_PAD;
-  int64_t const y = blockIdx.y * blockDim.y + threadIdx.y + FD_PAD;
-  int64_t const z = blockIdx.z * blockDim.z + threadIdx.z + FD_PAD;
+  int64_t const x = dw_grid_index(blockIdx.x, blockDim.x, threadIdx.x) + FD_PAD;
+  int64_t const y = dw_grid_index(blockIdx.y, blockDim.y, threadIdx.y) + FD_PAD;
+  int64_t const z = dw_grid_index(blockIdx.z, blockDim.z, threadIdx.z) + FD_PAD;
   if (z < nz - FD_PAD && y < ny - FD_PAD && x < nx - FD_PAD) {
     int64_t const j = z * ny * nx + y * nx + x;
     for (int64_t shot_idx = 0; shot_idx < n_shots; ++shot_idx) {
 #elif DW_NDIM == 2
-  int64_t const x = blockIdx.x * blockDim.x + threadIdx.x + FD_PAD;
-  int64_t const y = blockIdx.y * blockDim.y + threadIdx.y + FD_PAD;
-  int64_t const shot_idx = blockIdx.z * blockDim.z + threadIdx.z;
+  int64_t const x = dw_grid_index(blockIdx.x, blockDim.x, threadIdx.x) + FD_PAD;
+  int64_t const y = dw_grid_index(blockIdx.y, blockDim.y, threadIdx.y) + FD_PAD;
+  int64_t const shot_idx = dw_grid_index(blockIdx.z, blockDim.z, threadIdx.z);
   if (y < ny - FD_PAD && x < nx - FD_PAD && shot_idx < n_shots) {
     int64_t const j = y * nx + x;
 #else /* DW_NDIM == 1 */
-  int64_t const x = blockIdx.x * blockDim.x + threadIdx.x + FD_PAD;
-  int64_t const shot_idx = blockIdx.y * blockDim.y + threadIdx.y;
+  int64_t const x = dw_grid_index(blockIdx.x, blockDim.x, threadIdx.x) + FD_PAD;
+  int64_t const shot_idx = dw_grid_index(blockIdx.y, blockDim.y, threadIdx.y);
   if (x < nx - FD_PAD && shot_idx < n_shots) {
     int64_t const j = x;
 #endif
       int64_t const i = shot_idx * shot_numel + j;
       // Select v^2*dt^2 for this shot/grid point
-      DW_DTYPE const *__restrict const v2dt2_shot =
+      DW_DTYPE const* __restrict const v2dt2_shot =
           v_batched ? v2dt2 + shot_idx * shot_numel : v2dt2;
 #if DW_NDIM >= 3
       bool const pml_z = z < pml_z0 || z >= pml_z1;
@@ -518,50 +519,49 @@ extern "C"
 #ifdef _WIN32
     __declspec(dllexport)
 #endif
-    int
-    FUNC(forward)(
-        DW_DTYPE const *__restrict const v, DW_DTYPE const *__restrict const f,
-        DW_DTYPE *__restrict wfc, DW_DTYPE *__restrict wfp,
+    int FUNC(forward)(
+        DW_DTYPE const* __restrict const v, DW_DTYPE const* __restrict const f,
+        DW_DTYPE* __restrict wfc, DW_DTYPE* __restrict wfp,
 #if DW_NDIM >= 3
-        DW_DTYPE *__restrict psiz,
+        DW_DTYPE* __restrict psiz,
 #endif
 #if DW_NDIM >= 2
-        DW_DTYPE *__restrict psiy,
+        DW_DTYPE* __restrict psiy,
 #endif
-        DW_DTYPE *__restrict psix,
+        DW_DTYPE* __restrict psix,
 #if DW_NDIM >= 3
-        DW_DTYPE *__restrict psizn,
+        DW_DTYPE* __restrict psizn,
 #endif
 #if DW_NDIM >= 2
-        DW_DTYPE *__restrict psiyn,
+        DW_DTYPE* __restrict psiyn,
 #endif
-        DW_DTYPE *__restrict psixn,
+        DW_DTYPE* __restrict psixn,
 #if DW_NDIM >= 3
-        DW_DTYPE *__restrict const zetaz,
+        DW_DTYPE* __restrict const zetaz,
 #endif
 #if DW_NDIM >= 2
-        DW_DTYPE *__restrict const zetay,
+        DW_DTYPE* __restrict const zetay,
 #endif
-        DW_DTYPE *__restrict const zetax, DW_DTYPE *__restrict const w_store_1a,
-        DW_DTYPE *__restrict const w_store_1b, void *__restrict const w_store_2,
-        void *__restrict const w_store_3,
-        char const *__restrict const *__restrict const w_filenames_ptr,
-        DW_DTYPE *__restrict const r,
+        DW_DTYPE* __restrict const zetax, DW_DTYPE* __restrict const w_store_1a,
+        DW_DTYPE* __restrict const w_store_1b, void* __restrict const w_store_2,
+        void* __restrict const w_store_3,
+        char const* __restrict const* __restrict const w_filenames_ptr,
+        DW_DTYPE* __restrict const r,
 #if DW_NDIM >= 3
-        DW_DTYPE const *__restrict const az,
-        DW_DTYPE const *__restrict const bz,
-        DW_DTYPE const *__restrict const dbzdz,
+        DW_DTYPE const* __restrict const az,
+        DW_DTYPE const* __restrict const bz,
+        DW_DTYPE const* __restrict const dbzdz,
 #endif
 #if DW_NDIM >= 2
-        DW_DTYPE const *__restrict const ay,
-        DW_DTYPE const *__restrict const by,
-        DW_DTYPE const *__restrict const dbydy,
+        DW_DTYPE const* __restrict const ay,
+        DW_DTYPE const* __restrict const by,
+        DW_DTYPE const* __restrict const dbydy,
 #endif
-        DW_DTYPE const *__restrict const ax,
-        DW_DTYPE const *__restrict const bx,
-        DW_DTYPE const *__restrict const dbxdx,
-        int64_t const *__restrict const sources_i,
-        int64_t const *__restrict const receivers_i,
+        DW_DTYPE const* __restrict const ax,
+        DW_DTYPE const* __restrict const bx,
+        DW_DTYPE const* __restrict const dbxdx,
+        int64_t const* __restrict const sources_i,
+        int64_t const* __restrict const receivers_i,
 #if DW_NDIM >= 3
         DW_DTYPE const rdz_h,
 #endif
@@ -616,10 +616,10 @@ extern "C"
 #if DW_NDIM >= 2
         int64_t const bc_y1,
 #endif
-        int64_t const bc_x1, DW_DTYPE *__restrict const raw_store_1a,
-        DW_DTYPE *__restrict const raw_store_1b,
-        void *__restrict const raw_store_2, void *__restrict const raw_store_3,
-        char const *__restrict const *__restrict const raw_filenames_ptr,
+        int64_t const bc_x1, DW_DTYPE* __restrict const raw_store_1a,
+        DW_DTYPE* __restrict const raw_store_1b,
+        void* __restrict const raw_store_2, void* __restrict const raw_store_3,
+        char const* __restrict const* __restrict const raw_filenames_ptr,
         bool const store_raw_forward, int64_t const raw_storage_mode,
         size_t const raw_shot_bytes_uncomp, size_t const raw_shot_bytes_comp,
         bool const raw_storage_compression, int64_t const device,
@@ -651,21 +651,21 @@ extern "C"
   (void)raw_store_1b;
 #if DW_NDIM == 3
   dim3 const dimBlock(DW_STENCIL_BLOCK_3D);
-  unsigned int const gridx = ceil_div(nx_h - 2 * FD_PAD, dimBlock.x);
-  unsigned int const gridy = ceil_div(ny_h - 2 * FD_PAD, dimBlock.y);
-  unsigned int const gridz = ceil_div(nz_h - 2 * FD_PAD, dimBlock.z);
+  unsigned int const gridx = ceil_div(nx_h - 2LL * FD_PAD, dimBlock.x);
+  unsigned int const gridy = ceil_div(ny_h - 2LL * FD_PAD, dimBlock.y);
+  unsigned int const gridz = ceil_div(nz_h - 2LL * FD_PAD, dimBlock.z);
   int64_t const bc[6] = {bc_z0, bc_z1, bc_y0, bc_y1, bc_x0, bc_x1};
   int const has_bc = bc_z0 || bc_z1 || bc_y0 || bc_y1 || bc_x0 || bc_x1;
 #elif DW_NDIM == 2
   dim3 const dimBlock(32, 4, 1);
-  unsigned int const gridx = ceil_div(nx_h - 2 * FD_PAD, dimBlock.x);
-  unsigned int const gridy = ceil_div(ny_h - 2 * FD_PAD, dimBlock.y);
+  unsigned int const gridx = ceil_div(nx_h - 2LL * FD_PAD, dimBlock.x);
+  unsigned int const gridy = ceil_div(ny_h - 2LL * FD_PAD, dimBlock.y);
   unsigned int const gridz = ceil_div(n_shots_h, dimBlock.z);
   int64_t const bc[6] = {0, 0, bc_y0, bc_y1, bc_x0, bc_x1};
   int const has_bc = bc_y0 || bc_y1 || bc_x0 || bc_x1;
 #else /* DW_NDIM == 1 */
   dim3 const dimBlock(128, 1, 1);
-  unsigned int const gridx = ceil_div(nx_h - 2 * FD_PAD, dimBlock.x);
+  unsigned int const gridx = ceil_div(nx_h - 2LL * FD_PAD, dimBlock.x);
   unsigned int const gridy = ceil_div(n_shots_h, dimBlock.y);
   unsigned int const gridz = 1;
   int64_t const bc[6] = {0, 0, 0, 0, bc_x0, bc_x1};
@@ -696,7 +696,7 @@ extern "C"
   int64_t t;
   ScopedCudaDevice device_guard(device);
   if (device_guard.init_error != 0) return device_guard.init_error;
-  ScopedCudaConfig config_guard(device);
+  ScopedCudaConfig config_guard(device_guard.selected_device);
   if (config_guard.init_error != 0) return config_guard.init_error;
   ScopedFileGroup file_group;
   {
@@ -751,7 +751,7 @@ extern "C"
     bool const store_step = ((t % step_ratio_h) == 0);
     bool const store_w = store_step && v_requires_grad;
     int64_t const step_idx = t / step_ratio_h;
-    DW_DTYPE *w_store_1_t =
+    DW_DTYPE* w_store_1_t =
         w_store_1a != NULL
             ? (w_store_1a +
                (storage_mode == STORAGE_DEVICE && !storage_compression
@@ -797,15 +797,15 @@ extern "C"
             (size_t)n_shots_h * shot_numel_h * sizeof(DW_DTYPE),
             cudaMemcpyDeviceToDevice, stream_compute));
       } else {
-        void *const raw_store_2_t =
+        void* const raw_store_2_t =
             raw_store_2 != NULL
-                ? ((uint8_t *)raw_store_2 +
+                ? ((uint8_t*)raw_store_2 +
                    (raw_storage_mode == STORAGE_DEVICE
                         ? step_idx * raw_shot_bytes_comp * n_shots_h
                         : 0))
                 : NULL;
-        void *const raw_store_3_t =
-            raw_store_3 != NULL ? ((uint8_t *)raw_store_3 +
+        void* const raw_store_3_t =
+            raw_store_3 != NULL ? ((uint8_t*)raw_store_3 +
                                    (raw_storage_mode == STORAGE_CPU
                                         ? step_idx *
                                               (raw_storage_compression
@@ -843,16 +843,16 @@ extern "C"
     CHECK_KERNEL_ERROR
 
     if (store_w) {
-      void *const w_store_2_t =
+      void* const w_store_2_t =
           w_store_2 != NULL
-              ? ((uint8_t *)w_store_2 +
+              ? ((uint8_t*)w_store_2 +
                  (storage_mode == STORAGE_DEVICE && storage_compression
                       ? step_idx * shot_bytes_comp * n_shots_h
                       : 0))
               : NULL;
-      void *const w_store_3_t =
+      void* const w_store_3_t =
           w_store_3 != NULL
-              ? ((uint8_t *)w_store_3 +
+              ? ((uint8_t*)w_store_3 +
                  (storage_mode == STORAGE_CPU
                       ? step_idx *
                             (storage_compression ? shot_bytes_comp
@@ -908,59 +908,58 @@ extern "C"
 #ifdef _WIN32
     __declspec(dllexport)
 #endif
-    int
-    FUNC(backward)(
-        DW_DTYPE const *__restrict const v2dt2,
-        DW_DTYPE const *__restrict const grad_r, DW_DTYPE *__restrict wfc,
-        DW_DTYPE *__restrict wfp,
+    int FUNC(backward)(
+        DW_DTYPE const* __restrict const v2dt2,
+        DW_DTYPE const* __restrict const grad_r, DW_DTYPE* __restrict wfc,
+        DW_DTYPE* __restrict wfp,
 #if DW_NDIM >= 3
-        DW_DTYPE *__restrict psiz,
+        DW_DTYPE* __restrict psiz,
 #endif
 #if DW_NDIM >= 2
-        DW_DTYPE *__restrict psiy,
+        DW_DTYPE* __restrict psiy,
 #endif
-        DW_DTYPE *__restrict psix,
+        DW_DTYPE* __restrict psix,
 #if DW_NDIM >= 3
-        DW_DTYPE *__restrict psizn,
+        DW_DTYPE* __restrict psizn,
 #endif
 #if DW_NDIM >= 2
-        DW_DTYPE *__restrict psiyn,
+        DW_DTYPE* __restrict psiyn,
 #endif
-        DW_DTYPE *__restrict psixn,
+        DW_DTYPE* __restrict psixn,
 #if DW_NDIM >= 3
-        DW_DTYPE *__restrict zetaz,
+        DW_DTYPE* __restrict zetaz,
 #endif
 #if DW_NDIM >= 2
-        DW_DTYPE *__restrict zetay,
+        DW_DTYPE* __restrict zetay,
 #endif
-        DW_DTYPE *__restrict zetax,
+        DW_DTYPE* __restrict zetax,
 #if DW_NDIM >= 3
-        DW_DTYPE *__restrict zetazn,
+        DW_DTYPE* __restrict zetazn,
 #endif
 #if DW_NDIM >= 2
-        DW_DTYPE *__restrict zetayn,
+        DW_DTYPE* __restrict zetayn,
 #endif
-        DW_DTYPE *__restrict zetaxn, DW_DTYPE *__restrict const w_store_1a,
-        DW_DTYPE *__restrict const w_store_1b, void *__restrict const w_store_2,
-        void *__restrict const w_store_3,
-        char const *__restrict const *__restrict const w_filenames_ptr,
-        DW_DTYPE *__restrict const grad_f, DW_DTYPE *__restrict const grad_v,
-        DW_DTYPE *__restrict const grad_v_shot,
+        DW_DTYPE* __restrict zetaxn, DW_DTYPE* __restrict const w_store_1a,
+        DW_DTYPE* __restrict const w_store_1b, void* __restrict const w_store_2,
+        void* __restrict const w_store_3,
+        char const* __restrict const* __restrict const w_filenames_ptr,
+        DW_DTYPE* __restrict const grad_f, DW_DTYPE* __restrict const grad_v,
+        DW_DTYPE* __restrict const grad_v_shot,
 #if DW_NDIM >= 3
-        DW_DTYPE const *__restrict const az,
-        DW_DTYPE const *__restrict const bz,
-        DW_DTYPE const *__restrict const dbzdz,
+        DW_DTYPE const* __restrict const az,
+        DW_DTYPE const* __restrict const bz,
+        DW_DTYPE const* __restrict const dbzdz,
 #endif
 #if DW_NDIM >= 2
-        DW_DTYPE const *__restrict const ay,
-        DW_DTYPE const *__restrict const by,
-        DW_DTYPE const *__restrict const dbydy,
+        DW_DTYPE const* __restrict const ay,
+        DW_DTYPE const* __restrict const by,
+        DW_DTYPE const* __restrict const dbydy,
 #endif
-        DW_DTYPE const *__restrict const ax,
-        DW_DTYPE const *__restrict const bx,
-        DW_DTYPE const *__restrict const dbxdx,
-        int64_t const *__restrict const sources_i,
-        int64_t const *__restrict const receivers_i,
+        DW_DTYPE const* __restrict const ax,
+        DW_DTYPE const* __restrict const bx,
+        DW_DTYPE const* __restrict const dbxdx,
+        int64_t const* __restrict const sources_i,
+        int64_t const* __restrict const receivers_i,
 #if DW_NDIM >= 3
         DW_DTYPE const rdz_h,
 #endif
@@ -1014,10 +1013,10 @@ extern "C"
 #if DW_NDIM >= 2
         int64_t const bc_y1,
 #endif
-        int64_t const bc_x1, DW_DTYPE *__restrict const raw_store_1a,
-        DW_DTYPE *__restrict const raw_store_1b,
-        void *__restrict const raw_store_2, void *__restrict const raw_store_3,
-        char const *__restrict const *__restrict const raw_filenames_ptr,
+        int64_t const bc_x1, DW_DTYPE* __restrict const raw_store_1a,
+        DW_DTYPE* __restrict const raw_store_1b,
+        void* __restrict const raw_store_2, void* __restrict const raw_store_3,
+        char const* __restrict const* __restrict const raw_filenames_ptr,
         bool const store_raw_forward, int64_t const raw_storage_mode,
         size_t const raw_shot_bytes_uncomp, size_t const raw_shot_bytes_comp,
         bool const raw_storage_compression, int64_t const device,
@@ -1050,21 +1049,21 @@ extern "C"
   (void)raw_store_1b;
 #if DW_NDIM == 3
   dim3 const dimBlock(DW_STENCIL_BLOCK_3D);
-  unsigned int const gridx = ceil_div(nx_h - 2 * FD_PAD, dimBlock.x);
-  unsigned int const gridy = ceil_div(ny_h - 2 * FD_PAD, dimBlock.y);
-  unsigned int const gridz = ceil_div(nz_h - 2 * FD_PAD, dimBlock.z);
+  unsigned int const gridx = ceil_div(nx_h - 2LL * FD_PAD, dimBlock.x);
+  unsigned int const gridy = ceil_div(ny_h - 2LL * FD_PAD, dimBlock.y);
+  unsigned int const gridz = ceil_div(nz_h - 2LL * FD_PAD, dimBlock.z);
   int64_t const bc[6] = {bc_z0, bc_z1, bc_y0, bc_y1, bc_x0, bc_x1};
   int const has_bc = bc_z0 || bc_z1 || bc_y0 || bc_y1 || bc_x0 || bc_x1;
 #elif DW_NDIM == 2
   dim3 const dimBlock(32, 4, 1);
-  unsigned int const gridx = ceil_div(nx_h - 2 * FD_PAD, dimBlock.x);
-  unsigned int const gridy = ceil_div(ny_h - 2 * FD_PAD, dimBlock.y);
+  unsigned int const gridx = ceil_div(nx_h - 2LL * FD_PAD, dimBlock.x);
+  unsigned int const gridy = ceil_div(ny_h - 2LL * FD_PAD, dimBlock.y);
   unsigned int const gridz = ceil_div(n_shots_h, dimBlock.z);
   int64_t const bc[6] = {0, 0, bc_y0, bc_y1, bc_x0, bc_x1};
   int const has_bc = bc_y0 || bc_y1 || bc_x0 || bc_x1;
 #else /* DW_NDIM == 1 */
   dim3 const dimBlock(128, 1, 1);
-  unsigned int const gridx = ceil_div(nx_h - 2 * FD_PAD, dimBlock.x);
+  unsigned int const gridx = ceil_div(nx_h - 2LL * FD_PAD, dimBlock.x);
   unsigned int const gridy = ceil_div(n_shots_h, dimBlock.y);
   unsigned int const gridz = 1;
   int64_t const bc[6] = {0, 0, 0, 0, bc_x0, bc_x1};
@@ -1088,22 +1087,22 @@ extern "C"
 #if DW_NDIM == 3
   dim3 const dimBlock_combine(32, 4, 1);
   unsigned int const gridx_combine =
-      ceil_div(nx_h - 2 * FD_PAD, dimBlock_combine.x);
+      ceil_div(nx_h - 2LL * FD_PAD, dimBlock_combine.x);
   unsigned int const gridy_combine =
-      ceil_div(ny_h - 2 * FD_PAD, dimBlock_combine.y);
+      ceil_div(ny_h - 2LL * FD_PAD, dimBlock_combine.y);
   unsigned int const gridz_combine =
-      ceil_div(nz_h - 2 * FD_PAD, dimBlock_combine.z);
+      ceil_div(nz_h - 2LL * FD_PAD, dimBlock_combine.z);
 #elif DW_NDIM == 2
   dim3 const dimBlock_combine(32, 4, 1);
   unsigned int const gridx_combine =
-      ceil_div(nx_h - 2 * FD_PAD, dimBlock_combine.x);
+      ceil_div(nx_h - 2LL * FD_PAD, dimBlock_combine.x);
   unsigned int const gridy_combine =
-      ceil_div(ny_h - 2 * FD_PAD, dimBlock_combine.y);
+      ceil_div(ny_h - 2LL * FD_PAD, dimBlock_combine.y);
   unsigned int const gridz_combine = 1;
 #else /* DW_NDIM == 1 */
   dim3 const dimBlock_combine(128, 1, 1);
   unsigned int const gridx_combine =
-      ceil_div(nx_h - 2 * FD_PAD, dimBlock_combine.x);
+      ceil_div(nx_h - 2LL * FD_PAD, dimBlock_combine.x);
   unsigned int const gridy_combine = 1;
   unsigned int const gridz_combine = 1;
 #endif
@@ -1118,9 +1117,12 @@ extern "C"
   int64_t t;
   ScopedCudaDevice device_guard(device);
   if (device_guard.init_error != 0) return device_guard.init_error;
-  ScopedCudaConfig config_guard(device);
+  ScopedCudaConfig config_guard(device_guard.selected_device);
   if (config_guard.init_error != 0) return config_guard.init_error;
   ScopedFileGroup file_group;
+  // Receiver cotangents are adjoint sources; source gradients are samples.
+  int64_t const adjoint_sources_per_shot = n_receivers_per_shot_h;
+  int64_t const adjoint_receivers_per_shot = n_sources_per_shot_h;
   {
     int err = set_config(
 #if DW_NDIM >= 3
@@ -1130,7 +1132,7 @@ extern "C"
         rdy_h, rdy2_h, ny_h, pml_y0_h, pml_y1_h,
 #endif
         rdx_h, rdx2_h, nx_h, shot_numel_h, pml_x0_h, pml_x1_h, 0, n_shots_h,
-        n_receivers_per_shot_h, n_sources_per_shot_h, step_ratio_h,
+        adjoint_sources_per_shot, adjoint_receivers_per_shot, step_ratio_h,
         v_batched_h);
     if (err != 0) return err;
   }
@@ -1174,14 +1176,14 @@ extern "C"
    * self-adjoint). v2dt2 is a fresh per-call temporary, so writing its guard
    * cells in place is safe. Done once (constant across time steps). */
   if (has_bc)
-    LAUNCH_FILL_BC((DW_DTYPE *)v2dt2, 1,
+    LAUNCH_FILL_BC((DW_DTYPE*)v2dt2, 1,
                    (v_batched_h ? n_shots_h : 1) * shot_numel_h);
 
   for (t = start_t - 1; t >= start_t - nt; --t) {
     bool const load_step = (t % step_ratio_h) == 0;
     bool const load_w = load_step && v_requires_grad;
     int64_t const step_idx = t / step_ratio_h;
-    DW_DTYPE *__restrict w_store_1_t =
+    DW_DTYPE* __restrict w_store_1_t =
         w_store_1a != NULL
             ? (w_store_1a +
                (storage_mode == STORAGE_DEVICE && !storage_compression
@@ -1208,16 +1210,16 @@ extern "C"
     }
 
     if (load_w) {
-      void *const w_store_2_t =
+      void* const w_store_2_t =
           w_store_2 != NULL
-              ? ((uint8_t *)w_store_2 +
+              ? ((uint8_t*)w_store_2 +
                  (storage_mode == STORAGE_DEVICE && storage_compression
                       ? step_idx * shot_bytes_comp * n_shots_h
                       : 0))
               : NULL;
-      void *const w_store_3_t =
+      void* const w_store_3_t =
           w_store_3 != NULL
-              ? ((uint8_t *)w_store_3 +
+              ? ((uint8_t*)w_store_3 +
                  (storage_mode == STORAGE_CPU
                       ? step_idx *
                             (storage_compression ? shot_bytes_comp
@@ -1256,16 +1258,16 @@ extern "C"
        * (nothing was ever persisted; see FUNC(forward) above and
        * forward_wavefields_for_step in scalar.py, which returns None for
        * its steps instead of reading this buffer). */
-      void *const raw_store_2_t =
+      void* const raw_store_2_t =
           raw_store_2 != NULL
-              ? ((uint8_t *)raw_store_2 +
+              ? ((uint8_t*)raw_store_2 +
                  (raw_storage_mode == STORAGE_DEVICE
                       ? step_idx * raw_shot_bytes_comp * n_shots_h
                       : 0))
               : NULL;
-      void *const raw_store_3_t =
+      void* const raw_store_3_t =
           raw_store_3 != NULL
-              ? ((uint8_t *)raw_store_3 +
+              ? ((uint8_t*)raw_store_3 +
                  (raw_storage_mode == STORAGE_CPU
                       ? step_idx *
                             (raw_storage_compression ? raw_shot_bytes_comp

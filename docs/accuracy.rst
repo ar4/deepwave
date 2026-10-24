@@ -152,7 +152,8 @@ be called directly if you wish to compute a suitable time step.
 Compiler floating-point flags
 ------------------------------
 
-The compiled CPU/CUDA kernels build by default with ``-Ofast`` (CPU) /
+The compiled CPU/CUDA kernels build by default with ``-Ofast`` (CPU;
+Clang uses the equivalent ``-O3 -ffast-math -fstrict-aliasing``) /
 ``--use_fast_math`` (CUDA), the same flags released versions of Deepwave
 have always shipped. Fast-math flags relax IEEE 754 semantics (NaN/Inf
 handling, denormal flush-to-zero) in exchange for extra speed. On the CPU
@@ -244,14 +245,17 @@ operations in the same process). GPU kernels are unaffected: CUDA's
 ``--use_fast_math`` already flushes denormals per instruction in the
 generated device code, with no equivalent runtime mode to toggle.
 
-A consequence of this default: a genuinely denormal intermediate value is
-now computed as exactly zero rather than as its true (physically
-negligible) tiny value, on both the ``-Ofast`` and ``-DDW_FAST_MATH=OFF``
-CPU builds (this control is independent of that flag). The
-accuracy-sensitive test suite passes identically with it enabled, and the affected
-values are, by construction, below the float32 normal range (magnitude
-under ~1.18e-38) -- far below any tolerance this project's tests or a real
-inversion workflow would be sensitive to.
+A consequence of this default is that subnormal operands and results may be
+replaced by zero inside the compiled propagation kernels. This improves
+performance when long, decaying wave tails would otherwise cause slow
+subnormal arithmetic. It is a numerical approximation: small local changes
+can accumulate over many time steps, so the small magnitude of the flushed
+values alone does not establish an error bound on the final outputs or
+gradients. Numerical comparisons with the tensor implementation and analytic
+solutions remain necessary. The regular-grid second derivative uses weighted
+neighbour-minus-centre differences to reduce cancellation from separately
+rounded stencil coefficients.
+
 
 Released wheels built with ``-Ofast`` on an older-GCC manylinux image
 could, in principle, still carry the process-wide ``crtfastmath.o``

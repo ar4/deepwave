@@ -39,10 +39,10 @@ jobs:
         # docs/ has its own ruff.toml (a narrower line length, so example
         # code fits in a rendered code block) and docs/dev/ another; ruff
         # picks the closest one per file automatically.
-        run: ruff format --check src/deepwave/ tests/ docs/
+        run: ruff format --check src/deepwave/ tests/ docs/ scripts/ benchmarks/
 
       - name: ruff check
-        run: ruff check --output-format=github src/deepwave/ tests/ docs/
+        run: ruff check --output-format=github src/deepwave/ tests/ docs/ scripts/ benchmarks/
 
       - name: mypy
         # --strict now comes from pyproject.toml's [tool.mypy] table rather
@@ -89,27 +89,26 @@ jobs:
   clang-format-tidy:
     name: clang-format + clang-tidy
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
 
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
       - name: Install clang-format and clang-tidy
-        # Deviation from the box this suite was developed on (clang 19.1.7):
-        # ubuntu-latest's default apt clang toolchain version is not pinned
-        # to that exact version. clang-format's Google-based style and
-        # clang-tidy's check list are both stable across recent LLVM
-        # releases, but a version bump could in principle surface a new
-        # diagnostic or formatting nuance -- if this job goes red for no
-        # code-visible reason after an ubuntu-latest image update, suspect a
-        # clang-tools version drift first.
+        # Use the same current tools locally and in CI; image updates must not
+        # silently change either formatting rules or the static-analysis gate.
         run: |
-          sudo apt-get update
-          sudo apt-get install -y clang-format clang-tidy
+          pip install clang-format==23.1.3 clang-tidy==23.1.3
+          clang-format --version
+          clang-tidy --version
 
       - name: clang-format --dry-run --Werror
         run: |
-          find src/deepwave -name '*.c' -o -name '*.cu' -o -name '*.h' \
-            | xargs clang-format --dry-run --Werror
+          find src/deepwave \( -name '*.c' -o -name '*.cu' -o -name '*.cpp' -o -name '*.h' \) -print0 \
+            | xargs -0 clang-format --dry-run --Werror
 
       - name: Configure (compile_commands.json only, CPU-only, no build)
         # No CUDA toolkit on this runner; DW_SKIP_CUDA=ON keeps this a plain
@@ -117,7 +116,7 @@ jobs:
         # generated compile_commands.json, never a linked .so.
         run: cmake -S . -B build-tidy -DDW_SKIP_CUDA=ON -DCMAKE_BUILD_TYPE=Release
 
-      - name: clang-tidy (all configured variants of nine CPU families)
+      - name: clang-tidy (all configured CPU variants and native helpers)
         # clang-tidy processes every compile-command entry for each file,
         # including its configured NDIM/ACCURACY/DTYPE variants.
         # All nine supported propagators have compiled kernels.
@@ -125,9 +124,10 @@ jobs:
         # CONTRIBUTING.md's ".c and .cu are kept in lockstep" constraint;
         # a maintainer/GPU CI validates .cu separately). Allow tens of minutes
         # for static analysis of this full sweep of macro-heavy kernel code.
+        # Two files at a time use the runner's spare cores; each still checks
+        # every configured variant and xargs propagates any failing exit code.
         run: |
-          clang-tidy -p build-tidy \
-            src/deepwave/scalar.c \
+          printf '%s\0' src/deepwave/scalar.c \
             src/deepwave/scalar_born.c \
             src/deepwave/acoustic.c \
             src/deepwave/acoustic_born.c \
@@ -135,12 +135,40 @@ jobs:
             src/deepwave/elastic.c \
             src/deepwave/elastic_born.c \
             src/deepwave/elastic_vti.c \
-            src/deepwave/viscoacoustic.c
+            src/deepwave/viscoacoustic.c \
+            src/deepwave/storage_utils.c \
+            src/deepwave/simple_compress.c \
+            src/deepwave/cpu_features.c |
+            xargs -0 -n 1 -P 2 clang-tidy -p build-tidy \
+              --extra-arg=-idirafter --extra-arg="$(gcc -print-file-name=include)"
+
+      - name: clang-tidy (CUDA configuration lock; no toolkit required)
+        run: clang-tidy src/deepwave/cuda_config_lock.cpp -- -std=c++11
+
+  workflows:
+    name: actionlint + ShellCheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.13"
+      - name: Install actionlint and ShellCheck
+        run: |
+          pip install shellcheck-py==0.11.0.1
+          curl --fail --location --retry 3 https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz -o actionlint.tar.gz
+          echo '8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  actionlint.tar.gz' | sha256sum --check
+          tar -xzf actionlint.tar.gz actionlint
+      - name: Check workflows and their shell scripts
+        run: |
+          shellcheck --version
+          ./actionlint -color
 
   qualification:
     name: Record required qualification
     if: always()
-    needs: [lint, codespell, clang-format-tidy]
+    needs: [lint, codespell, clang-format-tidy, workflows]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5

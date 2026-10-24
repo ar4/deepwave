@@ -113,11 +113,11 @@
 #endif
 
 #if DW_NDIM == 3
-#define ND_INDEX(i, dz, dy, dx) (i + (dz) * ny * nx + (dy) * nx + (dx))
+#define ND_INDEX(i, dz, dy, dx) ((i) + (dz) * ny * nx + (dy) * nx + (dx))
 #elif DW_NDIM == 2
-#define ND_INDEX(i, dz, dy, dx) (i + (dy) * nx + (dx))
+#define ND_INDEX(i, dz, dy, dx) ((i) + (dy) * nx + (dx))
 #else /* DW_NDIM == 1 */
-#define ND_INDEX(i, dz, dy, dx) (i + (dx))
+#define ND_INDEX(i, dz, dy, dx) ((i) + (dx))
 #endif
 
 // Models (addressed by the shot-local index j -- see the addressing-
@@ -175,9 +175,9 @@
 // lines) provide `n_mech`/`r_lstride`/`m_lstride` as parameters.
 #ifdef DW_GSLS
 DW_HOST_DEVICE DW_DTYPE FUNC(gsls_beff)(
-    DW_DTYPE const *__restrict const p, DW_DTYPE const *__restrict const rmem,
-    DW_DTYPE const *__restrict const m1_shot,
-    DW_DTYPE const *__restrict const c2_shot, int64_t const wi,
+    DW_DTYPE const* __restrict const p, DW_DTYPE const* __restrict const rmem,
+    DW_DTYPE const* __restrict const m1_shot,
+    DW_DTYPE const* __restrict const c2_shot, int64_t const wi,
     int64_t const mi, DW_DTYPE const dt, int64_t const n_mech,
     int64_t const r_lstride, int64_t const m_lstride) {
   DW_DTYPE c2sum = 0;
@@ -202,33 +202,33 @@ DW_HOST_DEVICE DW_DTYPE FUNC(gsls_beff)(
 #if DW_NDIM >= 3
 #define VZ_ADJOINT(dz, dy, dx) (-B_EFF(dz, dy, dx))
 #define VZ_ADJOINT_PML(dz, dy, dx) \
-  (bz[z + dz] * PHI_Z(dz, dy, dx) - (1 + bz[z + dz]) * B_EFF(dz, dy, dx))
+  (bz[z + (dz)] * PHI_Z(dz, dy, dx) - (1 + bz[z + (dz)]) * B_EFF(dz, dy, dx))
 #endif
 #if DW_NDIM >= 2
 #define VY_ADJOINT(dz, dy, dx) (-B_EFF(dz, dy, dx))
 #define VY_ADJOINT_PML(dz, dy, dx) \
-  (by[y + dy] * PHI_Y(dz, dy, dx) - (1 + by[y + dy]) * B_EFF(dz, dy, dx))
+  (by[y + (dy)] * PHI_Y(dz, dy, dx) - (1 + by[y + (dy)]) * B_EFF(dz, dy, dx))
 #endif
 #define VX_ADJOINT(dz, dy, dx) (-B_EFF(dz, dy, dx))
 #define VX_ADJOINT_PML(dz, dy, dx) \
-  (bx[x + dx] * PHI_X(dz, dy, dx) - (1 + bx[x + dx]) * B_EFF(dz, dy, dx))
+  (bx[x + (dx)] * PHI_X(dz, dy, dx) - (1 + bx[x + (dx)]) * B_EFF(dz, dy, dx))
 
 #if DW_NDIM >= 3
 #define P_ADJOINT_Z(dz, dy, dx) (-dt * BUOYANCY_Z(dz, dy, dx) * VZ(dz, dy, dx))
-#define P_ADJOINT_Z_PML(dz, dy, dx)  \
-  (bzh[z + dz] * PSI_Z(dz, dy, dx) - \
-   dt * (1 + bzh[z + dz]) * BUOYANCY_Z(dz, dy, dx) * VZ(dz, dy, dx))
+#define P_ADJOINT_Z_PML(dz, dy, dx)    \
+  (bzh[z + (dz)] * PSI_Z(dz, dy, dx) - \
+   dt * (1 + bzh[z + (dz)]) * BUOYANCY_Z(dz, dy, dx) * VZ(dz, dy, dx))
 #endif
 #if DW_NDIM >= 2
 #define P_ADJOINT_Y(dz, dy, dx) (-dt * BUOYANCY_Y(dz, dy, dx) * VY(dz, dy, dx))
-#define P_ADJOINT_Y_PML(dz, dy, dx)  \
-  (byh[y + dy] * PSI_Y(dz, dy, dx) - \
-   dt * (1 + byh[y + dy]) * BUOYANCY_Y(dz, dy, dx) * VY(dz, dy, dx))
+#define P_ADJOINT_Y_PML(dz, dy, dx)    \
+  (byh[y + (dy)] * PSI_Y(dz, dy, dx) - \
+   dt * (1 + byh[y + (dy)]) * BUOYANCY_Y(dz, dy, dx) * VY(dz, dy, dx))
 #endif
 #define P_ADJOINT_X(dz, dy, dx) (-dt * BUOYANCY_X(dz, dy, dx) * VX(dz, dy, dx))
-#define P_ADJOINT_X_PML(dz, dy, dx)  \
-  (bxh[x + dx] * PSI_X(dz, dy, dx) - \
-   dt * (1 + bxh[x + dx]) * BUOYANCY_X(dz, dy, dx) * VX(dz, dy, dx))
+#define P_ADJOINT_X_PML(dz, dy, dx)    \
+  (bxh[x + (dx)] * PSI_X(dz, dy, dx) - \
+   dt * (1 + bxh[x + (dx)]) * BUOYANCY_X(dz, dy, dx) * VX(dz, dy, dx))
 
 /* ---- Forward: per-axis half-grid velocity updates (identical to acoustic,
  * no attenuation term on this equation) ---- */
@@ -242,10 +242,10 @@ DW_HOST_DEVICE DW_DTYPE FUNC(gsls_beff)(
  * z-axis PML region (false in the interior).
  */
 DW_HOST_DEVICE void FUNC(forward_vz_cell)(
-    DW_DTYPE const *__restrict const p, DW_DTYPE *__restrict const vz,
-    DW_DTYPE *__restrict const psi_z,
-    DW_DTYPE *__restrict const bz_grad_store_1, DW_DTYPE const buoyancy_z_shot,
-    DW_DTYPE const *__restrict const azh, DW_DTYPE const *__restrict const bzh,
+    DW_DTYPE const* __restrict const p, DW_DTYPE* __restrict const vz,
+    DW_DTYPE* __restrict const psi_z,
+    DW_DTYPE* __restrict const bz_grad_store_1, DW_DTYPE const buoyancy_z_shot,
+    DW_DTYPE const* __restrict const azh, DW_DTYPE const* __restrict const bzh,
     DW_DTYPE const dt, bool const b_requires_grad, int64_t const i,
     int64_t const ny, int64_t const nx, int64_t const z, bool const pml_z,
     DW_DTYPE const rdz) {
@@ -264,10 +264,10 @@ DW_HOST_DEVICE void FUNC(forward_vz_cell)(
 #if DW_NDIM >= 2
 /* v = v - dt * B * (grad(p) + psi), y axis (see FUNC(forward_vz_cell)). */
 DW_HOST_DEVICE void FUNC(forward_vy_cell)(
-    DW_DTYPE const *__restrict const p, DW_DTYPE *__restrict const vy,
-    DW_DTYPE *__restrict const psi_y,
-    DW_DTYPE *__restrict const by_grad_store_1, DW_DTYPE const buoyancy_y_shot,
-    DW_DTYPE const *__restrict const ayh, DW_DTYPE const *__restrict const byh,
+    DW_DTYPE const* __restrict const p, DW_DTYPE* __restrict const vy,
+    DW_DTYPE* __restrict const psi_y,
+    DW_DTYPE* __restrict const by_grad_store_1, DW_DTYPE const buoyancy_y_shot,
+    DW_DTYPE const* __restrict const ayh, DW_DTYPE const* __restrict const byh,
     DW_DTYPE const dt, bool const b_requires_grad, int64_t const i,
 #if DW_NDIM >= 3
     int64_t const ny,
@@ -287,10 +287,10 @@ DW_HOST_DEVICE void FUNC(forward_vy_cell)(
 
 /* v = v - dt * B * (grad(p) + psi), x axis (see FUNC(forward_vz_cell)). */
 DW_HOST_DEVICE void FUNC(forward_vx_cell)(
-    DW_DTYPE const *__restrict const p, DW_DTYPE *__restrict const vx,
-    DW_DTYPE *__restrict const psi_x,
-    DW_DTYPE *__restrict const bx_grad_store_1, DW_DTYPE const buoyancy_x_shot,
-    DW_DTYPE const *__restrict const axh, DW_DTYPE const *__restrict const bxh,
+    DW_DTYPE const* __restrict const p, DW_DTYPE* __restrict const vx,
+    DW_DTYPE* __restrict const psi_x,
+    DW_DTYPE* __restrict const bx_grad_store_1, DW_DTYPE const buoyancy_x_shot,
+    DW_DTYPE const* __restrict const axh, DW_DTYPE const* __restrict const bxh,
     DW_DTYPE const dt, bool const b_requires_grad, int64_t const i,
 #if DW_NDIM >= 3
     int64_t const ny,
@@ -323,36 +323,36 @@ DW_HOST_DEVICE void FUNC(forward_vx_cell)(
  */
 DW_HOST_DEVICE void FUNC(forward_p_cell)(
 #if DW_NDIM >= 3
-    DW_DTYPE const *__restrict const vz,
+    DW_DTYPE const* __restrict const vz,
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE const *__restrict const vy,
+    DW_DTYPE const* __restrict const vy,
 #endif
-    DW_DTYPE const *__restrict const vx, DW_DTYPE *__restrict const p,
-    DW_DTYPE *__restrict const rmem,
+    DW_DTYPE const* __restrict const vx, DW_DTYPE* __restrict const p,
+    DW_DTYPE* __restrict const rmem,
 #if DW_NDIM >= 3
-    DW_DTYPE *__restrict const phi_z,
+    DW_DTYPE* __restrict const phi_z,
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE *__restrict const phi_y,
+    DW_DTYPE* __restrict const phi_y,
 #endif
-    DW_DTYPE *__restrict const phi_x, DW_DTYPE const m1_shot,
+    DW_DTYPE* __restrict const phi_x, DW_DTYPE const m1_shot,
 #ifdef DW_GSLS
     /* Multi-mechanism GSLS: c2/ar are per-mechanism fields (stacked with
      * stride m_lstride, indexed from mj), rmem holds n_mech stacked memory
      * variables (stride r_lstride, indexed from i), and the r_old
      * checkpoint store is n_mech-times bigger (stride g_lstride, indexed
      * from gidx). */
-    DW_DTYPE const *__restrict const c2_shot,
-    DW_DTYPE const *__restrict const ar_shot, int64_t const mj,
+    DW_DTYPE const* __restrict const c2_shot,
+    DW_DTYPE const* __restrict const ar_shot, int64_t const mj,
     int64_t const n_mech, int64_t const r_lstride, int64_t const m_lstride,
     int64_t const gidx, int64_t const g_lstride,
 #else
     DW_DTYPE const c2_shot, DW_DTYPE const ar_shot,
 #endif
-    DW_DTYPE *__restrict const m1_grad_store_1,
-    DW_DTYPE *__restrict const c2_grad_store_1,
-    DW_DTYPE *__restrict const ar_grad_store_1, DW_DTYPE const dt,
+    DW_DTYPE* __restrict const m1_grad_store_1,
+    DW_DTYPE* __restrict const c2_grad_store_1,
+    DW_DTYPE* __restrict const ar_grad_store_1, DW_DTYPE const dt,
     bool const kmod_requires_grad, bool const ar_requires_grad, int64_t const i,
 #if DW_NDIM >= 3
     int64_t const ny,
@@ -361,15 +361,15 @@ DW_HOST_DEVICE void FUNC(forward_p_cell)(
     int64_t const nx,
 #endif
 #if DW_NDIM >= 3
-    int64_t const z, bool const pml_z, DW_DTYPE const *__restrict const az,
-    DW_DTYPE const *__restrict const bz, DW_DTYPE const rdz,
+    int64_t const z, bool const pml_z, DW_DTYPE const* __restrict const az,
+    DW_DTYPE const* __restrict const bz, DW_DTYPE const rdz,
 #endif
 #if DW_NDIM >= 2
-    int64_t const y, bool const pml_y, DW_DTYPE const *__restrict const ay,
-    DW_DTYPE const *__restrict const by, DW_DTYPE const rdy,
+    int64_t const y, bool const pml_y, DW_DTYPE const* __restrict const ay,
+    DW_DTYPE const* __restrict const by, DW_DTYPE const rdy,
 #endif
-    int64_t const x, bool const pml_x, DW_DTYPE const *__restrict const ax,
-    DW_DTYPE const *__restrict const bx, DW_DTYPE const rdx) {
+    int64_t const x, bool const pml_x, DW_DTYPE const* __restrict const ax,
+    DW_DTYPE const* __restrict const bx, DW_DTYPE const rdx) {
   DW_DTYPE div_v = 0;
 #if DW_NDIM >= 3
   DW_DTYPE d_z = DIFFZ1(VZ);
@@ -460,15 +460,15 @@ DW_HOST_DEVICE void FUNC(forward_p_cell)(
  * `pml_z` is true inside the z-axis PML region.
  */
 DW_HOST_DEVICE void FUNC(backward_vz_cell)(
-    DW_DTYPE const *__restrict const p,
-    DW_DTYPE const *__restrict const m1_shot,
-    DW_DTYPE const *__restrict const c2_shot,
-    DW_DTYPE const *__restrict const rmem, DW_DTYPE *__restrict const vz,
-    DW_DTYPE const *__restrict const phi_z,
-    DW_DTYPE const *__restrict const psi_z, DW_DTYPE *__restrict const psi_zn,
-    DW_DTYPE const buoyancy_z_shot, DW_DTYPE *__restrict const grad_bz,
-    DW_DTYPE const *__restrict const bz_grad_store_1,
-    DW_DTYPE const *__restrict const azh, DW_DTYPE const *__restrict const bz,
+    DW_DTYPE const* __restrict const p,
+    DW_DTYPE const* __restrict const m1_shot,
+    DW_DTYPE const* __restrict const c2_shot,
+    DW_DTYPE const* __restrict const rmem, DW_DTYPE* __restrict const vz,
+    DW_DTYPE const* __restrict const phi_z,
+    DW_DTYPE const* __restrict const psi_z, DW_DTYPE* __restrict const psi_zn,
+    DW_DTYPE const buoyancy_z_shot, DW_DTYPE* __restrict const grad_bz,
+    DW_DTYPE const* __restrict const bz_grad_store_1,
+    DW_DTYPE const* __restrict const azh, DW_DTYPE const* __restrict const bz,
     DW_DTYPE const dt, int64_t const step_ratio, bool const b_requires_grad,
     int64_t const i, int64_t const j,
 #ifdef DW_GSLS
@@ -487,15 +487,15 @@ DW_HOST_DEVICE void FUNC(backward_vz_cell)(
 #if DW_NDIM >= 2
 /* Adjoint of FUNC(forward_vy_cell); y axis (see FUNC(backward_vz_cell)). */
 DW_HOST_DEVICE void FUNC(backward_vy_cell)(
-    DW_DTYPE const *__restrict const p,
-    DW_DTYPE const *__restrict const m1_shot,
-    DW_DTYPE const *__restrict const c2_shot,
-    DW_DTYPE const *__restrict const rmem, DW_DTYPE *__restrict const vy,
-    DW_DTYPE const *__restrict const phi_y,
-    DW_DTYPE const *__restrict const psi_y, DW_DTYPE *__restrict const psi_yn,
-    DW_DTYPE const buoyancy_y_shot, DW_DTYPE *__restrict const grad_by,
-    DW_DTYPE const *__restrict const by_grad_store_1,
-    DW_DTYPE const *__restrict const ayh, DW_DTYPE const *__restrict const by,
+    DW_DTYPE const* __restrict const p,
+    DW_DTYPE const* __restrict const m1_shot,
+    DW_DTYPE const* __restrict const c2_shot,
+    DW_DTYPE const* __restrict const rmem, DW_DTYPE* __restrict const vy,
+    DW_DTYPE const* __restrict const phi_y,
+    DW_DTYPE const* __restrict const psi_y, DW_DTYPE* __restrict const psi_yn,
+    DW_DTYPE const buoyancy_y_shot, DW_DTYPE* __restrict const grad_by,
+    DW_DTYPE const* __restrict const by_grad_store_1,
+    DW_DTYPE const* __restrict const ayh, DW_DTYPE const* __restrict const by,
     DW_DTYPE const dt, int64_t const step_ratio, bool const b_requires_grad,
     int64_t const i, int64_t const j,
 #ifdef DW_GSLS
@@ -515,15 +515,15 @@ DW_HOST_DEVICE void FUNC(backward_vy_cell)(
 
 /* Adjoint of FUNC(forward_vx_cell); x axis (see FUNC(backward_vz_cell)). */
 DW_HOST_DEVICE void FUNC(backward_vx_cell)(
-    DW_DTYPE const *__restrict const p,
-    DW_DTYPE const *__restrict const m1_shot,
-    DW_DTYPE const *__restrict const c2_shot,
-    DW_DTYPE const *__restrict const rmem, DW_DTYPE *__restrict const vx,
-    DW_DTYPE const *__restrict const phi_x,
-    DW_DTYPE const *__restrict const psi_x, DW_DTYPE *__restrict const psi_xn,
-    DW_DTYPE const buoyancy_x_shot, DW_DTYPE *__restrict const grad_bx,
-    DW_DTYPE const *__restrict const bx_grad_store_1,
-    DW_DTYPE const *__restrict const axh, DW_DTYPE const *__restrict const bx,
+    DW_DTYPE const* __restrict const p,
+    DW_DTYPE const* __restrict const m1_shot,
+    DW_DTYPE const* __restrict const c2_shot,
+    DW_DTYPE const* __restrict const rmem, DW_DTYPE* __restrict const vx,
+    DW_DTYPE const* __restrict const phi_x,
+    DW_DTYPE const* __restrict const psi_x, DW_DTYPE* __restrict const psi_xn,
+    DW_DTYPE const buoyancy_x_shot, DW_DTYPE* __restrict const grad_bx,
+    DW_DTYPE const* __restrict const bx_grad_store_1,
+    DW_DTYPE const* __restrict const axh, DW_DTYPE const* __restrict const bx,
     DW_DTYPE const dt, int64_t const step_ratio, bool const b_requires_grad,
     int64_t const i, int64_t const j,
 #ifdef DW_GSLS
@@ -568,37 +568,37 @@ DW_HOST_DEVICE void FUNC(backward_vx_cell)(
  * the centre point here (no neighbour offset), so are passed by value.
  */
 DW_HOST_DEVICE void FUNC(backward_p_cell)(
-    DW_DTYPE *__restrict const p, DW_DTYPE *__restrict const rmem,
+    DW_DTYPE* __restrict const p, DW_DTYPE* __restrict const rmem,
 #if DW_NDIM >= 3
-    DW_DTYPE const *__restrict const vz, DW_DTYPE *__restrict const phi_z,
-    DW_DTYPE const *__restrict const buoyancy_z_shot,
-    DW_DTYPE const *__restrict const psi_z,
+    DW_DTYPE const* __restrict const vz, DW_DTYPE* __restrict const phi_z,
+    DW_DTYPE const* __restrict const buoyancy_z_shot,
+    DW_DTYPE const* __restrict const psi_z,
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE const *__restrict const vy, DW_DTYPE *__restrict const phi_y,
-    DW_DTYPE const *__restrict const buoyancy_y_shot,
-    DW_DTYPE const *__restrict const psi_y,
+    DW_DTYPE const* __restrict const vy, DW_DTYPE* __restrict const phi_y,
+    DW_DTYPE const* __restrict const buoyancy_y_shot,
+    DW_DTYPE const* __restrict const psi_y,
 #endif
-    DW_DTYPE const *__restrict const vx, DW_DTYPE *__restrict const phi_x,
-    DW_DTYPE const *__restrict const buoyancy_x_shot,
-    DW_DTYPE const *__restrict const psi_x, DW_DTYPE const m1_shot,
+    DW_DTYPE const* __restrict const vx, DW_DTYPE* __restrict const phi_x,
+    DW_DTYPE const* __restrict const buoyancy_x_shot,
+    DW_DTYPE const* __restrict const psi_x, DW_DTYPE const m1_shot,
 #ifdef DW_GSLS
     /* Multi-mechanism GSLS: c2/ar are per-mechanism fields (stride
      * m_lstride from mj), rmem the n_mech stacked adjoint memory variables
      * (stride r_lstride from i), grad_c2/grad_ar and the r_old checkpoint
      * store n_mech-times bigger (stride g_lstride from gidx). */
-    DW_DTYPE const *__restrict const c2_shot,
-    DW_DTYPE const *__restrict const ar_shot, int64_t const mj,
+    DW_DTYPE const* __restrict const c2_shot,
+    DW_DTYPE const* __restrict const ar_shot, int64_t const mj,
     int64_t const n_mech, int64_t const r_lstride, int64_t const m_lstride,
     int64_t const gidx, int64_t const g_lstride,
 #else
     DW_DTYPE const c2_shot, DW_DTYPE const ar_shot,
 #endif
-    DW_DTYPE *__restrict const grad_m1, DW_DTYPE *__restrict const grad_c2,
-    DW_DTYPE *__restrict const grad_ar,
-    DW_DTYPE const *__restrict const m1_grad_store_1,
-    DW_DTYPE const *__restrict const c2_grad_store_1,
-    DW_DTYPE const *__restrict const ar_grad_store_1, DW_DTYPE const dt,
+    DW_DTYPE* __restrict const grad_m1, DW_DTYPE* __restrict const grad_c2,
+    DW_DTYPE* __restrict const grad_ar,
+    DW_DTYPE const* __restrict const m1_grad_store_1,
+    DW_DTYPE const* __restrict const c2_grad_store_1,
+    DW_DTYPE const* __restrict const ar_grad_store_1, DW_DTYPE const dt,
     int64_t const step_ratio, bool const kmod_requires_grad,
     bool const ar_requires_grad, int64_t const i, int64_t const j,
 #if DW_NDIM >= 3
@@ -608,15 +608,15 @@ DW_HOST_DEVICE void FUNC(backward_p_cell)(
     int64_t const nx,
 #endif
 #if DW_NDIM >= 3
-    int64_t const z, bool const pml_z, DW_DTYPE const *__restrict const az,
-    DW_DTYPE const *__restrict const bzh, DW_DTYPE const rdz,
+    int64_t const z, bool const pml_z, DW_DTYPE const* __restrict const az,
+    DW_DTYPE const* __restrict const bzh, DW_DTYPE const rdz,
 #endif
 #if DW_NDIM >= 2
-    int64_t const y, bool const pml_y, DW_DTYPE const *__restrict const ay,
-    DW_DTYPE const *__restrict const byh, DW_DTYPE const rdy,
+    int64_t const y, bool const pml_y, DW_DTYPE const* __restrict const ay,
+    DW_DTYPE const* __restrict const byh, DW_DTYPE const rdy,
 #endif
-    int64_t const x, bool const pml_x, DW_DTYPE const *__restrict const ax,
-    DW_DTYPE const *__restrict const bxh, DW_DTYPE const rdx) {
+    int64_t const x, bool const pml_x, DW_DTYPE const* __restrict const ax,
+    DW_DTYPE const* __restrict const bxh, DW_DTYPE const rdx) {
   // Incoming adjoints (before this step modifies them) and the effective
   // pressure-adjoint field B_eff.
   DW_DTYPE const pbar = p[i];
@@ -740,12 +740,12 @@ DW_HOST_DEVICE void FUNC(backward_p_cell)(
  * interior receives in FUNC(backward_v*_cell), out-of-range taps dropped
  * (the adjoint pressure/memory fields are zero there once folded). */
 DW_HOST_DEVICE void FUNC(adj_gather_v_guard_line)(
-    DW_DTYPE *__restrict const v, DW_DTYPE const *__restrict const p,
-    DW_DTYPE const *__restrict const rmem,
-    DW_DTYPE const *__restrict const m1_shot,
-    DW_DTYPE const *__restrict const c2_shot, int64_t const base,
+    DW_DTYPE* __restrict const v, DW_DTYPE const* __restrict const p,
+    DW_DTYPE const* __restrict const rmem,
+    DW_DTYPE const* __restrict const m1_shot,
+    DW_DTYPE const* __restrict const c2_shot, int64_t const base,
     int64_t const jbase, int64_t const nax, int64_t const stride,
-    DW_DTYPE const dt, DW_DTYPE const rd, DW_DTYPE const *__restrict const sw
+    DW_DTYPE const dt, DW_DTYPE const rd, DW_DTYPE const* __restrict const sw
 #ifdef DW_GSLS
     ,
     int64_t const n_mech, int64_t const r_lstride, int64_t const m_lstride
@@ -803,12 +803,12 @@ DW_HOST_DEVICE void FUNC(adj_gather_v_guard_line)(
  * the extra high interior node n-P needs no gather -- see
  * acoustic_kernels.h's FUNC(adj_gather_v_guard_line_fr)). */
 DW_HOST_DEVICE void FUNC(adj_gather_v_guard_line_fr)(
-    DW_DTYPE *__restrict const v, DW_DTYPE const *__restrict const p,
-    DW_DTYPE const *__restrict const rmem,
-    DW_DTYPE const *__restrict const m1_shot,
-    DW_DTYPE const *__restrict const c2_shot, int64_t const base,
+    DW_DTYPE* __restrict const v, DW_DTYPE const* __restrict const p,
+    DW_DTYPE const* __restrict const rmem,
+    DW_DTYPE const* __restrict const m1_shot,
+    DW_DTYPE const* __restrict const c2_shot, int64_t const base,
     int64_t const jbase, int64_t const nax, int64_t const stride,
-    DW_DTYPE const dt, DW_DTYPE const rd, DW_DTYPE const *__restrict const sw,
+    DW_DTYPE const dt, DW_DTYPE const rd, DW_DTYPE const* __restrict const sw,
     int64_t const bc_lo, int64_t const bc_hi
 #ifdef DW_GSLS
     ,

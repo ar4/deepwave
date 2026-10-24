@@ -8,11 +8,9 @@
 # use-nullptr, use-override, use-trailing-return-type, range-for, etc.)
 # assumes C++ and does not apply.
 #
-# This list, and the suppression rationale below it, were set by running
-# clang-tidy over one representative NDIM/ACCURACY/DTYPE variant per
-# propagator per device (9 propagators -- scalar, scalar_born, acoustic,
-# acoustic_born, acoustic_vti, elastic, elastic_born, elastic_vti,
-# viscoacoustic -- x .c and .cu, 18 invocations) and triaging every finding.
+# The initial selection used representative CPU/CUDA sweeps. Finding counts
+# below are historical, not a current count or proof of correctness. Current
+# CPU checks cover the configured variants; CUDA needs its own toolchain.
 Checks: >
   -*,
   bugprone-*,
@@ -25,20 +23,17 @@ Checks: >
   readability-redundant-control-flow,
   readability-redundant-declaration,
   readability-simplify-boolean-expr,
+  readability-suspicious-call-argument,
   -bugprone-easily-swappable-parameters,
-  -bugprone-implicit-widening-of-multiplication-result,
-  -bugprone-macro-parentheses,
-  -clang-analyzer-security.insecureAPI.*,
-  -readability-suspicious-call-argument
+  -clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling
 
 WarningsAsErrors: '*'
 HeaderFilterRegex: '.*'
 FormatStyle: none
 
 # --- Suppression rationale (checks disabled above, and why) ---
-# Each of these was verified against the actual representative sweep's
-# output, not assumed; the commit that introduced each suppression carries
-# the full evidence.
+# These are portability and interface tradeoffs. None substitutes for checking
+# pointer identities, lifetimes, numerical behaviour or test sensitivity.
 #
 # bugprone-easily-swappable-parameters: 88,495 raw findings across the 18
 # representative files -- essentially every kernel entry point and
@@ -50,57 +45,26 @@ FormatStyle: none
 # require either a wholesale signature redesign (rejected -- sharing one
 # call shape across both backends is the whole point of the single-source
 # kernel headers) or would drown every other finding in noise. The real
-# "swapped argument" bug class this check targets is already caught in
-# this codebase by the cross-backend (C-vs-eager) numerical parity test
-# suite, which is how an elastic_born argument-ordering bug of exactly
-# that shape was actually found.
+# "swapped argument" bug class requires semantic tests as well as type
+# checks. Receiver-only parity missed an acoustic Born PML-state swap;
+# tests now also seed distinct cotangents for state outputs and compare
+# initial-state gradients with autograd. Those tests are evidence for their
+# exercised paths, not a guarantee that every same-typed argument is correct.
 #
-# bugprone-implicit-widening-of-multiplication-result: 200 raw findings,
-# and every single one is the identical benign pattern `2 * FD_PAD` (e.g.
-# `int64_t const mz = nz_ - 2 * FD_PAD + 1;`), where FD_PAD is a
-# compile-time macro constant in {1, 2, 3, 4} (regular_grid.h/
-# staggered_grid.h, one value per accuracy order) -- the multiplication is
-# bounded to at most 8 and can never overflow `int`. The check cannot
-# reason about a macro's compile-time value range, so it flags this
-# completely safe, ubiquitous idiom every time it appears; it produced
-# zero findings of any other shape across the sweep. (Note:
-# bugprone-narrowing-conversions, a related but separate check, is kept ON
-# -- it caught a real bug.)
+# Macro arguments are parenthesised and bugprone-macro-parentheses remains
+# enabled. The widening check also remains enabled: current clang-tidy
+# recognises the bounded constant FD_PAD products without false positives.
 #
-# bugprone-macro-parentheses: 154 findings across the 9-file CPU-only
-# representative sweep (mostly parameterised index/arithmetic macros like
-# `#define ND_INDEX(i, dz, dy, dx) (i + (dz) * ny * nx + ...)` and
-# `#define MAX(a, b) (a > b ? a : b)`). Every call site of every flagged
-# macro across the sweep passes only simple lvalues or `var - literal`
-# expressions, so the missing parentheses cannot currently change the
-# parsed meaning anywhere the macros are actually used -- a real
-# defensive-coding gap, not a live bug. Moved from "kept ON as backlog" to
-# disabled here so `WarningsAsErrors: '*'` can be enabled without a
-# 150-plus-line mechanical parenthesisation commit that touches every
-# kernel-index macro in the codebase for no behavioural benefit.
-#
-# clang-analyzer-security.insecureAPI.*: the one hit in the sweep flagged
+# clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling: the one hit in the sweep flagged
 # a plain `memcpy` call and suggested the Annex K `memcpy_s` family, which
 # is optional in C11, not implemented by glibc, and not something this
 # portable, gcc/nvcc-compiled codebase can depend on -- a well-known
 # false-positive-by-design check for code that intentionally targets
 # non-Annex-K platforms.
 #
-# readability-suspicious-call-argument: all 3 hits are in scalar.cu's
-# FUNC(backward), where the adjoint pass deliberately calls set_config()
-# with n_sources_per_shot_h and n_receivers_per_shot_h swapped relative to
-# their parameter names, then reuses the (identically named) forward
-# kernels record_receivers()/add_sources() with cross-wired grid
-# dimensions and index arrays to implement the source/receiver role
-# reversal inherent to the adjoint-state method (verified by tracing the
-# corresponding record_receivers<<<dimGrid_sources,...>>>(..., sources_i)
-# and add_sources<<<dimGrid_receivers,...>>>(..., receivers_i) launches:
-# the device __constant__ bound each kernel checks against must hold the
-# *other* count for exactly this reused invocation). The check's
-# name-vs-parameter-name heuristic cannot see that this is intentional,
-# semantically-verified kernel reuse rather than a mistake, and it is not
-# tunable per-call-site without NOLINT comments scattered through the
-# adjoint code -- disabled at the check level instead.
+# readability-suspicious-call-argument is enabled. The scalar CUDA adjoint
+# gives its deliberately reversed source/receiver counts explicit adjoint
+# names before configuring the reused injection and sampling kernels.
 #
 # --- Checks left enabled despite an earlier "kept ON as backlog" framing ---
 # The two checks below were previously left enabled with existing findings
@@ -113,10 +77,9 @@ FormatStyle: none
 # readability-braces-around-statements: 1,160 findings, mostly single-line
 # `if (cond) stmt;`. Genuinely relevant to C in general (the classic
 # dangling-else/goto-fail footgun class), but
-# readability-misleading-indentation -- which *would* fire if any of these
-# were formatted in a way that suggested a different scope than they have,
-# and is kept enabled -- found zero instances, confirming none of the
-# existing ones hide a live logic bug. Disabled rather than a
+# readability-misleading-indentation remains enabled. Its historical clean
+# result does not establish that the control flow is correct. Not selected
+# here to avoid a
 # 1,100-plus-line reformatting commit with no behavioural change.
 #
 # readability-non-const-parameter: 80 findings, e.g. `grad_bz_thread`,

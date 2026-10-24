@@ -84,6 +84,20 @@ rate per volume (:math:`\mathrm{s}^{-1}`). Zero-density/stiffness masks used
 for a surface are separate degeneracies; they are not ordinary material with
 an infinite or negative inverse density.
 
+The numerical scalar update uses :math:`u_{tt}=c^2(\nabla^2u-f)`.
+It accepts either sign of :math:`c` and the zero-speed limit. The
+``acoustic`` and ``viscoacoustic`` speed inputs likewise enter through
+:math:`c^2`; their density and attenuation restrictions are separate.
+The CFL bound uses absolute speed. For the Born propagators, reversing both
+``v`` and ``dv`` preserves the linearisation of :math:`c^2`.
+
+A zero time step evaluates the discrete update at ``dt=0`` without CFL
+substeps. In particular, the scalar two-level recurrence becomes
+:math:`u^{n+1}=2u^n-u^{n-1}`. Unequal initial time levels therefore still
+produce a changing sequence; a zero time step does not discard that initial
+state. With no supplied PML frequency, the zero-step limit uses zero rather
+than inferring a spectrum from samples with zero temporal spacing.
+
 Isotropic elastic solids, fluids, and dimension reduction
 ----------------------------------------------------------
 
@@ -285,3 +299,9 @@ numerical accuracy, particularly for many mechanisms in a narrow band. Neither
 the fit nor the elastic interior-energy argument proves passivity for every
 possible fitted configuration; the documented approximation should be checked
 against the attenuation required for the scientific application.
+
+Positive infinite ``q`` represents an exactly lossless cell for both the
+single- and multiple-mechanism attenuation models. It may be mixed with
+finite positive ``q`` in the same model. The attenuation strengths are
+proportional to ``1/q``, so the existing coefficient formulas give zero
+strength and the limiting zero derivative with respect to ``q`` there.

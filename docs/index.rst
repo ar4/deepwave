@@ -24,6 +24,9 @@ PyTorch for your CPU or CUDA device by following the instructions on the
 
 This method should work for most users. However, if you have an unusual system configuration, you might need to build Deepwave from source. Instructions for building from source are provided below.
 
+macOS wheels support Apple Silicon. Intel Mac wheels are no longer built,
+because PyTorch 2.4 and newer do not provide Intel macOS wheels.
+
 PyTorch is Deepwave's only dependency. Nothing else is needed to use it. The
 example scripts under ``docs/`` do import a few other packages --
 ``matplotlib`` to draw their figures, and, in some of them, ``scipy``

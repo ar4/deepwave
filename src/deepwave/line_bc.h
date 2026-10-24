@@ -36,7 +36,7 @@
 
 /* Refill the pressure guard ring of one line (free also zeros the on-surface
  * pressure node, an interior node). */
-static inline void FUNC(fill_p_bc_line)(DW_DTYPE *__restrict const p,
+static inline void FUNC(fill_p_bc_line)(DW_DTYPE* __restrict const p,
                                         int64_t const base, int64_t const nax,
                                         int64_t const stride,
                                         int64_t const bc_lo,
@@ -81,7 +81,7 @@ static inline void FUNC(fill_p_bc_line)(DW_DTYPE *__restrict const p,
 
 /* Refill the boundary-normal velocity guard ring of one line. The rigid high
  * wall node and the periodic extra high node are interior nodes fixed first. */
-static inline void FUNC(fill_v_bc_line)(DW_DTYPE *__restrict const v,
+static inline void FUNC(fill_v_bc_line)(DW_DTYPE* __restrict const v,
                                         int64_t const base, int64_t const nax,
                                         int64_t const stride,
                                         int64_t const bc_lo,

@@ -61,7 +61,7 @@ jobs:
         # cases exceed this runner's 16 GB RAM.
         run: >
           python benchmarks/run.py --tier meso --all --label candidate
-          --threads $(nproc)
+          --threads "$(nproc)"
           | tee benchmark_output.txt
 
       - name: Write job summary

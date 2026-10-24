@@ -87,8 +87,8 @@ def test_pseudo_acoustic_elliptical_limit_allowed_but_negative_diagonal_rejected
 
 
 @pytest.mark.parametrize("name", ["scalar", "acoustic", "viscoacoustic"])
-def test_negative_physical_speed_rejected(name: str) -> None:
-    """The scalar and acoustic backgrounds require positive active speed."""
+def test_signed_and_zero_speed_are_defined(name: str) -> None:
+    """Squared speed permits either sign and the zero-speed limit."""
     one = torch.ones(8, dtype=torch.float64)
     models = {
         "scalar": (-one,),
@@ -96,8 +96,8 @@ def test_negative_physical_speed_rejected(name: str) -> None:
         "viscoacoustic": (-one, one, one * 20),
     }[name]
     extra = {"q_freq": 25.0} if name == "viscoacoustic" else {}
-    with pytest.raises(deepwave.DeepwaveValueError, match="material requires"):
-        _plan(name, models, **extra)
+    _plan(name, models, **extra)
+    _plan(name, (torch.zeros_like(models[0]), *models[1:]), **extra)
 
 
 def test_born_perturbation_is_not_a_material() -> None:
@@ -107,22 +107,23 @@ def test_born_perturbation_is_not_a_material() -> None:
 
 
 @pytest.mark.parametrize("bad", [float("nan"), float("inf")])
-def test_nonfinite_material_rejected(bad: float) -> None:
-    """Positive comparisons alone must not admit infinite velocity or Q."""
+def test_undefined_material_values_rejected(bad: float) -> None:
+    """Reject NaN, infinite speed and negative infinite Q before propagation."""
     one = torch.ones(8, dtype=torch.float64)
     speed = one.clone()
     speed[0] = bad
     with pytest.raises(deepwave.DeepwaveValueError, match="finite v"):
         _plan("acoustic", (speed, one))
     quality = one.clone() * 20
-    quality[0] = bad
-    with pytest.raises(deepwave.DeepwaveValueError, match="finite q"):
+    quality[0] = -bad if bad == float("inf") else bad
+    with pytest.raises(deepwave.DeepwaveValueError, match="q > 0"):
         _plan("viscoacoustic", (one, one, quality), q_freq=25.0)
 
 
 def test_domain_check_shared_by_functional_module_plan_and_segments() -> None:
     """All public preparation routes reject the same invalid background."""
-    speed = -torch.ones(8, dtype=torch.float64)
+    speed = torch.ones(8, dtype=torch.float64)
+    speed[0] = float("nan")
     amplitude = torch.zeros(1, 1, 4, dtype=torch.float64)
     location = torch.tensor([[[4]]])
     options = {
@@ -139,7 +140,5 @@ def test_domain_check_shared_by_functional_module_plan_and_segments() -> None:
         lambda: deepwave.scalar(speed, 5.0, 0.001, checkpoint_segments=2, **options),
     )
     for call in calls:
-        with pytest.raises(
-            deepwave.DeepwaveValueError, match="material requires v > 0"
-        ):
+        with pytest.raises(deepwave.DeepwaveValueError, match="finite v"):
             call()

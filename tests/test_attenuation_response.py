@@ -382,3 +382,25 @@ def test_strong_loss_long_record_and_gradients_with_cfl_substeps():
         assert model.grad is not None
         assert bool(torch.isfinite(model.grad).all())
         assert float(model.grad.abs().max()) > 1e-8
+
+
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+@pytest.mark.parametrize("mechanisms", [1, 3])
+def test_exact_lossless_cells_and_q_derivative(dtype, mechanisms):
+    """An infinite-Q cell is exactly lossless beside a finite-Q attenuating cell."""
+    q = torch.tensor([20.0, float("inf")], dtype=dtype, requires_grad=True)
+    frequencies = torch.tensor([0.0, 5.0, 25.0, 50.0], dtype=dtype)
+    configuration = (
+        {"q_freq": 25.0}
+        if mechanisms == 1
+        else {"q_n_mechanisms": mechanisms, "q_band": (5.0, 60.0)}
+    )
+    response = deepwave.attenuation.response(q, frequencies, **configuration)
+    torch.testing.assert_close(
+        response[1], torch.ones_like(response[1]), rtol=0, atol=0
+    )
+    assert bool((response[0, 1:].imag > 0).all())
+    (gradient,) = torch.autograd.grad(response.imag.sum(), q)
+    assert torch.isfinite(gradient).all()
+    assert gradient[0] != 0
+    assert gradient[1] == 0

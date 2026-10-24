@@ -2459,13 +2459,11 @@ def scalar_born_func(
     global _forward_step_opt
 
     if backend:
-        v = cast("torch.Tensor", args[_N_LEADING_ARGS])
         # grid_spacing must reach the traced step functions as Python
         # floats: see _engine.float_grid_spacing for why an int silently
         # costs 8 significant digits under torch.compile on CUDA.
         args = (*args[:1], _engine.float_grid_spacing(args[1]), *args[2:])
-        config_key = (len(args[1]), args[5], v.dtype)
-        _forward_step_opt = _forward_step_cache.resolve(backend, config_key)
+        _forward_step_opt = _forward_step_cache.resolve(backend)
         return scalar_born_python(*args, backend=backend)
 
     # The compiled backend now threads the first-class boundary codes through

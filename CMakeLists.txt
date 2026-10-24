@@ -269,7 +269,14 @@ elseif(CMAKE_BUILD_TYPE MATCHES Release)
     # checks it across thread counts.
     if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang|Intel")
         if(DW_FAST_MATH)
-            set(C_RELEASE_FLAGS "-Ofast" "-fno-associative-math")
+            if(CMAKE_C_COMPILER_ID MATCHES "Clang")
+                # Clang deprecates -Ofast. Spell out its optimisation policy
+                # rather than suppressing the diagnostic; keep reassociation
+                # disabled for thread-count invariance.
+                set(C_RELEASE_FLAGS "-O3" "-ffast-math" "-fstrict-aliasing" "-fno-associative-math")
+            else()
+                set(C_RELEASE_FLAGS "-Ofast" "-fno-associative-math")
+            endif()
         else()
             set(C_RELEASE_FLAGS "-O3" "-fno-math-errno")
         endif()
@@ -326,14 +333,6 @@ if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
     # (observed on the Clang build; GCC did not report this class on this
     # codebase).
     #
-    # -Wno-deprecated-ofast (Clang-only diagnostic; silently accepted as an
-    # unknown -Wno- flag by GCC): recent Clang emits a driver-level notice
-    # that -Ofast is deprecated in favour of spelling out -O3 -ffast-math.
-    # -Ofast only appears when DW_FAST_MATH=ON (see C_RELEASE_FLAGS above);
-    # the suppression stays unconditional since it is inert (and harmless)
-    # for the default -O3 build, and the notice carries no per-source-line
-    # information to act on when it does fire.
-    #
     # -Wno-pass-failed (Clang-only diagnostic, silently accepted by GCC): the
     # kernel loops are annotated with `#pragma omp simd collapse(DW_NDIM)`
     # throughout (a vectorisation HINT to the compiler, not a correctness
@@ -350,60 +349,32 @@ if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
         -pedantic
         -Wno-unused-parameter
         -Wno-unused-function
-        -Wno-deprecated-ofast
         -Wno-pass-failed
     )
 endif()
 if(CMAKE_CUDA_COMPILER_ID MATCHES "NVIDIA")
-    # nvcc forwards these to its host-compiler pass (which compiles the
-    # non-kernel glue code nvcc generates from each .cu TU); the device-code
-    # frontend has its own, separate diagnostic flags and is not affected by
-    # -Xcompiler. No -pedantic here: CUDA's own syntax (__global__/__shared__/
-    # <<<>>> launches etc.) is not standard C/C++, so -pedantic would fire on
-    # every kernel launch and add nothing but noise.
-    #
-    # -Wno-unused-parameter / -Wno-unused-function: the kernel headers'
-    # DW_HOST_DEVICE-qualified cell functions and static host-side helper
-    # families (e.g. the per-axis "_cell_guard_*" boundary helpers in
-    # elastic_born_kernels.h) are included into every NDIM/ACCURACY/DTYPE/
-    # variant .cu translation unit with one uniform, cross-variant parameter
-    # list, and a given variant's host-compiled glue code only touches/calls
-    # the subset it needs -- the same cross-variant reasoning as the CPU
-    # C_WARNING_FLAGS case above, just observed independently on the CUDA
-    # host-compile pass (with GCC as host compiler: ~8400 unused-parameter
-    # instances; with Clang as host compiler: ~7700 unused-function
-    # instances -- each compiler's dead-code analysis differs, so the two
-    # classes don't perfectly overlap between them, but both are the same
-    # structural pattern).
-    #
-    # --diag-suppress=177,550: these are nvcc's OWN frontend diagnostics
-    # (independent of -Xcompiler / -Wall-style flags entirely -- they come
-    # from nvcc's own device-code parser, not the forwarded host compiler),
-    # for "declared but never referenced" (177) and "set but never used"
-    # (550) local variables (both suppressed via one comma-separated flag;
-    # passing them as two repeated -Xcudafe flags instead was tried and
-    # rejected by nvcc -- the second occurrence leaked through to the host
-    # compiler as an unrecognised argument). The overwhelming majority
-    # (~8900 instances, concentrated in elastic_born.cu/elastic_vti.cu/
-    # viscoacoustic.cu) are per-axis shot-local model pointers (e.g.
-    # buoyancy_x_shot/dbuoyancy_x_shot) that are declared together as one
-    # shared boilerplate block (mirroring the lamb_shot/mu_shot/dlamb_shot
-    # pattern used throughout this codebase) but only a subset is read by
-    # any one specific kernel -- the same cross-variant over-declaration
-    # pattern as the -Wno-unused-parameter/-function classes above, just
-    # diagnosed by nvcc's own frontend instead of the host compiler. This
-    # was verified, not assumed: tests/test_adjoint_dot_product.py's
-    # compiled-backend elastic_born dbuoyancy case
-    # (test_adjoint_dot_product[elastic_born-dbuoyancy-2d-pml-c]) passes,
-    # confirming the buoyancy/dbuoyancy gradient math is correct despite
-    # these specific shot-local pointers going unread in some kernels.
+    # Check nvcc's frontend independently of its host compiler. Unused local
+    # variables remain visible: declarations should match the active variant.
+    # Missing launch bounds are not enabled: they are an optional tuning hint,
+    # not a correctness requirement, and need GPU measurements before use.
     set(CUDA_WARNING_FLAGS
-        -Xcompiler=-Wall
-        -Xcompiler=-Wextra
-        -Xcompiler=-Wno-unused-parameter
-        -Xcompiler=-Wno-unused-function
-        --diag-suppress=177,550
+        --Wreorder
+        --Wdefault-stream-launch
+        --Wext-lambda-captures-this
+        --Werror=all-warnings
     )
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        # Shared cell-function signatures and header helper families include
+        # parameters/functions unused by individual variants, as on the CPU.
+        # These GNU-style options must not be forwarded to MSVC on Windows.
+        list(APPEND CUDA_WARNING_FLAGS
+            -Xcompiler=-Wall
+            -Xcompiler=-Wextra
+            -Xcompiler=-Werror
+            -Xcompiler=-Wno-unused-parameter
+            -Xcompiler=-Wno-unused-function
+        )
+    endif()
 endif()
 # --- End warning flags ---
 
@@ -425,6 +396,13 @@ function(configure_deepwave_cpu_release_flags TARGET_NAME BASENAME NDIM)
     if(NOT BASENAME STREQUAL "viscoacoustic" AND
        (NOT NDIM EQUAL 3 OR BASENAME MATCHES "^(scalar|scalar_born|elastic_born)$"))
         list(REMOVE_ITEM _CPU_RELEASE_FLAGS "--param=vect-epilogues-nomask=0")
+    endif()
+    # Compression must preserve subnormals even when long double has only
+    # double's range (Apple Silicon and MSVC). Fast-math can turn its bounded
+    # tiny-value division into an overflowing reciprocal. Keep this small
+    # helper precise without changing the propagator kernel optimisation.
+    if(BASENAME STREQUAL "simple_compress" AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang|Intel")
+        list(APPEND _CPU_RELEASE_FLAGS "-fno-fast-math")
     endif()
     if(_CPU_RELEASE_FLAGS)
         target_compile_options(${TARGET_NAME} PRIVATE ${_CPU_RELEASE_FLAGS})

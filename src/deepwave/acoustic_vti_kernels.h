@@ -138,9 +138,9 @@
 #endif
 
 #if DW_NDIM == 3
-#define ND_INDEX(i, dz, dy, dx) (i + (dz) * ny * nx + (dy) * nx + (dx))
+#define ND_INDEX(i, dz, dy, dx) ((i) + (dz) * ny * nx + (dy) * nx + (dx))
 #elif DW_NDIM == 2
-#define ND_INDEX(i, dz, dy, dx) (i + (dy) * nx + (dx))
+#define ND_INDEX(i, dz, dy, dx) ((i) + (dy) * nx + (dx))
 #else /* DW_NDIM == 1 */
 #define ND_INDEX(i, dz, dy, dx) (i + (dx))
 #endif
@@ -336,11 +336,11 @@
  * not for the DIFFZH1 stencil itself.
  */
 DW_HOST_DEVICE void FUNC(forward_vz_cell)(
-    DW_DTYPE const *__restrict const sigma_v, DW_DTYPE *__restrict const vz,
-    DW_DTYPE *__restrict const m_sigma_v_z,
-    DW_DTYPE *__restrict const dvzdbuoyancy_store_1,
-    DW_DTYPE const buoyancy_z_shot, DW_DTYPE const *__restrict const azh,
-    DW_DTYPE const *__restrict const bzh, DW_DTYPE const dt,
+    DW_DTYPE const* __restrict const sigma_v, DW_DTYPE* __restrict const vz,
+    DW_DTYPE* __restrict const m_sigma_v_z,
+    DW_DTYPE* __restrict const dvzdbuoyancy_store_1,
+    DW_DTYPE const buoyancy_z_shot, DW_DTYPE const* __restrict const azh,
+    DW_DTYPE const* __restrict const bzh, DW_DTYPE const dt,
     bool const buoyancy_requires_grad, int64_t const i, int64_t const ny,
     int64_t const nx, int64_t const z, int64_t const y, int64_t const x,
     bool const pml_z, DW_DTYPE const rdz) {
@@ -364,16 +364,16 @@ DW_HOST_DEVICE void FUNC(forward_vz_cell)(
  * buoyancy_y * dt * d(sigma_v)/dy [2-D, axis] (see FUNC(forward_vz_cell)). */
 DW_HOST_DEVICE void FUNC(forward_vy_cell)(
 #if DW_NDIM == 3
-    DW_DTYPE const *__restrict const sigma_h,
-    DW_DTYPE *__restrict const m_sigma_h_y,
+    DW_DTYPE const* __restrict const sigma_h,
+    DW_DTYPE* __restrict const m_sigma_h_y,
 #else
-    DW_DTYPE const *__restrict const sigma_v,
-    DW_DTYPE *__restrict const m_sigma_v_y,
+    DW_DTYPE const* __restrict const sigma_v,
+    DW_DTYPE* __restrict const m_sigma_v_y,
 #endif
-    DW_DTYPE *__restrict const vy,
-    DW_DTYPE *__restrict const dvydbuoyancy_store_1,
-    DW_DTYPE const buoyancy_y_shot, DW_DTYPE const *__restrict const ayh,
-    DW_DTYPE const *__restrict const byh, DW_DTYPE const dt,
+    DW_DTYPE* __restrict const vy,
+    DW_DTYPE* __restrict const dvydbuoyancy_store_1,
+    DW_DTYPE const buoyancy_y_shot, DW_DTYPE const* __restrict const ayh,
+    DW_DTYPE const* __restrict const byh, DW_DTYPE const dt,
     bool const buoyancy_requires_grad, int64_t const i,
 #if DW_NDIM >= 3
     int64_t const ny,
@@ -412,11 +412,11 @@ DW_HOST_DEVICE void FUNC(forward_vy_cell)(
 /* vx += buoyancy_x * dt * d(sigma_h)/dx (always transverse; see
  * FUNC(forward_vz_cell)). */
 DW_HOST_DEVICE void FUNC(forward_vx_cell)(
-    DW_DTYPE const *__restrict const sigma_h, DW_DTYPE *__restrict const vx,
-    DW_DTYPE *__restrict const m_sigma_h_x,
-    DW_DTYPE *__restrict const dvxdbuoyancy_store_1,
-    DW_DTYPE const buoyancy_x_shot, DW_DTYPE const *__restrict const axh,
-    DW_DTYPE const *__restrict const bxh, DW_DTYPE const dt,
+    DW_DTYPE const* __restrict const sigma_h, DW_DTYPE* __restrict const vx,
+    DW_DTYPE* __restrict const m_sigma_h_x,
+    DW_DTYPE* __restrict const dvxdbuoyancy_store_1,
+    DW_DTYPE const buoyancy_x_shot, DW_DTYPE const* __restrict const axh,
+    DW_DTYPE const* __restrict const bxh, DW_DTYPE const dt,
     bool const buoyancy_requires_grad, int64_t const i,
 #if DW_NDIM >= 3
     int64_t const ny,
@@ -457,19 +457,19 @@ DW_HOST_DEVICE void FUNC(forward_vx_cell)(
  */
 DW_HOST_DEVICE void FUNC(forward_sigma_cell)(
 #if DW_NDIM >= 3
-    DW_DTYPE const *__restrict const vz,
+    DW_DTYPE const* __restrict const vz,
 #endif
-    DW_DTYPE const *__restrict const vy, DW_DTYPE const *__restrict const vx,
-    DW_DTYPE *__restrict const sigma_v, DW_DTYPE *__restrict const sigma_h,
+    DW_DTYPE const* __restrict const vy, DW_DTYPE const* __restrict const vx,
+    DW_DTYPE* __restrict const sigma_v, DW_DTYPE* __restrict const sigma_h,
 #if DW_NDIM >= 3
-    DW_DTYPE *__restrict const m_vzz,
+    DW_DTYPE* __restrict const m_vzz,
 #endif
-    DW_DTYPE *__restrict const m_vyy, DW_DTYPE *__restrict const m_vxx,
+    DW_DTYPE* __restrict const m_vyy, DW_DTYPE* __restrict const m_vxx,
 #if DW_NDIM >= 3
-    DW_DTYPE *__restrict const dvzdz_store_1,
+    DW_DTYPE* __restrict const dvzdz_store_1,
 #endif
-    DW_DTYPE *__restrict const dvydy_store_1,
-    DW_DTYPE *__restrict const dvxdx_store_1, DW_DTYPE const c11_shot,
+    DW_DTYPE* __restrict const dvydy_store_1,
+    DW_DTYPE* __restrict const dvxdx_store_1, DW_DTYPE const c11_shot,
     DW_DTYPE const c13_shot, DW_DTYPE const c33_shot, DW_DTYPE const dt,
     bool const cnormal_requires_grad, int64_t const i,
 #if DW_NDIM >= 3
@@ -477,13 +477,13 @@ DW_HOST_DEVICE void FUNC(forward_sigma_cell)(
 #endif
     int64_t const nx,
 #if DW_NDIM >= 3
-    int64_t const z, bool const pml_z, DW_DTYPE const *__restrict const az,
-    DW_DTYPE const *__restrict const bz, DW_DTYPE const rdz,
+    int64_t const z, bool const pml_z, DW_DTYPE const* __restrict const az,
+    DW_DTYPE const* __restrict const bz, DW_DTYPE const rdz,
 #endif
-    int64_t const y, bool const pml_y, DW_DTYPE const *__restrict const ay,
-    DW_DTYPE const *__restrict const by, DW_DTYPE const rdy, int64_t const x,
-    bool const pml_x, DW_DTYPE const *__restrict const ax,
-    DW_DTYPE const *__restrict const bx, DW_DTYPE const rdx) {
+    int64_t const y, bool const pml_y, DW_DTYPE const* __restrict const ay,
+    DW_DTYPE const* __restrict const by, DW_DTYPE const rdy, int64_t const x,
+    bool const pml_x, DW_DTYPE const* __restrict const ax,
+    DW_DTYPE const* __restrict const bx, DW_DTYPE const rdx) {
 #if DW_NDIM >= 3
   DW_DTYPE dvzdz;
   if (pml_z) {
@@ -552,11 +552,11 @@ DW_HOST_DEVICE void FUNC(forward_sigma_cell)(
  * the z-axis PML region.
  */
 DW_HOST_DEVICE void FUNC(backward_vz_cell)(
-    DW_DTYPE const *__restrict const c13_shot,
-    DW_DTYPE const *__restrict const c33_shot,
-    DW_DTYPE const *__restrict const sigma_h,
-    DW_DTYPE const *__restrict const sigma_v, DW_DTYPE *__restrict const vz,
-    DW_DTYPE const *__restrict const m_vzz, DW_DTYPE const *__restrict const bz,
+    DW_DTYPE const* __restrict const c13_shot,
+    DW_DTYPE const* __restrict const c33_shot,
+    DW_DTYPE const* __restrict const sigma_h,
+    DW_DTYPE const* __restrict const sigma_v, DW_DTYPE* __restrict const vz,
+    DW_DTYPE const* __restrict const m_vzz, DW_DTYPE const* __restrict const bz,
     DW_DTYPE const dt, int64_t const i, int64_t const j, int64_t const ny,
     int64_t const nx, int64_t const z, int64_t const y, int64_t const x,
     bool const pml_z, DW_DTYPE const rdz) {
@@ -576,10 +576,10 @@ DW_HOST_DEVICE void FUNC(backward_vz_cell)(
  * For every other cell (the fold never touches it) vz[i] is identical pre-
  * and post-fold, so this split changes nothing there. */
 DW_HOST_DEVICE void FUNC(backward_vz_cell_pml_mem)(
-    DW_DTYPE const *__restrict const vz,
-    DW_DTYPE const *__restrict const m_sigma_v_z,
-    DW_DTYPE *__restrict const m_sigma_v_zn, DW_DTYPE const buoyancy_z_shot,
-    DW_DTYPE const *__restrict const azh, DW_DTYPE const dt, int64_t const i,
+    DW_DTYPE const* __restrict const vz,
+    DW_DTYPE const* __restrict const m_sigma_v_z,
+    DW_DTYPE* __restrict const m_sigma_v_zn, DW_DTYPE const buoyancy_z_shot,
+    DW_DTYPE const* __restrict const azh, DW_DTYPE const dt, int64_t const i,
     int64_t const ny, int64_t const nx, int64_t const z, int64_t const y,
     int64_t const x, bool const pml_z) {
   if (pml_z) {
@@ -595,15 +595,15 @@ DW_HOST_DEVICE void FUNC(backward_vz_cell_pml_mem)(
  * FUNC(backward_vz_cell). */
 DW_HOST_DEVICE void FUNC(backward_vy_cell)(
 #if DW_NDIM == 3
-    DW_DTYPE const *__restrict const c11_shot,
-    DW_DTYPE const *__restrict const c13_shot,
+    DW_DTYPE const* __restrict const c11_shot,
+    DW_DTYPE const* __restrict const c13_shot,
 #else
-    DW_DTYPE const *__restrict const c13_shot,
-    DW_DTYPE const *__restrict const c33_shot,
+    DW_DTYPE const* __restrict const c13_shot,
+    DW_DTYPE const* __restrict const c33_shot,
 #endif
-    DW_DTYPE const *__restrict const sigma_h,
-    DW_DTYPE const *__restrict const sigma_v, DW_DTYPE *__restrict const vy,
-    DW_DTYPE const *__restrict const m_vyy, DW_DTYPE const *__restrict const by,
+    DW_DTYPE const* __restrict const sigma_h,
+    DW_DTYPE const* __restrict const sigma_v, DW_DTYPE* __restrict const vy,
+    DW_DTYPE const* __restrict const m_vyy, DW_DTYPE const* __restrict const by,
     DW_DTYPE const dt, int64_t const i, int64_t const j,
 #if DW_NDIM >= 3
     int64_t const ny,
@@ -621,15 +621,15 @@ DW_HOST_DEVICE void FUNC(backward_vy_cell)(
  * vy_cell) -- see FUNC(backward_vz_cell_pml_mem)'s comment (same split,
  * same reason: vy[i] must be read post-fold). */
 DW_HOST_DEVICE void FUNC(backward_vy_cell_pml_mem)(
-    DW_DTYPE const *__restrict const vy,
+    DW_DTYPE const* __restrict const vy,
 #if DW_NDIM == 3
-    DW_DTYPE const *__restrict const m_sigma_h_y,
-    DW_DTYPE *__restrict const m_sigma_h_yn,
+    DW_DTYPE const* __restrict const m_sigma_h_y,
+    DW_DTYPE* __restrict const m_sigma_h_yn,
 #else
-    DW_DTYPE const *__restrict const m_sigma_v_y,
-    DW_DTYPE *__restrict const m_sigma_v_yn,
+    DW_DTYPE const* __restrict const m_sigma_v_y,
+    DW_DTYPE* __restrict const m_sigma_v_yn,
 #endif
-    DW_DTYPE const buoyancy_y_shot, DW_DTYPE const *__restrict const ayh,
+    DW_DTYPE const buoyancy_y_shot, DW_DTYPE const* __restrict const ayh,
     DW_DTYPE const dt, int64_t const i,
 #if DW_NDIM >= 3
     int64_t const ny, int64_t const z,
@@ -649,11 +649,11 @@ DW_HOST_DEVICE void FUNC(backward_vy_cell_pml_mem)(
 /* Adjoint velocity update, x axis: always transverse (fed by sigma_h, via
  * c11/c13) -- see FUNC(backward_vz_cell). */
 DW_HOST_DEVICE void FUNC(backward_vx_cell)(
-    DW_DTYPE const *__restrict const c11_shot,
-    DW_DTYPE const *__restrict const c13_shot,
-    DW_DTYPE const *__restrict const sigma_h,
-    DW_DTYPE const *__restrict const sigma_v, DW_DTYPE *__restrict const vx,
-    DW_DTYPE const *__restrict const m_vxx, DW_DTYPE const *__restrict const bx,
+    DW_DTYPE const* __restrict const c11_shot,
+    DW_DTYPE const* __restrict const c13_shot,
+    DW_DTYPE const* __restrict const sigma_h,
+    DW_DTYPE const* __restrict const sigma_v, DW_DTYPE* __restrict const vx,
+    DW_DTYPE const* __restrict const m_vxx, DW_DTYPE const* __restrict const bx,
     DW_DTYPE const dt, int64_t const i, int64_t const j,
 #if DW_NDIM >= 3
     int64_t const ny,
@@ -671,10 +671,10 @@ DW_HOST_DEVICE void FUNC(backward_vx_cell)(
  * FUNC(backward_vz_cell_pml_mem)'s comment (same split, same reason: vx[i]
  * must be read post-fold). */
 DW_HOST_DEVICE void FUNC(backward_vx_cell_pml_mem)(
-    DW_DTYPE const *__restrict const vx,
-    DW_DTYPE const *__restrict const m_sigma_h_x,
-    DW_DTYPE *__restrict const m_sigma_h_xn, DW_DTYPE const buoyancy_x_shot,
-    DW_DTYPE const *__restrict const axh, DW_DTYPE const dt, int64_t const i,
+    DW_DTYPE const* __restrict const vx,
+    DW_DTYPE const* __restrict const m_sigma_h_x,
+    DW_DTYPE* __restrict const m_sigma_h_xn, DW_DTYPE const buoyancy_x_shot,
+    DW_DTYPE const* __restrict const axh, DW_DTYPE const dt, int64_t const i,
 #if DW_NDIM >= 3
     int64_t const ny, int64_t const z,
 #endif
@@ -710,33 +710,33 @@ DW_HOST_DEVICE void FUNC(backward_vx_cell_pml_mem)(
  */
 DW_HOST_DEVICE void FUNC(backward_sigma_cell)(
 #if DW_NDIM >= 3
-    DW_DTYPE const *__restrict const vz,
-    DW_DTYPE const *__restrict const buoyancy_z_shot,
+    DW_DTYPE const* __restrict const vz,
+    DW_DTYPE const* __restrict const buoyancy_z_shot,
 #endif
-    DW_DTYPE const *__restrict const vy,
-    DW_DTYPE const *__restrict const buoyancy_y_shot,
-    DW_DTYPE const *__restrict const vx,
-    DW_DTYPE const *__restrict const buoyancy_x_shot,
-    DW_DTYPE *__restrict const sigma_v, DW_DTYPE *__restrict const sigma_h,
+    DW_DTYPE const* __restrict const vy,
+    DW_DTYPE const* __restrict const buoyancy_y_shot,
+    DW_DTYPE const* __restrict const vx,
+    DW_DTYPE const* __restrict const buoyancy_x_shot,
+    DW_DTYPE* __restrict const sigma_v, DW_DTYPE* __restrict const sigma_h,
 #if DW_NDIM >= 3
-    DW_DTYPE *__restrict const m_vzz,
+    DW_DTYPE* __restrict const m_vzz,
 #endif
-    DW_DTYPE *__restrict const m_vyy, DW_DTYPE *__restrict const m_vxx,
+    DW_DTYPE* __restrict const m_vyy, DW_DTYPE* __restrict const m_vxx,
 #if DW_NDIM == 3
-    DW_DTYPE const *__restrict const m_sigma_v_z,
-    DW_DTYPE const *__restrict const m_sigma_h_y,
+    DW_DTYPE const* __restrict const m_sigma_v_z,
+    DW_DTYPE const* __restrict const m_sigma_h_y,
 #else
-    DW_DTYPE const *__restrict const m_sigma_v_y,
+    DW_DTYPE const* __restrict const m_sigma_v_y,
 #endif
-    DW_DTYPE const *__restrict const m_sigma_h_x,
+    DW_DTYPE const* __restrict const m_sigma_h_x,
 #if DW_NDIM >= 3
-    DW_DTYPE const *__restrict const dvzdz_store_1,
+    DW_DTYPE const* __restrict const dvzdz_store_1,
 #endif
-    DW_DTYPE const *__restrict const dvydy_store_1,
-    DW_DTYPE const *__restrict const dvxdx_store_1, DW_DTYPE const c11_shot,
+    DW_DTYPE const* __restrict const dvydy_store_1,
+    DW_DTYPE const* __restrict const dvxdx_store_1, DW_DTYPE const c11_shot,
     DW_DTYPE const c13_shot, DW_DTYPE const c33_shot,
-    DW_DTYPE *__restrict const grad_c11, DW_DTYPE *__restrict const grad_c13,
-    DW_DTYPE *__restrict const grad_c33, DW_DTYPE const dt,
+    DW_DTYPE* __restrict const grad_c11, DW_DTYPE* __restrict const grad_c13,
+    DW_DTYPE* __restrict const grad_c33, DW_DTYPE const dt,
     int64_t const step_ratio, bool const c11_requires_grad,
     bool const c13_requires_grad, bool const c33_requires_grad, int64_t const i,
     int64_t const j,
@@ -745,13 +745,13 @@ DW_HOST_DEVICE void FUNC(backward_sigma_cell)(
 #endif
     int64_t const nx,
 #if DW_NDIM >= 3
-    int64_t const z, bool const pml_z, DW_DTYPE const *__restrict const az,
-    DW_DTYPE const *__restrict const bzh, DW_DTYPE const rdz,
+    int64_t const z, bool const pml_z, DW_DTYPE const* __restrict const az,
+    DW_DTYPE const* __restrict const bzh, DW_DTYPE const rdz,
 #endif
-    int64_t const y, bool const pml_y, DW_DTYPE const *__restrict const ay,
-    DW_DTYPE const *__restrict const byh, DW_DTYPE const rdy, int64_t const x,
-    bool const pml_x, DW_DTYPE const *__restrict const ax,
-    DW_DTYPE const *__restrict const bxh, DW_DTYPE const rdx) {
+    int64_t const y, bool const pml_y, DW_DTYPE const* __restrict const ay,
+    DW_DTYPE const* __restrict const byh, DW_DTYPE const rdy, int64_t const x,
+    bool const pml_x, DW_DTYPE const* __restrict const ax,
+    DW_DTYPE const* __restrict const bxh, DW_DTYPE const rdx) {
 #if DW_NDIM == 3
   if (c11_requires_grad) {
     grad_c11[i] += sigma_h[i] * (dvxdx_store_1[i] + dvydy_store_1[i]) *
@@ -987,10 +987,10 @@ DW_HOST_DEVICE bool FUNC(dw_is_pml_region)(int64_t const c,
  * which never needs it for flat indexing) purely for DW_DIFFZH1_SAFE's
  * bounds check. */
 DW_HOST_DEVICE void FUNC(backward_vz_cell_guard)(
-    DW_DTYPE const *__restrict const c13_shot,
-    DW_DTYPE const *__restrict const c33_shot,
-    DW_DTYPE const *__restrict const sigma_h,
-    DW_DTYPE const *__restrict const sigma_v, DW_DTYPE *__restrict const vz,
+    DW_DTYPE const* __restrict const c13_shot,
+    DW_DTYPE const* __restrict const c33_shot,
+    DW_DTYPE const* __restrict const sigma_h,
+    DW_DTYPE const* __restrict const sigma_v, DW_DTYPE* __restrict const vz,
     DW_DTYPE const dt, int64_t const i, int64_t const j, int64_t const nz,
     int64_t const ny, int64_t const nx, int64_t const z, int64_t const y,
     int64_t const x, DW_DTYPE const rdz) {
@@ -1004,14 +1004,14 @@ DW_HOST_DEVICE void FUNC(backward_vz_cell_guard)(
  * purely for DW_DIFFYH1_SAFE's bounds check. */
 DW_HOST_DEVICE void FUNC(backward_vy_cell_guard)(
 #if DW_NDIM == 3
-    DW_DTYPE const *__restrict const c11_shot,
-    DW_DTYPE const *__restrict const c13_shot,
+    DW_DTYPE const* __restrict const c11_shot,
+    DW_DTYPE const* __restrict const c13_shot,
 #else
-    DW_DTYPE const *__restrict const c13_shot,
-    DW_DTYPE const *__restrict const c33_shot,
+    DW_DTYPE const* __restrict const c13_shot,
+    DW_DTYPE const* __restrict const c33_shot,
 #endif
-    DW_DTYPE const *__restrict const sigma_h,
-    DW_DTYPE const *__restrict const sigma_v, DW_DTYPE *__restrict const vy,
+    DW_DTYPE const* __restrict const sigma_h,
+    DW_DTYPE const* __restrict const sigma_v, DW_DTYPE* __restrict const vy,
     DW_DTYPE const dt, int64_t const i, int64_t const j,
 #if DW_NDIM >= 3
     int64_t const nz,
@@ -1027,10 +1027,10 @@ DW_HOST_DEVICE void FUNC(backward_vy_cell_guard)(
 /* Guard-band companion to FUNC(backward_vx_cell)'s gather (see FUNC(
  * backward_vz_cell_guard)). */
 DW_HOST_DEVICE void FUNC(backward_vx_cell_guard)(
-    DW_DTYPE const *__restrict const c11_shot,
-    DW_DTYPE const *__restrict const c13_shot,
-    DW_DTYPE const *__restrict const sigma_h,
-    DW_DTYPE const *__restrict const sigma_v, DW_DTYPE *__restrict const vx,
+    DW_DTYPE const* __restrict const c11_shot,
+    DW_DTYPE const* __restrict const c13_shot,
+    DW_DTYPE const* __restrict const sigma_h,
+    DW_DTYPE const* __restrict const sigma_v, DW_DTYPE* __restrict const vx,
     DW_DTYPE const dt, int64_t const i, int64_t const j,
 #if DW_NDIM >= 3
     int64_t const nz,
@@ -1053,8 +1053,8 @@ DW_HOST_DEVICE void FUNC(backward_vx_cell_guard)(
  * sigma_v's value at the *old* cell, not the new guard cell) is left
  * entirely to the interior function -- see the module comment above. */
 DW_HOST_DEVICE void FUNC(backward_sigma_v_z_cell_guard)(
-    DW_DTYPE const *__restrict const buoyancy_z_shot,
-    DW_DTYPE const *__restrict const vz, DW_DTYPE *__restrict const sigma_v,
+    DW_DTYPE const* __restrict const buoyancy_z_shot,
+    DW_DTYPE const* __restrict const vz, DW_DTYPE* __restrict const sigma_v,
     DW_DTYPE const dt, int64_t const i, int64_t const j, int64_t const nz,
     int64_t const ny, int64_t const nx, int64_t const z, DW_DTYPE const rdz) {
   sigma_v[i] += -DW_DIFFZ1_SAFE(SIGMA_V_Z);
@@ -1064,8 +1064,8 @@ DW_HOST_DEVICE void FUNC(backward_sigma_v_z_cell_guard)(
  * sigma_cell) for its y (3-D transverse) term -- see FUNC(backward_sigma_
  * v_z_cell_guard). */
 DW_HOST_DEVICE void FUNC(backward_sigma_h_y_cell_guard)(
-    DW_DTYPE const *__restrict const buoyancy_y_shot,
-    DW_DTYPE const *__restrict const vy, DW_DTYPE *__restrict const sigma_h,
+    DW_DTYPE const* __restrict const buoyancy_y_shot,
+    DW_DTYPE const* __restrict const vy, DW_DTYPE* __restrict const sigma_h,
     DW_DTYPE const dt, int64_t const i, int64_t const j, int64_t const ny,
     int64_t const nx, int64_t const y, DW_DTYPE const rdy) {
   sigma_h[i] += -DW_DIFFY1_SAFE(SIGMA_H_Y);
@@ -1074,8 +1074,8 @@ DW_HOST_DEVICE void FUNC(backward_sigma_h_y_cell_guard)(
 /* Guard-band companion to the sigma_v sub-update inside FUNC(backward_
  * sigma_cell) (2-D: axis = y) -- see FUNC(backward_sigma_v_z_cell_guard). */
 DW_HOST_DEVICE void FUNC(backward_sigma_v_y_cell_guard)(
-    DW_DTYPE const *__restrict const buoyancy_y_shot,
-    DW_DTYPE const *__restrict const vy, DW_DTYPE *__restrict const sigma_v,
+    DW_DTYPE const* __restrict const buoyancy_y_shot,
+    DW_DTYPE const* __restrict const vy, DW_DTYPE* __restrict const sigma_v,
     DW_DTYPE const dt, int64_t const i, int64_t const j, int64_t const ny,
     int64_t const nx, int64_t const y, DW_DTYPE const rdy) {
   sigma_v[i] += -DW_DIFFY1_SAFE(SIGMA_V_Y);
@@ -1086,8 +1086,8 @@ DW_HOST_DEVICE void FUNC(backward_sigma_v_y_cell_guard)(
  * sigma_cell) for its x (always transverse) term -- see FUNC(backward_
  * sigma_v_z_cell_guard). */
 DW_HOST_DEVICE void FUNC(backward_sigma_h_x_cell_guard)(
-    DW_DTYPE const *__restrict const buoyancy_x_shot,
-    DW_DTYPE const *__restrict const vx, DW_DTYPE *__restrict const sigma_h,
+    DW_DTYPE const* __restrict const buoyancy_x_shot,
+    DW_DTYPE const* __restrict const vx, DW_DTYPE* __restrict const sigma_h,
     DW_DTYPE const dt, int64_t const i, int64_t const j,
 #if DW_NDIM >= 3
     int64_t const ny,

@@ -248,7 +248,6 @@ class StepCache:
     def resolve(
         self,
         backend: Optional[str],
-        config_key: abc.Hashable = None,
     ) -> Callable[..., Any]:
         """Returns the step function for the requested backend mode.
 
@@ -257,8 +256,6 @@ class StepCache:
         Args:
             backend: The propagator's already-coerced ``backend`` value;
                 falsy (``None``/``""``) returns :attr:`base` unchanged.
-            config_key: Retained for existing internal callers; PyTorch itself
-                now manages configuration specialisation.
 
         Returns:
             :attr:`base`, or the cached compiled variant.
@@ -749,7 +746,6 @@ def get_aux_and_stream(
 def allocate_model_gradients(
     models: abc.Sequence[torch.Tensor],
     model_batched: abc.Sequence[bool],
-    model_shape: abc.Sequence[int],
     n_shots: int,
     aux: int,
     is_cuda: bool,
@@ -771,7 +767,6 @@ def allocate_model_gradients(
         models: The model tensors.
         model_batched: For each model, whether a different model is provided per
             shot (in which case no shared temporary buffer is needed).
-        model_shape: The spatial shape of a single model.
         n_shots: The number of shots.
         aux: The threading/device ``aux`` value from :func:`get_aux_and_stream`.
         is_cuda: Whether the propagation runs on a CUDA device.
@@ -2314,7 +2309,7 @@ def propagator_spec(name: str) -> "PropagatorSpec":
     """
     module = importlib.import_module(f"deepwave.{name}")
     spec = getattr(module, "SPEC", None)
-    if not isinstance(spec, PropagatorSpec):  # pragma: no cover -- static
+    if not isinstance(spec, PropagatorSpec):  # static
         raise AssertionError(  # noqa: TRY004
             f"deepwave.{name} has no PropagatorSpec named SPEC"
         )
@@ -3608,7 +3603,7 @@ def check_outputs_finite(
                 propagator, name, int((~finite).sum().item()), info
             )
         )
-    raise AssertionError(  # pragma: no cover - the stacked flags said otherwise
+    raise AssertionError(  # the stacked flags said otherwise
         f"deepwave.{propagator}'s output finiteness check disagreed with "
         "itself between its two passes."
     )
@@ -5442,6 +5437,7 @@ def _forward_oom_estimate_line(
             dtype,
             accuracy=accuracy,
             pml_width=pml_width,
+            model_gradient_sampling_interval=step_ratio,
             storage_mode=storage_mode_str,
             models_requiring_grad=models_requiring_grad,
             storage_compression=storage_compression,
@@ -5977,27 +5973,9 @@ def unwrap_functorch(t: Optional[torch.Tensor]) -> Optional[torch.Tensor]:
     are already concrete and this is a no-op. ``None`` (an absent tangent) passes
     through unchanged.
     """
-    if t is None:
-        return None
-    try:
-        from torch._C._functorch import (
-            get_unwrapped,
-            maybe_get_level,
-        )
-    except ImportError:
-        return t
-    while True:
-        try:
-            level = maybe_get_level(t)
-        except Exception:  # noqa: BLE001 - defensive: any functorch level error means stop
-            break
-        if level is None or level < 0:
-            break
-        try:
-            t = get_unwrapped(t)
-        except Exception:  # noqa: BLE001 - dead level etc.; return best-effort concrete
-            break
-    return t
+    from deepwave import _common
+
+    return None if t is None else _common.unwrap_functorch(t)
 
 
 def run_backward_core(
@@ -6117,7 +6095,6 @@ def run_backward_core(
     grad_models, grad_models_tmp, grad_models_tmp_ptr = allocate_model_gradients(
         models,
         grad_model_batched(models, ndim),
-        list(model_shape),
         n_shots,
         aux,
         is_cuda,

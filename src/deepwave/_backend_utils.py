@@ -1408,7 +1408,7 @@ def _resolve_variant_template(
             return [*base_template(ndim), appended_arg]
 
         return _mechanical_template
-    raise AssertionError(  # pragma: no cover -- Variant.__post_init__ enforces this
+    raise AssertionError(  # Variant.__post_init__ enforces this
         "unreachable: Variant must set template, alias_of, or appended_arg"
     )
 

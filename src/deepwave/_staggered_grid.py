@@ -239,32 +239,69 @@ def _mpml_combine(
     sigma_self: torch.Tensor,
     sigma_others_scaled: list[torch.Tensor],
     alpha_self: torch.Tensor,
-    dt: float,
+    active: torch.Tensor,
+    *,
+    logarithmic: bool,
+    zero_step: bool,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Combine cross-axis damping and apply the C-PML ``a``/``b`` transform.
-
-    ``sigma_self`` is the axis's own (broadcast) raw damping; each entry of
-    ``sigma_others_scaled`` is ``mpml_fraction`` times another axis's (broadcast) raw
-    damping. ``alpha_self`` is the axis's own CFS frequency-shift term. The
-    result is materialised to the full grid (all spatial axes) so the backends
-    receive genuine full-grid arrays.
-    """
-    sigma_eff = sigma_self
+    """Integrate dimensionless damping, or its logarithm, over one time step."""
+    sigma = sigma_self
     for other in sigma_others_scaled:
-        sigma_eff = sigma_eff + other
-    sigmaalpha = sigma_eff + alpha_self
-    a = torch.exp(-sigmaalpha * abs(dt))
-    safe = sigmaalpha.clamp(min=1e-30)
-    b = sigma_eff / safe * (a - 1)
-    # Match setup_pml's ``a[pml_frac == 0] = 0``: where there is no damping at
-    # all the memory variable stays zero, so this is behaviourally inert but
-    # keeps the p -> 0 limit consistent with the standard profiles.
-    a = torch.where(sigma_eff == 0, torch.zeros_like(a), a)
-    # Broadcast both to the common full grid so they materialise as real
-    # full-grid tensors (the kernels index them on every axis).
-    a = a + torch.zeros_like(b)
-    b = b + torch.zeros_like(a)
+        sigma = torch.logaddexp(sigma, other) if logarithmic else sigma + other
+    if zero_step:
+        return active.to(sigma.dtype), torch.zeros_like(sigma)
+    if logarithmic:
+        total_log = torch.logaddexp(sigma, alpha_self)
+        safe_log = torch.where(torch.isneginf(total_log), 0.0, total_log)
+        ratio = (sigma - safe_log).exp().clamp(0, 1)
+        total = total_log.exp()
+    else:
+        total = sigma + alpha_self
+        denominator = torch.where(total == 0, 1.0, total)
+        ratio = (sigma / denominator).clamp(0, 1)
+    a = torch.where(active, torch.exp(-total), 0.0)
+    b = ratio * torch.expm1(-total).clamp(-1, 0)
     return a, b
+
+
+def _mpml_log_combine_chunks(
+    sigma: list[torch.Tensor],
+    alpha: torch.Tensor,
+    active: list[torch.Tensor],
+    axis: int,
+    shape: tuple[int, ...],
+    dtype: torch.dtype,
+    zero_step: bool,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Bound exceptional-range temporaries independently of the full grid size.
+
+    Only the 1-D profiles and at most 65536 cells use double-precision log
+    arithmetic. Outputs retain the requested dtype. Flattened indexing bounds
+    workspace even when a single plane of a 3-D model is very large.
+    """
+    size = math.prod(shape)
+    a = torch.empty(size, dtype=dtype, device=alpha.device)
+    b = torch.empty_like(a)
+    strides = [math.prod(shape[dim + 1 :]) for dim in range(len(shape))]
+    for begin in range(0, size, 65536):
+        end = min(size, begin + 65536)
+        linear = torch.arange(begin, end, device=alpha.device)
+        indices = [(linear // stride) % n for stride, n in zip(strides, shape)]
+        damping = [profile[index] for profile, index in zip(sigma, indices)]
+        mask = active[0][indices[0]]
+        for dim in range(1, len(shape)):
+            mask = mask | active[dim][indices[dim]]
+        ca, cb = _mpml_combine(
+            damping[axis],
+            [value for dim, value in enumerate(damping) if dim != axis],
+            alpha[indices[axis]],
+            mask,
+            logarithmic=True,
+            zero_step=zero_step,
+        )
+        a[begin:end] = ca
+        b[begin:end] = cb
+    return a.reshape(1, *shape), b.reshape(1, *shape)
 
 
 def _set_pml_profiles_mpml(
@@ -281,14 +318,11 @@ def _set_pml_profiles_mpml(
 ) -> list[torch.Tensor]:
     """Build multiaxial (M-PML) full-grid profiles (cross-damping ``mpml_fraction``).
 
-    Reconstructs each axis's raw ``sigma``/``alpha`` (exactly as
-    :func:`deepwave._common.setup_pml` does internally), augments each axis's
-    damping with ``mpml_fraction`` times the other axes' damping, and recomputes the
-    ``a``/``b`` C-PML coefficients from the combined damping. Because the cross
-    term makes each axis's coefficients depend on every coordinate, the returned
-    tensors span the full grid. At ``mpml_fraction == 0`` this reduces exactly to the
-    standard profiles (which is why the caller takes the untouched fast path
-    instead of calling this function).
+    Combines dimensionless per-axis damping before integrating the auxiliary
+    equation. Extreme scales use logarithms with bounded temporary storage.
+    The cross term makes each axis's coefficients depend on every coordinate,
+    so the returned tensors span the full grid. The caller uses standard profiles
+    directly when ``mpml_fraction == 0``.
     """
     ndim = len(shape)
     pml_start: list[list[float]] = [
@@ -299,25 +333,56 @@ def _set_pml_profiles_mpml(
         for dim in range(ndim)
     ]
 
-    # Reconstruct the raw 1-D sigma/alpha per axis for the integer (start=0.0)
-    # and half (start=0.5) staggered grids.
+    # Form v*|dt|/dx and f*|dt| without dimensioned intermediates. For dt=0,
+    # coefficients are obtained directly from the geometry mask below.
+    scale_dt = abs(dt) if dt else 1.0
+    velocity_scales = [
+        _common.product_ratio_parts(max_vel, scale_dt, spacing)
+        for spacing in grid_spacing
+    ]
+    frequency_scale = _common.product_ratio_parts(pml_freq, scale_dt, 1.0)
+    # A half-grid polynomial sample is at least (0.5/width)^2, with a further
+    # 1/width in sigma0. Include the cross-damping fraction in the range bound.
+    width = max(1, *pml_width)
+    finfo = torch.finfo(dtype)
+    low = math.frexp(finfo.tiny)[1] + 4 + math.ceil(3 * math.log2(width) + 2)
+    high = math.frexp(finfo.max)[1] - 8
+    cross_exponent = math.frexp(mpml_fraction)[1]
+    scales = [*velocity_scales, frequency_scale]
+    logarithmic = any(m != 0 and not low <= e <= high for m, e in scales) or any(
+        m != 0 and e + cross_exponent < low for m, e in velocity_scales
+    )
+    work_dtype = torch.float64 if logarithmic else dtype
     sigma: dict[float, list[torch.Tensor]] = {0.0: [], 0.5: []}
     alpha: dict[float, list[torch.Tensor]] = {0.0: [], 0.5: []}
+    active: dict[float, list[torch.Tensor]] = {0.0: [], 0.5: []}
     for start in (0.0, 0.5):
         for dim in range(ndim):
-            s, al = _common.setup_pml_sigma_alpha(
+            s, al, mask = _common.pml_sigma_alpha(
                 pml_width[2 * dim : 2 * dim + 2],
                 pml_start[dim],
-                grid_spacing[dim],
+                1.0,
                 shape[dim],
-                max_vel,
-                dtype,
+                1.0,
+                work_dtype,
                 device,
-                pml_freq,
-                start=start,
+                1.0,
+                start,
+                0.001,
+                2,
+                logarithmic=logarithmic,
             )
+            vm, ve = velocity_scales[dim]
+            fm, fe = frequency_scale
+            if logarithmic:
+                s = s + (math.log(vm) + ve * math.log(2) if vm else -math.inf)
+                al = al + (math.log(fm) + fe * math.log(2) if fm else -math.inf)
+            else:
+                s = s * math.ldexp(vm, ve)
+                al = al * math.ldexp(fm, fe)
             sigma[start].append(s)
             alpha[start].append(al)
+            active[start].append(mask)
 
     # The cross-axis terms sample the OTHER axes' damping at integer positions
     # for both the integer and half-grid profiles. A profile is staggered only
@@ -329,24 +394,46 @@ def _set_pml_profiles_mpml(
     # cross-damping strength has no physical significance (M-PML is an
     # empirically tuned stabiliser).
     others_scaled = [
-        mpml_fraction * _mpml_reshape_axis(sigma[0.0][dim], dim, ndim)
-        for dim in range(ndim)
+        profile + math.log(mpml_fraction) if logarithmic else profile * mpml_fraction
+        for profile in sigma[0.0]
     ]
     pml_profiles: list[torch.Tensor] = []
     for dim in range(ndim):
-        others = [others_scaled[k] for k in range(ndim) if k != dim]
+        for start in (0.0, 0.5):
+            profiles = [
+                sigma[start][k] if k == dim else others_scaled[k] for k in range(ndim)
+            ]
+            masks = [
+                active[start][k] if k == dim else active[0.0][k] for k in range(ndim)
+            ]
+            if logarithmic:
+                a, b = _mpml_log_combine_chunks(
+                    profiles,
+                    alpha[start][dim],
+                    masks,
+                    dim,
+                    shape,
+                    dtype,
+                    dt == 0,
+                )
+            else:
+                broadcast = [
+                    _mpml_reshape_axis(profile, k, ndim)
+                    for k, profile in enumerate(profiles)
+                ]
+                mask = _mpml_reshape_axis(masks[0], 0, ndim)
+                for k in range(1, ndim):
+                    mask = mask | _mpml_reshape_axis(masks[k], k, ndim)
+                a, b = _mpml_combine(
+                    broadcast[dim],
+                    [value for k, value in enumerate(broadcast) if k != dim],
+                    _mpml_reshape_axis(alpha[start][dim], dim, ndim),
+                    mask,
+                    logarithmic=False,
+                    zero_step=dt == 0,
+                )
+            pml_profiles.extend([a, b])
 
-        # Integer grid (a, b)
-        sig_self = _mpml_reshape_axis(sigma[0.0][dim], dim, ndim)
-        al_self = _mpml_reshape_axis(alpha[0.0][dim], dim, ndim)
-        a, b = _mpml_combine(sig_self, others, al_self, dt)
-
-        # Half grid (ah, bh)
-        sig_self_h = _mpml_reshape_axis(sigma[0.5][dim], dim, ndim)
-        al_self_h = _mpml_reshape_axis(alpha[0.5][dim], dim, ndim)
-        ah, bh = _mpml_combine(sig_self_h, others, al_self_h, dt)
-
-        pml_profiles.extend([a, b, ah, bh])
     return pml_profiles
 
 

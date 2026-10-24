@@ -1733,7 +1733,7 @@ def _acoustic_forward_jvp(
         import torch._C._functorch as _functorch_c
 
         depth = _functorch_c.get_dynamic_layer_stack_depth()
-    except (ImportError, AttributeError):  # pragma: no cover - older torch
+    except (ImportError, AttributeError):  # older torch
         depth = 0
     if depth > 1:
         raise DeepwaveNotImplementedError(
@@ -2425,27 +2425,18 @@ def _acoustic_born_make_aux_wavefields(
 
 
 def _acoustic_born_swap(state: "deepwave._engine.BackendState") -> None:
-    """Ping-pong the psi blocks of both Born adjoint fields with their aux.
-
-    ``acoustic_born_module._make_backward_call`` feeds
-    ``w[1 + ndim : 1 + 2 * ndim]`` (bg) and
-    ``w[n_bg_wf + 1 + ndim : n_bg_wf + 1 + 2 * ndim]`` (sc) to the kernel's
-    ping-ponged ``psi_*_sc`` slots (paired with the aux buffers); the
-    trailing ``... 2 * ndim : ... 3 * ndim`` blocks go to the single-buffer
-    ``phi_*_sc`` slots and must NOT be swapped (see the fix for the same bug
-    in ``acoustic_born.py``, commit 5969cb0).
-    """
+    """Ping-pong the trailing psi block of each Born adjoint field set."""
     ndim = state.ndim
     n_bg_wf = 1 + 3 * ndim
     w = state.wavefields
     a = state.aux_wavefields
-    w[1 + ndim : 1 + 2 * ndim], a[:ndim] = (
+    w[1 + 2 * ndim : 1 + 3 * ndim], a[:ndim] = (
         a[:ndim],
-        w[1 + ndim : 1 + 2 * ndim],
+        w[1 + 2 * ndim : 1 + 3 * ndim],
     )
-    w[n_bg_wf + 1 + ndim : n_bg_wf + 1 + 2 * ndim], a[ndim : 2 * ndim] = (
+    w[n_bg_wf + 1 + 2 * ndim : n_bg_wf + 1 + 3 * ndim], a[ndim : 2 * ndim] = (
         a[ndim : 2 * ndim],
-        w[n_bg_wf + 1 + ndim : n_bg_wf + 1 + 2 * ndim],
+        w[n_bg_wf + 1 + 2 * ndim : n_bg_wf + 1 + 3 * ndim],
     )
 
 
@@ -2796,14 +2787,12 @@ def acoustic_func(
     global _update_velocities_opt, _update_pressure_opt
 
     if backend:
-        k = cast("torch.Tensor", args[_N_LEADING_ARGS])
         # grid_spacing must reach the traced step functions as Python
         # floats: see _engine.float_grid_spacing for why an int silently
         # costs 8 significant digits under torch.compile on CUDA.
         args = (*args[:1], _engine.float_grid_spacing(args[1]), *args[2:])
-        config_key = (len(args[1]), args[5], k.dtype)
-        _update_velocities_opt = _update_velocities_cache.resolve(backend, config_key)
-        _update_pressure_opt = _update_pressure_cache.resolve(backend, config_key)
+        _update_velocities_opt = _update_velocities_cache.resolve(backend)
+        _update_pressure_opt = _update_pressure_cache.resolve(backend)
         return acoustic_python(*args, backend=backend)
 
     # The compiled backend now threads the first-class boundary codes through

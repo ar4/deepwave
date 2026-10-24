@@ -15,7 +15,6 @@ driven directly from a script when investigating a failure.
 from __future__ import annotations
 
 import inspect
-import warnings
 from typing import Any, NamedTuple
 
 import torch
@@ -196,9 +195,7 @@ def run_case(
     """Run one case forward and backward."""
     kwargs, leaves, leaf_names = build_case(name, device, dtype, backend=backend, nt=nt)
     models = kwargs.pop("_models")
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        out = getattr(deepwave, name)(*models, DX, DT, **kwargs)
+    out = getattr(deepwave, name)(*models, DX, DT, **kwargs)
     outputs = [tensor.detach().clone() for tensor in output_tensors(out)]
     loss = sum((tensor.to(torch.float64) ** 2).sum() for tensor in output_tensors(out))
     grads = torch.autograd.grad(loss, leaves, allow_unused=True)

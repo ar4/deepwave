@@ -87,7 +87,7 @@
  * would be unsafe; see mirror_pad_scalar_born_models in boundaries.py). */
 /* Fill the guard cells of a single line along one axis (base offset, element
  * stride ``stride``, axis length ``nax``) with the boundary image. */
-static inline void FUNC(fill_bc_line)(DW_DTYPE *__restrict const wf,
+static inline void FUNC(fill_bc_line)(DW_DTYPE* __restrict const wf,
                                       int64_t const base, int64_t const nax,
                                       int64_t const stride, int64_t const bc_lo,
                                       int64_t const bc_hi, int const is_model) {
@@ -146,8 +146,8 @@ static inline void FUNC(fill_bc_line)(DW_DTYPE *__restrict const wf,
  * the per-face code array [z0,z1,y0,y1,x0,x1] (only the trailing DW_NDIM pairs
  * are used). ``is_model`` selects the even/wrap (no-sign, no-zero) model
  * variant (unused by scalar_born; kept for signature parity with scalar.c). */
-static void FUNC(fill_bc)(DW_DTYPE *__restrict const wf, int const is_model,
-                          int64_t const *__restrict const bc, int64_t const nz_,
+static void FUNC(fill_bc)(DW_DTYPE* __restrict const wf, int const is_model,
+                          int64_t const* __restrict const bc, int64_t const nz_,
                           int64_t const ny_, int64_t const nx_) {
   (void)nz_;
   (void)ny_;
@@ -196,76 +196,75 @@ static void FUNC(fill_bc)(DW_DTYPE *__restrict const wf, int const is_model,
 #ifdef _WIN32
 __declspec(dllexport)
 #endif
-DW_TARGET_CLONES int
-FUNC(forward)(
-    DW_DTYPE const *__restrict const v,
-    DW_DTYPE const *__restrict const scatter,
-    DW_DTYPE const *__restrict const f, DW_DTYPE const *__restrict const fsc,
-    DW_DTYPE *__restrict const wfc, DW_DTYPE *__restrict const wfp,
+DW_TARGET_CLONES int FUNC(forward)(
+    DW_DTYPE const* __restrict const v,
+    DW_DTYPE const* __restrict const scatter,
+    DW_DTYPE const* __restrict const f, DW_DTYPE const* __restrict const fsc,
+    DW_DTYPE* __restrict const wfc, DW_DTYPE* __restrict const wfp,
 #if DW_NDIM >= 3
-    DW_DTYPE *__restrict const psiz,
+    DW_DTYPE* __restrict const psiz,
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE *__restrict const psiy,
+    DW_DTYPE* __restrict const psiy,
 #endif
-    DW_DTYPE *__restrict const psix,
+    DW_DTYPE* __restrict const psix,
 #if DW_NDIM >= 3
-    DW_DTYPE *__restrict const psizn,
+    DW_DTYPE* __restrict const psizn,
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE *__restrict const psiyn,
+    DW_DTYPE* __restrict const psiyn,
 #endif
-    DW_DTYPE *__restrict const psixn,
+    DW_DTYPE* __restrict const psixn,
 #if DW_NDIM >= 3
-    DW_DTYPE *__restrict const zetaz,
+    DW_DTYPE* __restrict const zetaz,
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE *__restrict const zetay,
+    DW_DTYPE* __restrict const zetay,
 #endif
-    DW_DTYPE *__restrict const zetax, DW_DTYPE *__restrict const wfcsc,
-    DW_DTYPE *__restrict const wfpsc,
+    DW_DTYPE* __restrict const zetax, DW_DTYPE* __restrict const wfcsc,
+    DW_DTYPE* __restrict const wfpsc,
 #if DW_NDIM >= 3
-    DW_DTYPE *__restrict const psizsc,
+    DW_DTYPE* __restrict const psizsc,
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE *__restrict const psiysc,
+    DW_DTYPE* __restrict const psiysc,
 #endif
-    DW_DTYPE *__restrict const psixsc,
+    DW_DTYPE* __restrict const psixsc,
 #if DW_NDIM >= 3
-    DW_DTYPE *__restrict const psiznsc,
+    DW_DTYPE* __restrict const psiznsc,
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE *__restrict const psiynsc,
+    DW_DTYPE* __restrict const psiynsc,
 #endif
-    DW_DTYPE *__restrict const psixnsc,
+    DW_DTYPE* __restrict const psixnsc,
 #if DW_NDIM >= 3
-    DW_DTYPE *__restrict const zetazsc,
+    DW_DTYPE* __restrict const zetazsc,
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE *__restrict const zetaysc,
+    DW_DTYPE* __restrict const zetaysc,
 #endif
-    DW_DTYPE *__restrict const zetaxsc, DW_DTYPE *__restrict const w_store_1,
-    DW_DTYPE *__restrict const w_store_1b, void *__restrict const w_store_2,
-    void *__restrict const w_store_3,
-    char const *__restrict const *__restrict const w_filenames_ptr,
-    DW_DTYPE *__restrict const wsc_store_1,
-    DW_DTYPE *__restrict const wsc_store_1b, void *__restrict const wsc_store_2,
-    void *__restrict const wsc_store_3,
-    char const *__restrict const *__restrict const wsc_filenames_ptr,
-    DW_DTYPE *__restrict const r, DW_DTYPE *__restrict const rsc,
+    DW_DTYPE* __restrict const zetaxsc, DW_DTYPE* __restrict const w_store_1,
+    DW_DTYPE* __restrict const w_store_1b, void* __restrict const w_store_2,
+    void* __restrict const w_store_3,
+    char const* __restrict const* __restrict const w_filenames_ptr,
+    DW_DTYPE* __restrict const wsc_store_1,
+    DW_DTYPE* __restrict const wsc_store_1b, void* __restrict const wsc_store_2,
+    void* __restrict const wsc_store_3,
+    char const* __restrict const* __restrict const wsc_filenames_ptr,
+    DW_DTYPE* __restrict const r, DW_DTYPE* __restrict const rsc,
 #if DW_NDIM >= 3
-    DW_DTYPE const *__restrict const az, DW_DTYPE const *__restrict const bz,
-    DW_DTYPE const *__restrict const dbzdz,
+    DW_DTYPE const* __restrict const az, DW_DTYPE const* __restrict const bz,
+    DW_DTYPE const* __restrict const dbzdz,
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE const *__restrict const ay, DW_DTYPE const *__restrict const by,
-    DW_DTYPE const *__restrict const dbydy,
+    DW_DTYPE const* __restrict const ay, DW_DTYPE const* __restrict const by,
+    DW_DTYPE const* __restrict const dbydy,
 #endif
-    DW_DTYPE const *__restrict const ax, DW_DTYPE const *__restrict const bx,
-    DW_DTYPE const *__restrict const dbxdx,
-    int64_t const *__restrict const sources_i,
-    int64_t const *__restrict const receivers_i,
-    int64_t const *__restrict const receiverssc_i,
+    DW_DTYPE const* __restrict const ax, DW_DTYPE const* __restrict const bx,
+    DW_DTYPE const* __restrict const dbxdx,
+    int64_t const* __restrict const sources_i,
+    int64_t const* __restrict const receivers_i,
+    int64_t const* __restrict const receiverssc_i,
 #if DW_NDIM >= 3
     DW_DTYPE const rdz,
 #endif
@@ -321,9 +320,10 @@ FUNC(forward)(
 #if DW_NDIM >= 2
     int64_t const bc_y1,
 #endif
-    int64_t const bc_x1, int64_t const n_threads, void *unused) {
+    int64_t const bc_x1, int64_t const n_threads, void* unused) {
   if (nt < 0 || n_shots < 0) return 1;
   if (nt == 0 || n_shots == 0) return 0;
+  if (n_threads == 0 || !dw_fits_control_int(n_threads)) return 1;
   /* Optional buffers are required only for active work requesting them.
    * Reject inconsistent native inputs before opening storage files. */
   if (nt > 0 && n_shots > 0) {
@@ -360,24 +360,24 @@ FUNC(forward)(
     int64_t const si = shot * n_sources_per_shot;
     int64_t const ri = shot * n_receivers_per_shot;
     int64_t const risc = shot * n_receiverssc_per_shot;
-    DW_DTYPE const *__restrict const v_shot = v_batched ? v + shot_i : v;
-    DW_DTYPE const *__restrict const scatter_shot =
+    DW_DTYPE const* __restrict const v_shot = v_batched ? v + shot_i : v;
+    DW_DTYPE const* __restrict const scatter_shot =
         scatter_batched ? scatter + shot_i : scatter;
 #if DW_NDIM >= 3
-    DW_DTYPE *__restrict const zetaz_t = zetaz + shot_i;
-    DW_DTYPE *__restrict const zetazsc_t = zetazsc + shot_i;
+    DW_DTYPE* __restrict const zetaz_t = zetaz + shot_i;
+    DW_DTYPE* __restrict const zetazsc_t = zetazsc + shot_i;
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE *__restrict const zetay_t = zetay + shot_i;
-    DW_DTYPE *__restrict const zetaysc_t = zetaysc + shot_i;
+    DW_DTYPE* __restrict const zetay_t = zetay + shot_i;
+    DW_DTYPE* __restrict const zetaysc_t = zetaysc + shot_i;
 #endif
-    DW_DTYPE *__restrict const zetax_t = zetax + shot_i;
-    DW_DTYPE *__restrict const zetaxsc_t = zetaxsc + shot_i;
+    DW_DTYPE* __restrict const zetax_t = zetax + shot_i;
+    DW_DTYPE* __restrict const zetaxsc_t = zetaxsc + shot_i;
     int64_t t;
 
     int storage_err = 0;
-    FILE *fp_w = NULL;
-    FILE *fp_wsc = NULL;
+    FILE* fp_w = NULL;
+    FILE* fp_wsc = NULL;
     if (storage_mode == STORAGE_DISK) {
       if (v_requires_grad || scatter_requires_grad) {
         fp_w = dw_open_file_utf8(w_filenames_ptr[shot], "ab");
@@ -405,42 +405,42 @@ FUNC(forward)(
         storage_err = 1;
         goto storage_cleanup;
       }
-      DW_DTYPE *__restrict const wfc_t =
-          (((t - start_t) & 1) ? wfp : wfc) + shot_i;
-      DW_DTYPE *__restrict const wfp_t =
-          (((t - start_t) & 1) ? wfc : wfp) + shot_i;
-      DW_DTYPE *__restrict const wfcsc_t =
-          (((t - start_t) & 1) ? wfpsc : wfcsc) + shot_i;
-      DW_DTYPE *__restrict const wfpsc_t =
-          (((t - start_t) & 1) ? wfcsc : wfpsc) + shot_i;
+      DW_DTYPE* __restrict const wfc_t =
+          (((uint64_t)(t - start_t) & 1u) ? wfp : wfc) + shot_i;
+      DW_DTYPE* __restrict const wfp_t =
+          (((uint64_t)(t - start_t) & 1u) ? wfc : wfp) + shot_i;
+      DW_DTYPE* __restrict const wfcsc_t =
+          (((uint64_t)(t - start_t) & 1u) ? wfpsc : wfcsc) + shot_i;
+      DW_DTYPE* __restrict const wfpsc_t =
+          (((uint64_t)(t - start_t) & 1u) ? wfcsc : wfpsc) + shot_i;
 #if DW_NDIM >= 3
-      DW_DTYPE *__restrict const psiz_t =
-          (((t - start_t) & 1) ? psizn : psiz) + shot_i;
-      DW_DTYPE *__restrict const psizn_t =
-          (((t - start_t) & 1) ? psiz : psizn) + shot_i;
-      DW_DTYPE *__restrict const psizsc_t =
-          (((t - start_t) & 1) ? psiznsc : psizsc) + shot_i;
-      DW_DTYPE *__restrict const psiznsc_t =
-          (((t - start_t) & 1) ? psizsc : psiznsc) + shot_i;
+      DW_DTYPE* __restrict const psiz_t =
+          (((uint64_t)(t - start_t) & 1u) ? psizn : psiz) + shot_i;
+      DW_DTYPE* __restrict const psizn_t =
+          (((uint64_t)(t - start_t) & 1u) ? psiz : psizn) + shot_i;
+      DW_DTYPE* __restrict const psizsc_t =
+          (((uint64_t)(t - start_t) & 1u) ? psiznsc : psizsc) + shot_i;
+      DW_DTYPE* __restrict const psiznsc_t =
+          (((uint64_t)(t - start_t) & 1u) ? psizsc : psiznsc) + shot_i;
 #endif
 #if DW_NDIM >= 2
-      DW_DTYPE *__restrict const psiy_t =
-          (((t - start_t) & 1) ? psiyn : psiy) + shot_i;
-      DW_DTYPE *__restrict const psiyn_t =
-          (((t - start_t) & 1) ? psiy : psiyn) + shot_i;
-      DW_DTYPE *__restrict const psiysc_t =
-          (((t - start_t) & 1) ? psiynsc : psiysc) + shot_i;
-      DW_DTYPE *__restrict const psiynsc_t =
-          (((t - start_t) & 1) ? psiysc : psiynsc) + shot_i;
+      DW_DTYPE* __restrict const psiy_t =
+          (((uint64_t)(t - start_t) & 1u) ? psiyn : psiy) + shot_i;
+      DW_DTYPE* __restrict const psiyn_t =
+          (((uint64_t)(t - start_t) & 1u) ? psiy : psiyn) + shot_i;
+      DW_DTYPE* __restrict const psiysc_t =
+          (((uint64_t)(t - start_t) & 1u) ? psiynsc : psiysc) + shot_i;
+      DW_DTYPE* __restrict const psiynsc_t =
+          (((uint64_t)(t - start_t) & 1u) ? psiysc : psiynsc) + shot_i;
 #endif
-      DW_DTYPE *__restrict const psix_t =
-          (((t - start_t) & 1) ? psixn : psix) + shot_i;
-      DW_DTYPE *__restrict const psixn_t =
-          (((t - start_t) & 1) ? psix : psixn) + shot_i;
-      DW_DTYPE *__restrict const psixsc_t =
-          (((t - start_t) & 1) ? psixnsc : psixsc) + shot_i;
-      DW_DTYPE *__restrict const psixnsc_t =
-          (((t - start_t) & 1) ? psixsc : psixnsc) + shot_i;
+      DW_DTYPE* __restrict const psix_t =
+          (((uint64_t)(t - start_t) & 1u) ? psixn : psix) + shot_i;
+      DW_DTYPE* __restrict const psixn_t =
+          (((uint64_t)(t - start_t) & 1u) ? psix : psixn) + shot_i;
+      DW_DTYPE* __restrict const psixsc_t =
+          (((uint64_t)(t - start_t) & 1u) ? psixnsc : psixsc) + shot_i;
+      DW_DTYPE* __restrict const psixnsc_t =
+          (((uint64_t)(t - start_t) & 1u) ? psixsc : psixnsc) + shot_i;
 
       /* Refill the guard ring of both the background and the scattered field
        * with the boundary image before the interior stencil reads it (no-op
@@ -452,32 +452,32 @@ FUNC(forward)(
         FILL_BC(wfcsc_t, 0);
       }
 
-      DW_DTYPE *__restrict const w_store_1_t =
+      DW_DTYPE* __restrict const w_store_1_t =
           w_store_1 != NULL
               ? (w_store_1 + shot_i +
                  ((storage_mode == STORAGE_DEVICE && !storage_compression)
                       ? t / step_ratio * n_shots * n_grid_points
                       : 0))
               : NULL;
-      DW_DTYPE *__restrict const wsc_store_1_t =
+      DW_DTYPE* __restrict const wsc_store_1_t =
           wsc_store_1 != NULL
               ? (wsc_store_1 + shot_i +
                  ((storage_mode == STORAGE_DEVICE && !storage_compression)
                       ? t / step_ratio * n_shots * n_grid_points
                       : 0))
               : NULL;
-      void *__restrict const w_store_2_t =
+      void* __restrict const w_store_2_t =
           w_store_2 != NULL
-              ? ((uint8_t *)w_store_2 +
+              ? ((uint8_t*)w_store_2 +
                  (shot +
                   ((storage_mode == STORAGE_DEVICE && storage_compression)
                        ? t / step_ratio * n_shots
                        : 0)) *
                      (int64_t)shot_bytes_comp)
               : NULL;
-      void *__restrict const wsc_store_2_t =
+      void* __restrict const wsc_store_2_t =
           wsc_store_2 != NULL
-              ? ((uint8_t *)wsc_store_2 +
+              ? ((uint8_t*)wsc_store_2 +
                  (shot +
                   ((storage_mode == STORAGE_DEVICE && storage_compression)
                        ? t / step_ratio * n_shots
@@ -491,7 +491,7 @@ FUNC(forward)(
       bool const v_or_scatter_requires_grad_t =
           v_requires_grad_t || scatter_requires_grad_t;
 #ifdef _OPENMP
-#pragma omp parallel num_threads(n_threads)
+#pragma omp parallel num_threads((int)n_threads)
 #endif /* _OPENMP */
       {
         unsigned int const dw_ftz_daz_prev_state = dw_ftz_daz_enter();
@@ -637,94 +637,93 @@ FUNC(forward)(
 #ifdef _WIN32
 __declspec(dllexport)
 #endif
-DW_TARGET_CLONES int
-FUNC(backward)(
-    DW_DTYPE const *__restrict const v,
-    DW_DTYPE const *__restrict const scatter,
-    DW_DTYPE const *__restrict const grad_r,
-    DW_DTYPE const *__restrict const grad_rsc, DW_DTYPE *__restrict const wfc,
-    DW_DTYPE *__restrict const wfp,
+DW_TARGET_CLONES int FUNC(backward)(
+    DW_DTYPE const* __restrict const v,
+    DW_DTYPE const* __restrict const scatter,
+    DW_DTYPE const* __restrict const grad_r,
+    DW_DTYPE const* __restrict const grad_rsc, DW_DTYPE* __restrict const wfc,
+    DW_DTYPE* __restrict const wfp,
 #if DW_NDIM >= 3
-    DW_DTYPE *__restrict const psiz,
+    DW_DTYPE* __restrict const psiz,
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE *__restrict const psiy,
+    DW_DTYPE* __restrict const psiy,
 #endif
-    DW_DTYPE *__restrict const psix,
+    DW_DTYPE* __restrict const psix,
 #if DW_NDIM >= 3
-    DW_DTYPE *__restrict const psizn,
+    DW_DTYPE* __restrict const psizn,
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE *__restrict const psiyn,
+    DW_DTYPE* __restrict const psiyn,
 #endif
-    DW_DTYPE *__restrict const psixn,
+    DW_DTYPE* __restrict const psixn,
 #if DW_NDIM >= 3
-    DW_DTYPE *__restrict const zetaz,
+    DW_DTYPE* __restrict const zetaz,
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE *__restrict const zetay,
+    DW_DTYPE* __restrict const zetay,
 #endif
-    DW_DTYPE *__restrict const zetax,
+    DW_DTYPE* __restrict const zetax,
 #if DW_NDIM >= 3
-    DW_DTYPE *__restrict const zetazn,
+    DW_DTYPE* __restrict const zetazn,
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE *__restrict const zetayn,
+    DW_DTYPE* __restrict const zetayn,
 #endif
-    DW_DTYPE *__restrict const zetaxn, DW_DTYPE *__restrict const wfcsc,
-    DW_DTYPE *__restrict const wfpsc,
+    DW_DTYPE* __restrict const zetaxn, DW_DTYPE* __restrict const wfcsc,
+    DW_DTYPE* __restrict const wfpsc,
 #if DW_NDIM >= 3
-    DW_DTYPE *__restrict const psizsc,
+    DW_DTYPE* __restrict const psizsc,
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE *__restrict const psiysc,
+    DW_DTYPE* __restrict const psiysc,
 #endif
-    DW_DTYPE *__restrict const psixsc,
+    DW_DTYPE* __restrict const psixsc,
 #if DW_NDIM >= 3
-    DW_DTYPE *__restrict const psiznsc,
+    DW_DTYPE* __restrict const psiznsc,
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE *__restrict const psiynsc,
+    DW_DTYPE* __restrict const psiynsc,
 #endif
-    DW_DTYPE *__restrict const psixnsc,
+    DW_DTYPE* __restrict const psixnsc,
 #if DW_NDIM >= 3
-    DW_DTYPE *__restrict const zetazsc,
+    DW_DTYPE* __restrict const zetazsc,
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE *__restrict const zetaysc,
+    DW_DTYPE* __restrict const zetaysc,
 #endif
-    DW_DTYPE *__restrict const zetaxsc,
+    DW_DTYPE* __restrict const zetaxsc,
 #if DW_NDIM >= 3
-    DW_DTYPE *__restrict const zetaznsc,
+    DW_DTYPE* __restrict const zetaznsc,
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE *__restrict const zetaynsc,
+    DW_DTYPE* __restrict const zetaynsc,
 #endif
-    DW_DTYPE *__restrict const zetaxnsc, DW_DTYPE *__restrict const w_store_1,
-    DW_DTYPE *__restrict const w_store_1b, void *__restrict const w_store_2,
-    void *__restrict const w_store_3,
-    char const *__restrict const *__restrict const w_filenames_ptr,
-    DW_DTYPE *__restrict const wsc_store_1,
-    DW_DTYPE *__restrict const wsc_store_1b, void *__restrict const wsc_store_2,
-    void *__restrict const wsc_store_3,
-    char const *__restrict const *__restrict const wsc_filenames_ptr,
-    DW_DTYPE *__restrict const grad_f, DW_DTYPE *__restrict const grad_fsc,
-    DW_DTYPE *__restrict const grad_v, DW_DTYPE *__restrict const grad_scatter,
-    DW_DTYPE *__restrict const grad_v_thread,
-    DW_DTYPE *__restrict const grad_scatter_thread,
+    DW_DTYPE* __restrict const zetaxnsc, DW_DTYPE* __restrict const w_store_1,
+    DW_DTYPE* __restrict const w_store_1b, void* __restrict const w_store_2,
+    void* __restrict const w_store_3,
+    char const* __restrict const* __restrict const w_filenames_ptr,
+    DW_DTYPE* __restrict const wsc_store_1,
+    DW_DTYPE* __restrict const wsc_store_1b, void* __restrict const wsc_store_2,
+    void* __restrict const wsc_store_3,
+    char const* __restrict const* __restrict const wsc_filenames_ptr,
+    DW_DTYPE* __restrict const grad_f, DW_DTYPE* __restrict const grad_fsc,
+    DW_DTYPE* __restrict const grad_v, DW_DTYPE* __restrict const grad_scatter,
+    DW_DTYPE* __restrict const grad_v_thread,
+    DW_DTYPE* __restrict const grad_scatter_thread,
 #if DW_NDIM >= 3
-    DW_DTYPE const *__restrict const az, DW_DTYPE const *__restrict const bz,
-    DW_DTYPE const *__restrict const dbzdz,
+    DW_DTYPE const* __restrict const az, DW_DTYPE const* __restrict const bz,
+    DW_DTYPE const* __restrict const dbzdz,
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE const *__restrict const ay, DW_DTYPE const *__restrict const by,
-    DW_DTYPE const *__restrict const dbydy,
+    DW_DTYPE const* __restrict const ay, DW_DTYPE const* __restrict const by,
+    DW_DTYPE const* __restrict const dbydy,
 #endif
-    DW_DTYPE const *__restrict const ax, DW_DTYPE const *__restrict const bx,
-    DW_DTYPE const *__restrict const dbxdx,
-    int64_t const *__restrict const sources_i,
-    int64_t const *__restrict const receivers_i,
-    int64_t const *__restrict const receiverssc_i,
+    DW_DTYPE const* __restrict const ax, DW_DTYPE const* __restrict const bx,
+    DW_DTYPE const* __restrict const dbxdx,
+    int64_t const* __restrict const sources_i,
+    int64_t const* __restrict const receivers_i,
+    int64_t const* __restrict const receiverssc_i,
 #if DW_NDIM >= 3
     DW_DTYPE const rdz,
 #endif
@@ -780,9 +779,10 @@ FUNC(backward)(
 #if DW_NDIM >= 2
     int64_t const bc_y1,
 #endif
-    int64_t const bc_x1, int64_t const n_threads, void *unused) {
+    int64_t const bc_x1, int64_t const n_threads, void* unused) {
   if (nt < 0 || n_shots < 0) return 1;
   if (nt == 0 || n_shots == 0) return 0;
+  if (n_threads == 0 || !dw_fits_control_int(n_threads)) return 1;
   /* Optional buffers are required only for active work requesting them.
    * Reject inconsistent native inputs before opening storage files. */
   if (nt > 0 && n_shots > 0) {
@@ -822,19 +822,19 @@ FUNC(backward)(
     int64_t const sisc = shot * n_sourcessc_per_shot;
     int64_t const ri = shot * n_receivers_per_shot;
     int64_t const risc = shot * n_receiverssc_per_shot;
-    DW_DTYPE *__restrict const grad_v_shot =
+    DW_DTYPE* __restrict const grad_v_shot =
         grad_v != NULL ? (grad_v + (v_batched ? shot_i : 0)) : NULL;
-    DW_DTYPE *__restrict const grad_scatter_shot =
+    DW_DTYPE* __restrict const grad_scatter_shot =
         grad_scatter != NULL ? (grad_scatter + (scatter_batched ? shot_i : 0))
                              : NULL;
-    DW_DTYPE const *__restrict const v_shot = v_batched ? v + shot_i : v;
-    DW_DTYPE const *__restrict const scatter_shot =
+    DW_DTYPE const* __restrict const v_shot = v_batched ? v + shot_i : v;
+    DW_DTYPE const* __restrict const scatter_shot =
         scatter_batched ? scatter + shot_i : scatter;
     int64_t t;
 
     int storage_err = 0;
-    FILE *fp_w = NULL;
-    FILE *fp_wsc = NULL;
+    FILE* fp_w = NULL;
+    FILE* fp_wsc = NULL;
     if (storage_mode == STORAGE_DISK) {
       if (v_requires_grad || scatter_requires_grad) {
         fp_w = dw_open_file_utf8(w_filenames_ptr[shot], "rb");
@@ -863,66 +863,66 @@ FUNC(backward)(
         storage_err = 1;
         goto storage_cleanup;
       }
-      DW_DTYPE *__restrict const wfc_t =
-          (((start_t - 1 - t) & 1) ? wfp : wfc) + shot_i;
-      DW_DTYPE *__restrict const wfp_t =
-          (((start_t - 1 - t) & 1) ? wfc : wfp) + shot_i;
-      DW_DTYPE *__restrict const wfcsc_t =
-          (((start_t - 1 - t) & 1) ? wfpsc : wfcsc) + shot_i;
-      DW_DTYPE *__restrict const wfpsc_t =
-          (((start_t - 1 - t) & 1) ? wfcsc : wfpsc) + shot_i;
+      DW_DTYPE* __restrict const wfc_t =
+          (((uint64_t)(start_t - 1 - t) & 1u) ? wfp : wfc) + shot_i;
+      DW_DTYPE* __restrict const wfp_t =
+          (((uint64_t)(start_t - 1 - t) & 1u) ? wfc : wfp) + shot_i;
+      DW_DTYPE* __restrict const wfcsc_t =
+          (((uint64_t)(start_t - 1 - t) & 1u) ? wfpsc : wfcsc) + shot_i;
+      DW_DTYPE* __restrict const wfpsc_t =
+          (((uint64_t)(start_t - 1 - t) & 1u) ? wfcsc : wfpsc) + shot_i;
 #if DW_NDIM >= 3
-      DW_DTYPE *__restrict const psiz_t =
-          (((start_t - 1 - t) & 1) ? psizn : psiz) + shot_i;
-      DW_DTYPE *__restrict const psizn_t =
-          (((start_t - 1 - t) & 1) ? psiz : psizn) + shot_i;
-      DW_DTYPE *__restrict const zetaz_t =
-          (((start_t - 1 - t) & 1) ? zetazn : zetaz) + shot_i;
-      DW_DTYPE *__restrict const zetazn_t =
-          (((start_t - 1 - t) & 1) ? zetaz : zetazn) + shot_i;
-      DW_DTYPE *__restrict const psizsc_t =
-          (((start_t - 1 - t) & 1) ? psiznsc : psizsc) + shot_i;
-      DW_DTYPE *__restrict const psiznsc_t =
-          (((start_t - 1 - t) & 1) ? psizsc : psiznsc) + shot_i;
-      DW_DTYPE *__restrict const zetazsc_t =
-          (((start_t - 1 - t) & 1) ? zetaznsc : zetazsc) + shot_i;
-      DW_DTYPE *__restrict const zetaznsc_t =
-          (((start_t - 1 - t) & 1) ? zetazsc : zetaznsc) + shot_i;
+      DW_DTYPE* __restrict const psiz_t =
+          (((uint64_t)(start_t - 1 - t) & 1u) ? psizn : psiz) + shot_i;
+      DW_DTYPE* __restrict const psizn_t =
+          (((uint64_t)(start_t - 1 - t) & 1u) ? psiz : psizn) + shot_i;
+      DW_DTYPE* __restrict const zetaz_t =
+          (((uint64_t)(start_t - 1 - t) & 1u) ? zetazn : zetaz) + shot_i;
+      DW_DTYPE* __restrict const zetazn_t =
+          (((uint64_t)(start_t - 1 - t) & 1u) ? zetaz : zetazn) + shot_i;
+      DW_DTYPE* __restrict const psizsc_t =
+          (((uint64_t)(start_t - 1 - t) & 1u) ? psiznsc : psizsc) + shot_i;
+      DW_DTYPE* __restrict const psiznsc_t =
+          (((uint64_t)(start_t - 1 - t) & 1u) ? psizsc : psiznsc) + shot_i;
+      DW_DTYPE* __restrict const zetazsc_t =
+          (((uint64_t)(start_t - 1 - t) & 1u) ? zetaznsc : zetazsc) + shot_i;
+      DW_DTYPE* __restrict const zetaznsc_t =
+          (((uint64_t)(start_t - 1 - t) & 1u) ? zetazsc : zetaznsc) + shot_i;
 #endif
 #if DW_NDIM >= 2
-      DW_DTYPE *__restrict const psiy_t =
-          (((start_t - 1 - t) & 1) ? psiyn : psiy) + shot_i;
-      DW_DTYPE *__restrict const psiyn_t =
-          (((start_t - 1 - t) & 1) ? psiy : psiyn) + shot_i;
-      DW_DTYPE *__restrict const zetay_t =
-          (((start_t - 1 - t) & 1) ? zetayn : zetay) + shot_i;
-      DW_DTYPE *__restrict const zetayn_t =
-          (((start_t - 1 - t) & 1) ? zetay : zetayn) + shot_i;
-      DW_DTYPE *__restrict const psiysc_t =
-          (((start_t - 1 - t) & 1) ? psiynsc : psiysc) + shot_i;
-      DW_DTYPE *__restrict const psiynsc_t =
-          (((start_t - 1 - t) & 1) ? psiysc : psiynsc) + shot_i;
-      DW_DTYPE *__restrict const zetaysc_t =
-          (((start_t - 1 - t) & 1) ? zetaynsc : zetaysc) + shot_i;
-      DW_DTYPE *__restrict const zetaynsc_t =
-          (((start_t - 1 - t) & 1) ? zetaysc : zetaynsc) + shot_i;
+      DW_DTYPE* __restrict const psiy_t =
+          (((uint64_t)(start_t - 1 - t) & 1u) ? psiyn : psiy) + shot_i;
+      DW_DTYPE* __restrict const psiyn_t =
+          (((uint64_t)(start_t - 1 - t) & 1u) ? psiy : psiyn) + shot_i;
+      DW_DTYPE* __restrict const zetay_t =
+          (((uint64_t)(start_t - 1 - t) & 1u) ? zetayn : zetay) + shot_i;
+      DW_DTYPE* __restrict const zetayn_t =
+          (((uint64_t)(start_t - 1 - t) & 1u) ? zetay : zetayn) + shot_i;
+      DW_DTYPE* __restrict const psiysc_t =
+          (((uint64_t)(start_t - 1 - t) & 1u) ? psiynsc : psiysc) + shot_i;
+      DW_DTYPE* __restrict const psiynsc_t =
+          (((uint64_t)(start_t - 1 - t) & 1u) ? psiysc : psiynsc) + shot_i;
+      DW_DTYPE* __restrict const zetaysc_t =
+          (((uint64_t)(start_t - 1 - t) & 1u) ? zetaynsc : zetaysc) + shot_i;
+      DW_DTYPE* __restrict const zetaynsc_t =
+          (((uint64_t)(start_t - 1 - t) & 1u) ? zetaysc : zetaynsc) + shot_i;
 #endif
-      DW_DTYPE *__restrict const psix_t =
-          (((start_t - 1 - t) & 1) ? psixn : psix) + shot_i;
-      DW_DTYPE *__restrict const psixn_t =
-          (((start_t - 1 - t) & 1) ? psix : psixn) + shot_i;
-      DW_DTYPE *__restrict const zetax_t =
-          (((start_t - 1 - t) & 1) ? zetaxn : zetax) + shot_i;
-      DW_DTYPE *__restrict const zetaxn_t =
-          (((start_t - 1 - t) & 1) ? zetax : zetaxn) + shot_i;
-      DW_DTYPE *__restrict const psixsc_t =
-          (((start_t - 1 - t) & 1) ? psixnsc : psixsc) + shot_i;
-      DW_DTYPE *__restrict const psixnsc_t =
-          (((start_t - 1 - t) & 1) ? psixsc : psixnsc) + shot_i;
-      DW_DTYPE *__restrict const zetaxsc_t =
-          (((start_t - 1 - t) & 1) ? zetaxnsc : zetaxsc) + shot_i;
-      DW_DTYPE *__restrict const zetaxnsc_t =
-          (((start_t - 1 - t) & 1) ? zetaxsc : zetaxnsc) + shot_i;
+      DW_DTYPE* __restrict const psix_t =
+          (((uint64_t)(start_t - 1 - t) & 1u) ? psixn : psix) + shot_i;
+      DW_DTYPE* __restrict const psixn_t =
+          (((uint64_t)(start_t - 1 - t) & 1u) ? psix : psixn) + shot_i;
+      DW_DTYPE* __restrict const zetax_t =
+          (((uint64_t)(start_t - 1 - t) & 1u) ? zetaxn : zetax) + shot_i;
+      DW_DTYPE* __restrict const zetaxn_t =
+          (((uint64_t)(start_t - 1 - t) & 1u) ? zetax : zetaxn) + shot_i;
+      DW_DTYPE* __restrict const psixsc_t =
+          (((uint64_t)(start_t - 1 - t) & 1u) ? psixnsc : psixsc) + shot_i;
+      DW_DTYPE* __restrict const psixnsc_t =
+          (((uint64_t)(start_t - 1 - t) & 1u) ? psixsc : psixnsc) + shot_i;
+      DW_DTYPE* __restrict const zetaxsc_t =
+          (((uint64_t)(start_t - 1 - t) & 1u) ? zetaxnsc : zetaxsc) + shot_i;
+      DW_DTYPE* __restrict const zetaxnsc_t =
+          (((uint64_t)(start_t - 1 - t) & 1u) ? zetaxsc : zetaxnsc) + shot_i;
 
       /* Adjoint guard fill: same mirror as the forward, applied to both
        * adjoint fields (self-adjoint on a reflecting, pml_width=0 face; see
@@ -932,32 +932,32 @@ FUNC(backward)(
         FILL_BC(wfcsc_t, 0);
       }
 
-      DW_DTYPE *__restrict const w_store_1_t =
+      DW_DTYPE* __restrict const w_store_1_t =
           w_store_1 != NULL
               ? (w_store_1 + shot_i +
                  ((storage_mode == STORAGE_DEVICE && !storage_compression)
                       ? t / step_ratio * n_shots * n_grid_points
                       : 0))
               : NULL;
-      DW_DTYPE *__restrict const wsc_store_1_t =
+      DW_DTYPE* __restrict const wsc_store_1_t =
           wsc_store_1 != NULL
               ? (wsc_store_1 + shot_i +
                  ((storage_mode == STORAGE_DEVICE && !storage_compression)
                       ? t / step_ratio * n_shots * n_grid_points
                       : 0))
               : NULL;
-      void *__restrict const w_store_2_t =
+      void* __restrict const w_store_2_t =
           w_store_2 != NULL
-              ? ((uint8_t *)w_store_2 +
+              ? ((uint8_t*)w_store_2 +
                  (shot +
                   ((storage_mode == STORAGE_DEVICE && storage_compression)
                        ? t / step_ratio * n_shots
                        : 0)) *
                      (int64_t)shot_bytes_comp)
               : NULL;
-      void *__restrict const wsc_store_2_t =
+      void* __restrict const wsc_store_2_t =
           wsc_store_2 != NULL
-              ? ((uint8_t *)wsc_store_2 +
+              ? ((uint8_t*)wsc_store_2 +
                  (shot +
                   ((storage_mode == STORAGE_DEVICE && storage_compression)
                        ? t / step_ratio * n_shots
@@ -992,7 +992,7 @@ FUNC(backward)(
       }
 
 #ifdef _OPENMP
-#pragma omp parallel num_threads(n_threads)
+#pragma omp parallel num_threads((int)n_threads)
 #endif /* _OPENMP */
       {
         unsigned int const dw_ftz_daz_prev_state = dw_ftz_daz_enter();
@@ -1120,57 +1120,56 @@ FUNC(backward)(
 #ifdef _WIN32
 __declspec(dllexport)
 #endif
-DW_TARGET_CLONES int
-FUNC(backward_sc)(
-    DW_DTYPE const *__restrict const v,
-    DW_DTYPE const *__restrict const grad_rsc, DW_DTYPE *__restrict const wfcsc,
-    DW_DTYPE *__restrict const wfpsc,
+DW_TARGET_CLONES int FUNC(backward_sc)(
+    DW_DTYPE const* __restrict const v,
+    DW_DTYPE const* __restrict const grad_rsc, DW_DTYPE* __restrict const wfcsc,
+    DW_DTYPE* __restrict const wfpsc,
 #if DW_NDIM >= 3
-    DW_DTYPE *__restrict const psizsc,
+    DW_DTYPE* __restrict const psizsc,
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE *__restrict const psiysc,
+    DW_DTYPE* __restrict const psiysc,
 #endif
-    DW_DTYPE *__restrict const psixsc,
+    DW_DTYPE* __restrict const psixsc,
 #if DW_NDIM >= 3
-    DW_DTYPE *__restrict const psiznsc,
+    DW_DTYPE* __restrict const psiznsc,
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE *__restrict const psiynsc,
+    DW_DTYPE* __restrict const psiynsc,
 #endif
-    DW_DTYPE *__restrict const psixnsc,
+    DW_DTYPE* __restrict const psixnsc,
 #if DW_NDIM >= 3
-    DW_DTYPE *__restrict const zetazsc,
+    DW_DTYPE* __restrict const zetazsc,
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE *__restrict const zetaysc,
+    DW_DTYPE* __restrict const zetaysc,
 #endif
-    DW_DTYPE *__restrict const zetaxsc,
+    DW_DTYPE* __restrict const zetaxsc,
 #if DW_NDIM >= 3
-    DW_DTYPE *__restrict const zetaznsc,
+    DW_DTYPE* __restrict const zetaznsc,
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE *__restrict const zetaynsc,
+    DW_DTYPE* __restrict const zetaynsc,
 #endif
-    DW_DTYPE *__restrict const zetaxnsc, DW_DTYPE *__restrict const w_store_1,
-    DW_DTYPE *__restrict const w_store_1b, void *__restrict const w_store_2,
-    void *__restrict const w_store_3,
-    char const *__restrict const *__restrict const w_filenames_ptr,
-    DW_DTYPE *__restrict const grad_fsc,
-    DW_DTYPE *__restrict const grad_scatter,
-    DW_DTYPE *__restrict const grad_scatter_thread,
+    DW_DTYPE* __restrict const zetaxnsc, DW_DTYPE* __restrict const w_store_1,
+    DW_DTYPE* __restrict const w_store_1b, void* __restrict const w_store_2,
+    void* __restrict const w_store_3,
+    char const* __restrict const* __restrict const w_filenames_ptr,
+    DW_DTYPE* __restrict const grad_fsc,
+    DW_DTYPE* __restrict const grad_scatter,
+    DW_DTYPE* __restrict const grad_scatter_thread,
 #if DW_NDIM >= 3
-    DW_DTYPE const *__restrict const az, DW_DTYPE const *__restrict const bz,
-    DW_DTYPE const *__restrict const dbzdz,
+    DW_DTYPE const* __restrict const az, DW_DTYPE const* __restrict const bz,
+    DW_DTYPE const* __restrict const dbzdz,
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE const *__restrict const ay, DW_DTYPE const *__restrict const by,
-    DW_DTYPE const *__restrict const dbydy,
+    DW_DTYPE const* __restrict const ay, DW_DTYPE const* __restrict const by,
+    DW_DTYPE const* __restrict const dbydy,
 #endif
-    DW_DTYPE const *__restrict const ax, DW_DTYPE const *__restrict const bx,
-    DW_DTYPE const *__restrict const dbxdx,
-    int64_t const *__restrict const sources_i,
-    int64_t const *__restrict const receiverssc_i,
+    DW_DTYPE const* __restrict const ax, DW_DTYPE const* __restrict const bx,
+    DW_DTYPE const* __restrict const dbxdx,
+    int64_t const* __restrict const sources_i,
+    int64_t const* __restrict const receiverssc_i,
 #if DW_NDIM >= 3
     DW_DTYPE const rdz,
 #endif
@@ -1225,9 +1224,10 @@ FUNC(backward_sc)(
 #if DW_NDIM >= 2
     int64_t const bc_y1,
 #endif
-    int64_t const bc_x1, int64_t const n_threads, void *unused) {
+    int64_t const bc_x1, int64_t const n_threads, void* unused) {
   if (nt < 0 || n_shots < 0) return 1;
   if (nt == 0 || n_shots == 0) return 0;
+  if (n_threads == 0 || !dw_fits_control_int(n_threads)) return 1;
   /* Optional buffers are required only for active work requesting them.
    * Reject inconsistent native inputs before opening storage files. */
   if (nt > 0 && n_shots > 0) {
@@ -1260,14 +1260,14 @@ FUNC(backward_sc)(
     int64_t const shot_i = shot * n_grid_points;
     int64_t const sisc = shot * n_sourcessc_per_shot;
     int64_t const risc = shot * n_receiverssc_per_shot;
-    DW_DTYPE *__restrict const grad_scatter_shot =
+    DW_DTYPE* __restrict const grad_scatter_shot =
         grad_scatter != NULL ? (grad_scatter + (scatter_batched ? shot_i : 0))
                              : NULL;
-    DW_DTYPE const *__restrict const v_shot = v_batched ? v + shot_i : v;
+    DW_DTYPE const* __restrict const v_shot = v_batched ? v + shot_i : v;
     int64_t t;
 
     int storage_err = 0;
-    FILE *fp_w = NULL;
+    FILE* fp_w = NULL;
     if (storage_mode == STORAGE_DISK) {
       if (scatter_requires_grad) {
         fp_w = dw_open_file_utf8(w_filenames_ptr[shot], "rb");
@@ -1284,54 +1284,54 @@ FUNC(backward_sc)(
         storage_err = 1;
         goto storage_cleanup;
       }
-      DW_DTYPE *__restrict const wfcsc_t =
-          (((start_t - 1 - t) & 1) ? wfpsc : wfcsc) + shot_i;
-      DW_DTYPE *__restrict const wfpsc_t =
-          (((start_t - 1 - t) & 1) ? wfcsc : wfpsc) + shot_i;
+      DW_DTYPE* __restrict const wfcsc_t =
+          (((uint64_t)(start_t - 1 - t) & 1u) ? wfpsc : wfcsc) + shot_i;
+      DW_DTYPE* __restrict const wfpsc_t =
+          (((uint64_t)(start_t - 1 - t) & 1u) ? wfcsc : wfpsc) + shot_i;
 #if DW_NDIM >= 3
-      DW_DTYPE *__restrict const psizsc_t =
-          (((start_t - 1 - t) & 1) ? psiznsc : psizsc) + shot_i;
-      DW_DTYPE *__restrict const psiznsc_t =
-          (((start_t - 1 - t) & 1) ? psizsc : psiznsc) + shot_i;
-      DW_DTYPE *__restrict const zetazsc_t =
-          (((start_t - 1 - t) & 1) ? zetaznsc : zetazsc) + shot_i;
-      DW_DTYPE *__restrict const zetaznsc_t =
-          (((start_t - 1 - t) & 1) ? zetazsc : zetaznsc) + shot_i;
+      DW_DTYPE* __restrict const psizsc_t =
+          (((uint64_t)(start_t - 1 - t) & 1u) ? psiznsc : psizsc) + shot_i;
+      DW_DTYPE* __restrict const psiznsc_t =
+          (((uint64_t)(start_t - 1 - t) & 1u) ? psizsc : psiznsc) + shot_i;
+      DW_DTYPE* __restrict const zetazsc_t =
+          (((uint64_t)(start_t - 1 - t) & 1u) ? zetaznsc : zetazsc) + shot_i;
+      DW_DTYPE* __restrict const zetaznsc_t =
+          (((uint64_t)(start_t - 1 - t) & 1u) ? zetazsc : zetaznsc) + shot_i;
 #endif
 #if DW_NDIM >= 2
-      DW_DTYPE *__restrict const psiysc_t =
-          (((start_t - 1 - t) & 1) ? psiynsc : psiysc) + shot_i;
-      DW_DTYPE *__restrict const psiynsc_t =
-          (((start_t - 1 - t) & 1) ? psiysc : psiynsc) + shot_i;
-      DW_DTYPE *__restrict const zetaysc_t =
-          (((start_t - 1 - t) & 1) ? zetaynsc : zetaysc) + shot_i;
-      DW_DTYPE *__restrict const zetaynsc_t =
-          (((start_t - 1 - t) & 1) ? zetaysc : zetaynsc) + shot_i;
+      DW_DTYPE* __restrict const psiysc_t =
+          (((uint64_t)(start_t - 1 - t) & 1u) ? psiynsc : psiysc) + shot_i;
+      DW_DTYPE* __restrict const psiynsc_t =
+          (((uint64_t)(start_t - 1 - t) & 1u) ? psiysc : psiynsc) + shot_i;
+      DW_DTYPE* __restrict const zetaysc_t =
+          (((uint64_t)(start_t - 1 - t) & 1u) ? zetaynsc : zetaysc) + shot_i;
+      DW_DTYPE* __restrict const zetaynsc_t =
+          (((uint64_t)(start_t - 1 - t) & 1u) ? zetaysc : zetaynsc) + shot_i;
 #endif
-      DW_DTYPE *__restrict const psixsc_t =
-          (((start_t - 1 - t) & 1) ? psixnsc : psixsc) + shot_i;
-      DW_DTYPE *__restrict const psixnsc_t =
-          (((start_t - 1 - t) & 1) ? psixsc : psixnsc) + shot_i;
-      DW_DTYPE *__restrict const zetaxsc_t =
-          (((start_t - 1 - t) & 1) ? zetaxnsc : zetaxsc) + shot_i;
-      DW_DTYPE *__restrict const zetaxnsc_t =
-          (((start_t - 1 - t) & 1) ? zetaxsc : zetaxnsc) + shot_i;
+      DW_DTYPE* __restrict const psixsc_t =
+          (((uint64_t)(start_t - 1 - t) & 1u) ? psixnsc : psixsc) + shot_i;
+      DW_DTYPE* __restrict const psixnsc_t =
+          (((uint64_t)(start_t - 1 - t) & 1u) ? psixsc : psixnsc) + shot_i;
+      DW_DTYPE* __restrict const zetaxsc_t =
+          (((uint64_t)(start_t - 1 - t) & 1u) ? zetaxnsc : zetaxsc) + shot_i;
+      DW_DTYPE* __restrict const zetaxnsc_t =
+          (((uint64_t)(start_t - 1 - t) & 1u) ? zetaxsc : zetaxnsc) + shot_i;
 
       /* Adjoint guard fill: same mirror as the forward (self-adjoint on a
        * reflecting, pml_width=0 face). This scattered-only pass has no
        * background adjoint field to fill. */
       if (has_bc) FILL_BC(wfcsc_t, 0);
 
-      DW_DTYPE *__restrict const w_store_1_t =
+      DW_DTYPE* __restrict const w_store_1_t =
           w_store_1 != NULL
               ? (w_store_1 + shot_i +
                  ((storage_mode == STORAGE_DEVICE && !storage_compression)
                       ? t / step_ratio * n_shots * n_grid_points
                       : 0))
               : NULL;
-      void *__restrict const w_store_2_t =
+      void* __restrict const w_store_2_t =
           w_store_2 != NULL
-              ? ((uint8_t *)w_store_2 +
+              ? ((uint8_t*)w_store_2 +
                  (shot +
                   ((storage_mode == STORAGE_DEVICE && storage_compression)
                        ? t / step_ratio * n_shots
@@ -1354,7 +1354,7 @@ FUNC(backward_sc)(
       }
 
 #ifdef _OPENMP
-#pragma omp parallel num_threads(n_threads)
+#pragma omp parallel num_threads((int)n_threads)
 #endif /* _OPENMP */
       {
         unsigned int const dw_ftz_daz_prev_state = dw_ftz_daz_enter();

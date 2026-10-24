@@ -16,7 +16,7 @@ and immediately before it enters the time loop. When nothing is planning,
 
 import contextvars
 import dataclasses
-from typing import TYPE_CHECKING, Any, Callable, Optional, Union
+from typing import TYPE_CHECKING, Any, Callable, Optional, Union, cast
 
 from deepwave._exceptions import (
     DeepwaveRuntimeError,
@@ -339,7 +339,7 @@ def _resolve_callable(propagator: Union[str, Callable[..., Any]]) -> Callable[..
     import deepwave
     from deepwave.introspection import _resolve_spec
 
-    return getattr(deepwave, _resolve_spec(propagator).name)  # type: ignore[no-any-return]
+    return cast("Callable[..., Any]", getattr(deepwave, _resolve_spec(propagator).name))
 
 
 def plan(
@@ -442,7 +442,7 @@ def plan(
         # without recording the cause, so a plan never spends the budget the
         # real call needs and never has to guess which entries were its own.
         _PROBE.reset(token)
-    if probe.info is None or probe.memory is None:  # pragma: no cover - defensive
+    if probe.info is None or probe.memory is None:  # defensive
         raise DeepwaveRuntimeError(
             "plan() stopped at the right point but collected an incomplete "
             "answer. Please report this."

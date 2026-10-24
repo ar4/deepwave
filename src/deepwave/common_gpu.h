@@ -5,6 +5,7 @@
 
 #include <mutex>
 
+#include "native_types.h"
 #include "storage_utils.h"
 
 /* Every CUDA propagator writes translation-unit __constant__ configuration
@@ -13,21 +14,27 @@
  * It must remain held until all compute and storage-stream work has finished:
  * locking only cudaMemcpyToSymbol would still let a later call overwrite the
  * configuration while an earlier kernel is running. */
-std::mutex &dw_cuda_config_mutex(int device) noexcept;
+std::mutex& dw_cuda_config_mutex(int device) noexcept;
 
 struct ScopedCudaDevice {
   int prior_device;
+  int selected_device;
   int init_error;
   bool have_prior;
-  explicit ScopedCudaDevice(int device) noexcept
-      : prior_device(0), init_error(0), have_prior(false) {
+  explicit ScopedCudaDevice(int64_t device) noexcept
+      : prior_device(0), selected_device(0), init_error(0), have_prior(false) {
+    if (!dw_fits_control_int(device)) {
+      init_error = static_cast<int>(cudaErrorInvalidDevice);
+      return;
+    }
     cudaError_t error = cudaGetDevice(&prior_device);
     if (error != cudaSuccess) {
       init_error = static_cast<int>(error);
       return;
     }
     have_prior = true;
-    error = cudaSetDevice(device);
+    selected_device = static_cast<int>(device);
+    error = cudaSetDevice(selected_device);
     if (error != cudaSuccess) init_error = static_cast<int>(error);
   }
   ~ScopedCudaDevice() {
@@ -37,8 +44,8 @@ struct ScopedCudaDevice {
       fprintf(stderr, "GPUassert: %s restoring CUDA device\n",
               cudaGetErrorString(error));
   }
-  ScopedCudaDevice(const ScopedCudaDevice &) = delete;
-  ScopedCudaDevice &operator=(const ScopedCudaDevice &) = delete;
+  ScopedCudaDevice(const ScopedCudaDevice&) = delete;
+  ScopedCudaDevice& operator=(const ScopedCudaDevice&) = delete;
 };
 
 struct ScopedCudaConfig {
@@ -47,6 +54,10 @@ struct ScopedCudaConfig {
   bool finished;
   explicit ScopedCudaConfig(int device) noexcept
       : init_error(0), finished(false) {
+    if (device < 0) {
+      init_error = static_cast<int>(cudaErrorInvalidDevice);
+      return;
+    }
     try {
       lock = std::unique_lock<std::mutex>(dw_cuda_config_mutex(device));
     } catch (...) {
@@ -64,8 +75,8 @@ struct ScopedCudaConfig {
   ~ScopedCudaConfig() {
     if (lock.owns_lock() && !finished) (void)finish();
   }
-  ScopedCudaConfig(const ScopedCudaConfig &) = delete;
-  ScopedCudaConfig &operator=(const ScopedCudaConfig &) = delete;
+  ScopedCudaConfig(const ScopedCudaConfig&) = delete;
+  ScopedCudaConfig& operator=(const ScopedCudaConfig&) = delete;
 };
 
 #define gpuErrchk(ans)                              \
@@ -74,18 +85,13 @@ struct ScopedCudaConfig {
     if (err != 0) return err;                       \
   }
 
-inline int gpuAssert(cudaError_t code, const char *file, int line) {
+inline int gpuAssert(cudaError_t code, const char* file, int line) {
   if (code != cudaSuccess) {
     fprintf(stderr, "GPUassert: %s %s %d\n", cudaGetErrorString(code), file,
             line);
     return (int)code;
   }
   return 0;
-}
-
-inline unsigned int ceil_div(unsigned int numerator, unsigned int denominator) {
-  // Launch dimensions may approach UINT_MAX; adding before division wraps.
-  return numerator / denominator + (numerator % denominator != 0);
 }
 
 struct ScopedStream {
@@ -95,7 +101,7 @@ struct ScopedStream {
     if (stream) cudaStreamDestroy(stream);
   }
   operator cudaStream_t() const { return stream; }
-  cudaStream_t *operator&() { return &stream; }
+  cudaStream_t* operator&() { return &stream; }
 };
 
 struct ScopedEvent {
@@ -105,40 +111,40 @@ struct ScopedEvent {
     if (event) cudaEventDestroy(event);
   }
   operator cudaEvent_t() const { return event; }
-  cudaEvent_t *operator&() { return &event; }
+  cudaEvent_t* operator&() { return &event; }
 };
 
 struct ScopedFile {
-  FILE *fp;
-  ScopedFile *next;
+  FILE* fp;
+  ScopedFile* next;
   ScopedFile() : fp(nullptr), next(nullptr) {}
   ~ScopedFile() { (void)close(); }
-  operator FILE *() const { return fp; }
+  operator FILE*() const { return fp; }
   int close() { return dw_close_file(&fp); }
-  bool open(const char *filename, const char *mode) {
+  bool open(const char* filename, const char* mode) {
     if (close() != 0) return false;
     fp = dw_open_file_utf8(filename, mode);
     return fp != nullptr;
   }
-  ScopedFile(const ScopedFile &) = delete;
-  ScopedFile &operator=(const ScopedFile &) = delete;
+  ScopedFile(const ScopedFile&) = delete;
+  ScopedFile& operator=(const ScopedFile&) = delete;
 };
 
 struct ScopedFileGroup {
-  ScopedFile *head;
+  ScopedFile* head;
   ScopedFileGroup() : head(nullptr) {}
-  void add(ScopedFile &file) {
+  void add(ScopedFile& file) {
     file.next = head;
     head = &file;
   }
   int close_all() {
     int status = 0;
-    for (ScopedFile *file = head; file != nullptr; file = file->next)
+    for (ScopedFile* file = head; file != nullptr; file = file->next)
       if (file->close() != 0) status = 1;
     return status;
   }
-  ScopedFileGroup(const ScopedFileGroup &) = delete;
-  ScopedFileGroup &operator=(const ScopedFileGroup &) = delete;
+  ScopedFileGroup(const ScopedFileGroup&) = delete;
+  ScopedFileGroup& operator=(const ScopedFileGroup&) = delete;
 };
 
 #ifdef DEBUG

@@ -120,7 +120,7 @@ def format_bytes(n: Union[int, float]) -> str:
                 return f"{int(size)} B"
             return f"{size:.1f} {unit}"
         size /= 1000.0
-    raise AssertionError  # pragma: no cover - the loop always returns
+    raise AssertionError  # the loop always returns
 
 
 @dataclasses.dataclass(frozen=True)

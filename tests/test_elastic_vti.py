@@ -154,9 +154,10 @@ def test_isotropic_limit(ndim, backend):
 
 
 @pytest.mark.parametrize("ndim", [2, 3])
+@pytest.mark.parametrize("mpml_fraction", [0.0, 0.15])
 @C_BACKEND
-def test_isotropic_limit_c_equals_eager_anisotropic(ndim):
-    """C and eager backends agree for a genuinely anisotropic medium."""
+def test_isotropic_limit_c_equals_eager_anisotropic(ndim, mpml_fraction):
+    """Unsampled C adjoints agree with autograd in anisotropic PML and M-PML."""
     lamb, mu, buoyancy = _make_iso_media(ndim)
     # Make it anisotropic: c11 != c33, c13 != lamb, c66 != c55.
     c11 = (lamb + 2 * mu) * 1.3
@@ -168,7 +169,8 @@ def test_isotropic_limit_c_equals_eager_anisotropic(ndim):
     outs = {}
     grads = {}
     for backend in ["eager", "compiled"]:
-        kwargs = _survey_kwargs(ndim, nt, backend=backend)
+        kwargs = _survey_kwargs(ndim, nt, backend=backend, dt=0.0003)
+        kwargs["mpml_fraction"] = mpml_fraction
         models = [
             m.clone().requires_grad_(True)
             for m in [c11, c13, c33, c55, buoyancy] + ([c66] if c66 is not None else [])
@@ -181,6 +183,9 @@ def test_isotropic_limit_c_equals_eager_anisotropic(ndim):
         out = deepwave.elastic_vti(
             c11_r, c13_r, c33_r, c55_r, b_r, 5.0, c66=c66_r, **kwargs
         )
+        # Exact adjoint comparison requires unsampled model gradients. The
+        # strided approximation is tested in test_gradient_sampling_characterisation.
+        assert out.info.step_ratio == out.info.model_gradient_stride == 1
         sum(o.pow(2).sum() for o in output_tensors(out) if o.numel() > 0).backward()
         outs[backend] = out
         grads[backend] = [m.grad for m in models]
@@ -188,20 +193,11 @@ def test_isotropic_limit_c_equals_eager_anisotropic(ndim):
         if a.numel() == 0:
             continue
         scale = a.abs().max().item()
-        assert (a - b).abs().max().item() <= max(scale, 1.0) * 5e-12
+        torch.testing.assert_close(b, a, rtol=0, atol=scale * 5e-12)
     for ga, gb in zip(grads["eager"], grads["compiled"]):
         scale = ga.abs().max().item()
-        # Eager (plain PyTorch ops) and the C backend (OpenMP/SIMD, different
-        # floating-point accumulation order) are not expected to agree to
-        # near machine precision on gradients: the *same* gap (~1e-4 relative,
-        # at this atol/rtol/pml_width/accuracy) is reproducible on the
-        # existing, unmodified isotropic `elastic` propagator with an
-        # equivalent tiny/aggressive (few-timestep, thin-PML, accuracy=2)
-        # setup, so this is a pre-existing precision characteristic of the
-        # shared architecture, not a VTI-specific bug. See
-        # test_gradcheck_fd_mpml's docstring for the same finding via
-        # gradcheck.
-        assert (ga - gb).abs().max().item() <= max(scale, 1.0) * 5e-4
+        assert scale > 0, "the reference must exercise every model gradient"
+        torch.testing.assert_close(gb, ga, rtol=0, atol=scale * 1e-8)
 
 
 def test_ndim_1_raises():
@@ -1150,22 +1146,10 @@ def test_gradcheck_fd_mpml(backend):
     see ``_tiny_problem``'s docstring for the two conditioning requirements
     (``step_ratio == 1`` and leaf rescaling) that make this an exact-adjoint
     gate rather than a comparison against the documented ``step_ratio > 1``
-    gradient quadrature. The C backend uses a looser tolerance than eager:
-    with this aggressive a setup (an 8^ndim grid, pml_width=2, accuracy=2 --
-    deliberately tiny to keep gradcheck affordable), eager (plain PyTorch
-    ops, autograd is exact) and the C backend (OpenMP/SIMD, a different
-    floating-point accumulation order) do not agree to near machine
-    precision; this gap is ~1e-4 (relative) here and is reproducible with an
-    equivalent tiny/thin-PML setup on the existing, unmodified isotropic
-    `elastic` C kernel too, so it is a pre-existing characteristic of the
-    shared architecture, not specific to VTI.
-    `tests/test_elastic.py::run_backend_parity` uses the same looser
-    atol=1e-5/rtol=1e-3 by default for exactly this reason.
-
-    This is the only gradient check of the compiled mPML path: its
-    cross-backend companion ``test_mpml_c_equals_eager`` compares forward
-    outputs only, and ``test_c_threading_matches_single_thread``'s mPML case
-    compares the compiled backend against itself.
+    gradient quadrature. The finite-difference tolerances below do not define
+    the accuracy required of the compiled adjoint: the routine
+    ``test_isotropic_limit_c_equals_eager_anisotropic`` comparison checks its
+    M-PML gradients directly against autograd with a much tighter tolerance.
     """
     inputs, wrapper = _tiny_problem(2, backend, mpml_fraction=0.15)
     atol, rtol = (1e-8, 1e-4) if backend == "eager" else (1e-5, 1e-3)

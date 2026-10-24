@@ -11,6 +11,9 @@ Deepwave requires Python 3.9 or later and PyTorch 2.4 or later. First install Py
     pip install deepwave
 ```
 
+macOS wheels support Apple Silicon. Intel Mac wheels are no longer provided:
+PyTorch 2.4 and newer do not publish wheels for that platform.
+
 Prebuilt x86 wheels require AVX2. Older CPUs need a source build; see
 [installation troubleshooting](https://ausargeo.com/deepwave/#installation-troubleshooting).
 

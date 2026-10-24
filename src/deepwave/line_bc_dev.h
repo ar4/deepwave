@@ -13,7 +13,7 @@
  * object-library macros), so there is no link-time collision to avoid by
  * making them internal-linkage. */
 
-__device__ inline void fill_p_bc_line_dev(DW_DTYPE *__restrict const p,
+__device__ inline void fill_p_bc_line_dev(DW_DTYPE* __restrict const p,
                                           int64_t const base, int64_t const nax,
                                           int64_t const stride,
                                           int64_t const bc_lo,
@@ -55,7 +55,7 @@ __device__ inline void fill_p_bc_line_dev(DW_DTYPE *__restrict const p,
   }
 }
 
-__device__ inline void fill_v_bc_line_dev(DW_DTYPE *__restrict const v,
+__device__ inline void fill_v_bc_line_dev(DW_DTYPE* __restrict const v,
                                           int64_t const base, int64_t const nax,
                                           int64_t const stride,
                                           int64_t const bc_lo,
@@ -108,11 +108,11 @@ __device__ inline void fill_v_bc_line_dev(DW_DTYPE *__restrict const v,
 
 /* One thread per line along the chosen axis (base = (L/stride)*(nax*stride) +
  * (L%stride) for a contiguous array). ``kind`` 0 = pressure, 1 = velocity. */
-__global__ void fill_bc_kernel(DW_DTYPE *__restrict const wf,
+__global__ void fill_bc_kernel(DW_DTYPE* __restrict const wf,
                                int64_t const n_lines, int64_t const nax,
                                int64_t const stride, int64_t const bc_lo,
                                int64_t const bc_hi, int const kind) {
-  int64_t const L = (int64_t)blockIdx.x * blockDim.x + threadIdx.x;
+  int64_t const L = dw_grid_index(blockIdx.x, blockDim.x, threadIdx.x);
   if (L >= n_lines) return;
   int64_t const base = (L / stride) * (nax * stride) + (L % stride);
   if (kind == 0)

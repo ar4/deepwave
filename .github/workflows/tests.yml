@@ -55,29 +55,42 @@ jobs:
       - name: Install Deepwave (from the prebuilt wheel) + test dependencies
         run: |
           pip install dist/*.whl
-          pip install pytest pytest-xdist pytest-cov scipy sympy
+          pip install pytest pytest-xdist pytest-cov scipy sympy matplotlib hypothesis
+          python -m pip freeze > test-environment.txt
 
       - name: pytest (fast subset, with coverage)
         # Keep the existing separate batches for the four elastic-family
         # files. Fixtures restore Torch globals; a failure in a combined
         # selection still needs diagnosis before calling it infrastructure.
-        # The 92% coverage floor is enforced on the LAST invocation
-        # only: --cov-append accumulates every prior invocation's data
-        # into the same .coverage file first, so that report (and its
-        # fail-under check) reflects the full cumulative total, not just
-        # the last file alone.
+        # Accumulate statements and branches across every batch. The final
+        # statement gate retains the existing 92% requirement independently
+        # of the new branch measurement (whose baseline is not yet known).
         run: |
           python -m pytest tests/ -n auto -m "not slow" \
             --ignore=tests/test_boundary.py \
             --ignore=tests/test_elastic.py \
             --ignore=tests/test_elastic_vti.py \
             --ignore=tests/test_elastic_born.py \
-            --cov=deepwave --cov-report=term-missing
-          python -m pytest tests/test_boundary.py -m "not slow" --cov=deepwave --cov-append --cov-report=term-missing
-          python -m pytest tests/test_elastic.py -m "not slow" --cov=deepwave --cov-append --cov-report=term-missing
-          python -m pytest tests/test_elastic_vti.py -m "not slow" --cov=deepwave --cov-append --cov-report=term-missing
+            --cov=deepwave --cov-branch --cov-report=term-missing
+          python -m pytest tests/test_boundary.py -m "not slow" --cov=deepwave --cov-branch --cov-append --cov-report=term-missing
+          python -m pytest tests/test_elastic.py -m "not slow" --cov=deepwave --cov-branch --cov-append --cov-report=term-missing
+          python -m pytest tests/test_elastic_vti.py -m "not slow" --cov=deepwave --cov-branch --cov-append --cov-report=term-missing
           python -m pytest tests/test_elastic_born.py -m "not slow" \
-            --cov=deepwave --cov-append --cov-report=term-missing --cov-fail-under=92
+            --cov=deepwave --cov-branch --cov-append --cov-report=term-missing --cov-report=json:coverage.json --cov-report=html:coverage-html
+          python scripts/check_line_coverage.py coverage.json
+
+      - name: Preserve coverage evidence
+        if: ${{ !cancelled() && hashFiles('.coverage') != '' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: python-coverage-${{ matrix.python-version }}
+          path: |
+            .coverage
+            coverage.json
+            coverage-html/
+            test-environment.txt
+          include-hidden-files: true
+          if-no-files-found: error
 
   physics:
     name: pytest (physics correctness gate)

@@ -14,9 +14,11 @@ function's assigned ``argtypes``.
 
 import ctypes
 
+import determinism_cases as dc
 import pytest
 import torch
 
+import deepwave
 from deepwave import (
     acoustic,
     acoustic_born,
@@ -57,27 +59,32 @@ def _type_ok(argtype, value):
     return True
 
 
-def _run_with_recording(thunk):
+def _run_with_recording(thunk, *, check_thread_range=False):
     """Run ``thunk`` with backend lookups wrapped to record call arguments."""
-    import deepwave._common as common
+    from deepwave import _backend_utils as backend_utils
 
-    real_lookup = common._backend_function
+    real_lookup = backend_utils.get_backend_function
     records = []
 
     def wrapped_lookup(*a, **k):
         func = real_lookup(*a, **k)
 
         def recorder(*args):
+            if check_thread_range:
+                assert func.argtypes[-2] is ctypes.c_int64
+                for count in (0, -1, 2**31, 2**63 - 1):
+                    invalid = (*args[:-2], count, args[-1])
+                    assert func(*invalid) == 1, (func.__name__, count)
             records.append((func, args))
             return func(*args)
 
         return recorder
 
-    common._backend_function = wrapped_lookup
+    backend_utils.get_backend_function = wrapped_lookup
     try:
         thunk()
     finally:
-        common._backend_function = real_lookup
+        backend_utils.get_backend_function = real_lookup
     return records
 
 
@@ -406,3 +413,53 @@ def test_viscoacoustic_call_matches_argtypes(ndim, dtype):
         out[-1].sum().backward()
 
     _assert_records(_run_with_recording(thunk))
+
+
+@pytest.mark.parametrize(
+    ("name", "scatter_only"),
+    [(name, False) for name in dc.PROPAGATORS]
+    + [(name, True) for name in ("scalar_born", "acoustic_born", "elastic_born")],
+)
+def test_native_thread_count_rejects_truncation(name, scatter_only, monkeypatch):
+    """All CPU entry paths reject invalid int controls before using any buffers."""
+    monkeypatch.setattr(dc, "N", 32)
+    monkeypatch.setattr(dc, "PML_WIDTH", 4)
+
+    def run():
+        kwargs, leaves, names = dc.build_case(
+            name, torch.device("cpu"), torch.float64, backend="compiled", nt=3
+        )
+        models = kwargs.pop("_models")
+        if scatter_only:
+            perturbations = {
+                "model:dv",
+                "model:drho",
+                "model:dlamb",
+                "model:dmu",
+                "model:dbuoyancy",
+            }
+            for leaf, label in zip(leaves, names):
+                leaf.requires_grad_(label in perturbations)
+        kwargs["origin"] = [0, 0]
+        for label in names:
+            if label.startswith("wavefield:"):
+                field = label.removeprefix("wavefield:")
+                kwargs[field] = torch.nn.functional.pad(kwargs[field], (4, 4, 4, 4))
+        with torch.no_grad():
+            for leaf, label in zip(leaves, names):
+                if label == "model:dv":
+                    leaf[0, :] = leaf[-1, :] = 0
+                    leaf[:, 0] = leaf[:, -1] = 0
+        output = getattr(deepwave, name)(*models, dc.DX, dc.DT / 2, **kwargs)
+        from helpers import output_tensors
+
+        loss = sum(t.square().mean() for t in output_tensors(output) if t.numel())
+        torch.autograd.grad(
+            loss, [t for t in leaves if t.requires_grad], allow_unused=True
+        )
+
+    records = _run_with_recording(run, check_thread_range=True)
+    _assert_records(records)
+    directions = {func.__name__.split("_double_")[1] for func, _ in records}
+    assert "forward_cpu" in directions
+    assert ("backward_sc_cpu" if scatter_only else "backward_cpu") in directions

@@ -30,7 +30,8 @@ def response(
     and positive loss. At DC the result is one. For multiple mechanisms,
     ``q`` is the weak-loss band target; ``real/imag`` is the *actual* effective
     Q and generally differs from that target, especially at strong loss.
-    Gradients with respect to ``q`` are preserved.
+    Gradients with respect to ``q`` are preserved. Positive infinite ``q``
+    gives the exact lossless response and the limiting zero Q derivative.
     """
     if not isinstance(q, torch.Tensor) or q.dtype not in (torch.float32, torch.float64):
         raise DeepwaveTypeError(
@@ -42,8 +43,10 @@ def response(
         raise DeepwaveValueError(
             "attenuation.response: frequencies must be a one-dimensional real tensor."
         )
-    if not bool(((q > 0) & torch.isfinite(q)).all()):
-        raise DeepwaveValueError("attenuation.response: q must be positive and finite.")
+    if not bool((q > 0).all()):
+        raise DeepwaveValueError(
+            "attenuation.response: q must be positive; +inf denotes the lossless limit."
+        )
     if not bool(((frequencies >= 0) & torch.isfinite(frequencies)).all()):
         raise DeepwaveValueError(
             "attenuation.response: frequencies must be finite and nonnegative."

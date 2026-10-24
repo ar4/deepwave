@@ -156,7 +156,6 @@ def _validate_transform_args(
 
 def _transform(
     signal: torch.Tensor,
-    internal_dt: float,
     inverse: bool,
     nt_out: Optional[int],
 ) -> torch.Tensor:
@@ -186,8 +185,6 @@ def _transform(
     Args:
         signal: Real tensor of shape ``[..., nt]``; the time axis is the last
             dimension and is treated as sampled at ``internal_dt``.
-        internal_dt: The internal (leapfrog) time step ``dt`` governing the
-            dispersion (seconds).
         inverse: Selects the remap direction (see above).
         nt_out: Length of the output time axis. Defaults to the input length.
 
@@ -289,7 +286,7 @@ def correct_source(
             is not positive.
     """
     _validate_transform_args(source_amplitudes, internal_dt, nt_out)
-    return _transform(source_amplitudes, internal_dt, inverse=False, nt_out=nt_out)
+    return _transform(source_amplitudes, inverse=False, nt_out=nt_out)
 
 
 def correct_receivers(
@@ -342,7 +339,7 @@ def correct_receivers(
             is not positive.
     """
     _validate_transform_args(receiver_amplitudes, internal_dt, nt_out)
-    return _transform(receiver_amplitudes, internal_dt, inverse=True, nt_out=nt_out)
+    return _transform(receiver_amplitudes, inverse=True, nt_out=nt_out)
 
 
 def cfl_internal_dt(

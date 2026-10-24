@@ -47,8 +47,6 @@ jobs:
             cpu_config: cmake.define.DW_FIXED_AVX2_OPT_IN=ON
           - os: windows-2022
             cpu_config: cmake.define.DW_FIXED_AVX2_OPT_IN=ON
-          - os: macos-15-intel
-            cpu_config: cmake.define.DW_FIXED_AVX2_OPT_IN=ON
           - os: macos-14
             cpu_config: ""
 
@@ -96,6 +94,13 @@ jobs:
           print(f'verified sdist sha256={actual}, source={package}')
           PY
 
+      - name: Install Windows build dependencies
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          DEEPWAVE_PACKAGE_DIR: ${{ steps.source.outputs.package_dir }}
+        run: ./scripts/install_windows_build_deps.ps1 -PackageDir $env:DEEPWAVE_PACKAGE_DIR
+
       - name: Build wheels
         uses: pypa/cibuildwheel@63fd63b352a9a8bdcc24791c9dbee952ee9a8abc # v3.3.0
         with:
@@ -111,21 +116,11 @@ jobs:
           # is specified in pyproject.toml
           CIBW_BEFORE_ALL_LINUX: >
             curl -sL https://developer.download.nvidia.com/compute/cuda/repos/rhel8/x86_64/cuda-rhel8.repo -o /etc/yum.repos.d/cuda-rhel8.repo &&
-            dnf install -y cuda-nvcc-13-3 cuda-cudart-devel-13-3 gcc-toolset-13 &&
+            dnf install -y cuda-nvcc-13-3 cuda-cudart-devel-13-3 cuda-documentation-13-3 gcc-toolset-13 &&
             mkdir -p {package}/runtime-notices &&
             cp /usr/share/licenses/gcc/COPYING3 {package}/runtime-notices/GNU_GPL_3.txt &&
             cp /usr/share/licenses/gcc/COPYING.RUNTIME {package}/runtime-notices/GCC_RUNTIME_EXCEPTION.txt
           CIBW_ENVIRONMENT_LINUX: PATH="/opt/rh/gcc-toolset-13/root/usr/bin/:$PATH:/usr/local/cuda-13.3/bin" CUDA_PATH="/usr/local/cuda-13.3/bin" CUDA_HOME="/usr/local/cuda-13.3" CUDA_ROOT="/usr/local/cuda-13.3" LD_LIBRARY_PATH="/opt/rh/gcc-toolset-13/root/usr/lib64:$LD_LIBRARY_PATH:/usr/local/cuda-13.3/lib64" CUDACXX="/usr/local/cuda-13.3/bin/nvcc" CC=/opt/rh/gcc-toolset-13/root/usr/bin/gcc CXX=/opt/rh/gcc-toolset-13/root/usr/bin/g++ CMAKE_CUDA_HOST_COMPILER=/opt/rh/gcc-toolset-13/root/usr/bin/g++
-          # For Windows, install CUDA
-          CIBW_BEFORE_ALL_WINDOWS: >
-            nuget install intelopenmp.devel.win -DirectDownload -NonInteractive &&
-            nuget install intelopenmp.redist.win -DirectDownload -NonInteractive &&
-            cp intelopenmp.devel.win*/build/native/win-x64/libiomp5md.lib {package}/src/deepwave &&
-            cp intelopenmp.redist.win*/runtimes/win-x64/native/libiomp5md.dll {package}/src/deepwave &&
-            mkdir -p {package}/runtime-notices &&
-            cp intelopenmp.redist.win*/license.txt {package}/runtime-notices/INTEL_OPENMP_LICENSE.txt &&
-            curl https://developer.download.nvidia.com/compute/cuda/13.3.1/network_installers/cuda_13.3.1_windows_network.exe -o cuda_13.3.1_windows_network.exe &&
-            cuda_13.3.1_windows_network.exe -s nvcc_13.3 cudart_13.3 visual_studio_integration_13.3
           CIBW_ENVIRONMENT_WINDOWS: PATH="$PATH;C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.3\\bin" CudaToolkitDir="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.3" CUDA_PATH="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.3" CUDA_HOME="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.3" CUDAToolkit_ROOT="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.3" CUDACXX="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.3\\bin\\nvcc.exe"
 
       - name: Check wheel size budget

@@ -17,6 +17,7 @@ import torch
 
 import deepwave
 from benchmarks import checkpoint_reentrancy as cp
+from deepwave._backend_utils import dll
 
 
 def main() -> None:
@@ -25,7 +26,7 @@ def main() -> None:
     parser.add_argument("--out", type=Path, help="Optional JSON result path")
     args = parser.parse_args()
     installed = Path(deepwave.__file__).parent
-    native = installed / "libdeepwave_C.so"
+    native = Path(dll._name).resolve()
     if not native.is_file():
         raise RuntimeError(f"Native library missing: {native}")
     identity = {

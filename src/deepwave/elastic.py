@@ -2784,7 +2784,7 @@ def _elastic_forward_jvp(
         import torch._C._functorch as _functorch_c
 
         depth = _functorch_c.get_dynamic_layer_stack_depth()
-    except (ImportError, AttributeError):  # pragma: no cover - older torch
+    except (ImportError, AttributeError):  # older torch
         depth = 0
     if depth > 1:
         raise DeepwaveNotImplementedError(
@@ -3433,11 +3433,9 @@ class ElasticBackwardFunc(torch.autograd.Function):
             aux, _stream = _engine.get_aux_and_stream(
                 models[0], n_shots, is_cuda, spatial_parallel=SPEC.spatial_parallel
             )
-            model_shape = list(models[0].shape[-ndim:])
             grad_pm_c, grad_pm_tmp, grad_pm_tmp_ptr = _engine.allocate_model_gradients(
                 pm_c,
                 [bool(pm_c_batched)] * 4,
-                model_shape,
                 n_shots,
                 aux,
                 is_cuda,
@@ -5147,14 +5145,12 @@ def elastic_func(
             _update_velocities_opt = update_velocities_pm
             _update_stresses_opt = update_stresses_pm
             return elastic_python(*args, backend=backend)
-        lamb = cast("torch.Tensor", args[_N_LEADING_ARGS])
         # grid_spacing must reach the traced step functions as Python
         # floats: see _engine.float_grid_spacing for why an int silently
         # costs 8 significant digits under torch.compile on CUDA.
         args = (*args[:1], _engine.float_grid_spacing(args[1]), *args[2:])
-        config_key = (len(args[1]), args[5], lamb.dtype)
-        _update_velocities_opt = _update_velocities_cache.resolve(backend, config_key)
-        _update_stresses_opt = _update_stresses_cache.resolve(backend, config_key)
+        _update_velocities_opt = _update_velocities_cache.resolve(backend)
+        _update_stresses_opt = _update_stresses_cache.resolve(backend)
         return elastic_python(*args, backend=backend)
 
     # ``args`` (the leading block, as received from ``elastic()``) has

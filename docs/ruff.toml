@@ -6,7 +6,7 @@ src = ["../src"]
 line-length = 76
 
 [lint]
-extend-ignore = ["ANN", "INP001", "ERA001", "B023"]
+extend-ignore = ["ANN", "INP001", "ERA001"]
 
 [lint.per-file-ignores]
 # The example scripts, and their jupytext-paired notebook copies, end with
@@ -20,3 +20,13 @@ extend-ignore = ["ANN", "INP001", "ERA001", "B023"]
 # paired script carries as a module docstring, so the imports necessarily
 # follow them. The `.py` source is where import order is checked.
 "example_*.ipynb" = ["S101", "E402"]
+
+# Each optimiser consumes its closure before the next outer-loop iteration.
+# The paired notebooks contain the same closures. Other examples keep B023.
+"example_distributed_ddp.{py,ipynb}" = ["B023"]
+"example_distributed_dp.{py,ipynb}" = ["B023"]
+"example_fwi.{py,ipynb}" = ["B023"]
+"example_gsot.{py,ipynb}" = ["B023"]
+
+# Sphinx event callbacks receive the application object by protocol.
+"conf.py" = ["ARG001"]

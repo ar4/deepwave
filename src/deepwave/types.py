@@ -1080,7 +1080,7 @@ _RECEIVER_PREFIXES: tuple[str, ...] = (
 )
 
 
-class PropagatorOutput(tuple):  # type: ignore[type-arg]
+class PropagatorOutput(tuple[Any, ...]):
     """Named, attribute-accessible view of a propagator's outputs.
 
     Returned by every propagator. Each final wavefield and receiver-amplitude

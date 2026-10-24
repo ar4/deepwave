@@ -1881,13 +1881,10 @@ def acoustic_born(
         # receive Python floats, not ints. setup_propagator already
         # guarantees this, so this is defence in depth.
         grid_spacing_out = _engine.float_grid_spacing(grid_spacing_out)
-        config_key = (len(grid_spacing_out), accuracy, dtype)
         _update_velocities_born_opt = _update_velocities_born_cache.resolve(
-            backend_mode, config_key
+            backend_mode
         )
-        _update_pressure_born_opt = _update_pressure_born_cache.resolve(
-            backend_mode, config_key
-        )
+        _update_pressure_born_opt = _update_pressure_born_cache.resolve(backend_mode)
         # The pure-PyTorch eager/compiled backends run native autograd, not
         # the shared step-based engine, so they have no storage manager and no
         # chunked backward-callback machinery (a backward_callback needs the
@@ -2058,7 +2055,7 @@ def _make_backward_sc_call(ndim: int) -> Any:
         db = sc_models[1:]
         w = state.wavefields  # scattered adjoint only: [psc, v*sc, phi_*_sc, psi_*_sc]
         a = state.aux_wavefields
-        psi_sc = w[1 + ndim : 1 + 2 * ndim]
+        psi_sc = w[1 + 2 * ndim : 1 + 3 * ndim]
         psin_sc = a[:ndim]
         grad_dk = state.grad_models[n_bg]
         grad_db = state.grad_models[n_bg + 1 :]
@@ -2074,7 +2071,7 @@ def _make_backward_sc_call(ndim: int) -> Any:
                 *[r.data_ptr() for r in state.grad_receivers],
                 w[0].data_ptr(),
                 *[f.data_ptr() for f in w[1 : 1 + ndim]],
-                *[f.data_ptr() for f in w[1 + 2 * ndim : 1 + 3 * ndim]],
+                *[f.data_ptr() for f in w[1 + ndim : 1 + 2 * ndim]],
                 *[f.data_ptr() for f in psi_sc],
                 *[f.data_ptr() for f in psin_sc],
                 # The forward now allocates 2*(ndim+1) store slots (background
@@ -2142,14 +2139,14 @@ def _make_backward_call(ndim: int) -> Any:
         # Background adjoint field.
         bg_p = w[0]
         bg_v = w[1 : 1 + ndim]
-        bg_phi = w[1 + 2 * ndim : 1 + 3 * ndim]
-        bg_psi = w[1 + ndim : 1 + 2 * ndim]
+        bg_phi = w[1 + ndim : 1 + 2 * ndim]
+        bg_psi = w[1 + 2 * ndim : 1 + 3 * ndim]
         bg_psin = a[:ndim]
         # Scattered adjoint field.
         sc_p = w[n_bg_wf]
         sc_v = w[n_bg_wf + 1 : n_bg_wf + 1 + ndim]
-        sc_phi = w[n_bg_wf + 1 + 2 * ndim : n_bg_wf + 1 + 3 * ndim]
-        sc_psi = w[n_bg_wf + 1 + ndim : n_bg_wf + 1 + 2 * ndim]
+        sc_phi = w[n_bg_wf + 1 + ndim : n_bg_wf + 1 + 2 * ndim]
+        sc_psi = w[n_bg_wf + 1 + 2 * ndim : n_bg_wf + 1 + 3 * ndim]
         sc_psin = a[ndim : 2 * ndim]
         n_f = [
             state.n_sources_per_shot[i] if state.grad_sources[i].numel() > 0 else 0
@@ -2385,25 +2382,20 @@ class AcousticBornForwardFunc(torch.autograd.Function):
                 ]
 
             def swap(state: _engine.BackendState) -> None:
+                # Each state block is [pressure, velocities, phi, psi]. Only
+                # psi is ping-ponged by the native adjoint.
                 w = state.wavefields
                 a = state.aux_wavefields
-                # ``_make_backward_call`` feeds ``w[1 + ndim : 1 + 2 * ndim]``
-                # (bg) and ``w[n_bg_wf + 1 + ndim : n_bg_wf + 1 + 2 * ndim]``
-                # (sc) to the kernel's ping-ponged ``psi_*_sc`` slots (paired
-                # with the aux buffers); the trailing ``... 2 * ndim : ... 3 *
-                # ndim`` blocks go to the single-buffer ``phi_*_sc`` slots and
-                # must NOT be swapped. Swap the ping-ponged blocks so
-                # odd-length chunks stay continuous.
-                w[1 + ndim : 1 + 2 * ndim], a[:ndim] = (
+                w[1 + 2 * ndim : 1 + 3 * ndim], a[:ndim] = (
                     a[:ndim],
-                    w[1 + ndim : 1 + 2 * ndim],
+                    w[1 + 2 * ndim : 1 + 3 * ndim],
                 )
                 (
-                    w[n_bg_wf + 1 + ndim : n_bg_wf + 1 + 2 * ndim],
+                    w[n_bg_wf + 1 + 2 * ndim : n_bg_wf + 1 + 3 * ndim],
                     a[ndim : 2 * ndim],
                 ) = (
                     a[ndim : 2 * ndim],
-                    w[n_bg_wf + 1 + ndim : n_bg_wf + 1 + 2 * ndim],
+                    w[n_bg_wf + 1 + 2 * ndim : n_bg_wf + 1 + 3 * ndim],
                 )
 
             state = _engine.run_backward_core(
@@ -2461,15 +2453,10 @@ class AcousticBornForwardFunc(torch.autograd.Function):
             return [torch.zeros_like(grad_wf[0]) for _ in range(ndim)]
 
         def swap_sc(state: _engine.BackendState) -> None:
-            # The C backward_sc ping-pongs the block that ``_make_backward_sc_call``
-            # feeds to the kernel's ``psi_*_sc`` slot, namely
-            # ``wavefields[1 + ndim : 1 + 2 * ndim]`` (paired with
-            # ``aux_wavefields``), NOT the trailing ``wavefields[-ndim:]`` block
-            # (which is passed to the single-buffer ``phi_*_sc`` slot). Swap the
-            # ping-ponged block so odd-length chunks stay continuous.
-            state.wavefields[1 + ndim : 1 + 2 * ndim], state.aux_wavefields[:] = (
+            # The trailing psi block owns the native ping-pong buffer.
+            state.wavefields[-ndim:], state.aux_wavefields[:] = (
                 state.aux_wavefields[:],
-                state.wavefields[1 + ndim : 1 + 2 * ndim],
+                state.wavefields[-ndim:],
             )
 
         state = _engine.run_backward_core(

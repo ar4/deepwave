@@ -166,6 +166,11 @@ linkcheck_ignore = [
     # DOIs resolve fine in a normal browser.
     r"^https://doi\.org/10\.1190/1\.3513453$",
     r"^https://doi\.org/10\.1190/geo2018-0098\.1$",
+    r"^https://doi\.org/10\.1190/1\.3059320$",
+    # Crossref confirms these DOIs; the publisher pages reject automated
+    # requests with HTTP 403 (Oxford Academic and International Press).
+    r"^https://doi\.org/10\.1111/j\.1365-246X\.2006\.02978\.x$",
+    r"^https://doi\.org/10\.4310/CMS\.2014\.v12\.n5\.a7$",
     *[_GITHUB_BLOB + name + r"\.py$" for name in _AHEAD_OF_MASTER_EXAMPLES],
 ]
 

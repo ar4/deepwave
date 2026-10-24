@@ -5175,6 +5175,15 @@ def test_boundaries_rejects_a_bad_ndim_or_width() -> None:
         deepwave.boundaries(2, width=[20, 20])
 
 
+@pytest.mark.parametrize(
+    "value", [0.5, -0.5, True, False, float("inf"), float("nan"), 1j]
+)
+def test_boundaries_rejects_noninteger_cell_counts(value) -> None:
+    """A fractional or nonfinite count must not silently change the PML geometry."""
+    with pytest.raises(deepwave.DeepwaveValueError, match="int or a sequence"):
+        deepwave.boundaries(2, width=[20, value, 20, 20])
+
+
 def test_boundaries_output_is_accepted_and_does_not_warn() -> None:
     """The round trip: what the helper returns runs, and is silent.
 

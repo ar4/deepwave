@@ -2809,14 +2809,12 @@ def elastic_vti_func(
     global _update_velocities_opt, _update_stresses_opt
 
     if backend:
-        c11 = cast("torch.Tensor", args[_N_LEADING_ARGS])
         # grid_spacing must reach the traced step functions as Python
         # floats: see _engine.float_grid_spacing for why an int silently
         # costs 8 significant digits under torch.compile on CUDA.
         args = (*args[:1], _engine.float_grid_spacing(args[1]), *args[2:])
-        config_key = (len(args[1]), args[5], c11.dtype)
-        _update_velocities_opt = _update_velocities_cache.resolve(backend, config_key)
-        _update_stresses_opt = _update_stresses_cache.resolve(backend, config_key)
+        _update_velocities_opt = _update_velocities_cache.resolve(backend)
+        _update_stresses_opt = _update_stresses_cache.resolve(backend)
         return elastic_vti_python(*args, backend=backend)
 
     # ``args`` (the leading block, as received from ``elastic_vti()``) has

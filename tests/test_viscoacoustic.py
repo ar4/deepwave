@@ -76,7 +76,8 @@ def test_q_mapping_exact_at_omega0():
 
 @pytest.mark.parametrize("ndim", [1, 2])
 @pytest.mark.parametrize("backend", BACKENDS)
-def test_acoustic_limit(ndim, backend):
+@pytest.mark.parametrize("q_value", [1e12, float("inf")])
+def test_acoustic_limit(ndim, backend, q_value):
     """Q -> very large reduces to acoustic (forward + gradients) to <1e-10 rel.
 
     The residual is the physical O(1/Q) attenuation, so Q=1e12 is used (giving
@@ -91,7 +92,7 @@ def test_acoustic_limit(ndim, backend):
     freq = 25.0
     v = 1500.0 + 20.0 * torch.randn(*shape, dtype=DTYPE)
     rho = 1000.0 + 30.0 * torch.randn(*shape, dtype=DTYPE)
-    q_big = torch.full(shape, 1e12, dtype=DTYPE)
+    q_big = torch.full(shape, q_value, dtype=DTYPE)
 
     src = deepwave.wavelets.ricker(freq, nt, dt, 1.5 / freq).to(DTYPE).reshape(1, 1, -1)
     src_loc = torch.zeros(1, 1, ndim, dtype=torch.long)
@@ -391,7 +392,8 @@ def test_gsls_fit_effective_q_within_band(record_property):
     record_property("effective_q_relative_errors", errs)
 
 
-def test_acoustic_limit_multi_mechanism():
+@pytest.mark.parametrize("q_value", [1e10, float("inf")])
+def test_acoustic_limit_multi_mechanism(q_value):
     """Q -> very large reduces to acoustic (forward + gradients), L=3 GSLS.
 
     Generalises test_acoustic_limit to q_n_mechanisms=3 (eager backend only).
@@ -406,7 +408,7 @@ def test_acoustic_limit_multi_mechanism():
     freq = 25.0
     v = 1500.0 + 20.0 * torch.randn(*shape, dtype=DTYPE)
     rho = 1000.0 + 30.0 * torch.randn(*shape, dtype=DTYPE)
-    q_big = torch.full(shape, 1e10, dtype=DTYPE)
+    q_big = torch.full(shape, q_value, dtype=DTYPE)
 
     src = deepwave.wavelets.ricker(freq, nt, dt, 1.5 / freq).to(DTYPE).reshape(1, 1, -1)
     src_loc = torch.zeros(1, 1, ndim, dtype=torch.long)
@@ -1201,8 +1203,12 @@ def test_c_matches_eager(ndim):
         scale = max(a.abs().max().item(), 1.0)
         assert (a - b).abs().max().item() <= scale * 1e-6
     for ge, gc in zip(g_e, g_c):
-        scale = max(ge.abs().max().item(), 1.0)
-        assert (ge - gc).abs().max().item() <= scale * 1e-6
+        # The model gradients have different units and can be much smaller
+        # than one. A unit floor allowed an entirely zero v/rho gradient to
+        # pass; measure each error against that gradient's actual magnitude.
+        scale = ge.abs().max().item()
+        assert scale > 0, "the reference must exercise every requested gradient"
+        torch.testing.assert_close(gc, ge, rtol=0, atol=scale * 1e-6)
 
 
 @C_BACKEND

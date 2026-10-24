@@ -310,7 +310,8 @@ def unrelaxed_factor(
     """Ratio of the high-frequency modulus to the relaxed modulus.
 
     This is the same constitutive coefficient used by :func:`sls_coefficients`,
-    evaluated before the CFL time step is chosen. Q must be positive and finite.
+    evaluated before the CFL time step is chosen. Positive infinite Q gives
+    the exact lossless limit.
     """
     if n_mechanisms == 1:
         inv_q = 1.0 / q
@@ -331,11 +332,10 @@ def unrelaxed_speed(
     if (
         not _common._torch_is_compiling()  # noqa: SLF001
         and _common.values_readable(q)
-        and not bool(((q > 0) & torch.isfinite(q)).all())
+        and not bool((q > 0).all())
     ):
         raise DeepwaveValueError(
-            "viscoacoustic: q must be positive and finite. "
-            "Use a large finite value to approximate the lossless limit."
+            "viscoacoustic: q must be positive; +inf denotes the lossless limit."
         )
     speed = v.abs() * unrelaxed_factor(q, n_mechanisms, q_band).sqrt()
     if _common.values_readable(speed) and not bool(torch.isfinite(speed).all()):

@@ -93,9 +93,37 @@ def test_zero_widths_and_raw_profiles_agree_with_ab() -> None:
     active = sigma > 0
     expected_a = torch.where(active, torch.exp(-(sigma + alpha) * 0.001), 0)
     expected_b = torch.where(
-        active, sigma / (sigma + alpha).clamp(min=1e-9) * (expected_a - 1), 0
+        active, sigma / (sigma + alpha) * torch.expm1(-(sigma + alpha) * 0.001), 0
     )
-    torch.testing.assert_close(a, expected_a, rtol=0, atol=0)
-    torch.testing.assert_close(b, expected_b, rtol=0, atol=0)
+    torch.testing.assert_close(a, expected_a, rtol=8 * torch.finfo(a.dtype).eps, atol=0)
+    torch.testing.assert_close(b, expected_b, rtol=8 * torch.finfo(b.dtype).eps, atol=0)
     assert bool(active.any())
     assert bool((~active).any())
+
+
+@pytest.mark.parametrize("accuracy", [2, 4, 6, 8])
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+@pytest.mark.parametrize("dim", [0, 1, 2])
+def test_second_derivative_preserves_constants(accuracy, dtype, dim) -> None:
+    """A constant has zero curvature, including near the floating-point limits."""
+    for value in (0.0, 1.0, -1.0, 0.1, torch.finfo(dtype).tiny, torch.finfo(dtype).max):
+        field = torch.full((9, 9, 9), value, dtype=dtype)
+        derivative = _regular_grid.diff2(field, dim, accuracy, 0.04, 3)
+        assert derivative[4, 4, 4].item() == 0.0
+
+
+@pytest.mark.parametrize("accuracy", [2, 4, 6, 8])
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+@pytest.mark.parametrize("dim", [0, 1, 2])
+def test_second_derivative_of_quadratic(accuracy, dtype, dim) -> None:
+    """Every supported stencil differentiates a quadratic to its exact curvature."""
+    coords = torch.arange(-4, 5, dtype=dtype)
+    zz, yy, xx = torch.meshgrid(coords, coords, coords, indexing="ij")
+    field = zz.square() + yy.square() + xx.square()
+    derivative = _regular_grid.diff2(field, dim, accuracy, 0.04, 3)
+    torch.testing.assert_close(
+        derivative[4, 4, 4],
+        torch.tensor(0.08, dtype=dtype),
+        rtol=8 * torch.finfo(dtype).eps,
+        atol=0,
+    )

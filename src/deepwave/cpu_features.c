@@ -36,7 +36,7 @@
 #include <intrin.h>
 #endif
 
-int deepwave_cpu_supports(const char *feature) {
+int deepwave_cpu_supports(const char* feature) {
 #if (defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || \
      defined(_M_IX86))
 #if defined(__GNUC__) || defined(__clang__)
@@ -93,7 +93,7 @@ int deepwave_cpu_supports(const char *feature) {
 #endif
 }
 
-const char *deepwave_cpu_required_baseline(void) {
+const char* deepwave_cpu_required_baseline(void) {
 #if defined(DW_BASELINE_ISA)
   return DW_BASELINE_ISA;
 #else

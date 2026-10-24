@@ -188,41 +188,47 @@ def diffx1(a: torch.Tensor, accuracy: int, rdx: float) -> torch.Tensor:
 
 
 def diffz2(a: torch.Tensor, accuracy: int, rdz2: float) -> torch.Tensor:
-    """Calculates the second derivative in the z-direction."""
+    """Calculate the second derivative while preserving constant fields exactly."""
     if accuracy == 2:
+        centre = a[..., 1:-1, :, :]
         return torch.nn.functional.pad(
-            (-2 * a[..., 1:-1, :, :] + 1 * (a[..., 2:, :, :] + a[..., :-2, :, :]))
-            * rdz2,
+            ((a[..., 2:, :, :] - centre) + (a[..., 0:-2, :, :] - centre)) * rdz2,
             (0, 0, 0, 0, 1, 1),
         )
     if accuracy == 4:
+        centre = a[..., 2:-2, :, :]
         return torch.nn.functional.pad(
             (
-                -5 / 2 * a[..., 2:-2, :, :]
-                + 4 / 3 * (a[..., 3:-1, :, :] + a[..., 1:-3, :, :])
-                + -1 / 12 * (a[..., 4:, :, :] + a[..., :-4, :, :])
+                (4 / 3)
+                * ((a[..., 3:-1, :, :] - centre) + (a[..., 1:-3, :, :] - centre))
+                + (-1 / 12)
+                * ((a[..., 4:, :, :] - centre) + (a[..., 0:-4, :, :] - centre))
             )
             * rdz2,
             (0, 0, 0, 0, 2, 2),
         )
     if accuracy == 6:
+        centre = a[..., 3:-3, :, :]
         return torch.nn.functional.pad(
             (
-                -49 / 18 * a[..., 3:-3, :, :]
-                + 3 / 2 * (a[..., 4:-2, :, :] + a[..., 2:-4, :, :])
-                + -3 / 20 * (a[..., 5:-1, :, :] + a[..., 1:-5, :, :])
-                + 1 / 90 * (a[..., 6:, :, :] + a[..., :-6, :, :])
+                (3 / 2)
+                * ((a[..., 4:-2, :, :] - centre) + (a[..., 2:-4, :, :] - centre))
+                + (-3 / 20)
+                * ((a[..., 5:-1, :, :] - centre) + (a[..., 1:-5, :, :] - centre))
+                + (1 / 90)
+                * ((a[..., 6:, :, :] - centre) + (a[..., 0:-6, :, :] - centre))
             )
             * rdz2,
             (0, 0, 0, 0, 3, 3),
         )
+    centre = a[..., 4:-4, :, :]
     return torch.nn.functional.pad(
         (
-            -205 / 72 * a[..., 4:-4, :, :]
-            + 8 / 5 * (a[..., 5:-3, :, :] + a[..., 3:-5, :, :])
-            + -1 / 5 * (a[..., 6:-2, :, :] + a[..., 2:-6, :, :])
-            + 8 / 315 * (a[..., 7:-1, :, :] + a[..., 1:-7, :, :])
-            + -1 / 560 * (a[..., 8:, :, :] + a[..., :-8, :, :])
+            (8 / 5) * ((a[..., 5:-3, :, :] - centre) + (a[..., 3:-5, :, :] - centre))
+            + (-1 / 5) * ((a[..., 6:-2, :, :] - centre) + (a[..., 2:-6, :, :] - centre))
+            + (8 / 315)
+            * ((a[..., 7:-1, :, :] - centre) + (a[..., 1:-7, :, :] - centre))
+            + (-1 / 560) * ((a[..., 8:, :, :] - centre) + (a[..., 0:-8, :, :] - centre))
         )
         * rdz2,
         (0, 0, 0, 0, 4, 4),
@@ -230,40 +236,41 @@ def diffz2(a: torch.Tensor, accuracy: int, rdz2: float) -> torch.Tensor:
 
 
 def diffy2(a: torch.Tensor, accuracy: int, rdy2: float) -> torch.Tensor:
-    """Calculates the second derivative in the y-direction."""
+    """Calculate the second derivative while preserving constant fields exactly."""
     if accuracy == 2:
+        centre = a[..., 1:-1, :]
         return torch.nn.functional.pad(
-            (-2 * a[..., 1:-1, :] + 1 * (a[..., 2:, :] + a[..., :-2, :])) * rdy2,
+            ((a[..., 2:, :] - centre) + (a[..., 0:-2, :] - centre)) * rdy2,
             (0, 0, 1, 1),
         )
     if accuracy == 4:
+        centre = a[..., 2:-2, :]
         return torch.nn.functional.pad(
             (
-                -5 / 2 * a[..., 2:-2, :]
-                + 4 / 3 * (a[..., 3:-1, :] + a[..., 1:-3, :])
-                + -1 / 12 * (a[..., 4:, :] + a[..., :-4, :])
+                (4 / 3) * ((a[..., 3:-1, :] - centre) + (a[..., 1:-3, :] - centre))
+                + (-1 / 12) * ((a[..., 4:, :] - centre) + (a[..., 0:-4, :] - centre))
             )
             * rdy2,
             (0, 0, 2, 2),
         )
     if accuracy == 6:
+        centre = a[..., 3:-3, :]
         return torch.nn.functional.pad(
             (
-                -49 / 18 * a[..., 3:-3, :]
-                + 3 / 2 * (a[..., 4:-2, :] + a[..., 2:-4, :])
-                + -3 / 20 * (a[..., 5:-1, :] + a[..., 1:-5, :])
-                + 1 / 90 * (a[..., 6:, :] + a[..., :-6, :])
+                (3 / 2) * ((a[..., 4:-2, :] - centre) + (a[..., 2:-4, :] - centre))
+                + (-3 / 20) * ((a[..., 5:-1, :] - centre) + (a[..., 1:-5, :] - centre))
+                + (1 / 90) * ((a[..., 6:, :] - centre) + (a[..., 0:-6, :] - centre))
             )
             * rdy2,
             (0, 0, 3, 3),
         )
+    centre = a[..., 4:-4, :]
     return torch.nn.functional.pad(
         (
-            -205 / 72 * a[..., 4:-4, :]
-            + 8 / 5 * (a[..., 5:-3, :] + a[..., 3:-5, :])
-            + -1 / 5 * (a[..., 6:-2, :] + a[..., 2:-6, :])
-            + 8 / 315 * (a[..., 7:-1, :] + a[..., 1:-7, :])
-            + -1 / 560 * (a[..., 8:, :] + a[..., :-8, :])
+            (8 / 5) * ((a[..., 5:-3, :] - centre) + (a[..., 3:-5, :] - centre))
+            + (-1 / 5) * ((a[..., 6:-2, :] - centre) + (a[..., 2:-6, :] - centre))
+            + (8 / 315) * ((a[..., 7:-1, :] - centre) + (a[..., 1:-7, :] - centre))
+            + (-1 / 560) * ((a[..., 8:, :] - centre) + (a[..., 0:-8, :] - centre))
         )
         * rdy2,
         (0, 0, 4, 4),
@@ -271,39 +278,41 @@ def diffy2(a: torch.Tensor, accuracy: int, rdy2: float) -> torch.Tensor:
 
 
 def diffx2(a: torch.Tensor, accuracy: int, rdx2: float) -> torch.Tensor:
-    """Calculates the second derivative in the x-direction."""
+    """Calculate the second derivative while preserving constant fields exactly."""
     if accuracy == 2:
+        centre = a[..., 1:-1]
         return torch.nn.functional.pad(
-            (-2 * a[..., 1:-1] + 1 * (a[..., 2:] + a[..., :-2])) * rdx2, (1, 1)
+            ((a[..., 2:] - centre) + (a[..., 0:-2] - centre)) * rdx2,
+            (1, 1),
         )
     if accuracy == 4:
+        centre = a[..., 2:-2]
         return torch.nn.functional.pad(
             (
-                -5 / 2 * a[..., 2:-2]
-                + 4 / 3 * (a[..., 3:-1] + a[..., 1:-3])
-                + -1 / 12 * (a[..., 4:] + a[..., :-4])
+                (4 / 3) * ((a[..., 3:-1] - centre) + (a[..., 1:-3] - centre))
+                + (-1 / 12) * ((a[..., 4:] - centre) + (a[..., 0:-4] - centre))
             )
             * rdx2,
             (2, 2),
         )
     if accuracy == 6:
+        centre = a[..., 3:-3]
         return torch.nn.functional.pad(
             (
-                -49 / 18 * a[..., 3:-3]
-                + 3 / 2 * (a[..., 4:-2] + a[..., 2:-4])
-                + -3 / 20 * (a[..., 5:-1] + a[..., 1:-5])
-                + 1 / 90 * (a[..., 6:] + a[..., :-6])
+                (3 / 2) * ((a[..., 4:-2] - centre) + (a[..., 2:-4] - centre))
+                + (-3 / 20) * ((a[..., 5:-1] - centre) + (a[..., 1:-5] - centre))
+                + (1 / 90) * ((a[..., 6:] - centre) + (a[..., 0:-6] - centre))
             )
             * rdx2,
             (3, 3),
         )
+    centre = a[..., 4:-4]
     return torch.nn.functional.pad(
         (
-            -205 / 72 * a[..., 4:-4]
-            + 8 / 5 * (a[..., 5:-3] + a[..., 3:-5])
-            + -1 / 5 * (a[..., 6:-2] + a[..., 2:-6])
-            + 8 / 315 * (a[..., 7:-1] + a[..., 1:-7])
-            + -1 / 560 * (a[..., 8:] + a[..., :-8])
+            (8 / 5) * ((a[..., 5:-3] - centre) + (a[..., 3:-5] - centre))
+            + (-1 / 5) * ((a[..., 6:-2] - centre) + (a[..., 2:-6] - centre))
+            + (8 / 315) * ((a[..., 7:-1] - centre) + (a[..., 1:-7] - centre))
+            + (-1 / 560) * ((a[..., 8:] - centre) + (a[..., 0:-8] - centre))
         )
         * rdx2,
         (4, 4),

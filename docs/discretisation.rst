@@ -270,6 +270,11 @@ limit. A pointwise wavespeed alone does not bound arbitrary heterogeneous
 velocity/stress operators: a high-order derivative can couple a stiff cell
 to a distant velocity node with much lower density.
 
+The CFL calculation uses dimensionless ratios, so equivalent length and time
+units give the same subdivision without squaring very large or very small
+speeds. A zero speed or zero ``dt`` needs no subdivision. If the required
+internal time step cannot be represented, the helper raises an error.
+
 The staggered propagators therefore include a density-weighted operator bound
 in the conservative speed reported as ``RunInfo.max_vel``. Acoustic and
 viscoacoustic use the weighted derivative stencil; elastic families bound

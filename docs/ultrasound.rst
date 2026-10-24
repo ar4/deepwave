@@ -8,7 +8,7 @@ metres and seconds), the excitation (tone bursts rather than Ricker wavelets),
 and the acquisition (extended transducer elements rather than point sources).
 This page collects the Deepwave features and conventions that matter for these
 applications, and maps them onto the vocabulary of `k-Wave
-<http://www.k-wave.org/>`_, the established ultrasound simulation package, for
+<https://github.com/ucl-bug/k-wave>`_, the established ultrasound simulation package, for
 readers arriving from there. For a broader tool comparison see
 :doc:`comparison`.
 

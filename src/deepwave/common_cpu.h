@@ -1,6 +1,8 @@
 #ifndef DW_COMMON_CPU_H
 #define DW_COMMON_CPU_H
 
+#include "native_types.h"
+
 #if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || \
     defined(_M_IX86)
 #define DW_FTZ_DAZ_X86 1

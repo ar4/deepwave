@@ -86,7 +86,7 @@ __device__ inline double dw_narrow_value<double>(double value) {
 
 /* CUDA kernel for compression */
 __launch_bounds__(THREADS_PER_BLOCK) __global__
-    void compress_kernel(DW_DTYPE const *const input, uint8_t *const output,
+    void compress_kernel(DW_DTYPE const* const input, uint8_t* const output,
 #if DW_NDIM >= 3
                          size_t const nz,
 #endif
@@ -164,7 +164,7 @@ __launch_bounds__(THREADS_PER_BLOCK) __global__
 
   /* Shared memory for reduction */
   extern __shared__ char shared_mem[];
-  DW_DTYPE *const s_max_abs = (DW_DTYPE *)shared_mem;
+  DW_DTYPE* const s_max_abs = (DW_DTYPE*)shared_mem;
 
   // Compare in double precision: CUDA fast-math may flush float subnormals
   // to zero in float comparisons, even though the input bits are nonzero.
@@ -172,7 +172,7 @@ __launch_bounds__(THREADS_PER_BLOCK) __global__
   __syncthreads();
 
   /* Reduction to find max abs in block */
-  for (unsigned int s = THREADS_PER_BLOCK / 2; s > 0; s >>= 1) {
+  for (unsigned int s = THREADS_PER_BLOCK / 2; s > 0; s >>= 1U) {
     if (tid < s) {
       if (dw_larger_abs(s_max_abs[tid + s], s_max_abs[tid])) {
         s_max_abs[tid] = s_max_abs[tid + s];
@@ -184,13 +184,13 @@ __launch_bounds__(THREADS_PER_BLOCK) __global__
   DW_DTYPE max_abs = s_max_abs[0];
 
   /* Store max_abs */
-  DW_DTYPE *const max_abs_vals = (DW_DTYPE *)output;
+  DW_DTYPE* const max_abs_vals = (DW_DTYPE*)output;
   if (tid == 0) {
     max_abs_vals[global_block_idx] = max_abs;
   }
 
   /* Quantise and store */
-  uint8_t *const compressed_data_start = output + gridDim.x * sizeof(DW_DTYPE);
+  uint8_t* const compressed_data_start = output + gridDim.x * sizeof(DW_DTYPE);
 
   if (in_bounds) {
     DW_DTYPE const tiny_limit = sizeof(DW_DTYPE) == sizeof(float)
@@ -218,7 +218,7 @@ __launch_bounds__(THREADS_PER_BLOCK) __global__
 
 /* CUDA kernel for decompression */
 __launch_bounds__(THREADS_PER_BLOCK) __global__
-    void decompress_kernel(uint8_t const *const input, DW_DTYPE *const output,
+    void decompress_kernel(uint8_t const* const input, DW_DTYPE* const output,
 #if DW_NDIM >= 3
                            size_t const nz,
 #endif
@@ -274,8 +274,8 @@ __launch_bounds__(THREADS_PER_BLOCK) __global__
   )
     return;
 
-  DW_DTYPE const *const max_abs_vals = (DW_DTYPE const *)input;
-  uint8_t const *const compressed_data_start =
+  DW_DTYPE const* const max_abs_vals = (DW_DTYPE const*)input;
+  uint8_t const* const compressed_data_start =
       input + gridDim.x * sizeof(DW_DTYPE);
 
   DW_DTYPE max_abs = max_abs_vals[global_block_idx];
@@ -321,7 +321,7 @@ __launch_bounds__(THREADS_PER_BLOCK) __global__
 /* CUDA wrapper functions */
 extern "C" {
 
-int SC_FUNC(compress_cuda)(void const *const input, void *const output,
+int SC_FUNC(compress_cuda)(void const* const input, void* const output,
                            size_t const n_batch,
 #if DW_NDIM >= 3
                            size_t const nz,
@@ -329,7 +329,7 @@ int SC_FUNC(compress_cuda)(void const *const input, void *const output,
 #if DW_NDIM >= 2
                            size_t const ny,
 #endif
-                           size_t const nx, void *const stream) {
+                           size_t const nx, void* const stream) {
 
   size_t const nbx = (nx + BLOCK_SIZE - 1) / BLOCK_SIZE;
 #if DW_NDIM >= 2
@@ -344,12 +344,16 @@ int SC_FUNC(compress_cuda)(void const *const input, void *const output,
 #endif
   size_t const n_blocks_per_shot = nbx * nby * nbz;
   size_t const total_blocks = n_batch * n_blocks_per_shot;
+  unsigned int const grid_blocks = dw_grid_dimension(total_blocks);
+  if (grid_blocks == 0)
+    return total_blocks == 0 ? 0 : (int)cudaErrorInvalidConfiguration;
 
-  size_t const shared_mem = THREADS_PER_BLOCK * sizeof(DW_DTYPE);
+  size_t const shared_mem =
+      static_cast<size_t>(THREADS_PER_BLOCK) * sizeof(DW_DTYPE);
 
-  compress_kernel<<<total_blocks, THREADS_PER_BLOCK, shared_mem,
-                    (cudaStream_t)stream>>>((DW_DTYPE const *)input,
-                                            (uint8_t *)output,
+  compress_kernel<<<grid_blocks, THREADS_PER_BLOCK, shared_mem,
+                    (cudaStream_t)stream>>>((DW_DTYPE const*)input,
+                                            (uint8_t*)output,
 #if DW_NDIM >= 3
                                             nz,
 #endif
@@ -368,7 +372,7 @@ int SC_FUNC(compress_cuda)(void const *const input, void *const output,
   return 0;
 }
 
-int SC_FUNC(decompress_cuda)(void const *const input, void *const output,
+int SC_FUNC(decompress_cuda)(void const* const input, void* const output,
                              size_t const n_batch,
 #if DW_NDIM >= 3
                              size_t const nz,
@@ -376,7 +380,7 @@ int SC_FUNC(decompress_cuda)(void const *const input, void *const output,
 #if DW_NDIM >= 2
                              size_t const ny,
 #endif
-                             size_t const nx, void *const stream) {
+                             size_t const nx, void* const stream) {
   size_t const nbx = (nx + BLOCK_SIZE - 1) / BLOCK_SIZE;
 #if DW_NDIM >= 2
   size_t const nby = (ny + BLOCK_SIZE - 1) / BLOCK_SIZE;
@@ -390,10 +394,13 @@ int SC_FUNC(decompress_cuda)(void const *const input, void *const output,
 #endif
   size_t const n_blocks_per_shot = nbx * nby * nbz;
   size_t const total_blocks = n_batch * n_blocks_per_shot;
+  unsigned int const grid_blocks = dw_grid_dimension(total_blocks);
+  if (grid_blocks == 0)
+    return total_blocks == 0 ? 0 : (int)cudaErrorInvalidConfiguration;
 
-  decompress_kernel<<<total_blocks, THREADS_PER_BLOCK, 0,
-                      (cudaStream_t)stream>>>((uint8_t const *)input,
-                                              (DW_DTYPE *)output,
+  decompress_kernel<<<grid_blocks, THREADS_PER_BLOCK, 0,
+                      (cudaStream_t)stream>>>((uint8_t const*)input,
+                                              (DW_DTYPE*)output,
 #if DW_NDIM >= 3
                                               nz,
 #endif

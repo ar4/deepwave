@@ -1,14 +1,9 @@
 """Tests for the acoustic Born (linearised) propagator.
 
-Covers the validation gates from ``docs/acoustic_born_derivation.md`` section
-9 that are in scope for the current (scattered-only adjoint) implementation:
-Born linearity, Born == directional finite difference of ``acoustic``,
-eager-vs-compiled gradient agreement for every differentiable input, a
-finite-difference check of the initial-wavefield gradients (the one
-differentiable input with no cross-backend or adjoint-identity companion),
-and the explicit ``NotImplementedError`` guards for the not-yet-supported
-gradient paths (background ``v``/``rho``, source amplitudes, background-side
-initial wavefields).
+Covers Born linearity, the directional derivative of ``acoustic``, and
+eager-vs-compiled gradients for both the full and scattered-only adjoints.
+Receiver losses and separate PML-state cotangents exercise different backward
+inputs; the latter also check buffer identity across odd-sized chunks.
 """
 
 import importlib
@@ -1506,3 +1501,82 @@ def test_batched_models_are_differentiable() -> None:
     assert dv.grad.shape == dv.shape
     assert bool(torch.isfinite(dv.grad).all())
     assert dv.grad.abs().max() > 0
+
+
+@pytest.mark.parametrize("ndim", [1, 2, 3], ids=["1d", "2d", "3d"])
+@pytest.mark.parametrize("accuracy", [2, 8])
+@pytest.mark.parametrize("nt", [2, 3])
+@pytest.mark.parametrize("full_adjoint", [False, True], ids=["scatter", "full"])
+@pytest.mark.parametrize("memory", ["phi", "psi"])
+def test_pml_state_cotangents_match_autograd(
+    ndim, accuracy, nt, full_adjoint, memory, numerics_device
+):
+    """Both adjoint paths preserve PML field identity across odd-sized chunks."""
+    results = []
+    for backend in ("compiled", "eager"):
+        v, rho, dv, drho, dx, dt, kwargs = _problem(ndim)
+        v, rho, dv, drho = (t.to(numerics_device) for t in (v, rho, dv, drho))
+        kwargs = {
+            key: value.to(numerics_device) if isinstance(value, torch.Tensor) else value
+            for key, value in kwargs.items()
+        }
+        v.requires_grad_(full_adjoint)
+        rho.requires_grad_(full_adjoint)
+        dv.requires_grad_()
+        drho.requires_grad_()
+        leaves = [v, rho, dv, drho] if full_adjoint else [dv, drho]
+        kwargs["source_amplitudes_volume_rate"] = (
+            kwargs["source_amplitudes_volume_rate"][..., :nt]
+            .clone()
+            .requires_grad_(full_adjoint)
+        )
+        if full_adjoint:
+            leaves.append(kwargs["source_amplitudes_volume_rate"])
+        kwargs["nt"] = nt
+        kwargs["origin"] = [0] * ndim
+        generator = torch.Generator(device=numerics_device).manual_seed(316)
+        shape = (1, *(n + 2 * kwargs["pml_width"] for n in v.shape))
+        for name in ab.acoustic_born_wavefield_names(ndim):
+            if not name.startswith(("pressure", "v")):
+                continue
+            value = torch.randn(
+                shape, dtype=v.dtype, device=numerics_device, generator=generator
+            )
+            value *= 1e3 if name.startswith("pressure") else 1e-3
+            value.requires_grad_(full_adjoint or "_sc_" in name)
+            kwargs[name] = value
+            if value.requires_grad:
+                leaves.append(value)
+        if backend == "compiled":
+            # One-step chunks expose every ping-pong transition.
+            kwargs["backward_callback"] = lambda state: None
+            kwargs["callback_frequency"] = 1
+        out = ab.acoustic_born(
+            v,
+            rho,
+            dx,
+            dt,
+            dv=dv,
+            drho=drho,
+            accuracy=accuracy,
+            backend=backend,
+            **kwargs,
+        )
+        loss = sum(
+            (
+                value
+                * torch.randn(
+                    value.shape,
+                    dtype=value.dtype,
+                    device=numerics_device,
+                    generator=generator,
+                )
+            ).mean()
+            for name, value in out.auxiliary_state.items()
+            if name.startswith(memory)
+        )
+        gradients = torch.autograd.grad(loss, leaves)
+        assert all(torch.isfinite(g).all() for g in gradients)
+        assert any(torch.count_nonzero(g) for g in gradients)
+        results.append(gradients)
+    torch.testing.assert_close(results[0], results[1], rtol=1e-8, atol=1e-10)

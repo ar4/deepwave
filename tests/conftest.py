@@ -25,6 +25,17 @@ from pathlib import Path
 import pytest
 
 
+@pytest.fixture(params=["cpu", pytest.param("cuda", marks=pytest.mark.gpu)])
+def numerics_device(request: pytest.FixtureRequest) -> str:
+    """Run numerical regressions on each backend, including the GPU release stage."""
+    import torch
+
+    device = str(request.param)
+    if device == "cuda" and not torch.cuda.is_available():
+        pytest.skip("CUDA is not available")
+    return device
+
+
 @pytest.fixture(autouse=True)
 def _isolate_torch_compile_cache() -> None:
     """Give each test its own Dynamo variants without changing compiler limits.

@@ -1020,7 +1020,7 @@ def _spec_n_mechanisms(spec: PropagatorSpec) -> Optional[int]:
     if parameter is None:
         return None
     default = parameter.default
-    if not isinstance(default, int):  # pragma: no cover - static
+    if not isinstance(default, int):  # static
         raise AssertionError(  # noqa: TRY004 - a spec bug, not a caller's type
             f"{spec.name}'s wavefield_names has no default n_mechanisms"
         )
@@ -1080,7 +1080,7 @@ def internal_names(
                 for public in spec.auxiliary_state_names(ndim)
             }
             missing = auxiliary - set(wavefields)
-            if missing:  # pragma: no cover - guards a spec inconsistency
+            if missing:  # guards a spec inconsistency
                 raise AssertionError(
                     f"{name} ({ndim}-D) declares auxiliary state names "
                     f"{sorted(missing)} that are not among its internal "

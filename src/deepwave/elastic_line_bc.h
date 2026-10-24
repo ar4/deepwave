@@ -33,7 +33,7 @@
  * role-swapped onto rigid here); periodic wraps (same arithmetic as
  * FUNC(fill_p_bc_line)'s periodic branch). */
 static inline void FUNC(fill_elastic_onrow_velocity_line)(
-    DW_DTYPE *__restrict const v, int64_t const base, int64_t const nax,
+    DW_DTYPE* __restrict const v, int64_t const base, int64_t const nax,
     int64_t const stride, int64_t const bc_lo, int64_t const bc_hi) {
   int64_t const P = FD_PAD;
   int64_t const m = nax - 2 * P + 1;
@@ -75,7 +75,7 @@ static inline void FUNC(fill_elastic_onrow_velocity_line)(
  * the one velocity component that is naturally staggered onto this axis's
  * half-cell plane -- no elastic-specific re-derivation needed there). */
 static inline void FUNC(fill_elastic_offrow_velocity_line)(
-    DW_DTYPE *__restrict const v, int64_t const base, int64_t const nax,
+    DW_DTYPE* __restrict const v, int64_t const base, int64_t const nax,
     int64_t const stride, int64_t const bc_lo, int64_t const bc_hi) {
   int64_t const P = FD_PAD;
   int64_t const m = nax - 2 * P + 1;
@@ -131,7 +131,7 @@ static inline void FUNC(fill_elastic_offrow_velocity_line)(
  * asymmetry is inherited directly from FUNC(fill_v_bc_line)'s own
  * low/high staggered-pad asymmetry, not invented here. */
 static inline void FUNC(fill_elastic_shear_line)(
-    DW_DTYPE *__restrict const s, int64_t const base, int64_t const nax,
+    DW_DTYPE* __restrict const s, int64_t const base, int64_t const nax,
     int64_t const stride, int64_t const bc_lo, int64_t const bc_hi) {
   int64_t const P = FD_PAD;
   int64_t const m = nax - 2 * P + 1;
@@ -179,7 +179,7 @@ static inline void FUNC(fill_elastic_shear_line)(
 /* Transpose of FUNC(fill_p_bc_line) (shared with acoustic_vti.c, whose
  * sigma_v/sigma_h fill is byte-identical to elastic's sigma_AA fill). */
 static inline void FUNC(fill_p_bc_line_adjoint)(
-    DW_DTYPE *__restrict const p, int64_t const base, int64_t const nax,
+    DW_DTYPE* __restrict const p, int64_t const base, int64_t const nax,
     int64_t const stride, int64_t const bc_lo, int64_t const bc_hi) {
   int64_t const P = FD_PAD;
   int64_t const m = nax - 2 * P + 1;
@@ -228,7 +228,7 @@ static inline void FUNC(fill_p_bc_line_adjoint)(
 
 /* Transpose of FUNC(fill_elastic_onrow_velocity_line). */
 static inline void FUNC(fill_elastic_onrow_velocity_line_adjoint)(
-    DW_DTYPE *__restrict const v, int64_t const base, int64_t const nax,
+    DW_DTYPE* __restrict const v, int64_t const base, int64_t const nax,
     int64_t const stride, int64_t const bc_lo, int64_t const bc_hi) {
   int64_t const P = FD_PAD;
   int64_t const m = nax - 2 * P + 1;
@@ -266,7 +266,7 @@ static inline void FUNC(fill_elastic_onrow_velocity_line_adjoint)(
 
 /* Transpose of FUNC(fill_elastic_offrow_velocity_line). */
 static inline void FUNC(fill_elastic_offrow_velocity_line_adjoint)(
-    DW_DTYPE *__restrict const v, int64_t const base, int64_t const nax,
+    DW_DTYPE* __restrict const v, int64_t const base, int64_t const nax,
     int64_t const stride, int64_t const bc_lo, int64_t const bc_hi) {
   int64_t const P = FD_PAD;
   int64_t const m = nax - 2 * P + 1;
@@ -309,7 +309,7 @@ static inline void FUNC(fill_elastic_offrow_velocity_line_adjoint)(
 
 /* Transpose of FUNC(fill_elastic_shear_line). */
 static inline void FUNC(fill_elastic_shear_line_adjoint)(
-    DW_DTYPE *__restrict const s, int64_t const base, int64_t const nax,
+    DW_DTYPE* __restrict const s, int64_t const base, int64_t const nax,
     int64_t const stride, int64_t const bc_lo, int64_t const bc_hi) {
   int64_t const P = FD_PAD;
   int64_t const m = nax - 2 * P + 1;

@@ -56,8 +56,8 @@ def _assert_outputs_equal(left: tuple, right: tuple, label: str) -> None:
         else:
             a_items, b_items = dict(a.items()), dict(b.items())
             assert a_items.keys() == b_items.keys(), f"{label}: state keys differ"
-            for key in a_items:
-                assert torch.equal(a_items[key], b_items[key]), (
+            for key, value in a_items.items():
+                assert torch.equal(value, b_items[key]), (
                     f"{label}: auxiliary_state[{key!r}] differs"
                 )
 

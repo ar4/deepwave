@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import warnings
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
 from typing import Any
@@ -35,9 +34,7 @@ def _run(
         )
     if barrier is not None:
         barrier.wait(timeout=30)
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", UserWarning)
-        out: Any = getattr(deepwave, name)(*models, dc.DX, dt, **kwargs)
+    out: Any = getattr(deepwave, name)(*models, dc.DX, dt, **kwargs)
     tensors = output_tensors(out)
     loss = sum(t.square().sum() for t in tensors)
     grads = torch.autograd.grad(loss, leaves, allow_unused=True)

@@ -776,8 +776,8 @@ def test_backward_forward_snapshot_requires_aligned_history():
     out.receiver_amplitudes.square().sum().backward()
     assert tuple(forward) == (0, 4, 8, 12, 16, 20)
     assert tuple(backward) == (20, 16, 12, 8, 4, 0)
-    for step in forward:
-        assert torch.allclose(backward[step], forward[step])
+    for step, value in forward.items():
+        assert torch.allclose(backward[step], value)
 
 
 @pytest.mark.parametrize("name", PROPAGATOR_NAMES)

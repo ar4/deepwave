@@ -315,7 +315,7 @@ def test_backends() -> None:
         ((10, 10, 10), (5, 5, 5)),
     ],
 )
-def test_direct(nx, dx):
+def test_direct(nx, dx, numerics_device):
     """Test propagation in a constant model."""
     if len(nx) == 1:
         expected_diffs = {2: 315, 4: 35, 6: 10, 8: 8}
@@ -328,6 +328,7 @@ def test_direct(nx, dx):
         for python in [_PYTHON_BACKEND_TRUE_EQUIVALENT, "compiled"]:
             expected, actual = run_direct(
                 nx=nx,
+                device=torch.device(numerics_device),
                 dx=dx,
                 propagator=scalarprop,
                 prop_kwargs={"backend": python, "accuracy": accuracy},
@@ -1229,15 +1230,13 @@ def test_checkpoint_double_backprop(
 
 
 def test_backend_parity_negative() -> None:
-    """Reject negative background speed before stepping."""
-    with pytest.raises(ValueError, match="v > 0"):
-        run_backend_parity(c=-1500, propagator=scalarprop)
+    """Backends agree for negative background velocity."""
+    run_backend_parity(c=-1500, propagator=scalarprop)
 
 
 def test_backend_parity_zero() -> None:
-    """Reject zero background speed before stepping."""
-    with pytest.raises(ValueError, match="v > 0"):
-        run_backend_parity(c=0, dc=0, propagator=scalarprop)
+    """Backends agree for zero background velocity."""
+    run_backend_parity(c=0, dc=0, propagator=scalarprop)
 
 
 def test_backend_parity_different_pml() -> None:
@@ -1340,17 +1339,18 @@ def test_negative_vel(
             prop_kwargs=prop_kwargs,
         )
 
-        # Negative physical background speed is outside the material domain.
-        with pytest.raises(ValueError, match="v > 0"):
-            propagator(
-                -model,
-                dx,
-                dt,
-                sources["amplitude"],
-                sources["locations"],
-                x_r,
-                prop_kwargs=prop_kwargs,
-            )
+        # The scalar equation depends on v**2.
+        out = propagator(
+            -model,
+            dx,
+            dt,
+            sources["amplitude"],
+            sources["locations"],
+            x_r,
+            prop_kwargs=prop_kwargs,
+        )
+        assert torch.allclose(out_positive[0], out[0])
+        assert torch.allclose(out_positive[-1], out[-1])
 
         # Negative dt
         out = propagator(
@@ -1365,17 +1365,18 @@ def test_negative_vel(
         assert torch.allclose(out_positive[0], out[0])
         assert torch.allclose(out_positive[-1], out[-1])
 
-        # Scalar zero speed is also rejected; signed Born directions remain valid.
-        with pytest.raises(ValueError, match="v > 0"):
-            propagator(
-                torch.zeros_like(model),
-                dx,
-                -dt,
-                sources["amplitude"],
-                sources["locations"],
-                x_r,
-                prop_kwargs=prop_kwargs,
-            )
+        # With zero velocity the source is multiplied by v**2 = 0.
+        out = propagator(
+            torch.zeros_like(model),
+            dx,
+            -dt,
+            sources["amplitude"],
+            sources["locations"],
+            x_r,
+            prop_kwargs=prop_kwargs,
+        )
+        assert torch.count_nonzero(out[0]) == 0
+        assert torch.count_nonzero(out[-1]) == 0
 
 
 def test_backend_parity_only_v_2d() -> None:
@@ -1393,19 +1394,9 @@ def test_backend_parity_only_v_2d() -> None:
 def test_backend_parity_only_source_2d() -> None:
     """Test backend parity with only source requiring gradient.
 
-    ``gradgrad=False`` is required here, not just faster: with every other
-    leaf fixed, the map from ``source_amplitudes`` to the outputs is exactly
-    linear (the wave equation is linear in the source term), so the
-    second-order gradient is identically zero and ``requires_grad=False`` on
-    the first-order gradient tensor. ``run_backend_parity``'s default (gradgrad
-    enabled) filters that first-order gradient out of the comparison
-    entirely and, since none of the primal outputs are included in the
-    gradgrad return path either, the whole assertion loop silently compares
-    zero tensor pairs -- this test previously passed by construction,
-    regardless of whether the compiled and eager backends agreed on
-    anything. With ``gradgrad=False`` it performs the one real comparison
-    that is actually possible for this configuration: the first-order
-    gradient with respect to ``source_amplitudes``.
+    With the other inputs fixed this map is linear. Compare its first
+    derivative directly; the common helper also represents an exactly zero
+    second derivative correctly, but computing it adds no evidence here.
     """
     run_backend_parity(
         propagator=scalarprop,
@@ -1421,11 +1412,8 @@ def test_backend_parity_only_source_2d() -> None:
 def test_backend_parity_only_wavefield_0_2d() -> None:
     """Test backend parity with only wavefield_0 requiring gradient.
 
-    ``gradgrad=False`` is required for the same reason as in
-    ``test_backend_parity_only_source_2d``: the map from ``wavefield_0`` to the
-    outputs is exactly linear, so the second-order gradient is identically
-    zero and the default gradgrad-enabled comparison loop silently compares
-    nothing at all.
+    With the other inputs fixed this map is linear, so compare its first
+    derivative directly without redundant second-derivative work.
     """
     run_backend_parity(
         propagator=scalarprop,
@@ -1891,9 +1879,6 @@ def run_backend_parity(
     if prop_kwargs is None:
         prop_kwargs = {}
 
-    out_idxs = []
-    grad_idxs = []
-
     def wrap(python):
         prop_kwargs["backend"] = python
         inputs = (
@@ -1921,7 +1906,7 @@ def run_backend_parity(
         # The auxiliary state is one output element holding several tensors;
         # the parity comparison is over tensors.
         return compute_backend_parity_grad_and_gradgrad(
-            output_tensors(out), inputs, out_idxs, gradgrad, grad_idxs
+            output_tensors(out), inputs, gradgrad
         )
 
     run_python_vs_compiled_backend_parity(wrap, "eager", atol=atol, rtol=rtol)
@@ -2975,148 +2960,29 @@ def test_compile_named_output_matches_eager() -> None:
     assert torch.equal(eager, _small_scalar_call_indexed())
 
 
-class _ScalarExportWrapper(torch.nn.Module):
-    """Wraps scalar() with max_vel supplied, for torch.export.export."""
+class _VelocityExtremesExportWrapper(torch.nn.Module):
+    """Exercise the supplied-bound helper inside an actually exported graph."""
 
-    def forward(
-        self,
-        v: torch.Tensor,
-        source_amplitudes: torch.Tensor,
-        source_locations: torch.Tensor,
-        receiver_locations: torch.Tensor,
-    ) -> torch.Tensor:
-        return scalar(
-            v,
-            5.0,
-            0.001,
-            source_amplitudes=source_amplitudes,
-            source_locations=source_locations,
-            receiver_locations=receiver_locations,
-            max_vel=2000.0,
-        )[-1]
+    def forward(self, v: torch.Tensor) -> torch.Tensor:
+        minimum, maximum = deepwave._common.velocity_extremes(v, 2000.0, "scalar")
+        return v * maximum + minimum
 
 
-def _export_scalar_wrapper() -> BaseException:
-    """Runs ``torch.export.export`` on the wrapper and returns the failure.
+@pytest.mark.parametrize("value", [-1500.0, 0.0, 1500.0])
+def test_torch_export_no_longer_fails_on_velocity_extremes(value: float) -> None:
+    """The helper exports without reading data-dependent model extrema.
 
-    Fails the test if the export unexpectedly succeeds, so that a future
-    PyTorch release that removes the remaining data-dependent guards is
-    reported as a stale expectation rather than passing silently.
+    With an explicit bound, tracing uses that bound and reports an unknown
+    minimum as zero. Run the exported graph on changed values too, so a
+    value accidentally captured during export cannot make this test pass.
+    Full propagator export remains unsupported; its first failure depends
+    on the PyTorch version and is not a regression oracle for this helper.
+    Location bounds and duplicate-write safety have their own direct tests.
     """
-    v = torch.ones(8, 8) * 1500.0
-    source_amplitudes = torch.zeros(1, 1, 8)
-    source_locations = torch.zeros(1, 1, 2, dtype=torch.long)
-    receiver_locations = torch.zeros(1, 1, 2, dtype=torch.long)
-    with pytest.raises(Exception) as excinfo:  # noqa: PT011 - characterising, not narrowing
-        torch.export.export(
-            _ScalarExportWrapper(),
-            (v, source_amplitudes, source_locations, receiver_locations),
-        )
-    return excinfo.value
-
-
-def test_torch_export_no_longer_fails_on_velocity_extremes(monkeypatch) -> None:
-    """Check torch.export no longer fails via a velocity_extremes guard.
-
-    ``torch.export.export`` used to fail with
-    ``GuardOnDataDependentSymNode`` originating in ``velocity_extremes``
-    (the ``v.abs().max().item()`` / ``v[v != 0].abs().min().item()`` reads),
-    even when ``max_vel`` was supplied and so those reads were redundant.
-    A later follow-up pass then removed every other *fixable* data-dependent
-    read in ``common.py`` (``mask_locations``, ``StorageManager.__init__``,
-    ``_validate_location_tensor`` -- see
-    ``test_velocity_extremes_reduces_dynamo_graph_breaks`` for the full
-    list and rationale). Duplicate-cell validation now deliberately breaks
-    the graph so native scatter writes remain safe. The other fixes used
-    shape-static rewrites or omitted diagnostics during tracing.
-
-    Honest outcome: ``torch.export.export`` still fails with
-    ``GuardOnDataDependentSymNode``, and *two* deliberately-retained
-    data-dependent reads remain on a propagator's setup path. This test pins
-    which one is reached first, and that the other is still behind it.
-
-    **First reached (the failure this test now characterises):**
-    ``deepwave._engine._channel_interpolates``'s all-sentinel sweep,
-    ``bool(torch.all(location == IGNORE_LOCATION))``. It answers "does this
-    channel hold any real coordinates at all?", and its only consumer is
-    :func:`deepwave._engine.resolved_location_interpolation`, which fills
-    ``RunInfo.location_interpolation_used`` -- the *string* reporting which
-    location-interpolation path the call took.
-
-    That read is **weaker than a safety guard**: nothing downstream branches
-    on it, no memory access depends on it, and getting it wrong would
-    mislabel a call, not corrupt one. It is nonetheless not fixable by the
-    ``common.py`` technique. Whether a channel is nothing but the sentinel is
-    a property of the tensor's *values*, not its shape, and the result is a
-    Python-level ``str`` handed back on ``RunInfo``; a shape-static
-    ``torch.where`` cannot produce a ``str``. Dropping the sweep entirely is
-    not behaviour-preserving either: an all-sentinel float channel with
-    ``requires_grad=True`` would then be reported as interpolated
-    (``_should_interpolate`` returns ``True`` for any float tensor requiring
-    grad, before it looks at coordinates), turning a ``"none"`` or
-    ``"hicks"`` answer into ``"hicks"`` or ``"mixed"``. The remaining exits
-    -- computing the field lazily, or skipping it under
-    ``torch.compiler.is_compiling()`` -- trade a wrong or deferred report for
-    a guard that, as the second half of this test measures, buys no working
-    export anyway.
-
-    **Behind it:** ``check_locations_are_within_model``'s ``bool(...)``
-    bounds reductions -- the pre-existing, genuinely irreducible one. It is
-    the only thing standing between an out-of-bounds coordinate and the
-    C/CUDA backend's unconditional gather/scatter, so it cannot be skipped
-    under tracing and cannot be approximated from shapes (see that function's
-    docstring). Neutralising ``_channel_interpolates``'s sweep therefore does
-    not make the export succeed; it only uncovers this one. The second half
-    of this test measures that directly, so the claim cannot go stale: if
-    someone ever makes the bounds check static, this half goes red and the
-    whole expectation gets revisited.
-
-    So the pinned property is unchanged in spirit from when this test was
-    written: torch.export raises exactly one clear error, at a documented
-    point, for a documented reason, rather than succeeding or failing
-    unpredictably elsewhere. Only *which* documented point moved.
-    """
-    err = _export_scalar_wrapper()
-    err_type = type(err).__name__
-    err_msg = str(err)
-    assert err_type == "GuardOnDataDependentSymNode", (
-        f"expected the remaining (unrelated) GuardOnDataDependentSymNode "
-        f"failure, got {err_type}: {err_msg[:500]}"
-    )
-    assert "velocity_extremes" not in err_msg, (
-        "torch.export failure still traces back into velocity_extremes; "
-        "the graph-break fix should have removed this guard: " + err_msg[:1000]
-    )
-    assert "_channel_interpolates" in err_msg, (
-        "expected the remaining failure to be the known, descriptive "
-        "_channel_interpolates all-sentinel read (the first data-dependent "
-        "branch a propagator reaches); the failure now comes from somewhere "
-        f"else: {err_msg[:1000]}"
-    )
-
-    # With that read neutralised, the export must still fail -- in the bounds
-    # check. This is what makes "_channel_interpolates is descriptive, the
-    # bounds check is the irreducible one" a measurement rather than a claim.
-    def _without_sentinel_sweep(mode, location, offset):
-        if isinstance(location, deepwave.Hicks):
-            return True
-        if not isinstance(location, torch.Tensor) or location.numel() == 0:
-            return None
-        return deepwave._location_interpolation._should_interpolate(
-            location, mode, offset=offset
-        )
-
-    monkeypatch.setattr(
-        deepwave._engine, "_channel_interpolates", _without_sentinel_sweep
-    )
-    err_msg_2 = str(_export_scalar_wrapper())
-    assert "_channel_interpolates" not in err_msg_2
-    assert "check_locations_are_within_model" in err_msg_2, (
-        "with _channel_interpolates' descriptive read removed, the export "
-        "should fail in the retained out-of-bounds guard "
-        "check_locations_are_within_model; it failed somewhere else "
-        f"instead: {err_msg_2[:1000]}"
-    )
+    v = torch.full((8, 8), value)
+    exported = torch.export.export(_VelocityExtremesExportWrapper(), (v,)).module()
+    for values in (v, -v, torch.zeros_like(v), v + 1):
+        torch.testing.assert_close(exported(values), values * 2000.0, rtol=0, atol=0)
 
 
 def test_eager_rejects_storage_compression() -> None:

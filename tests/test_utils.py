@@ -14,9 +14,86 @@ from helpers import (
     _second_deriv,
     _set_coords,
     _set_sources,
+    compute_backend_parity_grad_and_gradgrad,
     direct_2d_approx,
+    run_python_vs_compiled_backend_parity,
     scattered,
 )
+
+
+@pytest.mark.parametrize(
+    "defect", ["missing", "extra", "shape", "empty_tuple", "empty_tensor"]
+)
+def test_backend_comparison_rejects_incomplete_results(defect: str) -> None:
+    """A shared comparator must not pass through truncation or broadcasting."""
+
+    def wrap(backend):
+        if defect == "empty_tuple":
+            return ()
+        if defect == "empty_tensor":
+            return (torch.empty(0),)
+        expected = (torch.ones(2), torch.ones(3))
+        if backend == "eager":
+            return expected
+        if defect == "missing":
+            return expected[:1]
+        if defect == "extra":
+            return (*expected, torch.ones(4))
+        return (torch.ones(1), expected[1])
+
+    with pytest.raises(AssertionError):
+        run_python_vs_compiled_backend_parity(wrap, "eager")
+
+
+@pytest.mark.parametrize("gradgrad", [False, True])
+@pytest.mark.parametrize("defect", ["none", "offset", "linear_coefficient"])
+def test_backend_comparison_checks_primal_and_constant_gradients(
+    gradgrad: bool, defect: str
+) -> None:
+    """Equal Hessians do not imply equal outputs or first derivatives."""
+
+    def wrap(backend):
+        x = torch.tensor(0.5, requires_grad=True)
+        y = torch.tensor(0.0, requires_grad=True)
+        coefficient = (
+            2 if backend == "compiled" and defect == "linear_coefficient" else 1
+        )
+        offset = 1 if backend == "compiled" and defect == "offset" else 0
+        output = x.square() + coefficient * y + offset
+        return compute_backend_parity_grad_and_gradgrad((output,), (x, y), gradgrad)
+
+    if defect == "none":
+        run_python_vs_compiled_backend_parity(wrap, "eager")
+    else:
+        with pytest.raises(AssertionError):
+            run_python_vs_compiled_backend_parity(wrap, "eager")
+
+
+@pytest.mark.parametrize("gradgrad", [False, True])
+@pytest.mark.parametrize("defect", ["none", "constant_offset", "detached"])
+def test_backend_comparison_checks_outputs_with_different_graph_connectivity(
+    gradgrad: bool, defect: str
+) -> None:
+    """Constant graph edges are harmless; missing derivatives and offsets are not."""
+
+    def wrap(backend):
+        x = torch.tensor(2.0, requires_grad=True)
+        constant = x * 0 if backend == "compiled" else torch.tensor(0.0)
+        linear = 3 * x
+        if backend == "compiled":
+            if defect == "constant_offset":
+                constant = constant + 1
+            elif defect == "detached":
+                linear = linear.detach()
+        return compute_backend_parity_grad_and_gradgrad(
+            (constant, linear), (x,), gradgrad
+        )
+
+    if defect == "none":
+        run_python_vs_compiled_backend_parity(wrap, "eager")
+    else:
+        with pytest.raises(AssertionError):
+            run_python_vs_compiled_backend_parity(wrap, "eager")
 
 
 # Unit tests for _set_sources

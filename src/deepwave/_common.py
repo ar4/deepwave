@@ -849,6 +849,11 @@ def check_material_domain(
             raise DeepwaveValueError(f"{propagator}: material requires {description}.")
 
     for name, model in models.items():
+        if name == "q":
+            # 1/Q is the attenuation strength; +inf is the exact lossless limit.
+            # The comparison also rejects NaN, -inf and zero.
+            require(model > 0, "q > 0 (positive infinity denotes the lossless limit)")
+            continue
         finite = torch.isfinite(model)
         if not bool(finite.all()):
             count = int((~finite).sum())
@@ -860,15 +865,11 @@ def check_material_domain(
             )
 
     if "v" in models and "rho" not in models:
-        require(models["v"] > 0, "v > 0")
+        # These equations use v**2. Signed and zero speeds are well-defined;
+        # stability and PML setup use the maximum absolute speed.
         return
     if "v" in models and "rho" in models:
-        speed, density = models["v"], models["rho"]
-        require(density >= 0, "rho >= 0")
-        require(speed >= 0, "v >= 0")
-        require((density == 0) | (speed > 0), "v > 0 where rho > 0")
-        if "q" in models:
-            require(models["q"] > 0, "q > 0")
+        require(models["rho"] >= 0, "rho >= 0")
         return
     if {"lamb", "mu", "buoyancy"} <= models.keys():
         lamb, mu, buoyancy = (models[name] for name in ("lamb", "mu", "buoyancy"))
@@ -1375,6 +1376,10 @@ def setup_propagator(
     # not caught here still surfaces as non-finite output.
     if not _torch_is_compiling():
         for name, model in zip(model_names, models):
+            if name == "q" and propagator_name == "viscoacoustic":
+                # check_models has validated q > 0, including its +inf
+                # lossless limit; the generic finite-only rule does not apply.
+                continue
             if not values_readable(model):
                 continue
             n_nonfinite = int((~torch.isfinite(model)).sum())
@@ -1728,6 +1733,26 @@ def reject_model_as_grid_spacing(
     )
 
 
+def _float_value(value: Any) -> float:
+    """Let float validate its complete runtime numeric and buffer protocols.
+
+    Any is confined to this conversion boundary: restricting the accepted
+    protocols with isinstance would reject values float itself accepts.
+    The result is always a float, or the built-in conversion raises.
+    """
+    return float(value)
+
+
+def _int_value(value: Any) -> int:
+    """Delegate validation of integer-compatible values to the built-in."""
+    return int(value)
+
+
+def _iterable_values(value: Any) -> abc.Iterable[object]:
+    """Validate iteration, including the legacy __getitem__ sequence protocol."""
+    return cast("abc.Iterable[object]", iter(value))
+
+
 def set_grid_spacing(
     grid_spacing: Union[float, abc.Sequence[float]],
     ndims: int,
@@ -1758,11 +1783,13 @@ def set_grid_spacing(
     # Validate input and convert to list even for edge-cases such as 0-dim Tensors
     try:
         # Check if convertible to a float
-        processed_grid_spacing = [float(grid_spacing)] * ndims  # type: ignore
+        processed_grid_spacing = [_float_value(grid_spacing)] * ndims
     except (TypeError, ValueError):
         # Check if a sequence of values convertible to floats
         try:
-            processed_grid_spacing = [float(spacing) for spacing in grid_spacing]  # type: ignore
+            processed_grid_spacing = [
+                _float_value(spacing) for spacing in _iterable_values(grid_spacing)
+            ]
         except (TypeError, ValueError) as e:
             raise DeepwaveTypeError(
                 "grid_spacing must be a float or sequence of floats."
@@ -1824,16 +1851,19 @@ def set_pml_width(pml_width: Union[int, abc.Sequence[int]], ndims: int) -> list[
     # Validate input and convert to list even for edge-cases such as 0-dim Tensors
     try:
         # Check if convertible to an int
-        processed_pml_width = [int(pml_width)] * 2 * ndims  # type: ignore
-        if float(pml_width) != float(int(pml_width)):  # type: ignore
+        processed_pml_width = [_int_value(pml_width)] * 2 * ndims
+        if _float_value(pml_width) != float(_int_value(pml_width)):
             raise DeepwaveTypeError("pml_width must be an int or sequence of ints.")
     except (TypeError, ValueError):
         # Check if a sequence of values convertible to ints
         try:
-            pml_width_list = list(pml_width)  # type: ignore
-            if any(float(width) != float(int(width)) for width in pml_width_list):
+            pml_width_list = list(_iterable_values(pml_width))
+            if any(
+                _float_value(width) != float(_int_value(width))
+                for width in pml_width_list
+            ):
                 raise DeepwaveTypeError("pml_width must be an int or sequence of ints.")
-            processed_pml_width = [int(width) for width in pml_width_list]
+            processed_pml_width = [_int_value(width) for width in pml_width_list]
         except (TypeError, ValueError) as e:
             raise DeepwaveTypeError(
                 "pml_width must be an int or sequence of ints."
@@ -2598,21 +2628,29 @@ def boundaries(
         default if value is None else value for value, _ in per_face[: 2 * ndim]
     ]
 
-    if isinstance(width, int) and not isinstance(width, bool):
-        widths = [width] * 2 * ndim
-    else:
-        try:
-            widths = [int(w) for w in width]  # type: ignore[union-attr]
-        except TypeError as e:
-            raise DeepwaveValueError(
-                "deepwave.boundaries' width must be an int or a sequence of "
-                f"{2 * ndim} ints, but got {width!r}."
-            ) from e
-        if len(widths) != 2 * ndim:
-            raise DeepwaveValueError(
-                f"deepwave.boundaries' width must have 1 or {2 * ndim} "
-                f"entries for ndim={ndim}, but got {len(widths)}."
-            )
+    try:
+        if isinstance(width, bool):
+            raise DeepwaveValueError("Boundary widths must be whole cell counts.")
+        if isinstance(width, int):
+            widths = [width] * 2 * ndim
+        else:
+            raw_widths = list(width)
+            widths = [int(w) for w in raw_widths]
+            if any(
+                isinstance(w, bool) or w != converted
+                for w, converted in zip(raw_widths, widths)
+            ):
+                raise DeepwaveValueError("Boundary widths must be whole cell counts.")
+    except (TypeError, ValueError, OverflowError) as e:
+        raise DeepwaveValueError(
+            "deepwave.boundaries' width must be an int or a sequence of "
+            f"{2 * ndim} ints, but got {width!r}."
+        ) from e
+    if len(widths) != 2 * ndim:
+        raise DeepwaveValueError(
+            f"deepwave.boundaries' width must have 1 or {2 * ndim} "
+            f"entries for ndim={ndim}, but got {len(widths)}."
+        )
     if any(w < 0 for w in widths):
         raise DeepwaveValueError(
             f"deepwave.boundaries' width must be non-negative, got {widths!r}."
@@ -2690,6 +2728,7 @@ _PML_FREQ_FROM_DEFAULT = (
     "a fifth of the Nyquist frequency (0.5 / dt / 5), because no dominant "
     "frequency could be inferred from the source amplitudes"
 )
+_PML_FREQ_FROM_ZERO_DT = "the zero-time-step limit"
 
 
 class _InferredPmlFreq(float):
@@ -2712,7 +2751,7 @@ class _InferredPmlFreq(float):
 
 
 def default_pml_freq(dt: float) -> float:
-    """Returns the source-free default PML frequency, ``0.5 / dt / 5``.
+    """Return ``0.5 / abs(dt) / 5``, or zero for the zero-time-step limit.
 
     A fifth of the Nyquist frequency: the frequency band that a grid and time
     step of this scale are chosen to propagate well. At the classic seismic
@@ -2728,7 +2767,7 @@ def default_pml_freq(dt: float) -> float:
         The default PML frequency in the same units as ``1 / dt``.
 
     """
-    return 0.5 / abs(dt) / 5
+    return 0.5 / abs(dt) / 5 if dt != 0 else 0.0
 
 
 def infer_pml_freq(
@@ -2845,6 +2884,8 @@ def _infer_pml_freq(
     counts is unchanged by this split.
     """
     fallback = default_pml_freq(dt)
+    if dt == 0:
+        return fallback, _PML_FREQ_FROM_ZERO_DT
     present = [
         amplitude
         for amplitude in source_amplitudes
@@ -2897,33 +2938,20 @@ def _base_level_dispatch() -> Any:
     """
     try:
         from torch._functorch.pyfunctorch import temporarily_clear_interpreter_stack
-    except ImportError:  # pragma: no cover - older torch without this helper
+    except ImportError:  # older torch without this helper
         return contextlib.nullcontext()
     return temporarily_clear_interpreter_stack()
 
 
-def _unwrap_functorch(t: torch.Tensor) -> torch.Tensor:
-    """The concrete tensor underneath any ``torch.func`` wrappers.
+def unwrap_functorch(t: torch.Tensor) -> torch.Tensor:
+    """Return the concrete tensor underneath all ``torch.func`` wrappers.
 
-    A no-op when nothing is wrapped. Mirrors
-    :func:`deepwave._engine.unwrap_functorch`, kept here rather than imported
-    because this module is below ``_engine`` in the import order.
+    Unexpected PyTorch errors propagate: treating a failed unwrap as an
+    ordinary tensor could bypass batched-input validation or send a tensor
+    without concrete storage to the native backend.
     """
-    try:
-        from torch._C._functorch import get_unwrapped, maybe_get_level
-    except ImportError:  # pragma: no cover - older torch without functorch
-        return t
-    while True:
-        try:
-            level = maybe_get_level(t)
-        except Exception:  # noqa: BLE001 - any functorch level error means stop
-            break
-        if level is None or level < 0:
-            break
-        try:
-            t = get_unwrapped(t)
-        except Exception:  # noqa: BLE001 - dead level; return best effort
-            break
+    while _functorch.is_functorch_wrapped_tensor(t):
+        t = _functorch.get_unwrapped(t)
     return t
 
 
@@ -2955,7 +2983,7 @@ def _pml_freq_from_spectrum(
 
     """
     with _base_level_dispatch():
-        amplitudes = [_unwrap_functorch(amplitude) for amplitude in amplitudes]
+        amplitudes = [unwrap_functorch(amplitude) for amplitude in amplitudes]
         return _pml_freq_peak(amplitudes, dt)
 
 
@@ -3121,8 +3149,8 @@ def set_pml_freq(
     Raises:
         DeepwaveTypeError: If `pml_freq` is not None or convertible to a
             float.
-        DeepwaveValueError: If `dt` is not positive or `pml_freq` is
-            negative.
+        DeepwaveValueError: If `pml_freq` is negative. Signed and zero time
+            steps are permitted.
 
     """
     prefix = f"{propagator}: " if propagator else ""
@@ -3136,10 +3164,7 @@ def set_pml_freq(
             ) from e
     if not isinstance(dt, float):
         raise DeepwaveTypeError(f"{prefix}dt must be a float, but got {dt!r}.")
-    try:
-        nyquist = 0.5 / abs(dt)
-    except ZeroDivisionError as e:
-        raise DeepwaveValueError(f"{prefix}dt is too small.") from e
+    nyquist = 0.5 / abs(dt) if dt != 0 else math.inf
     if pml_freq is None:
         if user_dt is None:
             user_dt = dt
@@ -3196,7 +3221,9 @@ def warn_pml_freq_migration(
             :data:`_PML_FREQ_FROM_DEFAULT`.
 
     """
-    if pml_freq == _PML_FREQ_LEGACY_DEFAULT:
+    if pml_freq == _PML_FREQ_LEGACY_DEFAULT or inferred_from == _PML_FREQ_FROM_ZERO_DT:
+        # At dt=0 the frequency cannot change the update; no migration warning
+        # applies, and the Nyquist fallback has no meaning.
         return
     _warn_once_per_cause(
         # Keyed by the rounded value so an FWI loop, whose repeated calls
@@ -3382,7 +3409,7 @@ def set_max_vel(max_vel: Optional[float], max_abs_model_vel: float) -> float:
 
     Raises:
         TypeError: If `max_vel` or `max_model_vel` are not convertible to a float.
-        ValueError: If an explicit `max_vel` is nonfinite, zero, or below the
+        ValueError: If an explicit `max_vel` is nonfinite or below the
             conservative model speed.
 
     """
@@ -3402,8 +3429,8 @@ def set_max_vel(max_vel: Optional[float], max_abs_model_vel: float) -> float:
     if max_vel is None:
         return max_abs_model_vel
     max_vel = abs(max_vel)
-    if not math.isfinite(max_vel) or max_vel <= 0:
-        raise DeepwaveValueError("maximum absolute velocity must be greater than zero.")
+    if not math.isfinite(max_vel):
+        raise DeepwaveValueError("maximum absolute velocity must be finite.")
     if max_vel < max_abs_model_vel and not math.isclose(
         max_vel, max_abs_model_vel, rel_tol=1e-12
     ):
@@ -5911,11 +5938,12 @@ def cfl_condition_n(
             in.
         max_vel: The maximum absolute wavespeed in the model, in
             `grid_spacing` units per `dt` unit.
-        eps: A small quantity to prevent division by zero, in the square of
-            `max_vel`'s unit. Default 1e-15.
+        eps: Retained for call compatibility. Zero speed is handled explicitly,
+            so this parameter no longer regularises the speed or changes the
+            selected time step.
         courant_number: An optional Courant number to use instead of the
-            conservative default (0.6). If None (the default), 0.6 is used,
-            reproducing the historical behaviour bit-for-bit. If given, it is
+            conservative default (0.6). If None (the default), 0.6 is used.
+            If given, it is
             the actual dimensionless Courant number the time step will target;
             a larger value gives a larger ``inner_dt`` (fewer internal steps).
             This function does not itself enforce an upper bound: a caller
@@ -5933,10 +5961,12 @@ def cfl_condition_n(
 
     """
     try:
-        processed_grid_spacing = [float(grid_spacing)]  # type: ignore
+        processed_grid_spacing = [_float_value(grid_spacing)]
     except (TypeError, ValueError):
         try:
-            processed_grid_spacing = [float(spacing) for spacing in grid_spacing]  # type: ignore
+            processed_grid_spacing = [
+                _float_value(spacing) for spacing in _iterable_values(grid_spacing)
+            ]
         except (TypeError, ValueError) as e:
             raise DeepwaveTypeError(
                 "grid_spacing must be a float or sequence of floats."
@@ -5944,41 +5974,62 @@ def cfl_condition_n(
     if not processed_grid_spacing:
         raise DeepwaveValueError("grid_spacing must not be empty.")
     for g in processed_grid_spacing:
+        if not math.isfinite(g):
+            raise DeepwaveValueError("grid_spacing elements must be finite.")
         if g <= 0:
             raise DeepwaveValueError("grid_spacing elements must be positive.")
     try:
         dt = float(dt)
     except (TypeError, ValueError) as e:
         raise DeepwaveTypeError("dt must be a float.") from e
-    if dt == 0:
-        # step_ratio = ceil(abs(dt) / max_dt) would be 0, and the later
-        # dt / step_ratio would divide by zero (see PR #121). A negative dt
-        # is deliberately still accepted here (see
-        # test_cfl_condition_n_negative_dt): only dt == 0 is unrepresentable.
-        raise DeepwaveValueError("dt must not be zero.")
+    if not math.isfinite(dt):
+        raise DeepwaveValueError("dt must be finite.")
     try:
         max_vel = float(max_vel)
     except (TypeError, ValueError) as e:
         raise DeepwaveTypeError("max_vel must be a float.") from e
-    if max_vel <= 0:
-        raise DeepwaveRuntimeError("max_vel must be greater than zero.")
+    if not math.isfinite(max_vel) or max_vel < 0:
+        raise DeepwaveRuntimeError("max_vel must be finite and non-negative.")
 
     if courant_number is not None:
         try:
             courant_number = float(courant_number)
         except (TypeError, ValueError) as e:
             raise DeepwaveTypeError("courant_number must be a float.") from e
+        if not math.isfinite(courant_number):
+            raise DeepwaveValueError("courant_number must be finite.")
         if courant_number <= 0:
             raise DeepwaveValueError("courant_number must be greater than zero.")
     c_max = _DEFAULT_COURANT_NUMBER if courant_number is None else courant_number
+    if dt == 0 or max_vel == 0:
+        # No substeps are needed when there is no temporal or spatial advance.
+        return dt, 1
 
-    max_dt = (
-        c_max
-        / math.sqrt(sum(1 / dim_spacing**2 for dim_spacing in processed_grid_spacing))
-        / (max_vel**2 + eps)
-    ) * max_vel
-    step_ratio = math.ceil(abs(dt) / max_dt)
+    # Compute |dt| * max_vel * ||1 / dx|| / c_max without squaring a
+    # dimensioned quantity. Scaling the spatial norm and separating binary
+    # exponents avoids intermediate overflow/underflow when units change.
+    smallest_spacing = min(processed_grid_spacing)
+    spatial_norm = math.hypot(*(smallest_spacing / g for g in processed_grid_spacing))
+    dt_mantissa, dt_exponent = math.frexp(abs(dt))
+    speed_mantissa, speed_exponent = math.frexp(max_vel)
+    spacing_mantissa, spacing_exponent = math.frexp(smallest_spacing)
+    courant_mantissa, courant_exponent = math.frexp(c_max)
+    mantissa = (
+        dt_mantissa
+        * speed_mantissa
+        * spatial_norm
+        / spacing_mantissa
+        / courant_mantissa
+    )
+    exponent = dt_exponent + speed_exponent - spacing_exponent - courant_exponent
+    try:
+        ratio = math.ldexp(mantissa, exponent)
+    except OverflowError as error:
+        raise DeepwaveValueError("The required CFL step ratio is too large.") from error
+    step_ratio = max(1, math.ceil(ratio))
     inner_dt = dt / step_ratio
+    if inner_dt == 0:
+        raise DeepwaveValueError("The CFL-stable time step is too small to represent.")
     # Fallback frame chain (both warnings below): user call -> propagator()
     # -> setup_propagator() -> cfl_condition_n().
     if step_ratio >= 20:
@@ -6243,6 +6294,15 @@ def _snap_to_nodes(cells: torch.Tensor, snap: Union[bool, float]) -> torch.Tenso
     return torch.where((cells - nearest).abs() <= tolerance, nearest, cells)
 
 
+def product_ratio_parts(a: float, b: float, divisor: float) -> tuple[float, int]:
+    """Represent a*b/divisor without overflowing or losing tiny intermediates."""
+    a_mantissa, a_exponent = math.frexp(a)
+    b_mantissa, b_exponent = math.frexp(b)
+    d_mantissa, d_exponent = math.frexp(divisor)
+    mantissa, exponent = math.frexp(a_mantissa * b_mantissa / d_mantissa)
+    return mantissa, a_exponent + b_exponent - d_exponent + exponent
+
+
 def setup_pml(
     pml_width: abc.Sequence[int],
     pml_start: abc.Sequence[float],
@@ -6280,37 +6340,97 @@ def setup_pml(
             dominant frequency in the wavefield.
         start: Float specifying the coordinate (in grid cells) of the first
             element. Optional, default 0.
-        r_val: The reflection coefficient. Optional, default 0.001.
-        n_power: The power for the profile. Optional, default 2.
-        eps: A small number to prevent division by zero. Optional,
-            default 1e-9.
+        r_val: The target reflection coefficient, in (0, 1]. Default 0.001.
+        n_power: The non-negative polynomial degree. Default 2.
+        eps: Retained for call compatibility. An exactly zero denominator is
+            handled explicitly, without imposing a unit-dependent damping floor.
 
     Returns:
         A tuple containing the a and b profiles as Tensors.
 
     """
-    sigma, alpha, active = _pml_sigma_alpha(
+    if not math.isfinite(grid_spacing) or grid_spacing <= 0:
+        raise DeepwaveValueError("PML grid_spacing must be finite and positive.")
+    if not math.isfinite(dt):
+        raise DeepwaveValueError("PML dt must be finite.")
+    if not all(math.isfinite(value) and value >= 0 for value in (max_vel, pml_freq)):
+        raise DeepwaveValueError(
+            "PML max_vel and pml_freq must be finite and non-negative."
+        )
+    if not 0 < r_val <= 1 or n_power < 0:
+        raise DeepwaveValueError("PML requires 0 < r_val <= 1 and n_power >= 0.")
+
+    # Scale rates by time before putting them in tensors. Separately storing a
+    # tiny rate and huge dt can produce 0*inf even when their product is ordinary.
+    velocity_scale = product_ratio_parts(max_vel, abs(dt), grid_spacing)
+    frequency_scale = product_ratio_parts(pml_freq, abs(dt), 1.0)
+    scales = (velocity_scale, frequency_scale)
+    # Geometry contributes at most this factor; leave room for both faces and
+    # the frequency shift. Normal profiles retain the requested dtype.
+    bound = max(1.0, math.pi, abs((1 + n_power) * math.log(r_val)))
+    finfo = torch.finfo(dtype)
+    # Bound the smallest nonzero polynomial sample on this unit-spaced grid.
+    # Account for fractional interface positions before taking powers, so a
+    # large rate cannot hide underflow in the geometry template itself.
+    profile_span = 0.0
+    for width, interface in zip(pml_width, pml_start):
+        if width:
+            gap = abs(math.remainder(interface - start, 1.0)) or 1.0
+            width_log2 = math.log2(width)
+            profile_span = max(
+                profile_span,
+                width_log2 + n_power * max(0.0, width_log2 - math.log2(gap)),
+            )
+    if r_val < 1:
+        profile_span += max(0.0, -math.log2(-math.log(r_val)))
+    low = math.frexp(finfo.tiny)[1] + 4 + math.ceil(profile_span)
+    high = math.frexp(finfo.max)[1] - 4 - math.ceil(math.log2(bound))
+    logarithmic = any(m != 0 and not low <= e <= high for m, e in scales)
+    # Wider arithmetic reduces log/exp round-trip error; it does not hold the
+    # extreme rates themselves. Their representation remains logarithmic.
+    work_dtype = torch.float64 if logarithmic else dtype
+    sigma_shape, alpha_shape, active = pml_sigma_alpha(
         pml_width,
         pml_start,
-        grid_spacing,
+        1.0,
         n,
-        max_vel,
-        dtype,
+        1.0,
+        work_dtype,
         device,
-        pml_freq,
+        1.0,
         start,
         r_val,
         n_power,
+        logarithmic=logarithmic,
     )
-    sigmaalpha = sigma + alpha
-    a = torch.exp(-sigmaalpha * abs(dt))
-    b = torch.where(
-        sigmaalpha == 0,
-        torch.zeros_like(sigma),
-        sigma / sigmaalpha.clamp(min=eps) * (a - 1),
-    )
+    if not logarithmic:
+        sigma = sigma_shape * math.ldexp(*velocity_scale)
+        alpha = alpha_shape * math.ldexp(*frequency_scale)
+        total = sigma + alpha
+        denominator = torch.where(total == 0, torch.ones_like(total), total)
+        ratio = (sigma / denominator).clamp(0, 1)
+    else:
+        # Only exceptional scales need logs. Form the ratio before materialising
+        # a possibly infinite total damping, and handle zero rates before the
+        # log difference so that an inactive face cannot produce -inf - -inf.
+        velocity_log, frequency_log = (
+            math.log(m) + e * math.log(2) if m else -math.inf for m, e in scales
+        )
+        sigma_log = sigma_shape + velocity_log
+        alpha_log = alpha_shape + frequency_log
+        total_log = torch.logaddexp(sigma_log, alpha_log)
+        safe_total_log = torch.where(
+            torch.isneginf(total_log), torch.zeros_like(total_log), total_log
+        )
+        ratio = (sigma_log - safe_total_log).exp().clamp(0, 1)
+        total = total_log.exp()
+    a = torch.exp(-total)
+    # expm1 preserves damping when exp(-total) rounds to one. Both clamps state
+    # mathematical bounds for non-negative rates; they also let Torch 2.4's
+    # compiler avoid spurious 0*inf in its interval analysis of this product.
+    b = ratio * torch.expm1(-total).clamp(-1, 0)
     a[~active] = 0
-    return a, b
+    return a.to(dtype), b.to(dtype)
 
 
 def setup_pml_sigma_alpha(
@@ -6332,7 +6452,7 @@ def setup_pml_sigma_alpha(
     descriptions. Multiaxial PML combines these profiles across axes before
     applying the a/b transform.
     """
-    sigma, alpha, _ = _pml_sigma_alpha(
+    sigma, alpha, _ = pml_sigma_alpha(
         pml_width,
         pml_start,
         grid_spacing,
@@ -6348,7 +6468,7 @@ def setup_pml_sigma_alpha(
     return sigma, alpha
 
 
-def _pml_sigma_alpha(
+def pml_sigma_alpha(
     pml_width: abc.Sequence[int],
     pml_start: abc.Sequence[float],
     grid_spacing: float,
@@ -6360,26 +6480,59 @@ def _pml_sigma_alpha(
     start: float,
     r_val: float,
     n_power: int,
+    *,
+    logarithmic: bool = False,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Polynomial C-PML profiles with a local physical width for each face."""
     x = torch.arange(start, start + n, device=device, dtype=dtype)
     zero = torch.zeros_like(x)
+    absent = torch.full_like(x, -math.inf) if logarithmic else zero
     if not any(pml_width):
-        return zero, zero.clone(), torch.zeros_like(x, dtype=torch.bool)
+        return absent, absent.clone(), torch.zeros_like(x, dtype=torch.bool)
     fractions = []
     damping = []
     for side, width in enumerate(pml_width):
         if width == 0:
             fractions.append(zero)
-            damping.append(zero)
+            damping.append(absent)
             continue
         distance = pml_start[side] - x if side == 0 else x - pml_start[side]
         fraction = (distance / width).clamp(min=0, max=1)
-        physical_width = width * grid_spacing
-        sigma0 = -(1 + n_power) * max_vel * math.log(r_val) / (2 * physical_width)
         fractions.append(fraction)
-        damping.append(sigma0 * fraction**n_power)
+        if logarithmic:
+            # Take logs before the power or division can underflow. Degree zero
+            # is constant only inside its own face, including in log form.
+            log_fraction = distance.clamp(min=0, max=width).log() - math.log(width)
+            log_profile = (
+                torch.where(distance > 0, zero, absent)
+                if n_power == 0
+                else n_power * log_fraction
+            )
+            log_sigma0 = (
+                math.log1p(n_power)
+                + math.log(max_vel)
+                + math.log(-math.log(r_val))
+                - math.log(2)
+                - math.log(width)
+                - math.log(grid_spacing)
+                if max_vel > 0 and r_val < 1
+                else -math.inf
+            )
+            damping.append(log_sigma0 + log_profile)
+        else:
+            physical_width = width * grid_spacing
+            sigma0 = -(1 + n_power) * max_vel * math.log(r_val) / (2 * physical_width)
+            # Avoid 0**0 adding degree-zero damping outside this face.
+            profile = (fraction != 0).to(dtype) if n_power == 0 else fraction**n_power
+            damping.append(sigma0 * profile)
     fraction = torch.maximum(fractions[0], fractions[1])
+    if logarithmic:
+        log_alpha0 = math.log(math.pi) + math.log(pml_freq) if pml_freq else -math.inf
+        return (
+            torch.logaddexp(damping[0], damping[1]),
+            log_alpha0 + torch.log1p(-fraction),
+            fraction != 0,
+        )
     return (
         damping[0] + damping[1],
         math.pi * pml_freq * (1 - fraction),
@@ -6820,10 +6973,7 @@ def is_vmap_batched(tensor: torch.Tensor) -> bool:
     while _functorch.is_functorch_wrapped_tensor(t):
         if _functorch.is_batchedtensor(t):
             return True
-        try:
-            t = _functorch.get_unwrapped(t)
-        except Exception:  # noqa: BLE001 - dead level etc.; treat as not batched
-            break
+        t = _functorch.get_unwrapped(t)
     return False
 
 

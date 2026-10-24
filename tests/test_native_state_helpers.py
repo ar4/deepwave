@@ -26,7 +26,7 @@ def test_native_cuda_storage_failures_and_cleanup(tmp_path: Path) -> None:
 typedef int cudaError_t;
 typedef void* cudaStream_t;
 typedef void* cudaEvent_t;
-enum { cudaSuccess = 0, cudaErrorUnknown = 30,
+enum { cudaSuccess = 0, cudaErrorUnknown = 30, cudaErrorInvalidDevice = 101,
        cudaMemcpyDeviceToHost = 1, cudaMemcpyHostToDevice = 2 };
 extern cudaError_t cudaGetDevice(int*);
 extern cudaError_t cudaSetDevice(int);
@@ -88,10 +88,17 @@ static ssize_t write_cookie(void*, const char*, size_t) { return -1; }
 static int close_cookie(void*) { ++closes; return 0; }
 
 int main() {
+  int64_t const invalid_devices[] = {INT64_MIN, -1, int64_t(INT_MAX) + 1, INT64_MAX};
+  for (int64_t invalid : invalid_devices) {
+    ScopedCudaDevice guard(invalid);
+    assert(guard.init_error == cudaErrorInvalidDevice && device == 0);
+  }
+  { ScopedCudaConfig config(-1);
+    assert(config.init_error == cudaErrorInvalidDevice && !config.lock.owns_lock()); }
   {
     ScopedCudaDevice guard(1);
     assert(guard.init_error == 0 && device == 1);
-    ScopedCudaConfig config(1);
+    ScopedCudaConfig config(guard.selected_device);
     assert(config.init_error == 0);
     ScopedFileGroup files;
     ScopedFile first, second;

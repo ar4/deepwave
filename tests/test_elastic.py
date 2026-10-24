@@ -2270,8 +2270,6 @@ def run_backend_parity(
     if prop_kwargs is None:
         prop_kwargs = {}
 
-    out_idxs = []
-
     def wrap(python):
         prop_kwargs["backend"] = python
         inputs = (
@@ -2294,7 +2292,7 @@ def run_backend_parity(
             out = out[-ndim - 1 :]
         # The auxiliary state is one output element holding several tensors;
         # the parity comparison is over tensors.
-        return compute_backend_parity_grad(output_tensors(out), inputs, out_idxs)
+        return compute_backend_parity_grad(output_tensors(out), inputs)
 
     run_python_vs_compiled_backend_parity(wrap, "eager", atol=atol, rtol=rtol)
 

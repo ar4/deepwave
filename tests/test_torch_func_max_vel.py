@@ -111,22 +111,6 @@ MAXIMUM_MODEL_CASES: tuple[tuple[str, str], ...] = tuple(
     if (name, model) not in NOT_EXERCISED
 )
 
-#: Models that ``vmap`` cannot actually be mapped over on the eager backend,
-#: for a reason that has nothing to do with ``max_vel``: with ``max_vel``
-#: supplied, ``elastic_vti``'s time step fails while accumulating the shear
-#: stresses ("output with shape [2, N, N] doesn't match the broadcast shape
-#: [1, 2, N, N]"), because ``c55`` lives at the staggered shear-stress nodes
-#: and the batch dimension is not carried through that accumulation. So these
-#: are exercised for the ``max_vel`` error only, which they do raise.
-VMAP_UNSUPPORTED_MODELS: frozenset[tuple[str, str]] = frozenset(
-    {("elastic_vti", "c55")}
-)
-
-#: ``(propagator, model)`` for the entries whose batched call can also be run.
-RUNNABLE_MODEL_CASES: tuple[tuple[str, str], ...] = tuple(
-    case for case in MAXIMUM_MODEL_CASES if case not in VMAP_UNSUPPORTED_MODELS
-)
-
 
 def _positional_model_names(name: str) -> list[str]:
     """``name``'s models that are passed positionally, in call order.
@@ -329,7 +313,7 @@ def test_the_table_covers_every_propagator() -> None:
 def test_every_unexercised_entry_is_in_the_table() -> None:
     """The named exceptions are real table entries, not stale ones."""
     table = _documented_maximum_models()
-    for name, model in sorted(NOT_EXERCISED | VMAP_UNSUPPORTED_MODELS):
+    for name, model in sorted(NOT_EXERCISED):
         assert model in table[name], (name, model)
 
 
@@ -370,7 +354,7 @@ def test_batching_a_model_the_maximum_is_read_from_requires_max_vel(
     assert "max_vel=" in message, message
 
 
-@pytest.mark.parametrize(("name", "model"), RUNNABLE_MODEL_CASES)
+@pytest.mark.parametrize(("name", "model"), MAXIMUM_MODEL_CASES)
 def test_giving_max_vel_lets_the_same_batched_call_run(name: str, model: str) -> None:
     """Supplying the argument is the whole fix: the same call then runs."""
     models, kwargs = _case(name, max_vel=3000.0)

@@ -9,16 +9,16 @@ import os
 import re
 import shutil
 import subprocess
-import sys
 import tarfile
 import tempfile
 import zipfile
 from email.parser import BytesParser
 from pathlib import Path
+from platform import python_version
 from typing import Any
 
 REPOSITORY = "ar4/deepwave"
-PLATFORMS = ("ubuntu-latest", "windows-2022", "macos-15-intel", "macos-14")
+PLATFORMS = ("ubuntu-latest", "windows-2022", "macos-14")
 GATES = ("tests", "docs", "lint", "sanitizers")
 BUDGET = 95 * 1024 * 1024
 LOCAL_GPU = {
@@ -38,9 +38,10 @@ LOCAL_GPU = {
         "ba768051649e206a6107eab65900c03514b3f61543d2a4ca47df64d48514766a"
     ),
     "scope": (
-        "Retained local sm86/sm89 execution and sanitizer evidence; unchanged "
-        "runtime/native inputs. Actions distributions have CPU execution only; "
-        "no claim of GPU execution of these wheels."
+        "Historical local sm86/sm89 execution and sanitizer evidence for the "
+        "qualified_revision and runtime hash above. Changed runtime/native "
+        "inputs require fresh GPU qualification. Actions distributions have "
+        "CPU execution only; no claim of GPU execution of these wheels."
     ),
 }
 
@@ -203,9 +204,7 @@ def record(kind: str, directory: Path, needs: dict[str, Any]) -> None:
         receipt["build_inputs"] = {
             key: value for key, value in os.environ.items() if key.startswith("CIBW_")
         }
-        receipt["build_inputs"]["python"] = subprocess.check_output(
-            [sys.executable, "--version"], text=True
-        ).strip()
+        receipt["build_inputs"]["python"] = f"Python {python_version()}"
         receipt["build_inputs"]["workflow_sha256"] = sha256(
             Path(".github/workflows/build.yml")
         )
@@ -230,10 +229,10 @@ def record(kind: str, directory: Path, needs: dict[str, Any]) -> None:
 
 
 def aggregate(directory: Path, needs: dict[str, Any]) -> dict[str, Any]:
-    """Combine exactly the five expected successful artifact sets."""
+    """Combine the source and each expected successful platform artifact set."""
     successful_jobs(needs)
     receipts = [json.loads(p.read_text()) for p in directory.rglob("receipt.json")]
-    require(len(receipts) == 5, "missing/extra artifact set")
+    require(len(receipts) == 1 + len(PLATFORMS), "missing/extra artifact set")
     by_kind = {r["kind"]: r for r in receipts}
     require(set(by_kind) == {"sdist", *PLATFORMS}, "missing/duplicate platform")
     reference = by_kind["sdist"]
@@ -304,7 +303,6 @@ def validate_manifest(
         tags = {
             "ubuntu-latest": r"manylinux[0-9_]+_x86_64(?:\.manylinux[0-9_]+_x86_64)*",
             "windows-2022": r"win_amd64",
-            "macos-15-intel": r"macosx_\d+_\d+_x86_64(?:\.macosx_\d+_\d+_x86_64)*",
             "macos-14": r"macosx_\d+_\d+_arm64(?:\.macosx_\d+_\d+_arm64)*",
         }
         pattern = re.escape(f"deepwave-{release}-py3-none-") + tags[platform] + r"\.whl"

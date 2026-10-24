@@ -46,11 +46,11 @@
 #endif
 
 #if DW_NDIM == 3
-#define ND_INDEX(i, dz, dy, dx) (i + (dz) * ny * nx + (dy) * nx + (dx))
+#define ND_INDEX(i, dz, dy, dx) ((i) + (dz) * ny * nx + (dy) * nx + (dx))
 #elif DW_NDIM == 2
-#define ND_INDEX(i, dz, dy, dx) (i + (dy) * nx + (dx))
+#define ND_INDEX(i, dz, dy, dx) ((i) + (dy) * nx + (dx))
 #else /* DW_NDIM == 1 */
-#define ND_INDEX(i, dz, dy, dx) (i + (dx))
+#define ND_INDEX(i, dz, dy, dx) ((i) + (dx))
 #endif
 
 #define WFC(dz, dy, dx) wfc[ND_INDEX(i, dz, dy, dx)]
@@ -74,38 +74,38 @@
 #define AX_PSIX(dz, dy, dx) ax[x + (dx)] * PSIX(dz, dy, dx)
 
 #if DW_NDIM == 3
-#define UT_TERMZ1(dz, dy, dx)                                \
-  (dbzdz[z + dz] * ((1 + bz[z + dz]) * V2DT2_WFC(dz, 0, 0) + \
-                    bz[z + dz] * ZETAZ(dz, 0, 0)) +          \
-   bz[z + dz] * PSIZ(dz, 0, 0))
-#define UT_TERMZ2(dz, dy, dx) \
-  ((1 + bz[z + dz]) *         \
-   ((1 + bz[z + dz]) * V2DT2_WFC(dz, 0, 0) + bz[z + dz] * ZETAZ(dz, 0, 0)))
+#define UT_TERMZ1(dz, dy, dx)                                    \
+  (dbzdz[z + (dz)] * ((1 + bz[z + (dz)]) * V2DT2_WFC(dz, 0, 0) + \
+                      bz[z + (dz)] * ZETAZ(dz, 0, 0)) +          \
+   bz[z + (dz)] * PSIZ(dz, 0, 0))
+#define UT_TERMZ2(dz, dy, dx)                                       \
+  ((1 + bz[z + (dz)]) * ((1 + bz[z + (dz)]) * V2DT2_WFC(dz, 0, 0) + \
+                         bz[z + (dz)] * ZETAZ(dz, 0, 0)))
 #define PSIZ_TERM(dz, dy, dx) \
-  ((1 + bz[z + dz]) * V2DT2_WFC(dz, 0, 0) + bz[z + dz] * ZETAZ(dz, 0, 0))
+  ((1 + bz[z + (dz)]) * V2DT2_WFC(dz, 0, 0) + bz[z + (dz)] * ZETAZ(dz, 0, 0))
 #endif
 
 #if DW_NDIM >= 2
-#define UT_TERMY1(dz, dy, dx)                                \
-  (dbydy[y + dy] * ((1 + by[y + dy]) * V2DT2_WFC(0, dy, 0) + \
-                    by[y + dy] * ZETAY(0, dy, 0)) +          \
-   by[y + dy] * PSIY(0, dy, 0))
-#define UT_TERMY2(dz, dy, dx) \
-  ((1 + by[y + dy]) *         \
-   ((1 + by[y + dy]) * V2DT2_WFC(0, dy, 0) + by[y + dy] * ZETAY(0, dy, 0)))
+#define UT_TERMY1(dz, dy, dx)                                    \
+  (dbydy[y + (dy)] * ((1 + by[y + (dy)]) * V2DT2_WFC(0, dy, 0) + \
+                      by[y + (dy)] * ZETAY(0, dy, 0)) +          \
+   by[y + (dy)] * PSIY(0, dy, 0))
+#define UT_TERMY2(dz, dy, dx)                                       \
+  ((1 + by[y + (dy)]) * ((1 + by[y + (dy)]) * V2DT2_WFC(0, dy, 0) + \
+                         by[y + (dy)] * ZETAY(0, dy, 0)))
 #define PSIY_TERM(dz, dy, dx) \
-  ((1 + by[y + dy]) * V2DT2_WFC(0, dy, 0) + by[y + dy] * ZETAY(0, dy, 0))
+  ((1 + by[y + (dy)]) * V2DT2_WFC(0, dy, 0) + by[y + (dy)] * ZETAY(0, dy, 0))
 #endif
 
-#define UT_TERMX1(dz, dy, dx)                                \
-  (dbxdx[x + dx] * ((1 + bx[x + dx]) * V2DT2_WFC(0, 0, dx) + \
-                    bx[x + dx] * ZETAX(0, 0, dx)) +          \
-   bx[x + dx] * PSIX(0, 0, dx))
-#define UT_TERMX2(dz, dy, dx) \
-  ((1 + bx[x + dx]) *         \
-   ((1 + bx[x + dx]) * V2DT2_WFC(0, 0, dx) + bx[x + dx] * ZETAX(0, 0, dx)))
+#define UT_TERMX1(dz, dy, dx)                                    \
+  (dbxdx[x + (dx)] * ((1 + bx[x + (dx)]) * V2DT2_WFC(0, 0, dx) + \
+                      bx[x + (dx)] * ZETAX(0, 0, dx)) +          \
+   bx[x + (dx)] * PSIX(0, 0, dx))
+#define UT_TERMX2(dz, dy, dx)                                       \
+  ((1 + bx[x + (dx)]) * ((1 + bx[x + (dx)]) * V2DT2_WFC(0, 0, dx) + \
+                         bx[x + (dx)] * ZETAX(0, 0, dx)))
 #define PSIX_TERM(dz, dy, dx) \
-  ((1 + bx[x + dx]) * V2DT2_WFC(0, 0, dx) + bx[x + dx] * ZETAX(0, 0, dx))
+  ((1 + bx[x + (dx)]) * V2DT2_WFC(0, 0, dx) + bx[x + (dx)] * ZETAX(0, 0, dx))
 
 /* Forward stencil update for one grid point. `i` is the flat index used to
  * address wfc/wfp/w_store_1/psi/zeta arrays (per-shot-local on the CPU driver,
@@ -114,8 +114,8 @@
  * when this point is inside that axis's PML region (false in the interior).
  */
 DW_HOST_DEVICE void FUNC(forward_cell)(
-    DW_DTYPE const *__restrict const wfc, DW_DTYPE *__restrict const wfp,
-    DW_DTYPE *__restrict const w_store_1, DW_DTYPE const v_shot,
+    DW_DTYPE const* __restrict const wfc, DW_DTYPE* __restrict const wfp,
+    DW_DTYPE* __restrict const w_store_1, DW_DTYPE const v_shot,
     DW_DTYPE const dt2, bool const v_requires_grad, int64_t const i,
 #if DW_NDIM >= 3
     int64_t const ny,
@@ -124,23 +124,23 @@ DW_HOST_DEVICE void FUNC(forward_cell)(
     int64_t const nx,
 #endif
 #if DW_NDIM >= 3
-    int64_t const z, bool const pml_z, DW_DTYPE const *__restrict const psiz,
-    DW_DTYPE *__restrict const psizn, DW_DTYPE *__restrict const zetaz,
-    DW_DTYPE const *__restrict const az, DW_DTYPE const *__restrict const bz,
-    DW_DTYPE const *__restrict const dbzdz, DW_DTYPE const rdz,
+    int64_t const z, bool const pml_z, DW_DTYPE const* __restrict const psiz,
+    DW_DTYPE* __restrict const psizn, DW_DTYPE* __restrict const zetaz,
+    DW_DTYPE const* __restrict const az, DW_DTYPE const* __restrict const bz,
+    DW_DTYPE const* __restrict const dbzdz, DW_DTYPE const rdz,
     DW_DTYPE const rdz2,
 #endif
 #if DW_NDIM >= 2
-    int64_t const y, bool const pml_y, DW_DTYPE const *__restrict const psiy,
-    DW_DTYPE *__restrict const psiyn, DW_DTYPE *__restrict const zetay,
-    DW_DTYPE const *__restrict const ay, DW_DTYPE const *__restrict const by,
-    DW_DTYPE const *__restrict const dbydy, DW_DTYPE const rdy,
+    int64_t const y, bool const pml_y, DW_DTYPE const* __restrict const psiy,
+    DW_DTYPE* __restrict const psiyn, DW_DTYPE* __restrict const zetay,
+    DW_DTYPE const* __restrict const ay, DW_DTYPE const* __restrict const by,
+    DW_DTYPE const* __restrict const dbydy, DW_DTYPE const rdy,
     DW_DTYPE const rdy2,
 #endif
-    int64_t const x, bool const pml_x, DW_DTYPE const *__restrict const psix,
-    DW_DTYPE *__restrict const psixn, DW_DTYPE *__restrict const zetax,
-    DW_DTYPE const *__restrict const ax, DW_DTYPE const *__restrict const bx,
-    DW_DTYPE const *__restrict const dbxdx, DW_DTYPE const rdx,
+    int64_t const x, bool const pml_x, DW_DTYPE const* __restrict const psix,
+    DW_DTYPE* __restrict const psixn, DW_DTYPE* __restrict const zetax,
+    DW_DTYPE const* __restrict const ax, DW_DTYPE const* __restrict const bx,
+    DW_DTYPE const* __restrict const dbxdx, DW_DTYPE const rdx,
     DW_DTYPE const rdx2) {
   DW_DTYPE w_sum = 0;
 #if DW_NDIM >= 3
@@ -191,10 +191,10 @@ DW_HOST_DEVICE void FUNC(forward_cell)(
  * driver, distinct from the global `i`).
  */
 DW_HOST_DEVICE void FUNC(backward_cell)(
-    DW_DTYPE const *__restrict const wfc, DW_DTYPE *__restrict const wfp,
-    DW_DTYPE const *__restrict const v2dt2_shot,
-    DW_DTYPE const *__restrict const w_store_1,
-    DW_DTYPE *__restrict const grad_v_shot, bool const v_requires_grad,
+    DW_DTYPE const* __restrict const wfc, DW_DTYPE* __restrict const wfp,
+    DW_DTYPE const* __restrict const v2dt2_shot,
+    DW_DTYPE const* __restrict const w_store_1,
+    DW_DTYPE* __restrict const grad_v_shot, bool const v_requires_grad,
     int64_t const step_ratio, int64_t const i, int64_t const j,
 #if DW_NDIM >= 3
     int64_t const ny,
@@ -203,23 +203,23 @@ DW_HOST_DEVICE void FUNC(backward_cell)(
     int64_t const nx,
 #endif
 #if DW_NDIM >= 3
-    int64_t const z, bool const pml_z, DW_DTYPE const *__restrict const psiz,
-    DW_DTYPE *__restrict const psizn, DW_DTYPE const *__restrict const zetaz,
-    DW_DTYPE *__restrict const zetazn, DW_DTYPE const *__restrict const az,
-    DW_DTYPE const *__restrict const bz, DW_DTYPE const *__restrict const dbzdz,
+    int64_t const z, bool const pml_z, DW_DTYPE const* __restrict const psiz,
+    DW_DTYPE* __restrict const psizn, DW_DTYPE const* __restrict const zetaz,
+    DW_DTYPE* __restrict const zetazn, DW_DTYPE const* __restrict const az,
+    DW_DTYPE const* __restrict const bz, DW_DTYPE const* __restrict const dbzdz,
     DW_DTYPE const rdz, DW_DTYPE const rdz2,
 #endif
 #if DW_NDIM >= 2
-    int64_t const y, bool const pml_y, DW_DTYPE const *__restrict const psiy,
-    DW_DTYPE *__restrict const psiyn, DW_DTYPE const *__restrict const zetay,
-    DW_DTYPE *__restrict const zetayn, DW_DTYPE const *__restrict const ay,
-    DW_DTYPE const *__restrict const by, DW_DTYPE const *__restrict const dbydy,
+    int64_t const y, bool const pml_y, DW_DTYPE const* __restrict const psiy,
+    DW_DTYPE* __restrict const psiyn, DW_DTYPE const* __restrict const zetay,
+    DW_DTYPE* __restrict const zetayn, DW_DTYPE const* __restrict const ay,
+    DW_DTYPE const* __restrict const by, DW_DTYPE const* __restrict const dbydy,
     DW_DTYPE const rdy, DW_DTYPE const rdy2,
 #endif
-    int64_t const x, bool const pml_x, DW_DTYPE const *__restrict const psix,
-    DW_DTYPE *__restrict const psixn, DW_DTYPE const *__restrict const zetax,
-    DW_DTYPE *__restrict const zetaxn, DW_DTYPE const *__restrict const ax,
-    DW_DTYPE const *__restrict const bx, DW_DTYPE const *__restrict const dbxdx,
+    int64_t const x, bool const pml_x, DW_DTYPE const* __restrict const psix,
+    DW_DTYPE* __restrict const psixn, DW_DTYPE const* __restrict const zetax,
+    DW_DTYPE* __restrict const zetaxn, DW_DTYPE const* __restrict const ax,
+    DW_DTYPE const* __restrict const bx, DW_DTYPE const* __restrict const dbxdx,
     DW_DTYPE const rdx, DW_DTYPE const rdx2) {
   DW_DTYPE w_sum = 0;
 #if DW_NDIM >= 3

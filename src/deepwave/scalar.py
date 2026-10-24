@@ -2138,7 +2138,7 @@ def _scalar_forward_jvp(
         import torch._C._functorch as _functorch_c
 
         depth = _functorch_c.get_dynamic_layer_stack_depth()
-    except (ImportError, AttributeError):  # pragma: no cover - older torch
+    except (ImportError, AttributeError):  # older torch
         depth = 0
     if depth > 1:
         raise DeepwaveNotImplementedError(
@@ -2968,7 +2968,6 @@ class ScalarBackwardFunc(torch.autograd.Function):
         grad_v_list, _, grad_v_tmp_ptr_list = _engine.allocate_model_gradients(
             [v],
             [v_batched],
-            list(model_shape),
             n_shots,
             aux,
             is_cuda,
@@ -3311,7 +3310,9 @@ def scalar_python(
 
     wf_names = scalar_wavefield_names(ndim)
 
-    def _register_backward_callback(cb_step: int, wfs: list[torch.Tensor]) -> None:
+    def _register_backward_callback(
+        cb_step: int, wfs: list[torch.Tensor], callback: Callback
+    ) -> None:
         """Fire ``backward_callback`` during backward, with forward+adjoint fields.
 
         The compiled backend cannot surface the forward wavefield in the backward
@@ -3378,7 +3379,7 @@ def scalar_python(
                 if grad is None
                 else grad
             )
-            backward_callback(  # type: ignore[misc]
+            callback(
                 CallbackState(
                     dt * step_ratio,
                     cb_step,
@@ -3419,7 +3420,7 @@ def scalar_python(
                     ),
                 )
             if backward_callback is not None:
-                _register_backward_callback(step, wavefields)
+                _register_backward_callback(step, wavefields, backward_callback)
         for inner_step in range(step_ratio):
             t = step * step_ratio + inner_step
             if receivers_i_masked.numel() > 0:
@@ -3483,13 +3484,11 @@ def scalar_func(
     global _forward_step_opt
 
     if backend:
-        v = cast("torch.Tensor", args[_N_LEADING_ARGS])
         # grid_spacing must reach the traced step functions as Python
         # floats: see _engine.float_grid_spacing for why an int silently
         # costs 8 significant digits under torch.compile on CUDA.
         args = (*args[:1], _engine.float_grid_spacing(args[1]), *args[2:])
-        config_key = (len(args[1]), args[5], v.dtype)
-        _forward_step_opt = _forward_step_cache.resolve(backend, config_key)
+        _forward_step_opt = _forward_step_cache.resolve(backend)
         return scalar_python(*args, backend=backend)
 
     # The compiled backend now threads the first-class boundary codes through

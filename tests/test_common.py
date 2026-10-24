@@ -366,12 +366,8 @@ def test_set_pml_freq_invalid_type() -> None:
 
 
 def test_set_pml_freq_zero_dt() -> None:
-    """Test set_pml_freq with zero dt (should raise error)."""
-    with pytest.raises(
-        ValueError,
-        match=re.escape("dt is too small."),
-    ):
-        set_pml_freq(30.0, 0.0)
+    """A zero time step does not impose a finite Nyquist bound."""
+    assert set_pml_freq(30.0, 0.0) == 30.0
 
 
 # Tests for set_max_vel
@@ -406,12 +402,8 @@ def test_set_max_vel_invalid_type() -> None:
 
 
 def test_set_max_vel_zero_actual_max_vel() -> None:
-    """Test set_max_vel with zero actual_max_vel (should raise error)."""
-    with pytest.raises(
-        ValueError,
-        match=re.escape("maximum absolute velocity must be greater than zero."),
-    ):
-        set_max_vel(0.0, 0.0)
+    """Zero is an exact speed bound for a stationary model."""
+    assert set_max_vel(0.0, 0.0) == 0.0
 
 
 # Tests for set_nt
@@ -1207,6 +1199,63 @@ def test_zero_last_element_of_final_dimension_empty_tensor() -> None:
 
 
 # Tests for cfl_condition_n
+def test_cfl_tiny_speed_does_not_create_artificial_substeps() -> None:
+    """A nearly stationary model needs one step, independently of legacy eps."""
+    for eps in (0.0, 1e-15, 1.0):
+        assert cfl_condition_n([1.0], 1.0, 1e-20, eps=eps) == (1.0, 1)
+
+
+@pytest.mark.parametrize("scale", [1e-300, 1e-200, 1e-30, 1.0, 1e30, 1e200, 1e300])
+@pytest.mark.parametrize("sign", [-1, 1])
+def test_cfl_is_invariant_to_extreme_length_units(scale: float, sign: int) -> None:
+    """Changing the common distance unit preserves the dimensionless bound."""
+    dt = sign * 0.005
+    actual = cfl_condition_n([5 * scale, 10 * scale, 15 * scale], dt, 1500 * scale)
+    assert actual == (dt / 3, 3)
+
+
+@pytest.mark.parametrize("scale", [1e-300, 1e-200, 1.0, 1e200, 1e300])
+def test_cfl_is_invariant_to_extreme_time_units(scale: float) -> None:
+    """Reciprocal time/speed rescaling does not overflow the speed squared."""
+    dt = 0.005 * scale
+    assert cfl_condition_n([5.0, 10.0, 15.0], dt, 1500 / scale) == (dt / 3, 3)
+
+
+@pytest.mark.parametrize(
+    ("spacing", "dt", "speed", "courant", "ratio"),
+    [
+        ([1e-320], 0.1, 1e-320, 0.6, 1),
+        ([5e-324] * 3, 1.0, 5e-324, 0.6, 3),
+        ([5.0], 1e-300, 1e300, 0.6, 1),
+        ([5.0], 1e300, 1e-300, 0.6, 1),
+        ([2.0], 5e-324, 1.0, 5e-324, 1),
+    ],
+)
+def test_cfl_extreme_finite_inputs(spacing, dt, speed, courant, ratio) -> None:
+    """Representable CFL results survive tiny and huge intermediate scales."""
+    assert cfl_condition_n(spacing, dt, speed, courant_number=courant) == (
+        dt / ratio,
+        ratio,
+    )
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_cfl_rejects_nonfinite_spacing_and_courant(value: float) -> None:
+    """Undefined bounds fail explicitly before the exponent calculation."""
+    with pytest.raises(ValueError, match="grid_spacing elements must be finite"):
+        cfl_condition_n([value], 0.1, 1.0)
+    with pytest.raises(ValueError, match="courant_number must be finite"):
+        cfl_condition_n([1.0], 0.1, 1.0, courant_number=value)
+
+
+def test_cfl_rejects_unrepresentable_time_discretisation() -> None:
+    """An infinite ratio or a time step rounded to zero cannot drive a solver."""
+    with pytest.raises(ValueError, match="CFL step ratio is too large"):
+        cfl_condition_n([1.0], 1e308, 1e308)
+    with pytest.raises(ValueError, match="CFL-stable time step is too small"):
+        cfl_condition_n([1e-323], 5e-324, 4.0)
+
+
 def test_cfl_condition_n_basic() -> None:
     """Test cfl_condition_n with basic valid inputs."""
     grid_spacing = [5.0, 5.0]
@@ -1314,15 +1363,8 @@ def test_cfl_condition_larger_max_vel() -> None:
 
 
 def test_cfl_condition_n_zero_max_vel() -> None:
-    """Test cfl_condition_n with zero max_vel (should raise error)."""
-    grid_spacing = [5.0, 5.0]
-    dt = 0.004
-    max_vel = 0.0
-    with pytest.raises(
-        RuntimeError,
-        match=re.escape("max_vel must be greater than zero."),
-    ):
-        cfl_condition_n(grid_spacing, dt, max_vel)
+    """A stationary model needs no CFL substeps."""
+    assert cfl_condition_n([5.0, 5.0], 0.004, 0.0) == (0.004, 1)
 
 
 def test_cfl_condition_n_negative_dt() -> None:
@@ -1335,16 +1377,9 @@ def test_cfl_condition_n_negative_dt() -> None:
     assert inner_dt == pytest.approx(-0.001)
 
 
-def test_cfl_condition_n_zero_dt_raises_value_error() -> None:
-    """dt=0 raises a clear ValueError instead of a raw ZeroDivisionError.
-
-    ``step_ratio = ceil(abs(dt) / max_dt)`` is 0 when ``dt`` is 0, and the
-    later ``dt / step_ratio`` used to divide by zero (see PR #121).
-    """
-    grid_spacing = [5.0, 5.0]
-    max_vel = 1500.0
-    with pytest.raises(ValueError, match=re.escape("dt must not be zero.")):
-        cfl_condition_n(grid_spacing, 0.0, max_vel)
+def test_cfl_condition_n_zero_dt() -> None:
+    """The zero-step limit is represented without dividing by a zero step ratio."""
+    assert cfl_condition_n([5.0, 5.0], 0.0, 1500.0) == (0.0, 1)
 
 
 def test_cfl_condition_n_different_grid_spacing() -> None:
@@ -1966,6 +2001,21 @@ def test_cfl_condition_n_courant_nonpositive_raises() -> None:
         cfl_condition_n([5.0, 5.0], 0.004, 1500.0, courant_number=0.0)
 
 
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), -float("inf")])
+@pytest.mark.parametrize("argument", ["dt", "max_vel"])
+def test_cfl_nonfinite_inputs_are_rejected_before_zero_shortcut(argument, value):
+    """An inert step or model must not hide an invalid input on the other side."""
+    kwargs = {"dt": 0.0, "max_vel": 0.0, argument: value}
+    with pytest.raises((ValueError, RuntimeError), match="finite"):
+        cfl_condition_n([5.0], **kwargs)
+
+
+def test_cfl_courant_requires_real_scalar():
+    """Report a non-real Courant argument consistently with other scalar inputs."""
+    with pytest.raises(TypeError, match="courant_number must be a float"):
+        cfl_condition_n([5.0], 0.001, 1500.0, courant_number=1j)
+
+
 def test_locations_float_raises_error() -> None:
     """Test that extract_survey raises an error for float locations."""
     models = [torch.ones(10, 10)]
@@ -2433,16 +2483,25 @@ def test_run_backend_loop_succeeds_when_call_returns_zero() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _setup_pml_b_before_the_eps_guard(
-    sigma: torch.Tensor, sigmaalpha: torch.Tensor, a: torch.Tensor
-) -> torch.Tensor:
-    """The unguarded ``b`` expression ``setup_pml`` used before the eps guard.
-
-    Kept verbatim as the reference the guarded version must reproduce
-    bit-for-bit wherever it was finite, so the fix cannot silently perturb a
-    profile that was already correct.
-    """
-    return sigma / sigmaalpha * (a - 1)
+@pytest.mark.parametrize("scale", [1e-100, 1.0, 1e12, 1e100])
+@pytest.mark.parametrize("sign", [-1, 1])
+def test_setup_pml_is_invariant_to_time_units(scale: float, sign: int) -> None:
+    """Dimensionless damping must not depend on the unit used for time."""
+    profiles = [
+        setup_pml(
+            [20, 20],
+            [20.0, 39.0],
+            5.0,
+            sign * 0.001 * time_scale,
+            60,
+            1500.0 / time_scale,
+            torch.float64,
+            torch.device("cpu"),
+            25.0 / time_scale,
+        )
+        for time_scale in (1.0, scale)
+    ]
+    torch.testing.assert_close(profiles[0], profiles[1], rtol=1e-12, atol=0)
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
@@ -2474,58 +2533,6 @@ def test_setup_pml_zero_pml_freq_is_finite(dtype, pml_width) -> None:
     )
     assert bool(torch.isfinite(a).all()), "pml_freq=0 produced a non-finite a profile"
     assert bool(torch.isfinite(b).all()), "pml_freq=0 produced a non-finite b profile"
-
-
-@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
-@pytest.mark.parametrize("pml_freq", [1e-6, 1.0, 25.0, 1e6])
-@pytest.mark.parametrize("pml_width", [[0, 0], [1, 1], [10, 0], [20, 20]])
-def test_setup_pml_is_bit_identical_for_positive_pml_freq(
-    dtype, pml_freq, pml_width
-) -> None:
-    """The eps guard must not perturb any profile that was already finite.
-
-    Compared against the exact pre-guard expression rather than a frozen array
-    so the reference cannot drift out of date.
-    """
-    import math
-
-    n = 60
-    max_pml = max(pml_width) * 5.0
-    pml_start = [float(pml_width[0]), float(n - 1 - pml_width[1])]
-    _, b = setup_pml(
-        pml_width,
-        pml_start,
-        5.0,
-        0.001,
-        n,
-        1500.0,
-        dtype,
-        torch.device("cpu"),
-        pml_freq,
-    )
-    if max_pml == 0:
-        assert bool((b == 0).all())
-        return
-    # Recompute the pre-guard reference from the same intermediates.
-    sigma0 = -3 * 1500.0 * math.log(0.001) / (2 * max_pml)
-    x = torch.arange(0, n, dtype=dtype)
-    frac0 = (
-        torch.zeros_like(x) if pml_width[0] == 0 else (pml_start[0] - x) / pml_width[0]
-    )
-    frac1 = (
-        torch.zeros_like(x) if pml_width[1] == 0 else (x - pml_start[1]) / pml_width[1]
-    )
-    pml_frac = torch.clamp(torch.maximum(frac0, frac1), min=0, max=1)
-    sigma = sigma0 * pml_frac**2
-    sigmaalpha = sigma + math.pi * pml_freq * (1 - pml_frac)
-    expected = _setup_pml_b_before_the_eps_guard(
-        sigma, sigmaalpha, torch.exp(-sigmaalpha * 0.001)
-    )
-    assert bool(torch.isfinite(expected).all()), "reference itself is not finite"
-    assert torch.equal(b, expected), (
-        f"pml_freq={pml_freq}, pml_width={pml_width}, {dtype}: the eps-guarded "
-        "b profile is not bit-identical to the unguarded one"
-    )
 
 
 def test_scalar_propagation_with_zero_pml_freq_is_finite() -> None:
@@ -3972,3 +3979,15 @@ def test_batched_and_unbatched_models_are_still_a_valid_pair() -> None:
     from deepwave._common import check_model_shapes_match
 
     check_model_shapes_match([torch.zeros(3, 10, 10), torch.zeros(10, 10)], ["a", "b"])
+
+
+def test_grid_spacing_accepts_builtin_conversion_protocols() -> None:
+    """Type-checking helpers must preserve float's buffer and sequence inputs."""
+
+    class IndexedSpacing:
+        def __getitem__(self, index: int) -> float:
+            return (4.0, 5.0)[index]
+
+    assert set_grid_spacing(memoryview(b"4"), 2) == [4.0, 4.0]
+    assert set_grid_spacing(IndexedSpacing(), 2) == [4.0, 5.0]
+    assert set_pml_width(memoryview(b"2"), 2) == [2, 2, 2, 2]

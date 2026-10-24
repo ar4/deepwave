@@ -1455,7 +1455,7 @@ def _read_outputs(case: Case, out: Any) -> dict[str, torch.Tensor]:
     return found
 
 
-def _recombine(case: Case, call: _Call, outputs: dict[str, torch.Tensor]) -> None:
+def _recombine(call: _Call, outputs: dict[str, torch.Tensor]) -> None:
     """Apply the receiver side of the Hicks interpolation, in place."""
     if call.receiver_hicks is None:
         return
@@ -1596,7 +1596,7 @@ def run_job(
         call = _build_call(case, dtype, device, scratch, run_dtype=run_dtype)
         out, models = _invoke(case, call)
         outputs = _read_outputs(case, out)
-        _recombine(case, call, outputs)
+        _recombine(call, outputs)
         losses = [
             (tensor**2).sum()
             for key, tensor in outputs.items()

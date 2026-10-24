@@ -116,13 +116,13 @@ build-verbosity = 1
 archs = ["auto64"]
 
 # Test configuration
-test-requires = "pytest pytest-xdist scipy torch ninja sympy cmake"
+test-requires = "pytest pytest-xdist scipy torch ninja sympy cmake matplotlib hypothesis"
 # Fixtures are copied from the matching public checkout, even when package-dir
 # points at the extracted sole sdist. src/deepwave is static inspection/native
 # harness input only: no editable install or src/ on PYTHONPATH.
 test-sources = [
     "tests", "scripts", "benchmarks", "docs", "src/deepwave",
-    "pyproject.toml", "README.md", "CITATION.cff", "CHANGELOG.md",
+    "CMakeLists.txt", "pyproject.toml", "README.md", "CITATION.cff", "CHANGELOG.md",
     "CONTRIBUTING.md", "ruff.toml", ".clang-format", ".clang-tidy",
 ]
 
@@ -214,6 +214,8 @@ markers = [
 # plain `mypy src/` and get strict checking from this table, instead of
 # requiring every invocation to remember `--strict`.
 strict = true
+disallow_any_unimported = true
+enable_error_code = ["ignore-without-code", "truthy-bool", "truthy-iterable"]
 
 [tool.codespell]
 skip = "*.ipynb,*.json"

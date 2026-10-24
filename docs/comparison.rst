@@ -80,7 +80,7 @@ Deepwave does not offer.
 Ultrasound k-space: k-Wave
 --------------------------
 
-`k-Wave <http://www.k-wave.org/>`_ (and its Python bindings,
+`k-Wave <https://github.com/ucl-bug/k-wave>`_ (and its Python bindings,
 `k-wave-python <https://github.com/waltsims/k-wave-python>`_) is the
 established standard for medical-ultrasound and photoacoustic simulation. It
 uses a k-space pseudospectral method rather than finite differences, natively
@@ -129,7 +129,7 @@ Deepwave is a good fit when you want:
   for debugging optimisation runs and reproducing published results
   exactly.
 - A dependency-light compiled backend: prebuilt wheels for Linux, Windows,
-  and macOS (Intel and ARM), with a C/C++/CUDA core that does not link against
+  and macOS (Apple Silicon), with a C/C++/CUDA core that does not link against
   ``libtorch`` and keeps working across supported PyTorch version upgrades
   without rebuilding.
 - Ordinary PyTorch idioms throughout: the propagators are standard

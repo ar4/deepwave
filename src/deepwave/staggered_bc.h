@@ -80,8 +80,8 @@
  * accompanies the pressure and takes the pressure's image rule, it has no
  * stencil of its own (see the note above viscoacoustic.c's include of this
  * header). */
-static void FUNC(fill_p_bc)(DW_DTYPE *__restrict const p,
-                            int64_t const *__restrict const bc,
+static void FUNC(fill_p_bc)(DW_DTYPE* __restrict const p,
+                            int64_t const* __restrict const bc,
                             int64_t const nz_, int64_t const ny_,
                             int64_t const nx_) {
   (void)nz_;
@@ -121,12 +121,12 @@ static void FUNC(fill_p_bc)(DW_DTYPE *__restrict const p,
  * axis ``d`` (tangential velocities and corner cells are never read). */
 static void FUNC(fill_v_bc)(
 #if DW_NDIM >= 3
-    DW_DTYPE *__restrict const vz,
+    DW_DTYPE* __restrict const vz,
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE *__restrict const vy,
+    DW_DTYPE* __restrict const vy,
 #endif
-    DW_DTYPE *__restrict const vx, int64_t const *__restrict const bc,
+    DW_DTYPE* __restrict const vx, int64_t const* __restrict const bc,
     int64_t const nz_, int64_t const ny_, int64_t const nx_) {
   (void)nz_;
   (void)ny_;
@@ -167,8 +167,8 @@ static void FUNC(fill_v_bc)(
  * line (like the fills); the gathers run only over the other axes' interior
  * node ranges [FD_PAD, n - FD_PAD + 1), the only lines whose guard cells
  * receive adjoint-stencil contributions. */
-static void FUNC(adj_fold_p_bc)(DW_DTYPE *__restrict const p,
-                                int64_t const *__restrict const bc,
+static void FUNC(adj_fold_p_bc)(DW_DTYPE* __restrict const p,
+                                int64_t const* __restrict const bc,
                                 int64_t const nz_, int64_t const ny_,
                                 int64_t const nx_) {
   (void)nz_;
@@ -204,12 +204,12 @@ static void FUNC(adj_fold_p_bc)(DW_DTYPE *__restrict const p,
 
 static void FUNC(adj_fold_v_bc)(
 #if DW_NDIM >= 3
-    DW_DTYPE *__restrict const vz,
+    DW_DTYPE* __restrict const vz,
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE *__restrict const vy,
+    DW_DTYPE* __restrict const vy,
 #endif
-    DW_DTYPE *__restrict const vx, int64_t const *__restrict const bc,
+    DW_DTYPE* __restrict const vx, int64_t const* __restrict const bc,
     int64_t const nz_, int64_t const ny_, int64_t const nx_) {
   (void)nz_;
   (void)ny_;
@@ -244,13 +244,13 @@ static void FUNC(adj_fold_v_bc)(
 
 static void FUNC(adj_gather_v_guards)(
 #if DW_NDIM >= 3
-    DW_DTYPE *__restrict const vz,
+    DW_DTYPE* __restrict const vz,
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE *__restrict const vy,
+    DW_DTYPE* __restrict const vy,
 #endif
-    DW_DTYPE *__restrict const vx, DW_DTYPE const *__restrict const p,
-    DW_VGUARD_MODEL_PARAMS, int64_t const *__restrict const bc,
+    DW_DTYPE* __restrict const vx, DW_DTYPE const* __restrict const p,
+    DW_VGUARD_MODEL_PARAMS, int64_t const* __restrict const bc,
     int64_t const nz_, int64_t const ny_, int64_t const nx_,
 #if DW_NDIM >= 3
     DW_DTYPE const rdz_,
@@ -259,7 +259,7 @@ static void FUNC(adj_gather_v_guards)(
     DW_DTYPE const rdy_,
 #endif
     DW_DTYPE const rdx_, DW_DTYPE const dt_,
-    DW_DTYPE const *__restrict const sw DW_VGUARD_EXTRA_PARAMS) {
+    DW_DTYPE const* __restrict const sw DW_VGUARD_EXTRA_PARAMS) {
   (void)nz_;
   (void)ny_;
 #if DW_NDIM == 3
@@ -311,18 +311,18 @@ static void FUNC(adj_gather_v_guards)(
 }
 
 static void FUNC(adj_gather_p_guards)(
-    DW_DTYPE *__restrict const p,
+    DW_DTYPE* __restrict const p,
 #if DW_NDIM >= 3
-    DW_DTYPE const *__restrict const vz,
-    DW_DTYPE const *__restrict const buoyancy_z_shot,
+    DW_DTYPE const* __restrict const vz,
+    DW_DTYPE const* __restrict const buoyancy_z_shot,
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE const *__restrict const vy,
-    DW_DTYPE const *__restrict const buoyancy_y_shot,
+    DW_DTYPE const* __restrict const vy,
+    DW_DTYPE const* __restrict const buoyancy_y_shot,
 #endif
-    DW_DTYPE const *__restrict const vx,
-    DW_DTYPE const *__restrict const buoyancy_x_shot,
-    int64_t const *__restrict const bc, int64_t const nz_, int64_t const ny_,
+    DW_DTYPE const* __restrict const vx,
+    DW_DTYPE const* __restrict const buoyancy_x_shot,
+    int64_t const* __restrict const bc, int64_t const nz_, int64_t const ny_,
     int64_t const nx_,
 #if DW_NDIM >= 3
     DW_DTYPE const rdz_,
@@ -331,7 +331,7 @@ static void FUNC(adj_gather_p_guards)(
     DW_DTYPE const rdy_,
 #endif
     DW_DTYPE const rdx_, DW_DTYPE const dt_,
-    DW_DTYPE const *__restrict const sw) {
+    DW_DTYPE const* __restrict const sw) {
   (void)nz_;
   (void)ny_;
 #if DW_NDIM == 3
@@ -384,8 +384,8 @@ static void FUNC(adj_gather_p_guards)(
  * faces, zero elsewhere). Line enumeration matches the periodic appliers:
  * folds over every line, gathers over the other axes' interior node ranges
  * [FD_PAD, n - FD_PAD + 1). */
-static void FUNC(adj_fold_p_bc_frx)(DW_DTYPE *__restrict const p,
-                                    int64_t const *__restrict const bcx,
+static void FUNC(adj_fold_p_bc_frx)(DW_DTYPE* __restrict const p,
+                                    int64_t const* __restrict const bcx,
                                     int64_t const nz_, int64_t const ny_,
                                     int64_t const nx_) {
   (void)nz_;
@@ -427,12 +427,12 @@ static void FUNC(adj_fold_p_bc_frx)(DW_DTYPE *__restrict const p,
 
 static void FUNC(adj_fold_v_bc_frx)(
 #if DW_NDIM >= 3
-    DW_DTYPE *__restrict const vz,
+    DW_DTYPE* __restrict const vz,
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE *__restrict const vy,
+    DW_DTYPE* __restrict const vy,
 #endif
-    DW_DTYPE *__restrict const vx, int64_t const *__restrict const bcx,
+    DW_DTYPE* __restrict const vx, int64_t const* __restrict const bcx,
     int64_t const nz_, int64_t const ny_, int64_t const nx_) {
   (void)nz_;
   (void)ny_;
@@ -473,13 +473,13 @@ static void FUNC(adj_fold_v_bc_frx)(
 
 static void FUNC(adj_gather_v_guards_frx)(
 #if DW_NDIM >= 3
-    DW_DTYPE *__restrict const vz,
+    DW_DTYPE* __restrict const vz,
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE *__restrict const vy,
+    DW_DTYPE* __restrict const vy,
 #endif
-    DW_DTYPE *__restrict const vx, DW_DTYPE const *__restrict const p,
-    DW_VGUARD_MODEL_PARAMS, int64_t const *__restrict const bcx,
+    DW_DTYPE* __restrict const vx, DW_DTYPE const* __restrict const p,
+    DW_VGUARD_MODEL_PARAMS, int64_t const* __restrict const bcx,
     int64_t const nz_, int64_t const ny_, int64_t const nx_,
 #if DW_NDIM >= 3
     DW_DTYPE const rdz_,
@@ -488,7 +488,7 @@ static void FUNC(adj_gather_v_guards_frx)(
     DW_DTYPE const rdy_,
 #endif
     DW_DTYPE const rdx_, DW_DTYPE const dt_,
-    DW_DTYPE const *__restrict const sw DW_VGUARD_EXTRA_PARAMS) {
+    DW_DTYPE const* __restrict const sw DW_VGUARD_EXTRA_PARAMS) {
   (void)nz_;
   (void)ny_;
 #if DW_NDIM == 3
@@ -542,18 +542,18 @@ static void FUNC(adj_gather_v_guards_frx)(
 }
 
 static void FUNC(adj_gather_p_guards_frx)(
-    DW_DTYPE *__restrict const p,
+    DW_DTYPE* __restrict const p,
 #if DW_NDIM >= 3
-    DW_DTYPE const *__restrict const vz,
-    DW_DTYPE const *__restrict const buoyancy_z_shot,
+    DW_DTYPE const* __restrict const vz,
+    DW_DTYPE const* __restrict const buoyancy_z_shot,
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE const *__restrict const vy,
-    DW_DTYPE const *__restrict const buoyancy_y_shot,
+    DW_DTYPE const* __restrict const vy,
+    DW_DTYPE const* __restrict const buoyancy_y_shot,
 #endif
-    DW_DTYPE const *__restrict const vx,
-    DW_DTYPE const *__restrict const buoyancy_x_shot,
-    int64_t const *__restrict const bcx, int64_t const nz_, int64_t const ny_,
+    DW_DTYPE const* __restrict const vx,
+    DW_DTYPE const* __restrict const buoyancy_x_shot,
+    int64_t const* __restrict const bcx, int64_t const nz_, int64_t const ny_,
     int64_t const nx_,
 #if DW_NDIM >= 3
     DW_DTYPE const rdz_,
@@ -562,7 +562,7 @@ static void FUNC(adj_gather_p_guards_frx)(
     DW_DTYPE const rdy_,
 #endif
     DW_DTYPE const rdx_, DW_DTYPE const dt_,
-    DW_DTYPE const *__restrict const sw) {
+    DW_DTYPE const* __restrict const sw) {
   (void)nz_;
   (void)ny_;
 #if DW_NDIM == 3

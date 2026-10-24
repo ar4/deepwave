@@ -121,13 +121,13 @@
  * (FUNC(fill_elastic_shear_line)), for each axis with a non-PML face. */
 static void FUNC(fill_elastic_stress_bc)(
 #if DW_NDIM >= 3
-    DW_DTYPE *__restrict const sigmazz, DW_DTYPE *__restrict const sigmayz,
-    DW_DTYPE *__restrict const sigmaxz,
+    DW_DTYPE* __restrict const sigmazz, DW_DTYPE* __restrict const sigmayz,
+    DW_DTYPE* __restrict const sigmaxz,
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE *__restrict const sigmayy, DW_DTYPE *__restrict const sigmaxy,
+    DW_DTYPE* __restrict const sigmayy, DW_DTYPE* __restrict const sigmaxy,
 #endif
-    DW_DTYPE *__restrict const sigmaxx, int64_t const *__restrict const bc,
+    DW_DTYPE* __restrict const sigmaxx, int64_t const* __restrict const bc,
     int64_t const nz_, int64_t const ny_, int64_t const nx_) {
   (void)nz_;
   (void)ny_;
@@ -191,12 +191,12 @@ static void FUNC(fill_elastic_stress_bc)(
  * component. */
 static void FUNC(fill_elastic_velocity_bc)(
 #if DW_NDIM >= 3
-    DW_DTYPE *__restrict const vz,
+    DW_DTYPE* __restrict const vz,
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE *__restrict const vy,
+    DW_DTYPE* __restrict const vy,
 #endif
-    DW_DTYPE *__restrict const vx, int64_t const *__restrict const bc,
+    DW_DTYPE* __restrict const vx, int64_t const* __restrict const bc,
     int64_t const nz_, int64_t const ny_, int64_t const nx_) {
   (void)nz_;
   (void)ny_;
@@ -264,13 +264,13 @@ static void FUNC(fill_elastic_velocity_bc)(
  * that function's own face order (see the module comment above). */
 static void FUNC(fill_elastic_stress_bc_adjoint)(
 #if DW_NDIM >= 3
-    DW_DTYPE *__restrict const sigmazz, DW_DTYPE *__restrict const sigmayz,
-    DW_DTYPE *__restrict const sigmaxz,
+    DW_DTYPE* __restrict const sigmazz, DW_DTYPE* __restrict const sigmayz,
+    DW_DTYPE* __restrict const sigmaxz,
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE *__restrict const sigmayy, DW_DTYPE *__restrict const sigmaxy,
+    DW_DTYPE* __restrict const sigmayy, DW_DTYPE* __restrict const sigmaxy,
 #endif
-    DW_DTYPE *__restrict const sigmaxx, int64_t const *__restrict const bc,
+    DW_DTYPE* __restrict const sigmaxx, int64_t const* __restrict const bc,
     int64_t const nz_, int64_t const ny_, int64_t const nx_) {
   (void)nz_;
   (void)ny_;
@@ -336,12 +336,12 @@ static void FUNC(fill_elastic_stress_bc_adjoint)(
  * of that function's own face order (see the module comment above). */
 static void FUNC(fill_elastic_velocity_bc_adjoint)(
 #if DW_NDIM >= 3
-    DW_DTYPE *__restrict const vz,
+    DW_DTYPE* __restrict const vz,
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE *__restrict const vy,
+    DW_DTYPE* __restrict const vy,
 #endif
-    DW_DTYPE *__restrict const vx, int64_t const *__restrict const bc,
+    DW_DTYPE* __restrict const vx, int64_t const* __restrict const bc,
     int64_t const nz_, int64_t const ny_, int64_t const nx_) {
   (void)nz_;
   (void)ny_;
@@ -411,14 +411,14 @@ static void FUNC(fill_elastic_velocity_bc_adjoint)(
 
 static inline void add_pressure(
 #if DW_NDIM >= 3
-    DW_DTYPE *__restrict const sigmazz,
+    DW_DTYPE* __restrict const sigmazz,
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE *__restrict const sigmayy,
+    DW_DTYPE* __restrict const sigmayy,
 #endif
-    DW_DTYPE *__restrict const sigmaxx,
-    int64_t const *__restrict const sources_i,
-    DW_DTYPE const *__restrict const f, int64_t const n_sources_per_shot) {
+    DW_DTYPE* __restrict const sigmaxx,
+    int64_t const* __restrict const sources_i,
+    DW_DTYPE const* __restrict const f, int64_t const n_sources_per_shot) {
   int64_t source_idx;
 #pragma omp simd
   for (source_idx = 0; source_idx < n_sources_per_shot; ++source_idx) {
@@ -435,14 +435,14 @@ static inline void add_pressure(
 
 static inline void record_pressure(
 #if DW_NDIM >= 3
-    DW_DTYPE const *__restrict const sigmazz,
+    DW_DTYPE const* __restrict const sigmazz,
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE const *__restrict const sigmayy,
+    DW_DTYPE const* __restrict const sigmayy,
 #endif
-    DW_DTYPE const *__restrict const sigmaxx,
-    int64_t const *__restrict const locations,
-    DW_DTYPE *__restrict const amplitudes, int64_t n) {
+    DW_DTYPE const* __restrict const sigmaxx,
+    int64_t const* __restrict const locations,
+    DW_DTYPE* __restrict const amplitudes, int64_t n) {
   int64_t i;
 #pragma omp simd
   for (i = 0; i < n; ++i) {

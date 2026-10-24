@@ -4844,13 +4844,10 @@ def elastic_born(
         # receive Python floats, not ints. setup_propagator already
         # guarantees this, so this is defence in depth.
         grid_spacing_out = _engine.float_grid_spacing(grid_spacing_out)
-        config_key = (len(grid_spacing_out), accuracy, dtype)
         _update_velocities_born_opt = _update_velocities_born_cache.resolve(
-            backend_mode, config_key
+            backend_mode
         )
-        _update_stresses_born_opt = _update_stresses_born_cache.resolve(
-            backend_mode, config_key
-        )
+        _update_stresses_born_opt = _update_stresses_born_cache.resolve(backend_mode)
         # The pure-PyTorch eager/compiled backends run native autograd, not
         # the shared step-based engine, so they have no StorageManager and no
         # chunked backward-callback machinery (a backward_callback needs the

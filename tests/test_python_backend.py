@@ -409,8 +409,8 @@ def test_step_cache_uses_one_wrapper_without_changing_torch_config(monkeypatch) 
     monkeypatch.setattr(torch, "compile", fake_compile)
     before = torch._dynamo.config.cache_size_limit
     cache = StepCache(lambda x: x + 1)
-    first = cache.resolve("compile", (1, 2, torch.float32))
-    second = cache.resolve("compile", (3, 8, torch.float64))
+    first = cache.resolve("compile")
+    second = cache.resolve("compile")
     assert first is second
     assert first(3) == 4
     assert len(created) == 1

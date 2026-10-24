@@ -116,31 +116,6 @@ _MODEL_VALUES: dict[str, float] = {
 }
 
 # ---------------------------------------------------------------------------
-# Known departures.
-#
-# Each entry names a check that one or more propagators do not currently
-# satisfy. They are marked ``xfail(strict=True)`` rather than removed, so that
-# the check keeps its meaning and the marker fails loudly the moment the
-# departure is closed. The reason text states the observable fact, not the
-# remedy.
-# ---------------------------------------------------------------------------
-
-
-def _xfail(gaps: Mapping[str, str], key: str) -> list[Any]:
-    """The ``marks`` for one parametrisation, empty unless it is a known gap."""
-    if key not in gaps:
-        return []
-    return [pytest.mark.xfail(strict=True, reason=gaps[key])]
-
-
-def _params(gaps: Mapping[str, str] = types.MappingProxyType({})) -> list[Any]:
-    """``PROPAGATORS`` as parameters, with the known gaps marked ``xfail``."""
-    return [
-        pytest.param(name, marks=_xfail(gaps, name), id=name) for name in PROPAGATORS
-    ]
-
-
-# ---------------------------------------------------------------------------
 # Spec-driven fixtures: one tiny call, assembled for any propagator.
 # ---------------------------------------------------------------------------
 

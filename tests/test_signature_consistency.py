@@ -387,8 +387,8 @@ def test_module_forward_mirrors_functional_tail() -> None:
     (``_CONSTRUCTOR_HELD``): required/optional model tensors and the
     storage_mode/storage_path/storage_compression trio.
     """
-    for name in _FUNCTIONALS:
-        func_sig = inspect.signature(_FUNCTIONALS[name])
+    for name, functional in _FUNCTIONALS.items():
+        func_sig = inspect.signature(functional)
         func_tail = {p.name: p.default for p in _kwonly_tail(func_sig)}
         mod_tail = {
             p.name: p.default
@@ -453,9 +453,9 @@ def test_module_init_matches_functional_for_shared_concepts() -> None:
 def test_python_backend_alias_only_on_released_propagators() -> None:
     """Only the four v0.0.27 propagators retain their released alias."""
     released = {"scalar", "scalar_born", "acoustic", "elastic"}
-    for name in _FUNCTIONALS:
+    for name, functional in _FUNCTIONALS.items():
         for sig in (
-            inspect.signature(_FUNCTIONALS[name]),
+            inspect.signature(functional),
             inspect.signature(_MODULES[name].forward),
         ):
             params = sig.parameters

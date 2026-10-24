@@ -2,75 +2,23 @@ target-version = "py39"
 line-length = 88
 
 [lint]
-select = ["E", "F", "W", "I", "N", "D", "UP", "B", "C4", "SIM", "ANN", "A", "BLE", "C90", "DTZ", "ERA", "EXE", "G", "ISC", "PIE", "PT", "PTH", "Q", "RET", "RUF", "S", "TID", "TCH", "YTT", "SLF", "INP", "PERF", "NPY", "ARG", "TRY", "EM"]
+select = ["E", "F", "W", "I", "N", "D", "UP", "B", "C4", "SIM", "ANN", "A", "BLE", "C90", "DTZ", "ERA", "EXE", "G", "ISC", "PIE", "PT", "PTH", "Q", "RET", "RUF", "S", "TID", "TCH", "YTT", "SLF", "INP", "PERF", "NPY", "ARG", "TRY", "EM", "PLE", "PGH003", "PGH004", "PLC0206", "PLC0207"]
 ignore = [
     "ANN401",
-    # C901 (mccabe complexity) and the PLR091x pylint-refactor limits
-    # (too-many-returns/branches/arguments/statements) were both measured
-    # (one-off `ruff check --select C901`/`--select PLR0911,PLR0912,
-    # PLR0913,PLR0915` runs against src/deepwave/ -- not left permanently
-    # selected, since PLR091x is a narrow slice of the much larger PLR
-    # family this task does not evaluate) and rejected. 46 C901 findings
-    # (default threshold 10) and 222 PLR091x findings (default thresholds;
-    # PLR0913's default of 5 arguments alone accounts for 158) concentrate
-    # almost entirely in two genuine categories, not refactorable code
-    # smells: (1) the propagator entry points and internal validation/
-    # engine helpers, whose argument counts (up to 25) mirror the
-    # physically-meaningful knobs they expose -- collapsing them into a
-    # config object would obscure, not reduce, the complexity, and this
-    # project's whole API is built on explicit kwargs; (2) the
-    # eager-backend physics update loops and boundary-condition
-    # dispatchers (e.g. `_boundaries.py`'s per-face BC_* branches,
-    # `checkpointing.py`'s Revolve schedule), where the branching IS the
-    # physics/algorithm being implemented. Neither measurement found a
-    # case of accidentally-tangled control flow independent of what the
-    # function computes. PLR0904/PLR0916/PLR0917 were not evaluated: ruff
-    # reports they have no effect outside preview mode, which this project
-    # does not enable.
+    # Complexity metrics flag the propagator APIs, validation dispatch and
+    # numerical update loops. A threshold alone does not justify splitting
+    # these algorithms or replacing explicit public keywords with config
+    # objects. Review structure directly; do not treat this exception as
+    # evidence that a complex function is correct.
     "C901",
-    # ARG001/ARG002/ARG004/ARG005 (unused function/method/staticmethod/
-    # lambda argument): measured 87 findings, all protocol-mandated
-    # signature positions, not dead parameters -- the Python-side
-    # equivalent of the C side's `readability-non-const-parameter`
-    # suppression (see .clang-tidy): uniform cross-variant call shapes
-    # (`storage_path`/`ndim`/`fd_pad_list`/`step_ratio` kept for signature
-    # consistency across propagators), `torch.func` vmap/jvp rule
-    # signatures (`_engine.py`'s `(info, in_dims, args)`/`(ctx, tangents)`),
-    # pytest hook signatures (`conftest.py`'s `pytest_configure(config)`),
-    # and callback-protocol positions (`backward_callback`'s `state`,
-    # unused by some test callbacks that only need a subset of the fields).
-    "ARG001",
-    "ARG002",
-    "ARG004",
-    "ARG005",
-    # TRY003/EM101/EM102 (long message outside the exception class / raw or
-    # f-string literal passed to raise): measured 477 + 521 = 998 findings,
-    # the dominant majority of everything TRY/EM would otherwise flag.
-    # These enforce moving every validation error's message to a
-    # pre-assigned variable; deepwave's ~150 validation functions
-    # (`_common.py`, `location_interpolation.py`, `checkpointing.py`, every
-    # propagator's argument checks) deliberately keep each message inline
-    # at its `raise` so the condition and the user-facing text stay next
-    # to each other -- the project's stated priority is error-message
-    # clarity for non-expert users, and mechanically hoisting hundreds of
-    # one-line messages into a preceding `msg = "..."` would reduce local
-    # readability at every one of those sites for no functional benefit.
-    # TRY301 (2 findings, `_common.py`'s `set_pml_width`) is also rejected:
-    # both are a deliberate raise-to-fall-into-the-enclosing-`except`
-    # control-flow idiom, and abstracting the raise to an inner function
-    # (the check's suggested fix) does not address that idiom, only
-    # relocates it -- rewriting it to avoid exception-based control flow
-    # entirely would be a real behavioural risk to a heavily-used
-    # validator, out of proportion to a lint-adoption task. Of TRY004's 3
-    # findings, 2 were genuine and fixed (`location_interpolation.py`,
-    # `models.py`); the third (`_common.py`'s
-    # `get_survey_extents_from_wavefields`) is a per-site `# noqa: TRY004`
-    # -- see the comment there: that function has no declared
-    # exception-type contract and raises `RuntimeError` uniformly for
-    # every validation failure it has, several equally type-check-shaped,
-    # and changing just this one site would both break internal
-    # consistency and an existing test. TRY300 (1 finding) was genuine and
-    # has been fixed.
+    # Unused-argument exceptions are scoped below. Reviewing the former
+    # global suppression found an ignored gradient-sampling argument in the
+    # OOM estimate and several obsolete internal arguments, now corrected.
+    # Keep validation messages beside their conditions (TRY003/EM101/EM102).
+    # TRY301 permits validators to translate conversion and explicit domain
+    # failures through one error path; extracting a helper only to relocate
+    # a raise would not improve that contract. TRY004 remains enabled, with
+    # site exceptions only for internal invariant assertions.
     "TRY003",
     "TRY301",
     "EM101",
@@ -84,8 +32,37 @@ convention = "google"
 # SLF001 (private member access) is expected throughout the test suite: it is
 # a white-box test of deepwave's internal modules (`_common`, `_engine`,
 # `_backend_utils`, `_staggered_grid`), not a design smell to fix per-site.
-"tests/**.py" = ["ANN", "S101", "PT028", "INP001", "B023", "SLF001"]
+"tests/**.py" = ["ANN", "S101", "PT028", "INP001", "SLF001", "ARG001", "ARG002", "ARG005"]
 # test_adjoint_symbolic.py deliberately quotes C kernel source verbatim in
 # comments next to each transcribed expression (the point of the audit is that
 # the transcription is auditable), which ERA001 misreads as commented-out code.
-"tests/test_adjoint_symbolic.py" = ["ANN", "S101", "PT028", "INP001", "B023", "ERA001"]
+"tests/test_adjoint_symbolic.py" = ["ANN", "S101", "PT028", "INP001", "ERA001"]
+
+# These helpers are invoked and finish inside the same loop iteration; none
+# escape with a late-bound loop variable. Restrict the exception to the files
+# inspected for those lifetimes, so new tests retain the closure safety check.
+"tests/test_capabilities.py" = ["B023"]
+"tests/test_elastic.py" = ["B023"]
+"tests/test_example_training_review.py" = ["B023"]
+"tests/test_release_repairs.py" = ["B023"]
+"tests/test_scalar_born.py" = ["B023"]
+"tests/test_vti_oblique_interface.py" = ["B023"]
+"tests/test_vti_physics.py" = ["B023"]
+
+# These modules implement uniform propagator/transform callbacks. Remaining
+# unused positions include ndim, storage_path, fd_coeffs, torch.func rule inputs,
+# and backward context outputs. _common also retains public legacy eps keywords.
+# Keep other modules, including checkpointing and memory planning, checked.
+"src/deepwave/_common.py" = ["ARG001"]
+"src/deepwave/_engine.py" = ["ARG001"]
+"src/deepwave/_staggered_grid.py" = ["ARG001"]
+"src/deepwave/acoustic.py" = ["ARG001", "ARG004"]
+"src/deepwave/acoustic_vti.py" = ["ARG001"]
+"src/deepwave/elastic.py" = ["ARG001", "ARG004"]
+"src/deepwave/elastic_born.py" = ["ARG001"]
+"src/deepwave/elastic_vti.py" = ["ARG001"]
+"src/deepwave/scalar.py" = ["ARG001", "ARG004", "ARG005"]
+"src/deepwave/scalar_born.py" = ["ARG001", "ARG005"]
+"src/deepwave/viscoacoustic.py" = ["ARG001"]
+# Pytest supplies this hook argument even when only the report is needed.
+"scripts/_release_pytest_plugin.py" = ["ARG002"]

@@ -193,9 +193,9 @@
  * multi-mechanism GSLS build additionally threads its mechanism geometry
  * through as the trailing extras. */
 #define DW_VGUARD_MODEL_PARAMS                  \
-  DW_DTYPE const *__restrict const rmem,        \
-      DW_DTYPE const *__restrict const m1_shot, \
-      DW_DTYPE const *__restrict const c2_shot
+  DW_DTYPE const* __restrict const rmem,        \
+      DW_DTYPE const* __restrict const m1_shot, \
+      DW_DTYPE const* __restrict const c2_shot
 #define DW_VGUARD_MODEL_ARGS rmem, m1_shot, c2_shot
 #define DW_VGUARD_MODEL_SHOT_ARGS rmem_shot, m1_shot, c2_shot
 #define DW_VGUARD_EXTRA_PARAMS DW_GSLS_EXTRA_PARAMS
@@ -214,115 +214,114 @@
 #ifdef _WIN32
 __declspec(dllexport)
 #endif
-DW_TARGET_CLONES int
-FUNC(forward)(
-    DW_DTYPE const *__restrict const m1, DW_DTYPE const *__restrict const c2,
-    DW_DTYPE const *__restrict const ar,
+DW_TARGET_CLONES int FUNC(forward)(
+    DW_DTYPE const* __restrict const m1, DW_DTYPE const* __restrict const c2,
+    DW_DTYPE const* __restrict const ar,
 #if DW_NDIM >= 3
-    DW_DTYPE const *__restrict const buoyancy_z,
+    DW_DTYPE const* __restrict const buoyancy_z,
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE const *__restrict const buoyancy_y,
+    DW_DTYPE const* __restrict const buoyancy_y,
 #endif
-    DW_DTYPE const *__restrict const buoyancy_x,
-    DW_DTYPE const *__restrict const f_p,
+    DW_DTYPE const* __restrict const buoyancy_x,
+    DW_DTYPE const* __restrict const f_p,
 #if DW_NDIM >= 3
-    DW_DTYPE const *__restrict const f_vz,
+    DW_DTYPE const* __restrict const f_vz,
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE const *__restrict const f_vy,
+    DW_DTYPE const* __restrict const f_vy,
 #endif
-    DW_DTYPE const *__restrict const f_vx, DW_DTYPE *__restrict const p,
-    DW_DTYPE *__restrict const rmem,
+    DW_DTYPE const* __restrict const f_vx, DW_DTYPE* __restrict const p,
+    DW_DTYPE* __restrict const rmem,
 #if DW_NDIM >= 3
-    DW_DTYPE *__restrict const vz,
+    DW_DTYPE* __restrict const vz,
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE *__restrict const vy,
+    DW_DTYPE* __restrict const vy,
 #endif
-    DW_DTYPE *__restrict const vx,
+    DW_DTYPE* __restrict const vx,
 #if DW_NDIM >= 3
-    DW_DTYPE *__restrict const phi_z,
+    DW_DTYPE* __restrict const phi_z,
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE *__restrict const phi_y,
+    DW_DTYPE* __restrict const phi_y,
 #endif
-    DW_DTYPE *__restrict const phi_x,
+    DW_DTYPE* __restrict const phi_x,
 #if DW_NDIM >= 3
-    DW_DTYPE *__restrict const psi_z,
+    DW_DTYPE* __restrict const psi_z,
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE *__restrict const psi_y,
+    DW_DTYPE* __restrict const psi_y,
 #endif
-    DW_DTYPE *__restrict const psi_x,
-    DW_DTYPE *__restrict const m1_grad_store_1,
-    DW_DTYPE *__restrict const m1_grad_store_1b,
-    void *__restrict const m1_grad_store_2,
-    void *__restrict const m1_grad_store_3,
-    char const *__restrict const *__restrict const m1_grad_filenames_ptr,
-    DW_DTYPE *__restrict const c2_grad_store_1,
-    DW_DTYPE *__restrict const c2_grad_store_1b,
-    void *__restrict const c2_grad_store_2,
-    void *__restrict const c2_grad_store_3,
-    char const *__restrict const *__restrict const c2_grad_filenames_ptr,
-    DW_DTYPE *__restrict const ar_grad_store_1,
-    DW_DTYPE *__restrict const ar_grad_store_1b,
-    void *__restrict const ar_grad_store_2,
-    void *__restrict const ar_grad_store_3,
-    char const *__restrict const *__restrict const ar_grad_filenames_ptr,
+    DW_DTYPE* __restrict const psi_x,
+    DW_DTYPE* __restrict const m1_grad_store_1,
+    DW_DTYPE* __restrict const m1_grad_store_1b,
+    void* __restrict const m1_grad_store_2,
+    void* __restrict const m1_grad_store_3,
+    char const* __restrict const* __restrict const m1_grad_filenames_ptr,
+    DW_DTYPE* __restrict const c2_grad_store_1,
+    DW_DTYPE* __restrict const c2_grad_store_1b,
+    void* __restrict const c2_grad_store_2,
+    void* __restrict const c2_grad_store_3,
+    char const* __restrict const* __restrict const c2_grad_filenames_ptr,
+    DW_DTYPE* __restrict const ar_grad_store_1,
+    DW_DTYPE* __restrict const ar_grad_store_1b,
+    void* __restrict const ar_grad_store_2,
+    void* __restrict const ar_grad_store_3,
+    char const* __restrict const* __restrict const ar_grad_filenames_ptr,
 #if DW_NDIM >= 3
-    DW_DTYPE *__restrict const bz_grad_store_1,
-    DW_DTYPE *__restrict const bz_grad_store_1b,
-    void *__restrict const bz_grad_store_2,
-    void *__restrict const bz_grad_store_3,
-    char const *__restrict const *__restrict const bz_grad_filenames_ptr,
+    DW_DTYPE* __restrict const bz_grad_store_1,
+    DW_DTYPE* __restrict const bz_grad_store_1b,
+    void* __restrict const bz_grad_store_2,
+    void* __restrict const bz_grad_store_3,
+    char const* __restrict const* __restrict const bz_grad_filenames_ptr,
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE *__restrict const by_grad_store_1,
-    DW_DTYPE *__restrict const by_grad_store_1b,
-    void *__restrict const by_grad_store_2,
-    void *__restrict const by_grad_store_3,
-    char const *__restrict const *__restrict const by_grad_filenames_ptr,
+    DW_DTYPE* __restrict const by_grad_store_1,
+    DW_DTYPE* __restrict const by_grad_store_1b,
+    void* __restrict const by_grad_store_2,
+    void* __restrict const by_grad_store_3,
+    char const* __restrict const* __restrict const by_grad_filenames_ptr,
 #endif
-    DW_DTYPE *__restrict const bx_grad_store_1,
-    DW_DTYPE *__restrict const bx_grad_store_1b,
-    void *__restrict const bx_grad_store_2,
-    void *__restrict const bx_grad_store_3,
-    char const *__restrict const *__restrict const bx_grad_filenames_ptr,
-    DW_DTYPE *__restrict const r_p,
+    DW_DTYPE* __restrict const bx_grad_store_1,
+    DW_DTYPE* __restrict const bx_grad_store_1b,
+    void* __restrict const bx_grad_store_2,
+    void* __restrict const bx_grad_store_3,
+    char const* __restrict const* __restrict const bx_grad_filenames_ptr,
+    DW_DTYPE* __restrict const r_p,
 #if DW_NDIM >= 3
-    DW_DTYPE *__restrict const r_vz,
+    DW_DTYPE* __restrict const r_vz,
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE *__restrict const r_vy,
+    DW_DTYPE* __restrict const r_vy,
 #endif
-    DW_DTYPE *__restrict const r_vx,
+    DW_DTYPE* __restrict const r_vx,
 #if DW_NDIM >= 3
-    DW_DTYPE const *__restrict const az, DW_DTYPE const *__restrict const bz,
-    DW_DTYPE const *__restrict const azh, DW_DTYPE const *__restrict const bzh,
+    DW_DTYPE const* __restrict const az, DW_DTYPE const* __restrict const bz,
+    DW_DTYPE const* __restrict const azh, DW_DTYPE const* __restrict const bzh,
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE const *__restrict const ay, DW_DTYPE const *__restrict const by,
-    DW_DTYPE const *__restrict const ayh, DW_DTYPE const *__restrict const byh,
+    DW_DTYPE const* __restrict const ay, DW_DTYPE const* __restrict const by,
+    DW_DTYPE const* __restrict const ayh, DW_DTYPE const* __restrict const byh,
 #endif
-    DW_DTYPE const *__restrict const ax, DW_DTYPE const *__restrict const bx,
-    DW_DTYPE const *__restrict const axh, DW_DTYPE const *__restrict const bxh,
-    int64_t const *__restrict const sources_i_p,
+    DW_DTYPE const* __restrict const ax, DW_DTYPE const* __restrict const bx,
+    DW_DTYPE const* __restrict const axh, DW_DTYPE const* __restrict const bxh,
+    int64_t const* __restrict const sources_i_p,
 #if DW_NDIM >= 3
-    int64_t const *__restrict const sources_i_vz,
+    int64_t const* __restrict const sources_i_vz,
 #endif
 #if DW_NDIM >= 2
-    int64_t const *__restrict const sources_i_vy,
+    int64_t const* __restrict const sources_i_vy,
 #endif
-    int64_t const *__restrict const sources_i_vx,
-    int64_t const *__restrict const receivers_i_p,
+    int64_t const* __restrict const sources_i_vx,
+    int64_t const* __restrict const receivers_i_p,
 #if DW_NDIM >= 3
-    int64_t const *__restrict const receivers_i_vz,
+    int64_t const* __restrict const receivers_i_vz,
 #endif
 #if DW_NDIM >= 2
-    int64_t const *__restrict const receivers_i_vy,
+    int64_t const* __restrict const receivers_i_vy,
 #endif
-    int64_t const *__restrict const receivers_i_vx,
+    int64_t const* __restrict const receivers_i_vx,
 #if DW_NDIM >= 3
     DW_DTYPE const rdz,
 #endif
@@ -384,7 +383,7 @@ FUNC(forward)(
 #if DW_NDIM >= 2
     int64_t const bc_y1,
 #endif
-    int64_t const bc_x1, int64_t const n_threads, void *unused
+    int64_t const bc_x1, int64_t const n_threads, void* unused
 #ifdef DW_GSLS
     ,
     int64_t const n_mechanisms
@@ -392,6 +391,7 @@ FUNC(forward)(
 ) {
   if (nt < 0 || n_shots < 0) return 1;
   if (nt == 0 || n_shots == 0) return 0;
+  if (n_threads == 0 || !dw_fits_control_int(n_threads)) return 1;
   /* Optional buffers are required only for active work requesting them.
    * Reject inconsistent native inputs before opening storage files. */
   if (nt > 0 && n_shots > 0) {
@@ -482,59 +482,59 @@ FUNC(forward)(
 #endif
     int64_t const rcv_i_vx = shot * n_receivers_vx_per_shot;
 
-    DW_DTYPE const *__restrict const m1_shot = kmod_batched ? m1 + si : m1;
-    DW_DTYPE const *__restrict const c2_shot = kmod_batched ? c2 + si : c2;
-    DW_DTYPE const *__restrict const ar_shot = ar_batched ? ar + si : ar;
+    DW_DTYPE const* __restrict const m1_shot = kmod_batched ? m1 + si : m1;
+    DW_DTYPE const* __restrict const c2_shot = kmod_batched ? c2 + si : c2;
+    DW_DTYPE const* __restrict const ar_shot = ar_batched ? ar + si : ar;
 #if DW_NDIM >= 3
-    DW_DTYPE const *__restrict const buoyancy_z_shot =
+    DW_DTYPE const* __restrict const buoyancy_z_shot =
         b_batched ? buoyancy_z + si : buoyancy_z;
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE const *__restrict const buoyancy_y_shot =
+    DW_DTYPE const* __restrict const buoyancy_y_shot =
         b_batched ? buoyancy_y + si : buoyancy_y;
 #endif
-    DW_DTYPE const *__restrict const buoyancy_x_shot =
+    DW_DTYPE const* __restrict const buoyancy_x_shot =
         b_batched ? buoyancy_x + si : buoyancy_x;
 
-    DW_DTYPE *__restrict const p_shot = p + si;
-    DW_DTYPE *__restrict const rmem_shot = rmem + si;
+    DW_DTYPE* __restrict const p_shot = p + si;
+    DW_DTYPE* __restrict const rmem_shot = rmem + si;
 #if DW_NDIM >= 3
-    DW_DTYPE *__restrict const vz_shot = vz + si;
+    DW_DTYPE* __restrict const vz_shot = vz + si;
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE *__restrict const vy_shot = vy + si;
+    DW_DTYPE* __restrict const vy_shot = vy + si;
 #endif
-    DW_DTYPE *__restrict const vx_shot = vx + si;
+    DW_DTYPE* __restrict const vx_shot = vx + si;
 
 #if DW_NDIM >= 3
-    DW_DTYPE *__restrict const phi_z_shot = phi_z + si;
+    DW_DTYPE* __restrict const phi_z_shot = phi_z + si;
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE *__restrict const phi_y_shot = phi_y + si;
+    DW_DTYPE* __restrict const phi_y_shot = phi_y + si;
 #endif
-    DW_DTYPE *__restrict const phi_x_shot = phi_x + si;
+    DW_DTYPE* __restrict const phi_x_shot = phi_x + si;
 
 #if DW_NDIM >= 3
-    DW_DTYPE *__restrict const psi_z_t = psi_z + si;
+    DW_DTYPE* __restrict const psi_z_t = psi_z + si;
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE *__restrict const psi_y_t = psi_y + si;
+    DW_DTYPE* __restrict const psi_y_t = psi_y + si;
 #endif
-    DW_DTYPE *__restrict const psi_x_t = psi_x + si;
+    DW_DTYPE* __restrict const psi_x_t = psi_x + si;
 
     int64_t t;
 
     int storage_err = 0;
-    FILE *fp_m1_grad = NULL;
-    FILE *fp_c2_grad = NULL;
-    FILE *fp_ar_grad = NULL;
+    FILE* fp_m1_grad = NULL;
+    FILE* fp_c2_grad = NULL;
+    FILE* fp_ar_grad = NULL;
 #if DW_NDIM >= 3
-    FILE *fp_bz_grad = NULL;
+    FILE* fp_bz_grad = NULL;
 #endif
 #if DW_NDIM >= 2
-    FILE *fp_by_grad = NULL;
+    FILE* fp_by_grad = NULL;
 #endif
-    FILE *fp_bx_grad = NULL;
+    FILE* fp_bx_grad = NULL;
 
     OPEN_FILE_WRITE(m1_grad, kmod_requires_grad)
     OPEN_FILE_WRITE(c2_grad, kmod_requires_grad)
@@ -569,7 +569,7 @@ FUNC(forward)(
        * above, unused here). Compression is rejected upstream for this
        * variant. */
       (void)ar_grad_store_1_t;
-      DW_DTYPE *__restrict const ar_gsls_store_1_t =
+      DW_DTYPE* __restrict const ar_gsls_store_1_t =
           ar_grad_store_1 != NULL
               ? (ar_grad_store_1 + si * n_mech +
                  ((storage_mode == STORAGE_DEVICE && !storage_compression)
@@ -632,7 +632,7 @@ FUNC(forward)(
       }
 
 #ifdef _OPENMP
-#pragma omp parallel num_threads(n_threads)
+#pragma omp parallel num_threads((int)n_threads)
 #endif /* _OPENMP */
       {
         unsigned int const dw_ftz_daz_prev_state = dw_ftz_daz_enter();
@@ -760,7 +760,7 @@ FUNC(forward)(
       if (has_bc) FILL_V_BC();
 
 #ifdef _OPENMP
-#pragma omp parallel num_threads(n_threads)
+#pragma omp parallel num_threads((int)n_threads)
 #endif /* _OPENMP */
       {
         unsigned int const dw_ftz_daz_prev_state = dw_ftz_daz_enter();
@@ -926,141 +926,140 @@ FUNC(forward)(
 #ifdef _WIN32
 __declspec(dllexport)
 #endif
-DW_TARGET_CLONES int
-FUNC(backward)(
-    DW_DTYPE const *__restrict const m1, DW_DTYPE const *__restrict const c2,
-    DW_DTYPE const *__restrict const ar,
+DW_TARGET_CLONES int FUNC(backward)(
+    DW_DTYPE const* __restrict const m1, DW_DTYPE const* __restrict const c2,
+    DW_DTYPE const* __restrict const ar,
 #if DW_NDIM >= 3
-    DW_DTYPE const *__restrict const buoyancy_z,
+    DW_DTYPE const* __restrict const buoyancy_z,
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE const *__restrict const buoyancy_y,
+    DW_DTYPE const* __restrict const buoyancy_y,
 #endif
-    DW_DTYPE const *__restrict const buoyancy_x,
-    DW_DTYPE const *__restrict const grad_r_p,
+    DW_DTYPE const* __restrict const buoyancy_x,
+    DW_DTYPE const* __restrict const grad_r_p,
 #if DW_NDIM >= 3
-    DW_DTYPE const *__restrict const grad_r_vz,
+    DW_DTYPE const* __restrict const grad_r_vz,
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE const *__restrict const grad_r_vy,
+    DW_DTYPE const* __restrict const grad_r_vy,
 #endif
-    DW_DTYPE const *__restrict const grad_r_vx, DW_DTYPE *__restrict const p,
-    DW_DTYPE *__restrict const rmem,
+    DW_DTYPE const* __restrict const grad_r_vx, DW_DTYPE* __restrict const p,
+    DW_DTYPE* __restrict const rmem,
 #if DW_NDIM >= 3
-    DW_DTYPE *__restrict const vz,
+    DW_DTYPE* __restrict const vz,
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE *__restrict const vy,
+    DW_DTYPE* __restrict const vy,
 #endif
-    DW_DTYPE *__restrict const vx,
+    DW_DTYPE* __restrict const vx,
 #if DW_NDIM >= 3
-    DW_DTYPE *__restrict const phi_z,
+    DW_DTYPE* __restrict const phi_z,
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE *__restrict const phi_y,
+    DW_DTYPE* __restrict const phi_y,
 #endif
-    DW_DTYPE *__restrict const phi_x,
+    DW_DTYPE* __restrict const phi_x,
 #if DW_NDIM >= 3
-    DW_DTYPE *__restrict const psi_z,
+    DW_DTYPE* __restrict const psi_z,
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE *__restrict const psi_y,
+    DW_DTYPE* __restrict const psi_y,
 #endif
-    DW_DTYPE *__restrict const psi_x,
+    DW_DTYPE* __restrict const psi_x,
 #if DW_NDIM >= 3
-    DW_DTYPE *__restrict const psi_zn,
+    DW_DTYPE* __restrict const psi_zn,
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE *__restrict const psi_yn,
+    DW_DTYPE* __restrict const psi_yn,
 #endif
-    DW_DTYPE *__restrict const psi_xn,
+    DW_DTYPE* __restrict const psi_xn,
 
-    DW_DTYPE *__restrict const m1_grad_store_1,
-    DW_DTYPE *__restrict const m1_grad_store_1b,
-    void *__restrict const m1_grad_store_2,
-    void *__restrict const m1_grad_store_3,
-    char const *__restrict const *__restrict const m1_grad_filenames_ptr,
-    DW_DTYPE *__restrict const c2_grad_store_1,
-    DW_DTYPE *__restrict const c2_grad_store_1b,
-    void *__restrict const c2_grad_store_2,
-    void *__restrict const c2_grad_store_3,
-    char const *__restrict const *__restrict const c2_grad_filenames_ptr,
-    DW_DTYPE *__restrict const ar_grad_store_1,
-    DW_DTYPE *__restrict const ar_grad_store_1b,
-    void *__restrict const ar_grad_store_2,
-    void *__restrict const ar_grad_store_3,
-    char const *__restrict const *__restrict const ar_grad_filenames_ptr,
+    DW_DTYPE* __restrict const m1_grad_store_1,
+    DW_DTYPE* __restrict const m1_grad_store_1b,
+    void* __restrict const m1_grad_store_2,
+    void* __restrict const m1_grad_store_3,
+    char const* __restrict const* __restrict const m1_grad_filenames_ptr,
+    DW_DTYPE* __restrict const c2_grad_store_1,
+    DW_DTYPE* __restrict const c2_grad_store_1b,
+    void* __restrict const c2_grad_store_2,
+    void* __restrict const c2_grad_store_3,
+    char const* __restrict const* __restrict const c2_grad_filenames_ptr,
+    DW_DTYPE* __restrict const ar_grad_store_1,
+    DW_DTYPE* __restrict const ar_grad_store_1b,
+    void* __restrict const ar_grad_store_2,
+    void* __restrict const ar_grad_store_3,
+    char const* __restrict const* __restrict const ar_grad_filenames_ptr,
 #if DW_NDIM >= 3
-    DW_DTYPE *__restrict const bz_grad_store_1,
-    DW_DTYPE *__restrict const bz_grad_store_1b,
-    void *__restrict const bz_grad_store_2,
-    void *__restrict const bz_grad_store_3,
-    char const *__restrict const *__restrict const bz_grad_filenames_ptr,
+    DW_DTYPE* __restrict const bz_grad_store_1,
+    DW_DTYPE* __restrict const bz_grad_store_1b,
+    void* __restrict const bz_grad_store_2,
+    void* __restrict const bz_grad_store_3,
+    char const* __restrict const* __restrict const bz_grad_filenames_ptr,
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE *__restrict const by_grad_store_1,
-    DW_DTYPE *__restrict const by_grad_store_1b,
-    void *__restrict const by_grad_store_2,
-    void *__restrict const by_grad_store_3,
-    char const *__restrict const *__restrict const by_grad_filenames_ptr,
+    DW_DTYPE* __restrict const by_grad_store_1,
+    DW_DTYPE* __restrict const by_grad_store_1b,
+    void* __restrict const by_grad_store_2,
+    void* __restrict const by_grad_store_3,
+    char const* __restrict const* __restrict const by_grad_filenames_ptr,
 #endif
-    DW_DTYPE *__restrict const bx_grad_store_1,
-    DW_DTYPE *__restrict const bx_grad_store_1b,
-    void *__restrict const bx_grad_store_2,
-    void *__restrict const bx_grad_store_3,
-    char const *__restrict const *__restrict const bx_grad_filenames_ptr,
-    DW_DTYPE *__restrict const grad_f_p,
+    DW_DTYPE* __restrict const bx_grad_store_1,
+    DW_DTYPE* __restrict const bx_grad_store_1b,
+    void* __restrict const bx_grad_store_2,
+    void* __restrict const bx_grad_store_3,
+    char const* __restrict const* __restrict const bx_grad_filenames_ptr,
+    DW_DTYPE* __restrict const grad_f_p,
 #if DW_NDIM >= 3
-    DW_DTYPE *__restrict const grad_f_vz,
+    DW_DTYPE* __restrict const grad_f_vz,
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE *__restrict const grad_f_vy,
+    DW_DTYPE* __restrict const grad_f_vy,
 #endif
-    DW_DTYPE *__restrict const grad_f_vx, DW_DTYPE *__restrict const grad_m1,
-    DW_DTYPE *__restrict const grad_c2, DW_DTYPE *__restrict const grad_ar,
+    DW_DTYPE* __restrict const grad_f_vx, DW_DTYPE* __restrict const grad_m1,
+    DW_DTYPE* __restrict const grad_c2, DW_DTYPE* __restrict const grad_ar,
 #if DW_NDIM >= 3
-    DW_DTYPE *__restrict const grad_bz,
+    DW_DTYPE* __restrict const grad_bz,
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE *__restrict const grad_by,
+    DW_DTYPE* __restrict const grad_by,
 #endif
-    DW_DTYPE *__restrict const grad_bx,
-    DW_DTYPE *__restrict const grad_m1_thread,
-    DW_DTYPE *__restrict const grad_c2_thread,
-    DW_DTYPE *__restrict const grad_ar_thread,
+    DW_DTYPE* __restrict const grad_bx,
+    DW_DTYPE* __restrict const grad_m1_thread,
+    DW_DTYPE* __restrict const grad_c2_thread,
+    DW_DTYPE* __restrict const grad_ar_thread,
 #if DW_NDIM >= 3
-    DW_DTYPE *__restrict const grad_bz_thread,
+    DW_DTYPE* __restrict const grad_bz_thread,
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE *__restrict const grad_by_thread,
+    DW_DTYPE* __restrict const grad_by_thread,
 #endif
-    DW_DTYPE *__restrict const grad_bx_thread,
+    DW_DTYPE* __restrict const grad_bx_thread,
 #if DW_NDIM >= 3
-    DW_DTYPE const *__restrict const az, DW_DTYPE const *__restrict const bz,
-    DW_DTYPE const *__restrict const azh, DW_DTYPE const *__restrict const bzh,
+    DW_DTYPE const* __restrict const az, DW_DTYPE const* __restrict const bz,
+    DW_DTYPE const* __restrict const azh, DW_DTYPE const* __restrict const bzh,
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE const *__restrict const ay, DW_DTYPE const *__restrict const by,
-    DW_DTYPE const *__restrict const ayh, DW_DTYPE const *__restrict const byh,
+    DW_DTYPE const* __restrict const ay, DW_DTYPE const* __restrict const by,
+    DW_DTYPE const* __restrict const ayh, DW_DTYPE const* __restrict const byh,
 #endif
-    DW_DTYPE const *__restrict const ax, DW_DTYPE const *__restrict const bx,
-    DW_DTYPE const *__restrict const axh, DW_DTYPE const *__restrict const bxh,
-    int64_t const *__restrict const sources_i_p,
+    DW_DTYPE const* __restrict const ax, DW_DTYPE const* __restrict const bx,
+    DW_DTYPE const* __restrict const axh, DW_DTYPE const* __restrict const bxh,
+    int64_t const* __restrict const sources_i_p,
 #if DW_NDIM >= 3
-    int64_t const *__restrict const sources_i_vz,
+    int64_t const* __restrict const sources_i_vz,
 #endif
 #if DW_NDIM >= 2
-    int64_t const *__restrict const sources_i_vy,
+    int64_t const* __restrict const sources_i_vy,
 #endif
-    int64_t const *__restrict const sources_i_vx,
-    int64_t const *__restrict const receivers_i_p,
+    int64_t const* __restrict const sources_i_vx,
+    int64_t const* __restrict const receivers_i_p,
 #if DW_NDIM >= 3
-    int64_t const *__restrict const receivers_i_vz,
+    int64_t const* __restrict const receivers_i_vz,
 #endif
 #if DW_NDIM >= 2
-    int64_t const *__restrict const receivers_i_vy,
+    int64_t const* __restrict const receivers_i_vy,
 #endif
-    int64_t const *__restrict const receivers_i_vx,
+    int64_t const* __restrict const receivers_i_vx,
 #if DW_NDIM >= 3
     DW_DTYPE const rdz,
 #endif
@@ -1122,7 +1121,7 @@ FUNC(backward)(
 #if DW_NDIM >= 2
     int64_t const bc_y1,
 #endif
-    int64_t const bc_x1, int64_t const n_threads, void *unused
+    int64_t const bc_x1, int64_t const n_threads, void* unused
 #ifdef DW_GSLS
     ,
     int64_t const n_mechanisms
@@ -1130,6 +1129,7 @@ FUNC(backward)(
 ) {
   if (nt < 0 || n_shots < 0) return 1;
   if (nt == 0 || n_shots == 0) return 0;
+  if (n_threads == 0 || !dw_fits_control_int(n_threads)) return 1;
   /* Optional buffers are required only for active work requesting them.
    * Reject inconsistent native inputs before opening storage files. */
   if (nt > 0 && n_shots > 0) {
@@ -1246,7 +1246,7 @@ FUNC(backward)(
   int const has_per = per_x;
 #endif
   DW_DTYPE const stag_w_arr[FD_PAD] = DW_STAG_TAYLOR_W;
-  DW_DTYPE const *const stag_w = stag_w_arr;
+  DW_DTYPE const* const stag_w = stag_w_arr;
   /* has_bc is computed (identically to FUNC(forward)) but unused here: the
      backward pass drives the guard rings through has_fr/has_per/has_frx
      instead, which partition the same faces. */
@@ -1289,72 +1289,72 @@ FUNC(backward)(
 #endif
     int64_t const rcv_i_vx = shot * n_receivers_vx_per_shot;
 
-    DW_DTYPE const *__restrict const m1_shot = kmod_batched ? m1 + si : m1;
-    DW_DTYPE const *__restrict const c2_shot = kmod_batched ? c2 + si : c2;
-    DW_DTYPE const *__restrict const ar_shot = ar_batched ? ar + si : ar;
+    DW_DTYPE const* __restrict const m1_shot = kmod_batched ? m1 + si : m1;
+    DW_DTYPE const* __restrict const c2_shot = kmod_batched ? c2 + si : c2;
+    DW_DTYPE const* __restrict const ar_shot = ar_batched ? ar + si : ar;
 #if DW_NDIM >= 3
-    DW_DTYPE const *__restrict const buoyancy_z_shot =
+    DW_DTYPE const* __restrict const buoyancy_z_shot =
         b_batched ? buoyancy_z + si : buoyancy_z;
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE const *__restrict const buoyancy_y_shot =
+    DW_DTYPE const* __restrict const buoyancy_y_shot =
         b_batched ? buoyancy_y + si : buoyancy_y;
 #endif
-    DW_DTYPE const *__restrict const buoyancy_x_shot =
+    DW_DTYPE const* __restrict const buoyancy_x_shot =
         b_batched ? buoyancy_x + si : buoyancy_x;
 
     // In backward pass, p is the adjoint pressure field (Pbar), rmem is the
     // adjoint memory variable (Rbar), vz/vy/vx are adjoint velocity fields.
-    DW_DTYPE *__restrict const p_shot = p + si;
-    DW_DTYPE *__restrict const rmem_shot = rmem + si;
+    DW_DTYPE* __restrict const p_shot = p + si;
+    DW_DTYPE* __restrict const rmem_shot = rmem + si;
 #if DW_NDIM >= 3
-    DW_DTYPE *__restrict const vz_shot = vz + si;
+    DW_DTYPE* __restrict const vz_shot = vz + si;
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE *__restrict const vy_shot = vy + si;
+    DW_DTYPE* __restrict const vy_shot = vy + si;
 #endif
-    DW_DTYPE *__restrict const vx_shot = vx + si;
+    DW_DTYPE* __restrict const vx_shot = vx + si;
 
 #if DW_NDIM >= 3
-    DW_DTYPE *__restrict const phi_z_shot = phi_z + si;
+    DW_DTYPE* __restrict const phi_z_shot = phi_z + si;
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE *__restrict const phi_y_shot = phi_y + si;
+    DW_DTYPE* __restrict const phi_y_shot = phi_y + si;
 #endif
-    DW_DTYPE *__restrict const phi_x_shot = phi_x + si;
+    DW_DTYPE* __restrict const phi_x_shot = phi_x + si;
 
     // Gradients: accumulated directly into the shared buffers (see the
     // race-freedom comment above the shot loop).
-    DW_DTYPE *__restrict const grad_m1_shot =
+    DW_DTYPE* __restrict const grad_m1_shot =
         grad_m1 != NULL ? (grad_m1 + (kmod_batched ? si : 0)) : NULL;
-    DW_DTYPE *__restrict const grad_c2_shot =
+    DW_DTYPE* __restrict const grad_c2_shot =
         grad_c2 != NULL ? (grad_c2 + (kmod_batched ? si : 0)) : NULL;
-    DW_DTYPE *__restrict const grad_ar_shot =
+    DW_DTYPE* __restrict const grad_ar_shot =
         grad_ar != NULL ? (grad_ar + (ar_batched ? si : 0)) : NULL;
 #if DW_NDIM >= 3
-    DW_DTYPE *__restrict const grad_bz_shot =
+    DW_DTYPE* __restrict const grad_bz_shot =
         grad_bz != NULL ? (grad_bz + (b_batched ? si : 0)) : NULL;
 #endif
 #if DW_NDIM >= 2
-    DW_DTYPE *__restrict const grad_by_shot =
+    DW_DTYPE* __restrict const grad_by_shot =
         grad_by != NULL ? (grad_by + (b_batched ? si : 0)) : NULL;
 #endif
-    DW_DTYPE *__restrict const grad_bx_shot =
+    DW_DTYPE* __restrict const grad_bx_shot =
         grad_bx != NULL ? (grad_bx + (b_batched ? si : 0)) : NULL;
 
     int64_t t;
 
     int storage_err = 0;
-    FILE *fp_m1_grad = NULL;
-    FILE *fp_c2_grad = NULL;
-    FILE *fp_ar_grad = NULL;
+    FILE* fp_m1_grad = NULL;
+    FILE* fp_c2_grad = NULL;
+    FILE* fp_ar_grad = NULL;
 #if DW_NDIM >= 3
-    FILE *fp_bz_grad = NULL;
+    FILE* fp_bz_grad = NULL;
 #endif
 #if DW_NDIM >= 2
-    FILE *fp_by_grad = NULL;
+    FILE* fp_by_grad = NULL;
 #endif
-    FILE *fp_bx_grad = NULL;
+    FILE* fp_bx_grad = NULL;
 
     OPEN_FILE_READ(m1_grad, kmod_requires_grad)
     OPEN_FILE_READ(c2_grad, kmod_requires_grad)
@@ -1378,7 +1378,7 @@ FUNC(backward)(
        * gsls-layout pointer and byte-scaled load are done explicitly. */
       SETUP_STORE_LOAD(ar_grad, false)
       (void)ar_grad_store_1_t;
-      DW_DTYPE *__restrict const ar_gsls_store_1_t =
+      DW_DTYPE* __restrict const ar_gsls_store_1_t =
           ar_grad_store_1 != NULL
               ? (ar_grad_store_1 + si * n_mech +
                  ((storage_mode == STORAGE_DEVICE && !storage_compression)
@@ -1388,7 +1388,7 @@ FUNC(backward)(
       if (ar_requires_grad && ((t % step_ratio) == 0)) {
         int64_t const step_idx = t / step_ratio;
         if (STORAGE_FUNC(load_snapshot_cpu)(
-                (void *)ar_gsls_store_1_t, ar_grad_store_2_t, fp_ar_grad,
+                (void*)ar_gsls_store_1_t, ar_grad_store_2_t, fp_ar_grad,
                 storage_mode, storage_compression, step_idx,
                 shot_bytes_uncomp * (size_t)n_mech,
                 shot_bytes_comp * (size_t)n_mech, DIM_ARGS) != 0) {
@@ -1408,21 +1408,21 @@ FUNC(backward)(
       SETUP_STORE_LOAD(bx_grad, b_requires_grad)
 
 #if DW_NDIM >= 3
-      DW_DTYPE *__restrict const psi_z_t =
-          (((start_t - 1 - t) & 1) ? psi_zn : psi_z) + si;
-      DW_DTYPE *__restrict const psi_zn_t =
-          (((start_t - 1 - t) & 1) ? psi_z : psi_zn) + si;
+      DW_DTYPE* __restrict const psi_z_t =
+          (((uint64_t)(start_t - 1 - t) & 1u) ? psi_zn : psi_z) + si;
+      DW_DTYPE* __restrict const psi_zn_t =
+          (((uint64_t)(start_t - 1 - t) & 1u) ? psi_z : psi_zn) + si;
 #endif
 #if DW_NDIM >= 2
-      DW_DTYPE *__restrict const psi_y_t =
-          (((start_t - 1 - t) & 1) ? psi_yn : psi_y) + si;
-      DW_DTYPE *__restrict const psi_yn_t =
-          (((start_t - 1 - t) & 1) ? psi_y : psi_yn) + si;
+      DW_DTYPE* __restrict const psi_y_t =
+          (((uint64_t)(start_t - 1 - t) & 1u) ? psi_yn : psi_y) + si;
+      DW_DTYPE* __restrict const psi_yn_t =
+          (((uint64_t)(start_t - 1 - t) & 1u) ? psi_y : psi_yn) + si;
 #endif
-      DW_DTYPE *__restrict const psi_x_t =
-          (((start_t - 1 - t) & 1) ? psi_xn : psi_x) + si;
-      DW_DTYPE *__restrict const psi_xn_t =
-          (((start_t - 1 - t) & 1) ? psi_x : psi_xn) + si;
+      DW_DTYPE* __restrict const psi_x_t =
+          (((uint64_t)(start_t - 1 - t) & 1u) ? psi_xn : psi_x) + si;
+      DW_DTYPE* __restrict const psi_xn_t =
+          (((uint64_t)(start_t - 1 - t) & 1u) ? psi_x : psi_xn) + si;
 
       bool const kmod_requires_grad_t =
           kmod_requires_grad && ((t % step_ratio) == 0);
@@ -1488,7 +1488,7 @@ FUNC(backward)(
       // psi = a*psi - dt*B*a*v
 
 #ifdef _OPENMP
-#pragma omp parallel num_threads(n_threads)
+#pragma omp parallel num_threads((int)n_threads)
 #endif /* _OPENMP */
       {
         unsigned int const dw_ftz_daz_prev_state = dw_ftz_daz_enter();
@@ -1709,7 +1709,7 @@ FUNC(backward)(
       // Rbar_new = ar*Rbar - (dt/2)(1+ar)*Pbar   (SLS-like backward recursion)
 
 #ifdef _OPENMP
-#pragma omp parallel num_threads(n_threads)
+#pragma omp parallel num_threads((int)n_threads)
 #endif /* _OPENMP */
       {
         unsigned int const dw_ftz_daz_prev_state = dw_ftz_daz_enter();

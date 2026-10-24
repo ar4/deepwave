@@ -42,7 +42,7 @@ def test_stage_reports_optional_skip_with_executed_test(tmp_path):
     child = tmp_path / "test_mixed.py"
     child.write_text(
         'import pytest\n\ndef test_optional():\n    pytest.skip("optional")\n'
-        '\ndef test_executed():\n    assert 2 + 2 == 4\n'
+        "\ndef test_executed():\n    assert 2 + 2 == 4\n"
     )
     result = release._pytest(
         sys.executable,

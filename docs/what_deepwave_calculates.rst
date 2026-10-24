@@ -106,7 +106,7 @@ finite-record endpoints, initial/terminal transients and arbitrary initial
 wavefields or wavefield objectives can violate it. Further sampling with
 ``model_gradient_sampling_interval > 1`` requires a correspondingly lower
 bandwidth. For the sampling basis, see `Prandoni and Vetterli, Signal Processing
-for Communications <https://signalprocessingforcommunications.org/docs/sp4comm_corrected.pdf>`_;
+for Communications <https://www.sp4comm.org/docs/sp4comm_corrected.pdf>`_;
 Nyquist-rate wavefield storage is also used in `time-subsampled FWI
 <https://slim.gatech.edu/Publications/Public/Conferences/SEG/2015/louboutin2015SEGtcs/louboutin2015SEGtcs.html>`_.
 

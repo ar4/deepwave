@@ -1185,6 +1185,34 @@ def test_forward_oom_message_mentions_estimate_and_levers() -> None:
     assert "deepwave.checkpointing.run_segments" in message
 
 
+def test_forward_oom_estimate_accounts_for_sampled_history() -> None:
+    """Sampling four times less often removes three quarters of stored history."""
+    from deepwave import _engine
+
+    spec = deepwave.scalar.__globals__["SPEC"]
+    estimates = []
+    for interval in (1, 4):
+        message = _engine._forward_oom_estimate_line(
+            spec,
+            (140, 140),
+            20000,
+            1,
+            torch.float32,
+            torch.device("cpu"),
+            4,
+            [20] * 4,
+            interval,
+            "device",
+            False,
+        )
+        assert message is not None
+        estimates.append(float(message.split("at least ")[1].split(" GB")[0]))
+    # Scalar stores one float32 grid at each sampled step. The two reported
+    # estimates are rounded independently to 0.01 GB; other buffers cancel.
+    removed_gb = 140 * 140 * (20000 - 5000) * 4 / 1e9
+    assert abs((estimates[0] - estimates[1]) - removed_gb) <= 0.01
+
+
 def test_forward_oom_message_estimate_uses_the_real_models_requiring_grad() -> None:
     """Given the models, the quoted estimate is exact, not the worst case.
 

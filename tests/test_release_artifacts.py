@@ -77,7 +77,6 @@ def candidate(tmp_path: Path) -> dict[str, Any]:
         (
             "manylinux_2_28_x86_64",
             "win_amd64",
-            "macosx_10_13_x86_64",
             "macosx_11_0_arm64",
         ),
     ):
@@ -111,7 +110,7 @@ def test_complete_artifact_set(tmp_path: Path) -> None:
     validate(manifest)
     output = tmp_path.parent / (tmp_path.name + "-publish")
     release.verify_files(manifest, tmp_path, output)
-    assert len(list(output.iterdir())) == 5
+    assert len(list(output.iterdir())) == 4
     gates = {
         name: {**manifest, "kind": name, "jobs": {"gate": {"result": "success"}}}
         for name in release.GATES
@@ -404,11 +403,11 @@ class ArtifactAPI(MockAPI):
     def pages(self, path: str, key: str) -> list[dict[str, Any]]:
         """Resolve run-scoped artifact IDs and successful gate candidates."""
         if key == "workflow_runs":
-            workflow = path.split("/workflows/")[1].split(".yml")[0]
+            workflow = path.split("/workflows/")[1].split(".yml", maxsplit=1)[0]
             return [self.run(workflow)]
         if key == "jobs":
             return self.jobs
-        run_id = int(path.split("/runs/")[1].split("/")[0])
+        run_id = int(path.split("/runs/")[1].split("/", maxsplit=1)[0])
         names = (
             self.names
             if run_id == 123
@@ -457,7 +456,7 @@ class ArtifactAPI(MockAPI):
 def test_full_publication_validation_uses_existing_artifacts(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The complete promotion path uses five existing distributions and no upload."""
+    """The complete promotion path uses four existing distributions and no upload."""
     source = tmp_path / "source"
     source.mkdir()
     manifest = candidate(source)
@@ -477,7 +476,7 @@ def test_full_publication_validation_uses_existing_artifacts(
     output = tmp_path / "accepted"
     result = publication.prepare(api, 123, 2, "v0.1.0", output)  # type: ignore[arg-type]
     assert result["artifact_ids"]["release-manifest-a2"] == 1231
-    assert len(list((output / "publish").iterdir())) == 5
+    assert len(list((output / "publish").iterdir())) == 4
     assert set(result["required_gates"]) == set(release.GATES)
     assert commands[0][1:3] == ["merge-base", "--is-ancestor"]
     assert commands[1][1:4] == ["-m", "twine", "check"]

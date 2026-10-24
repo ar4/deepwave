@@ -117,6 +117,9 @@ extern "C" {
  * immediately before the block that closes every one of those handles
  * (mirroring the existing ``CLOSE_FILE`` calls), followed by
  * ``if (storage_err) return 1;``. */
+#ifndef __CUDACC__
+/* These per-shot storage macros are CPU-only. CUDA uses stream-aware
+ * helpers and ScopedFile ownership in its translation units. */
 #define OPEN_FILE_WRITE(name, grad_cond)                             \
   if (storage_mode == STORAGE_DISK && (grad_cond)) {                 \
     fp_##name = dw_open_file_utf8(name##_filenames_ptr[shot], "ab"); \
@@ -186,6 +189,8 @@ extern "C" {
       goto storage_cleanup;                                                   \
     }                                                                         \
   }
+
+#endif /* !__CUDACC__ */
 
 int STORAGE_FUNC(save_snapshot_cpu)(void const* store_1, void* store_2,
                                     FILE* fp, int64_t storage_mode,

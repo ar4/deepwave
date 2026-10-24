@@ -10,7 +10,7 @@
  * within each function is race-free. */
 
 __device__ inline void fill_p_bc_line_adjoint_dev(
-    DW_DTYPE *__restrict const p, int64_t const base, int64_t const nax,
+    DW_DTYPE* __restrict const p, int64_t const base, int64_t const nax,
     int64_t const stride, int64_t const bc_lo, int64_t const bc_hi) {
   int64_t const P = FD_PAD;
   int64_t const m = nax - 2 * P + 1;
@@ -58,7 +58,7 @@ __device__ inline void fill_p_bc_line_adjoint_dev(
 }
 
 __device__ inline void fill_elastic_onrow_velocity_line_dev(
-    DW_DTYPE *__restrict const v, int64_t const base, int64_t const nax,
+    DW_DTYPE* __restrict const v, int64_t const base, int64_t const nax,
     int64_t const stride, int64_t const bc_lo, int64_t const bc_hi) {
   int64_t const P = FD_PAD;
   int64_t const m = nax - 2 * P + 1;
@@ -90,7 +90,7 @@ __device__ inline void fill_elastic_onrow_velocity_line_dev(
 }
 
 __device__ inline void fill_elastic_offrow_velocity_line_dev(
-    DW_DTYPE *__restrict const v, int64_t const base, int64_t const nax,
+    DW_DTYPE* __restrict const v, int64_t const base, int64_t const nax,
     int64_t const stride, int64_t const bc_lo, int64_t const bc_hi) {
   int64_t const P = FD_PAD;
   int64_t const m = nax - 2 * P + 1;
@@ -129,7 +129,7 @@ __device__ inline void fill_elastic_offrow_velocity_line_dev(
 }
 
 __device__ inline void fill_elastic_shear_line_dev(
-    DW_DTYPE *__restrict const s, int64_t const base, int64_t const nax,
+    DW_DTYPE* __restrict const s, int64_t const base, int64_t const nax,
     int64_t const stride, int64_t const bc_lo, int64_t const bc_hi) {
   int64_t const P = FD_PAD;
   int64_t const m = nax - 2 * P + 1;
@@ -170,7 +170,7 @@ __device__ inline void fill_elastic_shear_line_dev(
 }
 
 __device__ inline void fill_elastic_onrow_velocity_line_adjoint_dev(
-    DW_DTYPE *__restrict const v, int64_t const base, int64_t const nax,
+    DW_DTYPE* __restrict const v, int64_t const base, int64_t const nax,
     int64_t const stride, int64_t const bc_lo, int64_t const bc_hi) {
   int64_t const P = FD_PAD;
   int64_t const m = nax - 2 * P + 1;
@@ -206,7 +206,7 @@ __device__ inline void fill_elastic_onrow_velocity_line_adjoint_dev(
 }
 
 __device__ inline void fill_elastic_offrow_velocity_line_adjoint_dev(
-    DW_DTYPE *__restrict const v, int64_t const base, int64_t const nax,
+    DW_DTYPE* __restrict const v, int64_t const base, int64_t const nax,
     int64_t const stride, int64_t const bc_lo, int64_t const bc_hi) {
   int64_t const P = FD_PAD;
   int64_t const m = nax - 2 * P + 1;
@@ -246,7 +246,7 @@ __device__ inline void fill_elastic_offrow_velocity_line_adjoint_dev(
 }
 
 __device__ inline void fill_elastic_shear_line_adjoint_dev(
-    DW_DTYPE *__restrict const s, int64_t const base, int64_t const nax,
+    DW_DTYPE* __restrict const s, int64_t const base, int64_t const nax,
     int64_t const stride, int64_t const bc_lo, int64_t const bc_hi) {
   int64_t const P = FD_PAD;
   int64_t const m = nax - 2 * P + 1;

@@ -1168,15 +1168,13 @@ def test_born_backend_parity_chained() -> None:
 
 
 def test_born_backend_parity_negative() -> None:
-    """Reject negative background speed before stepping."""
-    with pytest.raises(ValueError, match="v > 0"):
-        run_born_backend_parity(c=-1500, propagator=scalarbornprop)
+    """Backends agree for negative background velocity."""
+    run_born_backend_parity(c=-1500, propagator=scalarbornprop)
 
 
 def test_born_backend_parity_zero() -> None:
-    """Reject zero background speed before stepping."""
-    with pytest.raises(ValueError, match="v > 0"):
-        run_born_backend_parity(c=0, dc=0, propagator=scalarbornprop)
+    """Backends agree for zero background velocity."""
+    run_born_backend_parity(c=0, dc=0, propagator=scalarbornprop)
 
 
 def test_born_backend_parity_different_pml() -> None:
@@ -1268,19 +1266,23 @@ def test_negative_vel(
             prop_kwargs=prop_kwargs,
         )
 
-        # Negative physical background speed is outside the material domain.
-        with pytest.raises(ValueError, match="v > 0"):
-            propagator(
-                -model,
-                scatter,
-                dx.tolist(),
-                dt,
-                sources["amplitude"],
-                sources["locations"],
-                x_r,
-                x_r,
-                prop_kwargs=prop_kwargs,
-            )
+        # Changing v and its Born direction together leaves v**2 unchanged.
+        out = propagator(
+            -model,
+            -scatter,
+            dx.tolist(),
+            dt,
+            sources["amplitude"],
+            sources["locations"],
+            x_r,
+            x_r,
+            prop_kwargs=prop_kwargs,
+        )
+        assert torch.allclose(out_positive.wavefield_0, out.wavefield_0)
+        assert torch.allclose(out_positive.wavefield_sc_0, out.wavefield_sc_0)
+        assert torch.allclose(
+            out_positive.sc_receiver_amplitudes, out.sc_receiver_amplitudes
+        )
 
         # Negative dt
         out = propagator(
@@ -1300,19 +1302,21 @@ def test_negative_vel(
             out_positive.sc_receiver_amplitudes, out.sc_receiver_amplitudes
         )
 
-        # Scalar zero speed is also rejected; signed Born directions remain valid.
-        with pytest.raises(ValueError, match="v > 0"):
-            propagator(
-                torch.zeros_like(model),
-                scatter,
-                dx.tolist(),
-                -dt,
-                sources["amplitude"],
-                sources["locations"],
-                x_r,
-                x_r,
-                prop_kwargs=prop_kwargs,
-            )
+        # With zero velocity the source is multiplied by v**2 = 0.
+        out = propagator(
+            torch.zeros_like(model),
+            scatter,
+            dx.tolist(),
+            -dt,
+            sources["amplitude"],
+            sources["locations"],
+            x_r,
+            x_r,
+            prop_kwargs=prop_kwargs,
+        )
+        assert torch.count_nonzero(out.wavefield_0) == 0
+        assert torch.count_nonzero(out.wavefield_sc_0) == 0
+        assert torch.count_nonzero(out.sc_receiver_amplitudes) == 0
 
 
 def test_born_backend_parity_only_v_2d() -> None:
@@ -1703,8 +1707,6 @@ def run_born_backend_parity(
     if prop_kwargs is None:
         prop_kwargs = {}
 
-    out_idxs = []
-
     def wrap(python):
         prop_kwargs["backend"] = python
         inputs = (
@@ -1735,7 +1737,7 @@ def run_born_backend_parity(
         out = propagator(*inputs)
         # The auxiliary state is one output element holding several tensors;
         # the parity comparison is over tensors.
-        return compute_backend_parity_grad(output_tensors(out), inputs, out_idxs)
+        return compute_backend_parity_grad(output_tensors(out), inputs)
 
     run_python_vs_compiled_backend_parity(wrap, "eager", atol=atol, rtol=rtol)
 

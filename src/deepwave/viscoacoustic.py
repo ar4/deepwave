@@ -793,8 +793,9 @@ def viscoacoustic(
             batched model, ``[n_shots, *model_shape]``, where
             ``model_shape`` has ``ndim`` entries. See
             :ref:`batched-models`. A differentiable model input. Larger
-            ``Q`` means weaker attenuation; ``Q -> inf`` recovers the lossless
-            acoustic equation.
+            ``Q`` means weaker attenuation; ``Q = +inf`` gives the exact lossless
+            acoustic equation, including in selected cells of an otherwise
+            attenuating model.
         grid_spacing: Spatial grid cell size.
         dt: Time step interval. Deepwave is unit-agnostic: choose any single
             consistent system of units for ``v``, ``rho``, ``grid_spacing``,
@@ -2773,14 +2774,12 @@ def viscoacoustic_func(
     global _update_velocities_opt, _update_pressure_opt
 
     if backend:
-        m1 = cast("torch.Tensor", args[_N_LEADING_ARGS])
         # grid_spacing must reach the traced step functions as Python
         # floats: see _engine.float_grid_spacing for why an int silently
         # costs 8 significant digits under torch.compile on CUDA.
         args = (*args[:1], _engine.float_grid_spacing(args[1]), *args[2:])
-        config_key = (len(args[1]), args[5], m1.dtype)
-        _update_velocities_opt = _update_velocities_cache.resolve(backend, config_key)
-        _update_pressure_opt = _update_pressure_cache.resolve(backend, config_key)
+        _update_velocities_opt = _update_velocities_cache.resolve(backend)
+        _update_pressure_opt = _update_pressure_cache.resolve(backend)
         return viscoacoustic_python(*args, backend=backend)
 
     # ``boundary`` is at ``_BOUNDARY_IDX``, right after ``pml_width``

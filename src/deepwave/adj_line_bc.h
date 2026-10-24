@@ -31,7 +31,7 @@
  */
 
 /* Transpose of the periodic branch of fill_p_bc_line for one line. */
-DW_HOST_DEVICE void FUNC(adj_fold_p_line)(DW_DTYPE *__restrict const p,
+DW_HOST_DEVICE void FUNC(adj_fold_p_line)(DW_DTYPE* __restrict const p,
                                           int64_t const base, int64_t const nax,
                                           int64_t const stride) {
   int64_t const P = FD_PAD;
@@ -51,7 +51,7 @@ DW_HOST_DEVICE void FUNC(adj_fold_p_line)(DW_DTYPE *__restrict const p,
 /* Transpose of the periodic branch of fill_v_bc_line for one line (guard
  * cells plus the extra high interior node the forward slaves to node
  * FD_PAD). */
-DW_HOST_DEVICE void FUNC(adj_fold_v_line)(DW_DTYPE *__restrict const v,
+DW_HOST_DEVICE void FUNC(adj_fold_v_line)(DW_DTYPE* __restrict const v,
                                           int64_t const base, int64_t const nax,
                                           int64_t const stride) {
   int64_t const P = FD_PAD;
@@ -75,10 +75,10 @@ DW_HOST_DEVICE void FUNC(adj_fold_v_line)(DW_DTYPE *__restrict const v,
  * guard cells (the other axes' terms are zero there because the adjoint
  * velocities are zero on this axis's guard cells). */
 DW_HOST_DEVICE void FUNC(adj_gather_p_guard_line)(
-    DW_DTYPE *__restrict const p, DW_DTYPE const *__restrict const v,
-    DW_DTYPE const *__restrict const b_shot, int64_t const base,
+    DW_DTYPE* __restrict const p, DW_DTYPE const* __restrict const v,
+    DW_DTYPE const* __restrict const b_shot, int64_t const base,
     int64_t const jbase, int64_t const nax, int64_t const stride,
-    DW_DTYPE const dt, DW_DTYPE const rd, DW_DTYPE const *__restrict const sw) {
+    DW_DTYPE const dt, DW_DTYPE const rd, DW_DTYPE const* __restrict const sw) {
   int64_t const P = FD_PAD;
   int64_t c, q;
   for (c = 0; c < 2 * P - 1; ++c) {
@@ -118,7 +118,7 @@ DW_HOST_DEVICE void FUNC(adj_gather_p_guard_line)(
 /* Fold-then-zero transpose of the free/rigid branches of fill_p_bc_line
  * (bc codes 1=free, 2=rigid, 0=leave face alone). */
 DW_HOST_DEVICE void FUNC(adj_fold_p_line_fr)(
-    DW_DTYPE *__restrict const p, int64_t const base, int64_t const nax,
+    DW_DTYPE* __restrict const p, int64_t const base, int64_t const nax,
     int64_t const stride, int64_t const bc_lo, int64_t const bc_hi) {
   int64_t const P = FD_PAD;
   int64_t const m = nax - 2 * P + 1;
@@ -151,7 +151,7 @@ DW_HOST_DEVICE void FUNC(adj_fold_p_line_fr)(
 
 /* Fold-then-zero transpose of the free/rigid branches of fill_v_bc_line. */
 DW_HOST_DEVICE void FUNC(adj_fold_v_line_fr)(
-    DW_DTYPE *__restrict const v, int64_t const base, int64_t const nax,
+    DW_DTYPE* __restrict const v, int64_t const base, int64_t const nax,
     int64_t const stride, int64_t const bc_lo, int64_t const bc_hi) {
   int64_t const P = FD_PAD;
   int64_t const m = nax - 2 * P + 1;
@@ -184,10 +184,10 @@ DW_HOST_DEVICE void FUNC(adj_fold_v_line_fr)(
 /* Adjoint-pressure guard gather for one free/rigid-axis line (see
  * FUNC(adj_gather_p_guard_line) for the payload, which is identical). */
 DW_HOST_DEVICE void FUNC(adj_gather_p_guard_line_fr)(
-    DW_DTYPE *__restrict const p, DW_DTYPE const *__restrict const v,
-    DW_DTYPE const *__restrict const b_shot, int64_t const base,
+    DW_DTYPE* __restrict const p, DW_DTYPE const* __restrict const v,
+    DW_DTYPE const* __restrict const b_shot, int64_t const base,
     int64_t const jbase, int64_t const nax, int64_t const stride,
-    DW_DTYPE const dt, DW_DTYPE const rd, DW_DTYPE const *__restrict const sw,
+    DW_DTYPE const dt, DW_DTYPE const rd, DW_DTYPE const* __restrict const sw,
     int64_t const bc_lo, int64_t const bc_hi) {
   int64_t const P = FD_PAD;
   int64_t c, q;

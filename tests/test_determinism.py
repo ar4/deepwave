@@ -133,6 +133,60 @@ def test_cpu_results_do_not_depend_on_thread_count(
 @pytest.mark.parametrize("ndim", [1, 2, 3])
 @pytest.mark.parametrize("accuracy", [2, 4, 6, 8])
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+def test_scalar_compiled_threads_across_kernel_variants(
+    ndim: int,
+    accuracy: int,
+    dtype: torch.dtype,
+    restore_num_threads: None,
+) -> None:
+    """Irregular domains retain identical scalar adjoints across SIMD chunks."""
+    shape = {1: (37,), 2: (23, 31), 3: (17, 19, 23)}[ndim]
+    generator = torch.Generator().manual_seed(714)
+    speed = 1500 + 250 * torch.rand(shape, generator=generator, dtype=dtype)
+    source = torch.randn(2, 1, 24, generator=generator, dtype=dtype)
+    # Scalar continuation fields include the six-cell PML on both faces.
+    initial = [
+        torch.randn(2, *(n + 12 for n in shape), generator=generator, dtype=dtype)
+        for _ in range(2)
+    ]
+    locations = torch.tensor([[[n // 2 for n in shape]]] * 2)
+    reference = None
+    for count in THREAD_COUNTS:
+        torch.set_num_threads(count)
+        leaves = [value.clone().requires_grad_() for value in [speed, source, *initial]]
+        out = deepwave.scalar(
+            leaves[0],
+            5.0,
+            0.0004,
+            source_amplitudes=leaves[1],
+            source_locations=locations,
+            receiver_locations=locations,
+            wavefield_0=leaves[2],
+            wavefield_m1=leaves[3],
+            origin=[0] * ndim,
+            accuracy=accuracy,
+            pml_width=6,
+            pml_freq=25.0,
+            max_vel=2000.0,
+            backend="compiled",
+        )
+        tensors = output_tensors(out)
+        loss = sum(tensor.to(torch.float64).square().sum() for tensor in tensors)
+        grads = torch.autograd.grad(loss, leaves)
+        assert all(torch.isfinite(grad).all() and grad.norm() > 0 for grad in grads)
+        current = [tensor.detach().clone() for tensor in [*tensors, *grads]]
+        if reference is None:
+            reference = current
+        else:
+            assert all(torch.equal(a, b) for a, b in zip(reference, current)), (
+                f"{ndim}D/order {accuracy}/{dtype}: "
+                f"{count} threads differ from {THREAD_COUNTS[0]}"
+            )
+
+
+@pytest.mark.parametrize("ndim", [1, 2, 3])
+@pytest.mark.parametrize("accuracy", [2, 4, 6, 8])
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
 @pytest.mark.parametrize("n_mechanisms", [1, 3])
 def test_viscoacoustic_compiled_threads_across_kernel_variants(
     ndim: int,

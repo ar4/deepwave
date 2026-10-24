@@ -524,89 +524,67 @@ def _build_multicomponent_receivers(
     return receiver_locations
 
 
-def _select_requiring_grad(
-    seq: Sequence[torch.Tensor], idxs: list[int]
-) -> list[torch.Tensor]:
-    """Cache (in ``idxs``) and select the elements of ``seq`` with ``requires_grad``.
+def _differentiate_with_zeros(
+    outputs: Sequence[torch.Tensor],
+    leaves: Sequence[torch.Tensor],
+    *,
+    create_graph: bool = False,
+) -> tuple[torch.Tensor, ...]:
+    """Differentiate fixed cotangents, representing disconnected derivatives as zero.
 
-    ``idxs`` is a mutable list owned by the caller: populated the first time this
-    is called, left untouched afterwards, so repeated calls (e.g. once per backend
-    in a Python-vs-compiled comparison) select the same indices.
+    Draw for every output before selecting graph-connected ones. A custom
+    autograd Function may mark a mathematically constant output requires_grad,
+    while the eager expression has no graph for it; both must receive the
+    same cotangents for the outputs that actually depend on the inputs.
     """
-    if not idxs:
-        idxs.extend(i for i, x in enumerate(seq) if x.requires_grad)
-    return [seq[i] for i in idxs]
+    cotangents = [torch.randn_like(value.contiguous()) for value in outputs]
+    selected = [
+        (value, cotangent)
+        for value, cotangent in zip(outputs, cotangents)
+        if value.requires_grad
+    ]
+    if not selected:
+        return tuple(torch.zeros_like(leaf) for leaf in leaves)
+    active_outputs, active_cotangents = zip(*selected)
+    gradients = torch.autograd.grad(
+        active_outputs,
+        leaves,
+        grad_outputs=active_cotangents,
+        create_graph=create_graph,
+        allow_unused=True,
+    )
+    return tuple(
+        torch.zeros_like(leaf) if value is None else value
+        for leaf, value in zip(leaves, gradients)
+    )
 
 
 def compute_backend_parity_grad(
     out: Sequence[torch.Tensor],
     inputs: Sequence[Any],
-    out_idxs: list[int],
 ) -> tuple[torch.Tensor, ...]:
-    """Select requires-grad outputs and return them plus their gradient.
-
-    Shared body of the acoustic, elastic, and scalar_born backend-parity
-    ``wrap()`` closures (none of which do a second-order gradgrad pass, unlike
-    scalar's -- see :func:`compute_backend_parity_grad_and_gradgrad`). Draws
-    random cotangents for ``out`` (after caching/reusing which indices of
-    ``out`` require grad in ``out_idxs``) and differentiates w.r.t. every
-    ``requires_grad`` tensor in ``inputs``.
-    """
-    out_sel = _select_requiring_grad(out, out_idxs)
-    v = [torch.randn_like(o.contiguous()) for o in out_sel]
-    leaves = [p for p in inputs if isinstance(p, torch.Tensor) and p.requires_grad]
-    grads = torch.autograd.grad(out_sel, leaves, grad_outputs=v)
-    return tuple(out_sel) + grads
+    """Compare every primal output and every requested first derivative."""
+    return compute_backend_parity_grad_and_gradgrad(out, inputs, gradgrad=False)
 
 
 def compute_backend_parity_grad_and_gradgrad(
     out: Sequence[torch.Tensor],
     inputs: Sequence[Any],
-    out_idxs: list[int],
     gradgrad: bool,
-    grad_idxs: list[int],
 ) -> tuple[torch.Tensor, ...]:
-    """Scalar-family variant with an optional second-order (gradgrad) pass.
+    """Return all outputs, first derivatives, and optional second derivatives.
 
-    Companion to :func:`compute_backend_parity_grad`. When ``gradgrad`` is
-    False, returns *only* the first-order gradient tuple (deliberately not
-    prefixed with the selected outputs): some backend-parity tests need this
-    to get one real comparison in configurations where the second-order
-    gradient would be identically zero -- see
-    ``test_backend_parity_only_source_2d`` in test_scalar.py for the full
-    rationale. When ``gradgrad`` is True, also differentiates that
-    first-order gradient a second time and returns ``tuple(selected outputs)
-    + first-order grads + second-order grads``.
+    Graph connectivity is an implementation detail, not an equality condition.
+    Compare numerical derivatives, including exact zeros, so neither a detached
+    nonconstant output nor a constant-output offset escapes the comparison.
     """
-    out_sel = _select_requiring_grad(out, out_idxs)
-    v = [torch.randn_like(o.contiguous()) for o in out_sel]
     leaves = [p for p in inputs if isinstance(p, torch.Tensor) and p.requires_grad]
-    grads = torch.autograd.grad(out_sel, leaves, grad_outputs=v, create_graph=gradgrad)
+    assert leaves, "no differentiable inputs tested"
+    grads = _differentiate_with_zeros(out, leaves, create_graph=gradgrad)
     if not gradgrad:
-        return grads
-
-    grads_sel = _select_requiring_grad(grads, grad_idxs)
-    if len(grads_sel) == 0:
-        # A leaf whose only requiring-grad path through the propagator is
-        # linear (e.g. source_amplitudes or wavefield_0 alone, with every
-        # other leaf fixed) has an identically-zero second derivative, so
-        # grad_idxs is empty here. Returning grads (empty) at this point
-        # would make the caller's comparison loop silently compare zero
-        # tensor pairs, passing regardless of whether the primal outputs
-        # or the first-order gradient actually agree between backends.
-        # Fail loudly instead: this configuration must pass
-        # gradgrad=False to get a real comparison; see
-        # test_backend_parity_only_source_2d.
-        raise AssertionError(
-            "run_backend_parity: gradgrad=True but every first-order "
-            "gradient is non-requiring-grad (identically linear in the "
-            "leaves that require grad), so there is nothing left to "
-            "compare for the second-order pass. Pass gradgrad=False for "
-            "this configuration instead."
-        )
-    w = [torch.randn_like(g.contiguous()) for g in grads_sel]
-    grad_grads = torch.autograd.grad(grads_sel, leaves, grad_outputs=w)
-    return tuple(out_sel) + tuple(grads_sel) + grad_grads
+        return tuple(out) + grads
+    second = _differentiate_with_zeros(grads, leaves)
+    return tuple(out) + grads + second
 
 
 def run_python_vs_compiled_backend_parity(wrap, python_flag, atol=1e-8, rtol=1e-5):
@@ -621,8 +599,10 @@ def run_python_vs_compiled_backend_parity(wrap, python_flag, atol=1e-8, rtol=1e-
     out_python = wrap(python_flag)
     torch.manual_seed(1)
     out_compiled = wrap("compiled")
-    for oc, op in zip(out_compiled, out_python):
-        assert torch.allclose(oc, op, atol=atol, rtol=rtol)
+    assert any(t.numel() for t in out_python), "no nonempty reference tensors compared"
+    torch.testing.assert_close(
+        tuple(out_compiled), tuple(out_python), atol=atol, rtol=rtol
+    )
 
 
 def assert_compiled_matches_eager_grad(f, args, compiled_backend="compiled", tol=1e-6):

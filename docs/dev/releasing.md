@@ -49,9 +49,9 @@ Mandatory workflow jobs themselves must all succeed. No commit-message test
 bypass is supported.
 
 Download and retain `release-manifest-a<ATTEMPT>`,
-`release-sdist-a<ATTEMPT>`, and all four
+`release-sdist-a<ATTEMPT>`, and all three
 `release-wheels-<PLATFORM>-a<ATTEMPT>` artifacts. Platforms are `ubuntu-latest`,
-`windows-2022`, `macos-15-intel` and `macos-14`. Each wheel set contains exactly
+`windows-2022` and `macos-14`. Each wheel set contains exactly
 one repaired `py3-none` wheel. The 95 MiB wheel limit is enforced. The sdist is
 built once, then used by every release wheel builder. Matching public checkout
 content is required for every shipped source member except generated `PKG-INFO`;
@@ -69,9 +69,11 @@ Record the successful build run ID and **current completed run attempt**, tested
 Git tree, PR head/base and links to all required checks. Default PR checkout may
 be a synthetic merge commit: its actual Git tree, rather than just the PR head
 SHA, is the identity that must be promoted. Linux Actions performs CPU wheel
-validation. Retained local GPU evidence and its source/toolchain scope are
-separate; the Actions wheels do not claim GPU execution. Recompilation alone does
-not require repeating that campaign under the maintainer's release decision.
+validation. Install the accepted Linux wheel for the planned Colab GPU tests,
+using the matching source tests and preserving the wheel checksum and execution
+reports. GPU execution of the repaired source is required separately from CPU
+Actions results. Tests requiring two visible GPUs remain a separate qualification
+item when the Colab runtime exposes one device.
 
 ## Merge, tag and promote
 
@@ -163,7 +165,7 @@ python -m twine upload accepted-manual/publish/*
 
 Inspect `accepted-manual/evidence/publication-validation.json` and its checksum
 list before uploading. The helper applies the same checks and downloads only the
-selected accepted sdist and four wheel sets. Never rebuild locally for this
+selected accepted sdist and three wheel sets. Never rebuild locally for this
 fallback. Optional TestPyPI publication has its own credentials/configuration
 and uses the accepted distributions; it is not another build or GPU campaign.
 
@@ -182,7 +184,7 @@ excluded for missing checkout data. Research under `exploration` is excluded by
 `testpaths = ["tests"]` and by the explicit sdist allowlist.
 
 The Linux selection uses two bounded workers and excludes existing gradcheck,
-backend-parity and compile selections. Windows and both macOS jobs retain full
+backend-parity and compile selections. Windows and the Apple Silicon macOS job retain full
 scalar tests, fast acoustic tests, every family's native smoke and Unicode
 storage-path checks. Collection on Linux does not qualify Windows/macOS.
 

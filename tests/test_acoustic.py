@@ -536,15 +536,13 @@ def test_backend_parity_partial_wavefields() -> None:
 
 
 def test_backend_parity_negative() -> None:
-    """Negative physical speed is rejected before either backend runs."""
-    with pytest.raises(ValueError, match="v >= 0"):
-        run_backend_parity(c=-1500, propagator=acousticprop)
+    """Backends agree for negative background velocity."""
+    run_backend_parity(c=-1500, propagator=acousticprop)
 
 
 def test_backend_parity_zero() -> None:
-    """Zero physical speed in positive-density material is rejected."""
-    with pytest.raises(ValueError, match="v > 0"):
-        run_backend_parity(c=0, dc=0, propagator=acousticprop)
+    """Backends agree for zero background velocity."""
+    run_backend_parity(c=0, dc=0, propagator=acousticprop)
 
 
 def test_backend_parity_different_pml() -> None:
@@ -1056,8 +1054,6 @@ def run_backend_parity(
     if prop_kwargs is None:
         prop_kwargs = {}
 
-    out_idxs = []
-
     def wrap(python):
         prop_kwargs["backend"] = python
         inputs = (
@@ -1091,7 +1087,7 @@ def run_backend_parity(
             out = out[-ndim - 1 :]
         # The auxiliary state is one output element holding several tensors;
         # the parity comparison is over tensors.
-        return compute_backend_parity_grad(output_tensors(out), inputs, out_idxs)
+        return compute_backend_parity_grad(output_tensors(out), inputs)
 
     run_python_vs_compiled_backend_parity(wrap, "eager", atol=atol, rtol=rtol)
 
@@ -2225,3 +2221,45 @@ def test_acoustic_output_names(ndim) -> None:
     assert out._names == tuple(acoustic_output_names(ndim))
     for name in out._names:
         assert hasattr(out, name)
+
+
+@pytest.mark.parametrize("nt", [3, 4])
+def test_pml_state_hessian_vector_matches_autograd(nt: int) -> None:
+    """The Born-backed double backward includes terminal PML cotangents."""
+    results = []
+    for backend in ("compiled", "eager"):
+        generator = torch.Generator().manual_seed(913)
+        v = torch.full((12, 12), 1500.0, dtype=torch.float64, requires_grad=True)
+        rho = torch.full_like(v, 2200.0, requires_grad=True)
+        pressure = (
+            1000 * torch.randn(1, 20, 20, dtype=v.dtype, generator=generator)
+        ).requires_grad_()
+        out = acoustic(
+            v,
+            rho,
+            5.0,
+            0.0004,
+            pressure_0=pressure,
+            origin=[0, 0],
+            nt=nt,
+            pml_width=4,
+            pml_freq=25.0,
+            max_vel=2000.0,
+            backend=backend,
+        )
+        loss = sum(
+            (
+                value * torch.randn(value.shape, dtype=value.dtype, generator=generator)
+            ).mean()
+            for value in out.auxiliary_state.values()
+        )
+        leaves = (v, rho, pressure)
+        first = torch.autograd.grad(loss, leaves, create_graph=True)
+        directions = tuple(
+            torch.randn(g.shape, dtype=g.dtype, generator=generator) for g in first
+        )
+        second = torch.autograd.grad(first, leaves, grad_outputs=directions)
+        assert all(torch.isfinite(g).all() for g in second)
+        assert any(torch.count_nonzero(g) for g in second)
+        results.append(second)
+    torch.testing.assert_close(results[0], results[1], rtol=1e-8, atol=1e-10)

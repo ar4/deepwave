@@ -18,7 +18,7 @@ run independently; you do not need to work through the whole collection.
    * - Work with elastic waves
      - :doc:`example_elastic` — modelling and inversion
    * - Simulate an ultrasound array
-     - :doc:`example_ultrasound` — transducers and fluid-solid media
+     - :doc:`ultrasound` — transducers and fluid-solid media
    * - Reconstruct initial pressure
      - :doc:`example_photoacoustic` — an initial-state inverse problem
    * - Fit a simulation into available memory

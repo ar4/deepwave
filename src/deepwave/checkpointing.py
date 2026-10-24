@@ -285,8 +285,7 @@ def _absorb_survey_kwargs(
         nt = _set_nt(nt, list(amplitudes.values()), 1)
         fitted = _fit_source_amplitudes_to_nt(list(amplitudes.values()), nt)
         amplitudes = {
-            name: cast("torch.Tensor", value)
-            for name, value in zip(amplitudes, fitted)
+            name: cast("torch.Tensor", value) for name, value in zip(amplitudes, fitted)
         }
     return amplitudes
 
@@ -541,7 +540,7 @@ def _canonical_source_order(
     """
     try:
         declared = list(inspect.signature(propagator).parameters)
-    except (TypeError, ValueError):  # pragma: no cover - builtins/C callables
+    except (TypeError, ValueError):  # builtins/C callables
         declared = []
     position = {name: i for i, name in enumerate(declared)}
     names = sorted(source_amplitudes, key=lambda n: position.get(n, len(position)))
@@ -638,7 +637,6 @@ class _SegmentResampling:
 
 
 def _resolve_segment_resampling(
-    model_args: Sequence[torch.Tensor],
     grid_spacing: Union[float, int, Sequence[float]],
     dt: float,
     ndim: int,
@@ -672,7 +670,7 @@ def _resolve_segment_resampling(
     if step_ratio == 1:
         return None
     _, check = _cfl_condition_n(gs, inner_dt, speed, courant_number=courant_number)
-    if check != 1:  # pragma: no cover - floating-point edge case
+    if check != 1:  # floating-point edge case
         raise _DeepwaveRuntimeError(
             "the internally computed dt / step_ratio "
             f"({dt} / {step_ratio}) still fails the CFL check (it would itself "
@@ -1059,7 +1057,7 @@ def _suggest_aligned_n_segments(nt: int, mgsi: int, requested: int) -> Optional[
         return None
     quotient = nt // mgsi
     divisors = [k for k in range(1, quotient + 1) if quotient % k == 0]
-    if not divisors:  # pragma: no cover - quotient >= 1 always has divisor 1
+    if not divisors:  # quotient >= 1 always has divisor 1
         return None
     return min(divisors, key=lambda k: (abs(k - requested), k))
 
@@ -1495,7 +1493,7 @@ def run_segments(
             )
     elif n_segments is not None:
         lengths = _segment_lengths(nt, n_segments)
-    else:  # pragma: no cover - the exactly-one check above guarantees this
+    else:  # the exactly-one check above guarantees this
         raise _DeepwaveValueError(
             "run_segments requires exactly one of n_segments or seg_lengths."
         )
@@ -1615,7 +1613,7 @@ def run_segments(
         kwargs = {**kwargs, "max_vel": prepared.info.max_vel}
 
     resampling = _resolve_segment_resampling(
-        model_args, grid_spacing, dt, ndim, len(lengths), kwargs
+        grid_spacing, dt, ndim, len(lengths), kwargs
     )
     if not combine and resampling is not None:
         raise _DeepwaveValueError(

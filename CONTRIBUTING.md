@@ -29,7 +29,7 @@ rebuilds and reloads that backend as you change `.c`/`.cu`/`CMakeLists.txt`.
 3. Install the test dependencies and the lint-tool versions used by CI:
 
    ```bash
-   pip install pytest pytest-xdist scipy sympy ruff==0.15.6 mypy==1.19.1
+   pip install pytest pytest-xdist pytest-cov hypothesis scipy sympy matplotlib ruff==0.15.6 mypy==1.19.1 clang-format==23.1.3 clang-tidy==23.1.3
    ```
 
    (`sympy` is used only by `tests/test_adjoint_symbolic.py`, which re-derives
@@ -142,6 +142,32 @@ Notes:
   node, but it is not reclassified as infrastructure merely because an
   isolated rerun passes.
 
+### Coverage and generated numerical tests
+
+The CPU test matrix collects Python statement and branch coverage across all
+its test batches and uploads the data, JSON and HTML reports. The existing 92%
+statement requirement is enforced by `scripts/check_line_coverage.py`; branch
+coverage is reported separately until a full-suite baseline has been reviewed.
+Python coverage does not measure execution inside the C/CUDA kernels. A covered
+line or branch also does not establish that its result was checked correctly.
+
+`tests/test_numerical_properties.py` uses Hypothesis to generate bounded cases
+with exact rational CFL expectations and PML unit-change identities. These
+complement the independent Decimal PML oracle. Each generated profile has at
+most 24 elements. The explicit deterministic settings reproduce the examples
+for the same test, Python and Hypothesis versions; changing those versions can
+change the examples. Hypothesis shrinks a failure to a small counterexample,
+which should then become an explicit regression test. There is no timing
+deadline for numerical assertions: use benchmarks to test performance.
+
+```bash
+python -m pytest tests/test_numerical_properties.py tests/test_pml_numerics.py
+```
+
+The lint workflow also runs actionlint with ShellCheck on every workflow and its
+embedded shell scripts. Keep their versions in sync with `.github/workflows/lint.yml`
+when reproducing diagnostics locally.
+
 ## Sanitizer builds
 
 CMake's `DW_SANITIZE` option builds the CPU object libraries with
@@ -250,6 +276,20 @@ against `tests/` and `docs/` as well as `src/deepwave/` and must pass. `mypy
 `ruff format --check`, `ruff check`, and `mypy --strict src/` are all
 genuinely clean today, so any regression you introduce will show up as a red,
 build-failing CI annotation.
+
+The C/CUDA formatter and CPU static analyser use clang-format and clang-tidy
+23.1.3, matching CI. Check formatting with:
+
+```bash
+clang-format --dry-run --Werror src/deepwave/*.c src/deepwave/*.cu src/deepwave/*.h
+```
+
+Configure a CPU build directory, then run the same clang-tidy command as
+`.github/workflows/lint.yml`, covering all nine propagator families and the
+storage, compression, and CPU feature helpers. When using the pip-distributed tool
+with a GCC build database, pass `--extra-arg=-idirafter` and
+`--extra-arg="$(gcc -print-file-name=include)"` to find OpenMP headers after
+Clang's own intrinsic headers.
 
 ## Example notebooks (jupytext)
 
@@ -380,6 +420,15 @@ plumbing in `backend_utils.py`.
    file in the same PR, even though you can't run it locally; a maintainer (or
    future GPU CI) validates CUDA execution before release. Say so explicitly in
    your PR description (see "PR expectations" below).
+   Both backends retain signed 64-bit tensor indices, offsets and sizes.
+   Widen operands before multiplication; assigning a wrapped 32-bit product
+   to `int64_t` cannot recover it. Control values use the receiving API's
+   type: validate the ABI's 64-bit thread count or device ordinal before
+   converting it to `int`. CUDA launch dimensions likewise require checked
+   conversion after division of the full tensor size. `native_types.h`
+   centralises these operations, with C and C++ boundary tests that require
+   no large allocations. A narrower internal index needs a demonstrated
+   range bound and measured benefit; CPU and GPU instruction costs can differ.
 3. **ABI changes must update the ABI reference tests.** `deepwave._backend_utils`
    assigns `ctypes.argtypes` to every backend entry point; those must exactly
    mirror the C function signatures, or calls silently corrupt memory.

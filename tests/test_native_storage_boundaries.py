@@ -5,6 +5,7 @@ from __future__ import annotations
 import ctypes
 import gc
 import os
+import platform
 import shutil
 import subprocess
 from pathlib import Path
@@ -81,6 +82,11 @@ def test_compiled_disk_gradient_uses_unicode_storage_path(tmp_path: Path) -> Non
 @pytest.mark.parametrize("shape", [(8,), (3, 9), (2, 3, 9)])
 def test_native_compression_tiny_blocks(dtype, peak, shape):
     """Quantization error stays within one half level, including partial blocks."""
+    _check_compression_roundtrip(dll, dtype, peak, shape)
+
+
+def _check_compression_roundtrip(library, dtype, peak, shape):
+    """Check the numerical bound against an explicitly selected native library."""
     name = "float" if dtype is ctypes.c_float else "double"
     ndim = len(shape)
     n = 1
@@ -93,8 +99,8 @@ def test_native_compression_tiny_blocks(dtype, peak, shape):
     packed = (ctypes.c_byte * (blocks * ctypes.sizeof(dtype) + n))()
     recovered = (dtype * n)()
     args = [ctypes.c_void_p, ctypes.c_void_p] + [ctypes.c_size_t] * ndim
-    compress = getattr(dll, f"simple_compress_compress_cpu_{ndim}d_{name}")
-    decompress = getattr(dll, f"simple_compress_decompress_cpu_{ndim}d_{name}")
+    compress = getattr(library, f"simple_compress_compress_cpu_{ndim}d_{name}")
+    decompress = getattr(library, f"simple_compress_decompress_cpu_{ndim}d_{name}")
     compress.argtypes = decompress.argtypes = args
     compress.restype = decompress.restype = None
     compress(original, packed, *shape)
@@ -107,6 +113,50 @@ def test_native_compression_tiny_blocks(dtype, peak, shape):
     min_subnormal = 1.4e-45 if dtype is ctypes.c_float else 5e-324
     assert max(errors) <= actual_peak / 254 + actual_peak * 1e-6 + 2 * min_subnormal
     assert all(b == 0 for a, b in zip(original, recovered) if a == 0)
+
+
+@pytest.mark.parametrize("compiler", ["gcc", "clang"])
+def test_compression_with_64_bit_long_double(compiler, tmp_path):
+    """Exercise Apple Silicon's long-double range using the release build flags."""
+    cc = shutil.which(compiler)
+    cmake = shutil.which("cmake")
+    if platform.system() != "Linux" or platform.machine() != "x86_64":
+        pytest.skip("-mlong-double-64 regression harness requires Linux x86_64")
+    if cc is None or cmake is None:
+        pytest.skip("CMake and the requested C compiler are required")
+    root = Path(__file__).resolve().parents[1]
+    subprocess.run(  # noqa: S603 - trusted compiler and local source
+        [
+            cmake,
+            "-S",
+            str(root),
+            "-B",
+            str(tmp_path),
+            "-DDW_SKIP_CUDA=ON",
+            "-DCMAKE_BUILD_TYPE=Release",
+            f"-DCMAKE_C_COMPILER={cc}",
+            "-DCMAKE_C_FLAGS=-mlong-double-64",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    target = "simple_compress_1_2_double_obj"
+    subprocess.run(  # noqa: S603 - trusted compiler and local source
+        [cmake, "--build", str(tmp_path), "--target", target],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    obj = next((tmp_path / "CMakeFiles" / f"{target}.dir").rglob("*.o"))
+    library = tmp_path / "compression.so"
+    subprocess.run(  # noqa: S603 - trusted compiler and local object
+        [cc, "-shared", str(obj), "-o", str(library)], check=True
+    )
+    for peak in (0.0, 1e-320, 1e-306, 1.0, torch.finfo(torch.float64).max):
+        _check_compression_roundtrip(
+            ctypes.CDLL(str(library)), ctypes.c_double, peak, (8,)
+        )
 
 
 @pytest.mark.gpu
