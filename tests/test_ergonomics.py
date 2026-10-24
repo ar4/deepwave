@@ -1702,4 +1702,7 @@ def test_readme_quick_example_is_warning_free() -> None:
     with warnings.catch_warnings(record=True) as record:
         warnings.simplefilter("always")
         exec(compile(code, "readme_quick_example", "exec"), namespace)  # noqa: S102
-    assert record == []
+    assert not record, "\n".join(
+        warnings.formatwarning(w.message, w.category, w.filename, w.lineno)
+        for w in record
+    )

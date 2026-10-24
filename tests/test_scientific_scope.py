@@ -50,11 +50,9 @@ def _run(q: torch.Tensor) -> deepwave.PropagatorOutput:
     )
 
 
-@pytest.mark.parametrize(
-    "value", [0.0, -1.0, float("nan"), -float("inf"), float("inf")]
-)
+@pytest.mark.parametrize("value", [0.0, -1.0, float("nan"), -float("inf")])
 def test_attenuation_rejects_invalid_quality(value: float) -> None:
-    """Quality factors must satisfy the physical and finite-model contract."""
+    """Quality factors must be positive; NaN and negative infinity are invalid."""
     with pytest.raises(
         deepwave.DeepwaveValueError, match=r"q must be positive|q > 0|finite q"
     ):
@@ -88,9 +86,14 @@ def test_small_positive_quality_has_finite_correct_relaxation() -> None:
     assert torch.isfinite(torch.autograd.grad(out.receiver_amplitudes_p.sum(), q)[0])
 
 
-def test_large_finite_quality_is_supported_lossless_limit() -> None:
-    """Large finite quality remains a supported lossless approximation."""
-    out = _run(torch.full((16,), 1e12))
+@pytest.mark.parametrize("quality", [1e12, float("inf")])
+def test_large_quality_is_supported_lossless_limit(quality: float) -> None:
+    """Both large finite Q and positive infinity support the lossless limit.
+
+    test_viscoacoustic.test_acoustic_limit independently compares this limit
+    with acoustic propagation and its gradients on eager and native backends.
+    """
+    out = _run(torch.full((16,), quality))
     assert torch.isfinite(out.receiver_amplitudes_p).all()
 
 

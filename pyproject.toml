@@ -73,6 +73,9 @@ docs = [
 examples = [
     "geomloss",
     "matplotlib",
+    # Python 3.9's final Matplotlib series uses parser APIs deprecated in
+    # pyparsing 3.3. Matplotlib's fix (3.10.7) requires Python >=3.10.
+    "pyparsing<3.3; python_version < '3.10'",
     "numpy",
     "scipy",
     "torchaudio",

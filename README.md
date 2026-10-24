@@ -58,6 +58,9 @@ Deepwave does not try to be a general symbolic PDE solver, a multi-node HPC code
 
 ## Quick Example
 This example also needs Matplotlib: `python -m pip install matplotlib`.
+On Python 3.9, also install `"pyparsing<3.3"` for compatibility with Matplotlib 3.9:
+`python -m pip install "pyparsing<3.3"`. Newer Python versions can use the current
+Matplotlib and Pyparsing releases.
 
 In a few lines you can make a velocity model, propagate a wave from a source in the top left corner to a receiver in the top right, calculate an objective function, and backpropagate to obtain its gradient with respect to the velocity.
 ```python
