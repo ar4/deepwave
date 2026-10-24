@@ -3373,7 +3373,7 @@ def elastic_born_func(
     """
     return cast(
         "tuple[torch.Tensor, ...]",
-        ElasticBornForwardFunc.apply(  # type: ignore[no-untyped-call]
+        ElasticBornForwardFunc.apply(
             pml_profiles,
             grid_spacing,
             dt,

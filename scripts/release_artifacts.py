@@ -99,9 +99,12 @@ def identity() -> dict[str, Any]:
 def successful_jobs(jobs: dict[str, Any]) -> None:
     """Require every declared gate, including matrix jobs."""
     require(bool(jobs), "empty required jobs")
+    failed = []
     for name, job in jobs.items():
         result = job.get("result") if isinstance(job, dict) else job
-        require(result == "success", f"required job {name}: {result}")
+        if result != "success":
+            failed.append(f"{name}: {result}")
+    require(not failed, "required jobs did not succeed: " + "; ".join(failed))
 
 
 def source_members(path: Path) -> dict[str, str]:
@@ -409,5 +412,17 @@ def main() -> None:
         verify_files(manifest, args.directory, args.output)
 
 
+def cli() -> None:
+    """Expose validation failures as Actions annotations, retaining tracebacks."""
+    try:
+        main()
+    except (ValueError, OSError) as error:
+        if os.environ.get("GITHUB_ACTIONS") == "true":
+            message = str(error).replace("%", "%25").replace("\r", "%0D")
+            message = message.replace("\n", "%0A")
+            print(f"::error title=Release qualification failed::{message}", flush=True)
+        raise
+
+
 if __name__ == "__main__":
-    main()
+    cli()

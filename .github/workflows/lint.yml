@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
 
       - name: Set up Python
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
 
@@ -34,6 +34,11 @@ jobs:
         # mypy --strict needs torch's type stubs to resolve deepwave's
         # torch.Tensor-heavy signatures.
         run: pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Record lint environment
+        run: |
+          python --version
+          pip freeze
 
       - name: ruff format --check
         # docs/ has its own ruff.toml (a narrower line length, so example
@@ -49,7 +54,9 @@ jobs:
         # than this flag; this still only checks src/, matching the
         # project's mypy gate (benchmarks/ and tests/ are not held to
         # mypy --strict).
-        run: mypy src/
+        run: |
+          echo "::add-matcher::.github/matchers/mypy.json"
+          mypy src/
 
       - name: clone drift check
         # Re-extracts each duplicated C/CUDA function named in
@@ -66,7 +73,7 @@ jobs:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
 
       - name: Set up Python
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
 
@@ -93,7 +100,7 @@ jobs:
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
 
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
 
@@ -151,7 +158,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.13"
       - name: Install actionlint and ShellCheck

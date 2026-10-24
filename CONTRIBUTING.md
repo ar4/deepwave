@@ -272,10 +272,15 @@ in `ruff.toml`) and `docs/` has its own `docs/ruff.toml` (a narrower line
 length, so example code fits in a rendered code block, plus the ignores an
 example script needs), but neither is exempt from CI -- both `ruff` steps run
 against `tests/` and `docs/` as well as `src/deepwave/` and must pass. `mypy
---strict` is checked against `src/` only. `src/deepwave/`, `tests/`, `docs/`,
-`ruff format --check`, `ruff check`, and `mypy --strict src/` are all
-genuinely clean today, so any regression you introduce will show up as a red,
-build-failing CI annotation.
+--strict` is checked against `src/` only.
+
+Match CI's type-checking environment: Python 3.12, Ruff 0.15.6, mypy 1.19.1,
+and the latest CPU PyTorch from `https://download.pytorch.org/whl/cpu`.
+CI records the installed versions. PyTorch's type annotations change between
+releases: an ignore needed by an older release can correctly fail strict
+checking as unused with newer annotations. Runtime compatibility with older
+supported PyTorch releases is checked separately by the test matrix. Mypy
+diagnostics are also exposed as file-and-line annotations in the lint job.
 
 The C/CUDA formatter and CPU static analyser use clang-format and clang-tidy
 23.1.3, matching CI. Check formatting with:

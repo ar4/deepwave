@@ -2837,7 +2837,7 @@ def elastic_vti_func(
     # ``setup_context``; strip it so callers see only the output tensors.
     return cast(
         "tuple[torch.Tensor, ...]",
-        ElasticVtiForwardFunc.apply(*args)[:-1],  # type: ignore[no-untyped-call]
+        ElasticVtiForwardFunc.apply(*args)[:-1],
     )
 
 

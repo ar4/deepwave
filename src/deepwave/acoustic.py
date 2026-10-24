@@ -2006,7 +2006,7 @@ class AcousticForwardFunc(torch.autograd.Function):
         wavefields = saved[4 * n : 4 * n + n_bg_wf]
         pml_profiles = saved[4 * n + n_bg_wf :]
 
-        result = AcousticBackwardFunc.apply(  # type: ignore[no-untyped-call]
+        result = AcousticBackwardFunc.apply(
             pml_profiles,
             sources_i,
             receivers_i,
@@ -2813,7 +2813,7 @@ def acoustic_func(
     # ``setup_context``; strip it so callers see only the output tensors.
     return cast(
         "tuple[torch.Tensor, ...]",
-        func(*args)[:-1],  # type: ignore[no-untyped-call]
+        func(*args)[:-1],
     )
 
 

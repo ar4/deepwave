@@ -2810,7 +2810,7 @@ def viscoacoustic_func(
     func = ViscoacousticForwardFunc.apply
     return cast(
         "tuple[torch.Tensor, ...]",
-        func(*args)[:-1],  # type: ignore[no-untyped-call]
+        func(*args)[:-1],
     )
 
 

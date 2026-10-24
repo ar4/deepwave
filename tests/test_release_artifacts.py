@@ -6,6 +6,9 @@ import copy
 import hashlib
 import io
 import json
+import os
+import subprocess
+import sys
 import tarfile
 import zipfile
 from typing import TYPE_CHECKING, Any
@@ -17,6 +20,47 @@ import pytest
 
 from scripts import prepare_publication as publication
 from scripts import release_artifacts as release
+
+
+@pytest.mark.parametrize("actions", ["true", "false"])
+def test_qualification_cli_reports_failed_prerequisites(
+    tmp_path: Path, actions: str
+) -> None:
+    """A real CLI failure names every failed gate without hiding its traceback."""
+    jobs = {
+        "lint": {"result": "failure"},
+        "build%windows\nsecond line": {"result": "cancelled"},
+        "docs": {"result": "success"},
+    }
+    result = subprocess.run(  # noqa: S603 - fixed local CLI and generated metadata
+        [
+            sys.executable,
+            release.__file__,
+            "aggregate",
+            "--directory",
+            str(tmp_path),
+            "--needs",
+            json.dumps(jobs),
+        ],
+        env={**os.environ, "GITHUB_ACTIONS": actions},
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+    assert result.returncode == 1
+    assert "ValueError: required jobs did not succeed:" in result.stderr
+    assert "lint: failure" in result.stderr
+    assert "build%windows\nsecond line: cancelled" in result.stderr
+    assert "docs: success" not in result.stderr
+    if actions == "true":
+        assert result.stdout == (
+            "::error title=Release qualification failed::"
+            "required jobs did not succeed: lint: failure; "
+            "build%25windows%0Asecond line: cancelled\n"
+        )
+    else:
+        assert not result.stdout
 
 
 def candidate(tmp_path: Path) -> dict[str, Any]:

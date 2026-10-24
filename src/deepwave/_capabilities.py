@@ -23,7 +23,7 @@ import dataclasses
 import inspect
 import tempfile
 import warnings
-from typing import Any, Callable, Optional, cast
+from typing import Any, Callable, Optional
 
 import torch
 from torch.func import jvp, vmap
@@ -566,7 +566,7 @@ def _probe_batching(name: str) -> str:
             return _receiver(name, 2, backend, v)
 
         def call(f: Callable[[torch.Tensor], torch.Tensor] = f) -> torch.Tensor:
-            return cast("torch.Tensor", vmap(f)(batch))
+            return vmap(f)(batch)
 
         if _succeeds(call):
             return f"yes, over property models ({label} backend)"
