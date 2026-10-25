@@ -55,7 +55,13 @@ def test_compiled_call_rechecks_sources_and_adjoint_receivers(
             **shared,
         ).receiver_amplitudes_p
 
-    compiled = torch.compile(run, backend=compiler_backend)
+    if compiler_backend is None:
+        # Passing backend=None explicitly is not equivalent across PyTorch
+        # versions: some Dynamo releases try to call None as the backend.
+        # Omitting the argument selects PyTorch's default backend.
+        compiled = torch.compile(run)
+    else:
+        compiled = torch.compile(run, backend=compiler_backend)
     with pytest.raises(
         DeepwaveRuntimeError, match="locations must be unique within each shot"
     ):

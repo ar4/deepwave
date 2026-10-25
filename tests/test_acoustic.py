@@ -206,7 +206,7 @@ def test_backends() -> None:
     [
         ((50,), (5,)),
         ((50, 50), (5, 5)),
-        ((10, 10, 10), (5, 5, 5)),
+        pytest.param((10, 10, 10), (5, 5, 5), marks=pytest.mark.slow),
     ],
 )
 def test_direct(nx, dx):
@@ -490,6 +490,7 @@ def test_backend_parity_8th_order() -> None:
     run_backend_parity(propagator=acousticprop, prop_kwargs={"accuracy": 8})
 
 
+@pytest.mark.slow
 def test_backend_parity_cfl() -> None:
     """Test backend parity with a timestep greater than the CFL limit."""
     run_backend_parity(propagator=acousticprop, dt=0.002, nt_add=1000, atol=5e-8)

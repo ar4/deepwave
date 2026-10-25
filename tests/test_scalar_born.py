@@ -71,7 +71,7 @@ def test_backends() -> None:
     [
         ((50,), (5,)),
         ((50, 50), (5, 5)),
-        ((10, 10, 10), (5, 5, 5)),
+        pytest.param((10, 10, 10), (5, 5, 5), marks=pytest.mark.slow),
     ],
 )
 def test_born_scatter(nx, dx) -> None:

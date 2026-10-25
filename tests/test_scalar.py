@@ -312,7 +312,7 @@ def test_backends() -> None:
     [
         ((50,), (5,)),
         pytest.param((50, 50), (5, 5), marks=pytest.mark.slow),
-        ((10, 10, 10), (5, 5, 5)),
+        pytest.param((10, 10, 10), (5, 5, 5), marks=pytest.mark.slow),
     ],
 )
 def test_direct(nx, dx, numerics_device):
@@ -2090,6 +2090,7 @@ def test_jvp_v() -> None:
     assert torch.allclose(jvp_out, fd_out)
 
 
+@pytest.mark.slow
 def test_hessian_v() -> None:
     """Test Hessian-vector product (double backward) vs JVP of grad."""
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -2138,6 +2139,7 @@ def test_hessian_v() -> None:
     assert torch.allclose(hvp_standard, hvp_functional, atol=1e-5)
 
 
+@pytest.mark.slow
 def test_vmap_grad_v() -> None:
     """Test vmap over grad with respect to velocity."""
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
