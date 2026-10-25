@@ -2507,8 +2507,10 @@ _N_LEAD = _engine.leading_arg_count(AcousticBornForwardFunc.forward)
 
 def acoustic_born_func(*args: Any) -> tuple[torch.Tensor, ...]:
     """Helper function to apply :class:`AcousticBornForwardFunc`."""
-    func = AcousticBornForwardFunc.apply
-    return cast("tuple[torch.Tensor, ...]", func(*args)[:-1])
+    return cast(
+        "tuple[torch.Tensor, ...]",
+        _common.apply_autograd_function(AcousticBornForwardFunc.apply, *args)[:-1],
+    )
 
 
 def _update_velocities_born(

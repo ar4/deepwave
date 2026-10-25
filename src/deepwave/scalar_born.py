@@ -2478,13 +2478,11 @@ def scalar_born_func(
         + args[_N_LEADING_ARGS:]
     )
 
-    func = ScalarBornForwardFunc.apply
-
     # ``forward`` appends a ``ForwardSavedState`` trailing output for
     # ``setup_context``; strip it so callers see only the output tensors.
     return cast(
         "tuple[torch.Tensor, ...]",
-        func(*args)[:-1],
+        _common.apply_autograd_function(ScalarBornForwardFunc.apply, *args)[:-1],
     )
 
 

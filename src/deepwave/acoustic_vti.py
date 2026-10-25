@@ -3249,7 +3249,7 @@ def acoustic_vti_func(
     # output tensors (mirrors elastic_vti_func).
     return cast(
         "tuple[torch.Tensor, ...]",
-        AcousticVtiForwardFunc.apply(*args)[:-1],
+        _common.apply_autograd_function(AcousticVtiForwardFunc.apply, *args)[:-1],
     )
 
 

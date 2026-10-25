@@ -3206,7 +3206,8 @@ class ElasticForwardFunc(torch.autograd.Function):
         pm_c = getattr(ctx, "pm_c", None)
         pm_tensors = tuple(pm_c) if pm_c is not None else ()
 
-        result = ElasticBackwardFunc.apply(
+        result = _common.apply_autograd_function(
+            ElasticBackwardFunc.apply,
             mpml,
             boundary,
             pm_c_batched,
@@ -5188,7 +5189,7 @@ def elastic_func(
     # ``setup_context``; strip it so callers see only the output tensors.
     return cast(
         "tuple[torch.Tensor, ...]",
-        ElasticForwardFunc.apply(*args)[:-1],
+        _common.apply_autograd_function(ElasticForwardFunc.apply, *args)[:-1],
     )
 
 

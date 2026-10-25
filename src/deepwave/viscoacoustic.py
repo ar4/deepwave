@@ -2807,10 +2807,9 @@ def viscoacoustic_func(
         *args[_N_LEADING_ARGS:],
     )
 
-    func = ViscoacousticForwardFunc.apply
     return cast(
         "tuple[torch.Tensor, ...]",
-        func(*args)[:-1],
+        _common.apply_autograd_function(ViscoacousticForwardFunc.apply, *args)[:-1],
     )
 
 

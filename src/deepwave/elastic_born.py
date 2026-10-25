@@ -3373,7 +3373,8 @@ def elastic_born_func(
     """
     return cast(
         "tuple[torch.Tensor, ...]",
-        ElasticBornForwardFunc.apply(
+        _common.apply_autograd_function(
+            ElasticBornForwardFunc.apply,
             pml_profiles,
             grid_spacing,
             dt,

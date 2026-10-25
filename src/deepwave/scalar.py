@@ -2007,7 +2007,8 @@ class ScalarForwardFunc(torch.autograd.Function):
         # run_forward stores this as a one-element list (one source type).
         source_amplitudes_requires_grad = ctx.source_amplitudes_requires_grad[0]
 
-        result = ScalarBackwardFunc.apply(
+        result = _common.apply_autograd_function(
+            ScalarBackwardFunc.apply,
             grad_r,
             v,
             pml_profiles,
@@ -3503,14 +3504,12 @@ def scalar_func(
         + args[_N_LEADING_ARGS:]
     )
 
-    func = ScalarForwardFunc.apply
-
     # ``forward`` appends a ``ForwardSavedState`` as its trailing output (so
     # ``setup_context`` can populate ``ctx`` without the old-style ``ctx`` arg);
     # strip it so callers see only the wavefield/receiver tensors.
     return cast(
         "tuple[torch.Tensor, ...]",
-        func(*args)[:-1],
+        _common.apply_autograd_function(ScalarForwardFunc.apply, *args)[:-1],
     )
 
 

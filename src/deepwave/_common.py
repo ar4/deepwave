@@ -76,6 +76,12 @@ if TYPE_CHECKING:
     import deepwave._engine
     import deepwave._location_interpolation
 
+
+def apply_autograd_function(function: Any, *args: Any) -> Any:
+    """Call a ``torch.autograd.Function.apply`` method, which is untyped."""
+    return function(*args)
+
+
 # Some warnings interpolate a value derived from the current model (e.g. its
 # velocity range), which can change between calls within the same process --
 # an FWI loop's evolving model being the typical case. Python's default

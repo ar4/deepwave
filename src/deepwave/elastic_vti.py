@@ -2837,7 +2837,7 @@ def elastic_vti_func(
     # ``setup_context``; strip it so callers see only the output tensors.
     return cast(
         "tuple[torch.Tensor, ...]",
-        ElasticVtiForwardFunc.apply(*args)[:-1],
+        _common.apply_autograd_function(ElasticVtiForwardFunc.apply, *args)[:-1],
     )
 
 
