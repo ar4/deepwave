@@ -952,14 +952,10 @@ DW_TARGET_CLONES int FUNC(backward)(
 #endif
               int64_t x;
 
-#ifdef _OPENMP
 /* Fixed chunks keep SIMD/scalar-tail boundaries independent of the
  * thread count. The adjoint must round each cell the same way even when
  * the compiler emits different arithmetic for its vector and scalar paths. */
-#pragma omp for simd collapse(DW_NDIM) schedule(static, 256) nowait
-#else
-#pragma omp simd collapse(DW_NDIM)
-#endif
+DW_OMP_FOR_SIMD(schedule(static, 256) nowait)
 #if DW_NDIM >= 3
               for (z = (pml_z == 0   ? FD_PAD
                         : pml_z == 1 ? pml_z0
