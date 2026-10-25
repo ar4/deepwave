@@ -556,7 +556,7 @@ if(CUDAToolkit_FOUND)
     #
     # The specific architectures a compiler even accepts change across CUDA
     # releases -- this project's release CI (.github/workflows/build.yml)
-    # is pinned to CUDA 13.3, but a dev box may have a newer toolkit (CUDA
+    # is pinned to CUDA 12.4, but a dev box may have a newer toolkit (CUDA
     # 13.x dropped sm_50/60/70 entirely: `nvcc --list-gpu-arch` on a CUDA
     # 13.3 install starts at compute_75) -- so the curated list is chosen
     # per detected CUDA major version rather than hardcoded once. The
@@ -761,10 +761,11 @@ if(CUDAToolkit_FOUND)
                 set(CUDA_RELEASE_OPTIONS -O3 --restrict)
             endif()
             # Keep all SASS/PTX targets while reducing the wheel payload.
-            # CUDA 13 supports size compression on every compatible driver;
-            # leave older toolkits on their default to retain driver support.
+            # CUDA 12.4 introduced --compress-mode=size; it requires drivers
+            # from CUDA 12.4 onward, matching the minimum driver floor for
+            # these release wheels. Older toolkits retain their default mode.
             if(CMAKE_CUDA_COMPILER_ID STREQUAL "NVIDIA" AND
-               CMAKE_CUDA_COMPILER_VERSION VERSION_GREATER_EQUAL 13.0)
+               CMAKE_CUDA_COMPILER_VERSION VERSION_GREATER_EQUAL 12.4)
                 list(APPEND CUDA_RELEASE_OPTIONS --compress-mode=size)
             endif()
         endif()

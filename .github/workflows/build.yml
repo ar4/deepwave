@@ -124,12 +124,12 @@ jobs:
           # is specified in pyproject.toml
           CIBW_BEFORE_ALL_LINUX: >
             curl -sL https://developer.download.nvidia.com/compute/cuda/repos/rhel8/x86_64/cuda-rhel8.repo -o /etc/yum.repos.d/cuda-rhel8.repo &&
-            dnf install -y cuda-nvcc-13-3 cuda-cudart-devel-13-3 cuda-documentation-13-3 gcc-toolset-13 gcc-toolset-13-libubsan-devel &&
+            dnf install -y cuda-nvcc-12-4 cuda-cudart-devel-12-4 cuda-documentation-12-4 gcc-toolset-13 gcc-toolset-13-libubsan-devel &&
             mkdir -p {package}/runtime-notices &&
             cp /usr/share/licenses/gcc/COPYING3 {package}/runtime-notices/GNU_GPL_3.txt &&
             cp /usr/share/licenses/gcc/COPYING.RUNTIME {package}/runtime-notices/GCC_RUNTIME_EXCEPTION.txt
-          CIBW_ENVIRONMENT_LINUX: PATH="/opt/rh/gcc-toolset-13/root/usr/bin/:$PATH:/usr/local/cuda-13.3/bin" CUDA_PATH="/usr/local/cuda-13.3/bin" CUDA_HOME="/usr/local/cuda-13.3" CUDA_ROOT="/usr/local/cuda-13.3" LD_LIBRARY_PATH="/opt/rh/gcc-toolset-13/root/usr/lib64:$LD_LIBRARY_PATH:/usr/local/cuda-13.3/lib64" CUDACXX="/usr/local/cuda-13.3/bin/nvcc" CC=/opt/rh/gcc-toolset-13/root/usr/bin/gcc CXX=/opt/rh/gcc-toolset-13/root/usr/bin/g++ CMAKE_CUDA_HOST_COMPILER=/opt/rh/gcc-toolset-13/root/usr/bin/g++
-          CIBW_ENVIRONMENT_WINDOWS: PATH="$PATH;C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.3\\bin" CudaToolkitDir="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.3" CUDA_PATH="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.3" CUDA_HOME="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.3" CUDAToolkit_ROOT="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.3" CUDACXX="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.3\\bin\\nvcc.exe"
+          CIBW_ENVIRONMENT_LINUX: PATH="/opt/rh/gcc-toolset-13/root/usr/bin/:$PATH:/usr/local/cuda-12.4/bin" CUDA_PATH="/usr/local/cuda-12.4/bin" CUDA_HOME="/usr/local/cuda-12.4" CUDA_ROOT="/usr/local/cuda-12.4" LD_LIBRARY_PATH="/opt/rh/gcc-toolset-13/root/usr/lib64:$LD_LIBRARY_PATH:/usr/local/cuda-12.4/lib64" CUDACXX="/usr/local/cuda-12.4/bin/nvcc" CC=/opt/rh/gcc-toolset-13/root/usr/bin/gcc CXX=/opt/rh/gcc-toolset-13/root/usr/bin/g++ CMAKE_CUDA_HOST_COMPILER=/opt/rh/gcc-toolset-13/root/usr/bin/g++
+          CIBW_ENVIRONMENT_WINDOWS: PATH="$PATH;C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4\\bin" CudaToolkitDir="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4" CUDA_PATH="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4" CUDA_HOME="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4" CUDAToolkit_ROOT="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4" CUDACXX="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4\\bin\\nvcc.exe"
 
       - name: Check wheel size budget
         run: |

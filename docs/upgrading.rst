@@ -1465,9 +1465,10 @@ The compiled CUDA kernels ship a curated architecture list
 
 The compiled kernels embed Ampere (sm_86) and Ada (sm_89) machine code,
 plus PTX for the oldest architecture in the build's supported toolkit bucket.
-This keeps wheel size within the release budget. CUDA 13 builds use
-compute_75 (Turing) as the PTX floor; the CUDA 12 bucket uses compute_50
-(Maxwell).
+This keeps wheel size within the release budget. Release wheels use CUDA 12.4
+and compute_50 (Maxwell) as the PTX floor to support a wider range of drivers
+and GPU generations. CUDA 13 source builds use compute_75 (Turing) as their
+PTX floor because that is the oldest architecture accepted by CUDA 13.
 
 A GPU at or above that floor without a matching machine-code entry can use
 PTX JIT, provided its driver supports the emitted PTX version and the installed
@@ -1476,8 +1477,8 @@ PTX is not a fallback for devices below the floor, and does not promise support
 for every future device or driver.
 
 Fix: check :func:`deepwave.diagnostics.report` and the installed PyTorch build.
-For a GPU below the CUDA 13 floor, use a source build with a compatible older
-CUDA toolkit and PyTorch, or run on the CPU.
+For a GPU below the floor of the toolkit used for a source build, use a
+compatible older CUDA toolkit and PyTorch, or run on the CPU.
 
 .. _upgrade-step-ratio:
 

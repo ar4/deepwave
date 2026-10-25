@@ -214,7 +214,7 @@ def record(kind: str, directory: Path, needs: dict[str, Any]) -> None:
         receipt["build_inputs"]["pyproject_sha256"] = sha256(Path("pyproject.toml"))
         receipt["build_inputs"]["compiler_versions"] = (
             "Actual compiler versions in cibuildwheel build logs; Linux GCC toolset "
-            "13 / CUDA 13.3 and Windows CUDA 13.3.1 in the hashed workflow"
+            "13 / CUDA 12.4 and Windows CUDA 12.4.1 in the hashed workflow"
         )
         receipt["build_inputs"]["runner_image"] = os.environ.get(
             "ImageVersion",  # noqa: SIM112 - GitHub runner variable
