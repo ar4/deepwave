@@ -56,7 +56,7 @@ jobs:
         run: |
           pip install dist/*.whl
           # Match the Python 3.9 plotting compatibility constraint in [examples].
-          pip install pytest pytest-xdist pytest-cov pytest-instafail scipy sympy matplotlib hypothesis \
+          pip install pytest pytest-xdist pytest-timeout pytest-cov pytest-instafail scipy sympy matplotlib hypothesis \
             'pyparsing<3.3; python_version < "3.10"'
           python -m pip freeze > test-environment.txt
 
@@ -67,12 +67,14 @@ jobs:
         # Accumulate statements and branches across every batch. The final
         # statement gate retains the existing 92% requirement independently
         # of the new branch measurement (whose baseline is not yet known).
-        # Show failures immediately and retain per-test timings. A five-minute
-        # stack dump diagnoses long tests without aborting them. Run every
-        # batch even if an earlier one fails, preserving a failing job status.
+        # Enforce a five-minute maximum per test. The thread timeout method
+        # terminates a hung xdist worker even when a test is stuck in native
+        # code. Show failures immediately and retain per-test timings. Run
+        # every batch even if an earlier one fails, preserving a failing job
+        # status.
         run: |
           status=0
-          reporting=(--instafail -v --durations=30 -o faulthandler_timeout=300)
+          reporting=(--instafail -v --durations=30 --timeout=300 --timeout-method=thread)
           python -m pytest tests/ -n auto -m "not slow" "${reporting[@]}" \
             --junitxml=test-results/main.xml \
             --ignore=tests/test_boundary.py \
