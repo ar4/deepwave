@@ -761,11 +761,11 @@ if(CUDAToolkit_FOUND)
                 set(CUDA_RELEASE_OPTIONS -O3 --restrict)
             endif()
             # Keep all SASS/PTX targets while reducing the wheel payload.
-            # CUDA 12.4 introduced --compress-mode=size; it requires drivers
-            # from CUDA 12.4 onward, matching the minimum driver floor for
-            # these release wheels. Older toolkits retain their default mode.
+            # CUDA 12.8 added nvcc's --compress-mode=size option. CUDA 12.4
+            # still compresses fatbins by default, using its speed-oriented
+            # mode; don't pass an option that this compiler doesn't accept.
             if(CMAKE_CUDA_COMPILER_ID STREQUAL "NVIDIA" AND
-               CMAKE_CUDA_COMPILER_VERSION VERSION_GREATER_EQUAL 12.4)
+               CMAKE_CUDA_COMPILER_VERSION VERSION_GREATER_EQUAL 12.8)
                 list(APPEND CUDA_RELEASE_OPTIONS --compress-mode=size)
             endif()
         endif()
