@@ -47,7 +47,8 @@ jobs:
           for wheel in dist/*.whl; do
             python -m pip install "${wheel}[docs]"
           done
-          python -m pip install pytest
+          # The HTTPS checksum test imports get_marmousi, which uses NumPy.
+          python -m pip install pytest numpy
 
       - name: Check documentation setup and HTTPS transport
         run: python -m pytest tests/test_docs_build_setup.py tests/test_geoazur.py

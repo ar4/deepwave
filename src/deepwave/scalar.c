@@ -518,14 +518,13 @@ DW_TARGET_CLONES int FUNC(forward)(
         int pml_x;
 
 #if DW_NDIM >= 3
-#pragma GCC unroll 3
-        for (pml_z = 0; pml_z < 3; ++pml_z)
+        DW_UNROLL_PML for (pml_z = 0; pml_z < 3; ++pml_z)
 #endif
 #if DW_NDIM >= 2
-#pragma GCC unroll 3
+            DW_UNROLL_PML
           for (pml_y = 0; pml_y < 3; ++pml_y)
 #endif
-#pragma GCC unroll 3
+              DW_UNROLL_PML
             for (pml_x = 0; pml_x < 3; ++pml_x) {
 #if DW_NDIM >= 3
               int64_t z;
@@ -535,11 +534,7 @@ DW_TARGET_CLONES int FUNC(forward)(
 #endif
               int64_t x;
 
-#ifdef _OPENMP
-#pragma omp for simd collapse(DW_NDIM) nowait
-#else
-#pragma omp simd collapse(DW_NDIM)
-#endif
+              DW_OMP_FOR_SIMD(nowait)
 #if DW_NDIM >= 3
               for (z = (pml_z == 0   ? FD_PAD
                         : pml_z == 1 ? pml_z0
@@ -941,14 +936,13 @@ DW_TARGET_CLONES int FUNC(backward)(
         int pml_x;
 
 #if DW_NDIM >= 3
-#pragma GCC unroll 3
-        for (pml_z = 0; pml_z < 3; ++pml_z)
+        DW_UNROLL_PML for (pml_z = 0; pml_z < 3; ++pml_z)
 #endif
 #if DW_NDIM >= 2
-#pragma GCC unroll 3
+            DW_UNROLL_PML
           for (pml_y = 0; pml_y < 3; ++pml_y)
 #endif
-#pragma GCC unroll 3
+              DW_UNROLL_PML
             for (pml_x = 0; pml_x < 3; ++pml_x) {
 #if DW_NDIM >= 3
               int64_t z;

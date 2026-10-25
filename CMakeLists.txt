@@ -760,6 +760,13 @@ if(CUDAToolkit_FOUND)
             else()
                 set(CUDA_RELEASE_OPTIONS -O3 --restrict)
             endif()
+            # Keep all SASS/PTX targets while reducing the wheel payload.
+            # CUDA 13 supports size compression on every compatible driver;
+            # leave older toolkits on their default to retain driver support.
+            if(CMAKE_CUDA_COMPILER_ID STREQUAL "NVIDIA" AND
+               CMAKE_CUDA_COMPILER_VERSION VERSION_GREATER_EQUAL 13.0)
+                list(APPEND CUDA_RELEASE_OPTIONS --compress-mode=size)
+            endif()
         endif()
         if(NOT WIN32)
             # -fPIC is not a valid option for the MSVC compiler on Windows.

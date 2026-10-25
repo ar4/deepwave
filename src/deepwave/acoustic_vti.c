@@ -977,12 +977,10 @@ DW_TARGET_CLONES int FUNC(forward)(
         int pml_y;
         int pml_x;
 #if DW_NDIM >= 3
-#pragma GCC unroll 3
-        for (pml_z = 0; pml_z < 3; ++pml_z)
+        DW_UNROLL_PML for (pml_z = 0; pml_z < 3; ++pml_z)
 #endif
-#pragma GCC unroll 3
-          for (pml_y = 0; pml_y < 3; ++pml_y)
-#pragma GCC unroll 3
+            DW_UNROLL_PML
+          for (pml_y = 0; pml_y < 3; ++pml_y) DW_UNROLL_PML
             for (pml_x = 0; pml_x < 3; ++pml_x) {
 #if DW_NDIM >= 3
               int64_t z;
@@ -992,14 +990,10 @@ DW_TARGET_CLONES int FUNC(forward)(
 
 #if DW_NDIM >= 3
 
-          // vz -- fed only by d(sigma_v)/dz (the axis derivative).
+              // vz -- fed only by d(sigma_v)/dz (the axis derivative).
 
-#ifdef _OPENMP
-#pragma omp for simd collapse(DW_NDIM) nowait
-#else
-#pragma omp simd collapse(DW_NDIM)
-#endif
-              for (z = pml_bounds_zh[pml_z]; z < pml_bounds_zh[pml_z + 1]; z++)
+              DW_OMP_FOR_SIMD(nowait) for (z = pml_bounds_zh[pml_z];
+                                           z < pml_bounds_zh[pml_z + 1]; z++)
                 for (y = pml_bounds_y[pml_y]; y < pml_bounds_y[pml_y + 1]; y++)
                   for (x = pml_bounds_x[pml_x]; x < pml_bounds_x[pml_x + 1];
                        x++) {
@@ -1012,14 +1006,10 @@ DW_TARGET_CLONES int FUNC(forward)(
                   }
 #endif
 
-          // vy -- 3-D: transverse, fed only by d(sigma_h)/dy.
-          //       2-D: axis, fed only by d(sigma_v)/dy.
+              // vy -- 3-D: transverse, fed only by d(sigma_h)/dy.
+              //       2-D: axis, fed only by d(sigma_v)/dy.
 
-#ifdef _OPENMP
-#pragma omp for simd collapse(DW_NDIM) nowait
-#else
-#pragma omp simd collapse(DW_NDIM)
-#endif
+              DW_OMP_FOR_SIMD(nowait)
 #if DW_NDIM >= 3
               for (z = pml_bounds_z[pml_z]; z < pml_bounds_z[pml_z + 1]; z++)
 #endif
@@ -1046,13 +1036,9 @@ DW_TARGET_CLONES int FUNC(forward)(
                         y, x, !DW_PML_SKIP(pml_y == 1), rdy);
                   }
 
-          // vx -- always transverse, fed only by d(sigma_h)/dx.
+              // vx -- always transverse, fed only by d(sigma_h)/dx.
 
-#ifdef _OPENMP
-#pragma omp for simd collapse(DW_NDIM) nowait
-#else
-#pragma omp simd collapse(DW_NDIM)
-#endif
+              DW_OMP_FOR_SIMD(nowait)
 #if DW_NDIM >= 3
               for (z = pml_bounds_z[pml_z]; z < pml_bounds_z[pml_z + 1]; z++)
 #endif
@@ -1111,12 +1097,10 @@ DW_TARGET_CLONES int FUNC(forward)(
         int pml_y;
         int pml_x;
 #if DW_NDIM >= 3
-#pragma GCC unroll 3
-        for (pml_z = 0; pml_z < 3; ++pml_z)
+        DW_UNROLL_PML for (pml_z = 0; pml_z < 3; ++pml_z)
 #endif
-#pragma GCC unroll 3
-          for (pml_y = 0; pml_y < 3; ++pml_y)
-#pragma GCC unroll 3
+            DW_UNROLL_PML
+          for (pml_y = 0; pml_y < 3; ++pml_y) DW_UNROLL_PML
             for (pml_x = 0; pml_x < 3; ++pml_x) {
 #if DW_NDIM >= 3
               int64_t z;
@@ -1124,15 +1108,11 @@ DW_TARGET_CLONES int FUNC(forward)(
               int64_t y;
               int64_t x;
 
-          // sigma_v, sigma_h -- VTI constitutive relation (c66 = 0
-          // reduction of elastic_vti's normal-stress update; see the
-          // header derivation).
+              // sigma_v, sigma_h -- VTI constitutive relation (c66 = 0
+              // reduction of elastic_vti's normal-stress update; see the
+              // header derivation).
 
-#ifdef _OPENMP
-#pragma omp for simd collapse(DW_NDIM) nowait
-#else
-#pragma omp simd collapse(DW_NDIM)
-#endif
+              DW_OMP_FOR_SIMD(nowait)
 #if DW_NDIM >= 3
               for (z = pml_bounds_z[pml_z]; z < pml_bounds_z[pml_z + 1]; z++)
 #endif
@@ -1674,12 +1654,10 @@ DW_TARGET_CLONES int FUNC(backward)(
         int pml_y;
         int pml_x;
 #if DW_NDIM >= 3
-#pragma GCC unroll 3
-        for (pml_z = 0; pml_z < 3; ++pml_z)
+        DW_UNROLL_PML for (pml_z = 0; pml_z < 3; ++pml_z)
 #endif
-#pragma GCC unroll 3
-          for (pml_y = 0; pml_y < 3; ++pml_y)
-#pragma GCC unroll 3
+            DW_UNROLL_PML
+          for (pml_y = 0; pml_y < 3; ++pml_y) DW_UNROLL_PML
             for (pml_x = 0; pml_x < 3; ++pml_x) {
 #if DW_NDIM >= 3
               int64_t z;
@@ -1689,17 +1667,13 @@ DW_TARGET_CLONES int FUNC(backward)(
 
 #if DW_NDIM >= 3
 
-          // vz -- adjoint update (transpose of the c33/c13 coupling into
-          // dvzdz), then ping-pong the m_sigma_v_z/m_sigma_h_y memories
-          // (read by the sigma-adjoint block below at a possibly-neighbour
-          // offset, so the pre-this-block value must survive).
+              // vz -- adjoint update (transpose of the c33/c13 coupling into
+              // dvzdz), then ping-pong the m_sigma_v_z/m_sigma_h_y memories
+              // (read by the sigma-adjoint block below at a possibly-neighbour
+              // offset, so the pre-this-block value must survive).
 
-#ifdef _OPENMP
-#pragma omp for simd collapse(DW_NDIM) nowait
-#else
-#pragma omp simd collapse(DW_NDIM)
-#endif
-              for (z = pml_bounds_zh[pml_z]; z < pml_bounds_zh[pml_z + 1]; z++)
+              DW_OMP_FOR_SIMD(nowait) for (z = pml_bounds_zh[pml_z];
+                                           z < pml_bounds_zh[pml_z + 1]; z++)
                 for (y = pml_bounds_y[pml_y]; y < pml_bounds_y[pml_y + 1]; y++)
                   for (x = pml_bounds_x[pml_x]; x < pml_bounds_x[pml_x + 1];
                        x++) {
@@ -1711,14 +1685,10 @@ DW_TARGET_CLONES int FUNC(backward)(
                   }
 #endif
 
-          // vy -- 3-D: transverse (fed by sigma_h); 2-D: axis (fed by
-          // sigma_v). See acoustic_vti_kernels.h's VY_Y/VY_Y_PML macros.
+              // vy -- 3-D: transverse (fed by sigma_h); 2-D: axis (fed by
+              // sigma_v). See acoustic_vti_kernels.h's VY_Y/VY_Y_PML macros.
 
-#ifdef _OPENMP
-#pragma omp for simd collapse(DW_NDIM) nowait
-#else
-#pragma omp simd collapse(DW_NDIM)
-#endif
+              DW_OMP_FOR_SIMD(nowait)
 #if DW_NDIM >= 3
               for (z = pml_bounds_z[pml_z]; z < pml_bounds_z[pml_z + 1]; z++)
 #endif
@@ -1745,13 +1715,9 @@ DW_TARGET_CLONES int FUNC(backward)(
                         y, x, !DW_PML_SKIP(pml_y == 1), rdy);
                   }
 
-          // vx -- always transverse (fed by sigma_h).
+              // vx -- always transverse (fed by sigma_h).
 
-#ifdef _OPENMP
-#pragma omp for simd collapse(DW_NDIM) nowait
-#else
-#pragma omp simd collapse(DW_NDIM)
-#endif
+              DW_OMP_FOR_SIMD(nowait)
 #if DW_NDIM >= 3
               for (z = pml_bounds_z[pml_z]; z < pml_bounds_z[pml_z + 1]; z++)
 #endif
@@ -2003,12 +1969,10 @@ DW_TARGET_CLONES int FUNC(backward)(
         int pml_y;
         int pml_x;
 #if DW_NDIM >= 3
-#pragma GCC unroll 3
-        for (pml_z = 0; pml_z < 3; ++pml_z)
+        DW_UNROLL_PML for (pml_z = 0; pml_z < 3; ++pml_z)
 #endif
-#pragma GCC unroll 3
-          for (pml_y = 0; pml_y < 3; ++pml_y)
-#pragma GCC unroll 3
+            DW_UNROLL_PML
+          for (pml_y = 0; pml_y < 3; ++pml_y) DW_UNROLL_PML
             for (pml_x = 0; pml_x < 3; ++pml_x) {
 #if DW_NDIM >= 3
               int64_t z;
@@ -2016,23 +1980,19 @@ DW_TARGET_CLONES int FUNC(backward)(
               int64_t y;
               int64_t x;
 
-          // sigma_v, sigma_h -- model gradients (derivation doc Sec. 5):
-          //   grad_c11 = sum s_h (S_x + S_y)          [2-D: s_h S_x]
-          //   grad_c13 = sum (s_v (S_x+S_y) + s_h S_z) [2-D: s_v S_x+s_h S_y]
-          //   grad_c33 = sum s_v S_z                   [2-D: s_v S_y]
-          // gated on (t % step_ratio)==0 AND scaled by step_ratio (the
-          // elastic_born-escalation-#7 pattern), then the adjoint PML
-          // memory for m_vxx/m_vyy/m_vzz (single-buffer: written here,
-          // read by the vz/vy/vx block ABOVE in the same reversed
-          // timestep -- i.e. read-before-write within an iteration, so no
-          // ping-pong needed), then the sigma_v/sigma_h adjoint update
-          // itself (transpose of the velocity update's buoyancy coupling).
+              // sigma_v, sigma_h -- model gradients (derivation doc Sec. 5):
+              //   grad_c11 = sum s_h (S_x + S_y)          [2-D: s_h S_x]
+              //   grad_c13 = sum (s_v (S_x+S_y) + s_h S_z) [2-D: s_v S_x+s_h
+              //   S_y] grad_c33 = sum s_v S_z                   [2-D: s_v S_y]
+              // gated on (t % step_ratio)==0 AND scaled by step_ratio (the
+              // elastic_born-escalation-#7 pattern), then the adjoint PML
+              // memory for m_vxx/m_vyy/m_vzz (single-buffer: written here,
+              // read by the vz/vy/vx block ABOVE in the same reversed
+              // timestep -- i.e. read-before-write within an iteration, so no
+              // ping-pong needed), then the sigma_v/sigma_h adjoint update
+              // itself (transpose of the velocity update's buoyancy coupling).
 
-#ifdef _OPENMP
-#pragma omp for simd collapse(DW_NDIM) nowait
-#else
-#pragma omp simd collapse(DW_NDIM)
-#endif
+              DW_OMP_FOR_SIMD(nowait)
 #if DW_NDIM >= 3
               for (z = pml_bounds_z[pml_z]; z < pml_bounds_z[pml_z + 1]; z++)
 #endif

@@ -1,1 +1,2 @@
 BasedOnStyle: Google
+AttributeMacros: [DW_UNROLL_PML, DW_OMP_FOR_SIMD]
