@@ -52,7 +52,8 @@ Download and retain `release-manifest-a<ATTEMPT>`,
 `release-sdist-a<ATTEMPT>`, and all three
 `release-wheels-<PLATFORM>-a<ATTEMPT>` artifacts. Platforms are `ubuntu-latest`,
 `windows-2022` and `macos-14`. Each wheel set contains exactly
-one repaired `py3-none` wheel. The 95 MiB wheel limit is enforced. The sdist is
+one repaired `py3-none` wheel. The 99 MiB wheel limit is enforced, leaving 1 MiB
+below PyPI's default per-file upload limit. The sdist is
 built once, then used by every release wheel builder. Matching public checkout
 content is required for every shipped source member except generated `PKG-INFO`;
 all tracked `src/` files and the build configuration must be present. Archive

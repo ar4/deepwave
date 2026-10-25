@@ -133,11 +133,11 @@ jobs:
 
       - name: Check wheel size budget
         run: |
-          budget=99614720  # 95 MiB
+          budget=103809024  # 99 MiB, below PyPI's default 100 MiB per-file limit
           for f in wheelhouse/*.whl; do
             size=$(stat -c%s "$f" 2>/dev/null || stat -f%z "$f")
             if [ "$size" -gt "$budget" ]; then
-              echo "wheel $f is $size bytes, exceeds the 95 MiB ($budget byte) budget" >&2
+              echo "wheel $f is $size bytes, exceeds the 99 MiB ($budget byte) budget" >&2
               exit 1
             fi
           done

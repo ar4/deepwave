@@ -20,7 +20,7 @@ from typing import Any
 REPOSITORY = "ar4/deepwave"
 PLATFORMS = ("ubuntu-latest", "windows-2022", "macos-14")
 GATES = ("tests", "docs", "lint", "sanitizers")
-BUDGET = 95 * 1024 * 1024
+BUDGET = 99 * 1024 * 1024
 LOCAL_GPU = {
     "qualified_toolchain": {
         "compiler": "GCC 13.3.1 Red Hat 13.3.1-2",
@@ -159,7 +159,7 @@ def distribution(path: Path) -> dict[str, Any]:
         "distribution version/name mismatch",
     )
     if path.suffix == ".whl":
-        require(path.stat().st_size <= BUDGET, "95 MiB wheel limit")
+        require(path.stat().st_size <= BUDGET, "99 MiB wheel limit")
     return {"filename": path.name, "sha256": sha256(path), "bytes": path.stat().st_size}
 
 
@@ -380,7 +380,7 @@ def verify_files(manifest: dict[str, Any], directory: Path, output: Path) -> Non
             "wrong metadata version",
         )
         if path.suffix == ".whl":
-            require(path.stat().st_size <= BUDGET, "95 MiB limit")
+            require(path.stat().st_size <= BUDGET, "99 MiB limit")
         else:
             require(
                 source_members(path) == manifest["source_members"],
