@@ -27,7 +27,7 @@ jobs:
           pipx run build --sdist
           python scripts/release_artifacts.py record --kind sdist --directory dist
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: release-sdist-a${{ github.run_attempt }}
           path: dist/
@@ -165,7 +165,7 @@ jobs:
         run: python scripts/release_artifacts.py record --kind "$WHEEL_PLATFORM" --directory wheelhouse
         shell: bash
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: release-wheels-${{ matrix.os }}-a${{ github.run_attempt }}
           path: ./wheelhouse/
@@ -190,7 +190,7 @@ jobs:
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
         run: python scripts/release_artifacts.py aggregate --directory accepted --needs "$NEEDS_JSON"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: release-manifest-a${{ github.run_attempt }}
           path: accepted/release-manifest.json

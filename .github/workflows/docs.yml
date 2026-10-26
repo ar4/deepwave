@@ -92,7 +92,7 @@ jobs:
           python -m sphinx -b linkcheck docs /tmp/deepwave-linkcheck
 
       - name: Retain the rendered documentation for release
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: docs-html-a${{ github.run_attempt }}
           path: /tmp/deepwave-docs-build/html/
@@ -165,7 +165,7 @@ jobs:
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
         run: python scripts/release_artifacts.py record --kind docs --directory evidence --needs "$NEEDS_JSON"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: qualification-docs-a${{ github.run_attempt }}
           path: evidence/receipt.json

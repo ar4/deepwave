@@ -52,14 +52,14 @@ jobs:
         run: >-
           python -m scripts.prepare_publication --run-id "$BUILD_RUN_ID"
           --attempt "$BUILD_ATTEMPT" --tag "$RELEASE_TAG"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         id: distributions
         with:
           name: validated-distributions-a${{ github.run_attempt }}
           path: accepted/publish/
           retention-days: 90
           if-no-files-found: error
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: publication-evidence-a${{ github.run_attempt }}
           path: accepted/evidence/
