@@ -4,6 +4,8 @@ This script records snapshots of the forward and backward propagated
 wavefields, and the velocity gradient, and creates an animation of them.
 """
 
+import os
+
 import matplotlib
 import torch
 
@@ -17,15 +19,18 @@ import matplotlib.pyplot as plt
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Set up the model
-ny = 100
-nx = 200
+# ``DEEPWAVE_SMOKE=1`` shrinks this example so that it can be run quickly as
+# an automated check; the default sizes are the ones the text describes.
+smoke = os.environ.get("DEEPWAVE_SMOKE") == "1"
+ny = 40 if smoke else 100
+nx = 60 if smoke else 200
 v_true = torch.ones(ny, nx, device=device) * 1500
 v = v_true.clone()
 v_true[ny // 2 :, :] = 2000
 dx = 5.0
 dt = 0.004
 freq = 25
-nt = 150
+nt = 40 if smoke else 150
 peak_time = 1.5 / freq
 
 # Set up the source and receiver
@@ -54,11 +59,18 @@ out_true = deepwave.scalar(
 
 v.requires_grad_()
 
-# Storage for snapshots from callbacks
+# Storage for snapshots from callbacks.
+#
+# Each pass calls back ceil(nt / callback_frequency) times, so the
+# buffers are sized with a ceiling division. Floor division
+# (`nt // callback_frequency`) is one short whenever `callback_frequency`
+# does not divide `nt`, which is exactly the case you reach by raising
+# `callback_frequency` on a long run.
 callback_frequency = 1
-forward_snapshots = torch.zeros(nt // callback_frequency, ny, nx)
-backward_snapshots = torch.zeros(nt // callback_frequency, ny, nx)
-gradient_snapshots = torch.zeros(nt // callback_frequency, ny, nx)
+n_snapshots = -(-nt // callback_frequency)
+forward_snapshots = torch.zeros(n_snapshots, ny, nx)
+backward_snapshots = torch.zeros(n_snapshots, ny, nx)
+gradient_snapshots = torch.zeros(n_snapshots, ny, nx)
 
 
 # Define callback functions
@@ -81,22 +93,35 @@ class ForwardCallback:
         self.step += 1
 
 
-# Could instead have used a function
+# Both directions now observe the same user-time grid. Counting invocations
+# remains convenient; `state.step // callback_frequency` is also a valid
+# snapshot index in either direction, even when the final interval is short
+# or model-gradient histories use a different storage stride.
 # def forward_callback(state):
-#     forward_snapshots[state.step] = (
+#     forward_snapshots[state.step // callback_frequency] = (
 #         state.get_wavefield("wavefield_0")[0].cpu().clone()
 #     )
 
 
-def backward_callback(state):
-    """A function called during the backward pass."""
-    # We use [0] to select the first shot in the batch
-    backward_snapshots[state.step] = (
-        state.get_wavefield("wavefield_0")[0].cpu().clone()
-    )
-    gradient_snapshots[state.step] = (
-        state.get_gradient("v")[0].cpu().clone()
-    )
+class BackwardCallback:
+    """A callable class to store snapshots during backward propagation."""
+
+    def __init__(self):
+        """Initialises the BackwardCallback."""
+        # The backward pass runs from the last time step to the first,
+        # so the first call fills the last snapshot slot.
+        self.index = n_snapshots - 1
+
+    def __call__(self, state):
+        """A function called during the backward pass."""
+        # We use [0] to select the first shot in the batch.
+        backward_snapshots[self.index] = (
+            state.get_wavefield("wavefield_0")[0].cpu().clone()
+        )
+        gradient_snapshots[self.index] = (
+            state.get_gradient("v")[0].cpu().clone()
+        )
+        self.index -= 1
 
 
 # Run the propagation
@@ -109,12 +134,14 @@ out = deepwave.scalar(
     receiver_locations=receiver_locations,
     max_vel=v_true.max().item(),
     forward_callback=ForwardCallback(),
-    backward_callback=backward_callback,
+    backward_callback=BackwardCallback(),
     callback_frequency=callback_frequency,
 )
 
 # Backpropagate
-torch.nn.MSELoss()(out[-1], out_true[-1]).backward()
+torch.nn.MSELoss()(
+    out.receiver_amplitudes, out_true.receiver_amplitudes
+).backward()
 
 # Create and save the animation
 fig, axes = plt.subplots(1, 3, figsize=(12, 4), sharey=True)
@@ -184,3 +211,6 @@ ani = animation.FuncAnimation(
 )
 
 ani.save("example_callback_animation.gif", writer="pillow")
+
+assert torch.isfinite(v.grad).all(), "velocity gradient is not finite"
+assert v.grad.abs().max() > 0, "velocity gradient is all zeros"

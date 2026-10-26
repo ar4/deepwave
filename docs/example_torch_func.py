@@ -1,12 +1,12 @@
 """Demonstrates using PyTorch's torch.func features with Deepwave.
 
-Deepwave supports using `torch.func` features such as `vmap` (vectorizing
+Deepwave supports using `torch.func` features such as `vmap` (vectorising
 map) and forward-mode automatic differentiation (AD) to perform efficient
 batch processing and sensitivity analysis.
 
 This example demonstrates two key applications:
 1.  **Forward-Mode AD for Scattering:** Using `torch.func.jvp`
-    (Jacobian-Vector Product) to compute the scattered wavefield (linearized
+    (Jacobian-Vector Product) to compute the scattered wavefield (linearised
     response) from a velocity perturbation. We verify this matches the
     output of the explicit `scalar_born` propagator.
 2.  **Batched Sensitivity Analysis:** Using `torch.func.vmap` combined with
@@ -16,13 +16,21 @@ This example demonstrates two key applications:
     model.
 
 Note:
-    Using `torch.func` with Deepwave currently requires:
-    -   Operating on property models (velocity, scattering potential), not
+    The `vmap(jvp)` composition in this example requires:
+    -   Mapping property models (velocity, scattering potential), not
         source/receiver locations.
-    -   Using the pure Python backend (`python_backend="eager"`).
-    -   Explicitly specifying `max_vel`, as `vmap` hides the concrete values
-        needed for automatic time-step calculation.
+    -   Using the pure Python backend (`backend="eager"`). A standalone
+        `jvp` of scalar, acoustic or elastic also supports the compiled
+        backend.
+    -   Explicitly specifying `max_vel` when the velocity model is
+        batched by `vmap`, which hides the concrete values the automatic
+        time-step calculation would otherwise read. Every other transform
+        leaves them readable, so `max_vel` is inferred as usual under
+        `grad`, `jacrev` and `jvp`; it is given below to pin the internal
+        time step.
 """
+
+import os
 
 import matplotlib.pyplot as plt
 import torch
@@ -36,9 +44,13 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # 1. Setup the Simulation
 # -----------------------------------------------------------------------
 
+# ``DEEPWAVE_SMOKE=1`` shrinks this example so that it can be run quickly as
+# an automated check; the default sizes are the ones the text describes.
+smoke = os.environ.get("DEEPWAVE_SMOKE") == "1"
+
 # Define a simple 2D velocity model (background)
-ny = 100
-nx = 100
+ny = 60 if smoke else 100
+nx = 60 if smoke else 100
 dx = 4.0
 v_bg = 1500 * torch.ones(ny, nx, device=device)
 v_bg[ny // 2 :] = 2000  # Two layers
@@ -51,7 +63,7 @@ scatter[ny // 2 - 5 : ny // 2 + 5, nx // 2 - 5 : nx // 2 + 5] = 100
 n_shots = 1
 n_sources_per_shot = 1
 n_receivers_per_shot = nx
-nt = 200
+nt = 80 if smoke else 200
 dt = 0.004
 freq = 25
 peak_time = 1.5 / freq
@@ -77,22 +89,23 @@ source_amplitudes = (
 )
 
 # --------------------------------------------------------------------------
-# 2. Born Modeling (Reference)
+# 2. Born Modelling (Reference)
 # --------------------------------------------------------------------------
 # Calculate the scattered wavefield using the explicit Born propagator.
-# This linearizes the wave equation around v_bg.
+# This linearises the wave equation around v_bg.
 
-print("Running explicit Born modeling...")
+print("Running explicit Born modelling...")
 out_born = deepwave.scalar_born(
     v_bg,
-    scatter,
     dx,
     dt,
+    dv=scatter,
     source_amplitudes=source_amplitudes,
     source_locations=source_locations,
-    receiver_locations=receiver_locations,
+    sc_receiver_locations=receiver_locations,
     pml_freq=freq,
-)[-1]  # Last output is the scattered receiver data
+    max_vel=2000,
+).sc_receiver_amplitudes  # Scattered receiver data
 
 
 # --------------------------------------------------------------------------
@@ -106,7 +119,9 @@ out_born = deepwave.scalar_born(
 
 def forward_sim(v):
     """Wrap the nonlinear simulation."""
-    # Note: We must specify `max_vel` and `python_backend="eager"`
+    # `backend="eager"` is needed because this wrapper is also composed with
+    # `vmap` below; `max_vel` pins the internal time step (a `jvp`-wrapped
+    # model is readable, so it would otherwise be inferred).
     return deepwave.scalar(
         v,
         dx,
@@ -116,8 +131,8 @@ def forward_sim(v):
         receiver_locations=receiver_locations,
         pml_freq=freq,
         max_vel=2000,
-        python_backend="eager",
-    )[-1]
+        backend="eager",
+    ).receiver_amplitudes
 
 
 print("Running forward-mode AD (JVP)...")
@@ -136,7 +151,7 @@ print(f"Max difference between Born and JVP: {diff:.6e}")
 # Suppose we want to evaluate the scattering response for multiple different
 # perturbations (e.g., checking sensitivity to anomalies at different
 # locations).
-# We can use `vmap` to vectorize the JVP calculation over a batch of
+# We can use `vmap` to vectorise the JVP calculation over a batch of
 # perturbations.
 
 # Create a batch of 3 perturbations
@@ -159,24 +174,25 @@ def get_jvp(tangent):
     return torch.func.jvp(forward_sim, (v_bg,), (tangent,))[1]
 
 
-# Vectorize `get_jvp` over the perturbation input
+# Vectorise `get_jvp` over the perturbation input
 out_vmap = torch.func.vmap(get_jvp)(scatter_batch)
 
-# Verify against explicit Born modeling with batched input
+# Verify against explicit Born modelling with batched input
 # Deepwave natively supports batched inputs, so we can pass the batch
 # directly.
 # We need to expand other inputs to match the batch size N=3.
 N = len(scatter_batch)
 out_born_batch = deepwave.scalar_born(
     v_bg.expand(N, -1, -1),
-    scatter_batch,
     dx,
     dt,
+    dv=scatter_batch,
     source_amplitudes=source_amplitudes.expand(N, -1, -1),
     source_locations=source_locations.expand(N, -1, -1),
-    receiver_locations=receiver_locations.expand(N, -1, -1),
+    sc_receiver_locations=receiver_locations.expand(N, -1, -1),
     pml_freq=freq,
-)[-1]
+    max_vel=2000,
+).sc_receiver_amplitudes
 
 batch_diff = (out_born_batch - out_vmap[:, 0]).abs().max().item()
 print(f"Max difference for batched vmap: {batch_diff:.6e}")
@@ -282,3 +298,6 @@ ax[-1, 1].set_xlabel("Receiver Channel")
 
 plt.tight_layout()
 plt.savefig("example_torch_func_vmap_jvp.jpg")
+
+assert torch.isfinite(out_vmap).all(), "batched vmap output is not finite"
+assert out_vmap.abs().max() > 0, "batched vmap output is all zeros"

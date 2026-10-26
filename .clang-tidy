@@ -1,0 +1,122 @@
+# clang-tidy configuration for Deepwave's C/CUDA kernel sources
+# (src/deepwave/*.c, *.cu, *.h).
+#
+# Starting families: bugprone-*, clang-analyzer-*, performance-*, plus a
+# hand-picked subset of readability-* checks judged relevant to a C
+# codebase. modernize-* is excluded entirely: this is a C99/C11 codebase
+# compiled by both gcc and nvcc, and every modernize-* check (use-auto,
+# use-nullptr, use-override, use-trailing-return-type, range-for, etc.)
+# assumes C++ and does not apply.
+#
+# The initial selection used representative CPU/CUDA sweeps. Finding counts
+# below are historical, not a current count or proof of correctness. Current
+# CPU checks cover the configured variants; CUDA needs its own toolchain.
+Checks: >
+  -*,
+  bugprone-*,
+  clang-analyzer-*,
+  performance-*,
+  readability-duplicate-include,
+  readability-else-after-return,
+  readability-inconsistent-declaration-parameter-name,
+  readability-misleading-indentation,
+  readability-redundant-control-flow,
+  readability-redundant-declaration,
+  readability-simplify-boolean-expr,
+  readability-suspicious-call-argument,
+  -bugprone-easily-swappable-parameters,
+  -clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling
+
+WarningsAsErrors: '*'
+HeaderFilterRegex: '.*'
+FormatStyle: none
+
+# --- Suppression rationale (checks disabled above, and why) ---
+# These are portability and interface tradeoffs. None substitutes for checking
+# pointer identities, lifetimes, numerical behaviour or test sensitivity.
+#
+# bugprone-easily-swappable-parameters: 88,495 raw findings across the 18
+# representative files -- essentially every kernel entry point and
+# per-grid-point FUNC(*_cell) function, because they all take a long,
+# fixed-order list of same-typed pointer/scalar parameters (grid
+# dimensions, PML region flags, per-axis pointers, all DW_DTYPE*/int64_t)
+# by design: this is the established calling convention shared between the
+# .c and .cu twins (see the *_kernels.h headers). Silencing this would
+# require either a wholesale signature redesign (rejected -- sharing one
+# call shape across both backends is the whole point of the single-source
+# kernel headers) or would drown every other finding in noise. The real
+# "swapped argument" bug class requires semantic tests as well as type
+# checks. Receiver-only parity missed an acoustic Born PML-state swap;
+# tests now also seed distinct cotangents for state outputs and compare
+# initial-state gradients with autograd. Those tests are evidence for their
+# exercised paths, not a guarantee that every same-typed argument is correct.
+#
+# Macro arguments are parenthesised and bugprone-macro-parentheses remains
+# enabled. The widening check also remains enabled: current clang-tidy
+# recognises the bounded constant FD_PAD products without false positives.
+#
+# clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling: the one hit in the sweep flagged
+# a plain `memcpy` call and suggested the Annex K `memcpy_s` family, which
+# is optional in C11, not implemented by glibc, and not something this
+# portable, gcc/nvcc-compiled codebase can depend on -- a well-known
+# false-positive-by-design check for code that intentionally targets
+# non-Annex-K platforms.
+#
+# readability-suspicious-call-argument is enabled. The scalar CUDA adjoint
+# gives its deliberately reversed source/receiver counts explicit adjoint
+# names before configuring the reused injection and sampling kernels.
+#
+# --- Checks left enabled despite an earlier "kept ON as backlog" framing ---
+# The two checks below were previously left enabled with existing findings
+# accepted as backlog (see the C6.C5 commit history for the prior text);
+# their finding counts (measured on the current 9-file representative
+# sweep) are large enough that enabling `WarningsAsErrors: '*'` requires
+# actually resolving them, and neither is close to a small fix, so both
+# were moved to disabled instead, joining the checks above:
+#
+# readability-braces-around-statements: 1,160 findings, mostly single-line
+# `if (cond) stmt;`. Genuinely relevant to C in general (the classic
+# dangling-else/goto-fail footgun class), but
+# readability-misleading-indentation remains enabled. Its historical clean
+# result does not establish that the control flow is correct. Not selected
+# here to avoid a
+# 1,100-plus-line reformatting commit with no behavioural change.
+#
+# readability-non-const-parameter: 80 findings, e.g. `grad_bz_thread`,
+# `raw_store_1b`. Every flagged parameter is a documented, intentionally-
+# unused placeholder kept only for calling-convention uniformity across
+# variants (each site already has an explicit `(void)param;` cast and, in
+# several cases, a comment stating only the sibling parameter is ever
+# written -- e.g. scalar.c's "only raw_store_1a is ever written; the
+# remaining pointers exist purely [for signature uniformity]"). The
+# check's suggestion is correct but purely cosmetic here; disabled rather
+# than an 80-site signature-touching commit with no behavioural change.
+#
+# --- Checks evaluated and REJECTED (not enabled above) ---
+#
+# readability-function-cognitive-complexity: measured with a threshold of
+# 25 over the same 9-propagator representative sweep: 2,272 findings. The
+# per-cell kernel functions this flags (the `FUNC(*_cell)` family in
+# `*_kernels.h`) implement one finite-difference stencil update each --
+# their branching (PML region checks, boundary-condition variants, M-PML/
+# GSLS/PM feature flags) is the physics and the supported variant matrix,
+# not accidental control-flow tangle; splitting them would scatter a
+# single per-cell update across helper functions with no shared meaning
+# outside that one call site, which the `*_kernels.h` single-source
+# pattern this codebase has otherwise consolidated around already argues
+# against. Rejected wholesale.
+#
+# misc-unused-parameters (689 hits): the same calling-convention-
+# uniformity pattern as readability-non-const-parameter above (many hits
+# are literally the same parameters, e.g. `unused`-named `void *` padding
+# args kept so variant dispatch tables share one function-pointer type).
+# Rejected for the same reason.
+#
+# misc-include-cleaner (5 hits, all "included header `*_kernels.h` is not
+# used directly"): a tooling false positive given how this codebase
+# actually uses these headers -- each `*_kernels.h` is the sole source of
+# the kernel functions the including `.c` file calls, but the check's
+# static "used directly" heuristic does not trace through the
+# `NDIMS`/`ACCURACIES`/`DTYPES`-parameterized macro-inclusion pattern
+# `CMakeLists.txt` drives. Rejected as a known limitation of the check
+# against this codebase's build structure, not a real finding.

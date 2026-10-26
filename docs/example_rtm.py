@@ -1,26 +1,46 @@
 """Demonstrates Reverse-Time Migration (RTM) using Deepwave.
 
-This script focuses on memory reduction by accumulating gradients over
-batches. It also shows how to use a tapered mute to attenuate direct
-arrivals.
+RTM forms an image of subsurface reflectivity by cross-correlating a
+forward-propagated source wavefield with a backward-propagated receiver
+wavefield. Here that image is obtained as the gradient of a Born
+data-misfit objective with respect to a scattering potential that starts
+at zero: one forward propagation, one backpropagation, one optimiser step.
+The script also shows how to use a tapered mute to attenuate direct
+arrivals, and how to accumulate the gradient over batches of shots so that
+the whole survey need not be in memory at once.
 """
 
 import math
+import os
 
 import matplotlib.pyplot as plt
 import torch
+from get_marmousi import load_data, load_vp
 from scipy.ndimage import gaussian_filter
 
 import deepwave
 from deepwave import scalar_born
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-ny_full = 2301
-nx_full = 751
+
+# ``DEEPWAVE_SMOKE=1`` shrinks this example so that it can be run quickly as
+# an automated check; the default sizes are the ones the text describes.
+smoke = os.environ.get("DEEPWAVE_SMOKE") == "1"
+
+# Dimension 0 is depth and dimension 1 is horizontal position, the
+# convention used throughout this documentation.
+ny_full = 751
+nx_full = 2301
 dx_full = 4.0
-v = torch.from_file("marmousi_vp.bin", size=ny_full * nx_full).reshape(
-    ny_full, nx_full
-)
+# ``load_vp`` reads marmousi_vp.bin from the current directory and checks
+# that it is in the depth-first layout Deepwave 0.1.0 writes (row 0 is the
+# 1500 m/s water layer; an old-layout file holds the same number of floats
+# and so would reshape without error, silently giving a rotated model). In
+# smoke mode it returns a generated stand-in model of the same shape and
+# velocity range instead, so no download is needed.
+v = load_vp(smoke=smoke)
+if smoke:
+    v = v[:150, :300]
 
 # Smooth to use as migration model
 v_mig = torch.tensor(1 / gaussian_filter(1 / v.numpy(), 40))
@@ -29,20 +49,20 @@ ny = v_mig.shape[0]
 nx = v_mig.shape[1]
 dx = dx_full * 2
 
-n_shots = 115
+n_shots = 8 if smoke else 115
 
 n_sources_per_shot = 1
 d_source = 10  # 10 * 8m = 80m
 first_source = 5  # 5 * 8m = 40m
 source_depth = 1  # 1 * 8m = 8m
 
-n_receivers_per_shot = 384
+n_receivers_per_shot = 40 if smoke else 384
 d_receiver = 3  # 3 * 8m = 24m
 first_receiver = 0  # 0 * 8m = 0m
 receiver_depth = 1  # 1 * 8m = 8m
 
 freq = 25
-nt = 750
+nt = 150 if smoke else 750
 dt = 0.004
 peak_time = 1.5 / freq
 
@@ -54,8 +74,8 @@ source_locations = torch.zeros(
     dtype=torch.long,
     device=device,
 )
-source_locations[..., 1] = source_depth
-source_locations[:, 0, 0] = torch.arange(n_shots) * d_source + first_source
+source_locations[..., 0] = source_depth
+source_locations[:, 0, 1] = torch.arange(n_shots) * d_source + first_source
 
 # receiver_locations
 receiver_locations = torch.zeros(
@@ -65,8 +85,8 @@ receiver_locations = torch.zeros(
     dtype=torch.long,
     device=device,
 )
-receiver_locations[..., 1] = receiver_depth
-receiver_locations[:, :, 0] = (
+receiver_locations[..., 0] = receiver_depth
+receiver_locations[:, :, 1] = (
     torch.arange(n_receivers_per_shot) * d_receiver + first_receiver
 ).repeat(n_shots, 1)
 
@@ -77,14 +97,15 @@ source_amplitudes = (
     .to(device)
 )
 
-# Load observed data
-observed_data = (
-    torch.from_file(
-        "marmousi_data.bin", size=n_shots * n_receivers_per_shot * nt
-    )
-    .reshape(n_shots, n_receivers_per_shot, nt)
-    .to(device)
-)
+# Load observed data. ``load_data`` takes the first n_shots shots,
+# n_receivers_per_shot receivers and nt time samples of marmousi_data.bin.
+# In smoke mode there is no downloaded model for that file to have come
+# from, so it instead generates the data by propagating through ``v``. Note
+# that the data is recorded on the original 4 m grid whatever the migration
+# grid is, as real data would be: only the migration model is subsampled.
+observed_data = load_data(
+    v, n_shots, n_receivers_per_shot, nt, smoke=smoke
+).to(device)
 
 # Create mask to attenuate direct arrival
 mask = torch.ones_like(observed_data)
@@ -151,7 +172,7 @@ loss_fn = torch.nn.MSELoss()
 
 # Run optimisation/inversion
 n_epochs = 1
-n_batch = 46  # The number of batches to use
+n_batch = 8 if smoke else 46  # The number of batches to use
 n_shots_per_batch = (n_shots + n_batch - 1) // n_batch
 for _epoch in range(n_epochs):
     epoch_loss = 0
@@ -164,15 +185,24 @@ for _epoch in range(n_epochs):
         s = slice(batch_start, batch_end)
         out = scalar_born(
             v_mig,
-            scatter,
             dx,
             dt,
+            dv=scatter,
             source_amplitudes=source_amplitudes[s],
             source_locations=source_locations[s],
-            receiver_locations=receiver_locations[s],
+            sc_receiver_locations=receiver_locations[s],
             pml_freq=freq,
         )
-        loss = loss_fn(out[-1] * mask[s], observed_scatter_masked[s])
+        loss = (
+            loss_fn(
+                out.sc_receiver_amplitudes * mask[s],
+                observed_scatter_masked[s],
+            )
+            * (batch_end - batch_start)
+            / n_shots
+        )
+        # Weight each batch mean by its share of the survey. In particular,
+        # the final, smaller batch must not overweight its shots.
         epoch_loss += loss.item()
         loss.backward()
     print(epoch_loss)
@@ -184,7 +214,7 @@ vmin, vmax = torch.quantile(
 )
 plt.figure(figsize=(10.5, 3.5))
 plt.imshow(
-    scatter.detach().cpu().T,
+    scatter.detach().cpu(),
     aspect="auto",
     cmap="gray",
     vmin=vmin,
@@ -193,3 +223,6 @@ plt.imshow(
 plt.savefig("example_rtm.jpg")
 
 scatter.detach().cpu().numpy().tofile("marmousi_scatter.bin")
+
+assert torch.isfinite(scatter).all(), "scattering image is not finite"
+assert scatter.abs().max() > 0, "scattering image is all zeros"

@@ -4,26 +4,33 @@ This script shows that using a free surface and applying a smoothing
 function to the model can mitigate these large gradients.
 """
 
+import math
+import os
+
 import matplotlib.pyplot as plt
 import torch
 import torchvision
 
 import deepwave
 
+# ``DEEPWAVE_SMOKE=1`` shrinks this example so that it can be run quickly as
+# an automated check; the default sizes are the ones the text describes.
+smoke = os.environ.get("DEEPWAVE_SMOKE") == "1"
+
 # Define simulation parameters
 freq = 25
-nt = 200
+nt = 80 if smoke else 200
 dt = 0.004
 peak_time = 0.06
 dx = 4
-ny_model = 50
-nx_model = 100
+ny_model = 25 if smoke else 50
+nx_model = 50 if smoke else 100
 
 source_amplitudes = deepwave.wavelets.ricker(
     freq, nt, dt, peak_time
 ).reshape(1, 1, -1)
-source_locations = torch.tensor([[[0, 10]]])
-receiver_locations = torch.tensor([[[0, 90]]])
+source_locations = torch.tensor([[[0, 5 if smoke else 10]]])
+receiver_locations = torch.tensor([[[0, 45 if smoke else 90]]])
 
 v_true = 1500 * torch.ones(ny_model, nx_model)
 v = 1600 * torch.ones(ny_model, nx_model)
@@ -39,7 +46,7 @@ out_true = deepwave.scalar(
     source_amplitudes=source_amplitudes,
     source_locations=source_locations,
     receiver_locations=receiver_locations,
-)[-1]
+).receiver_amplitudes
 
 out = deepwave.scalar(
     v,
@@ -48,7 +55,7 @@ out = deepwave.scalar(
     source_amplitudes=source_amplitudes,
     source_locations=source_locations,
     receiver_locations=receiver_locations,
-)[-1]
+).receiver_amplitudes
 
 torch.nn.MSELoss()(out, out_true).backward()
 
@@ -70,7 +77,7 @@ out_true = deepwave.scalar(
     source_locations=source_locations,
     receiver_locations=receiver_locations,
     pml_width=[0, 20, 20, 20],  # <--
-)[-1]
+).receiver_amplitudes
 
 out = deepwave.scalar(
     v,
@@ -80,7 +87,7 @@ out = deepwave.scalar(
     source_locations=source_locations,
     receiver_locations=receiver_locations,
     pml_width=[0, 20, 20, 20],  # <--
-)[-1]
+).receiver_amplitudes
 
 torch.nn.MSELoss()(out, out_true).backward()
 
@@ -102,7 +109,7 @@ out_true = deepwave.scalar(
     source_amplitudes=source_amplitudes,
     source_locations=source_locations,
     receiver_locations=receiver_locations,
-)[-1]
+).receiver_amplitudes
 
 # Smooth model
 v_smooth = torchvision.transforms.functional.gaussian_blur(
@@ -116,7 +123,7 @@ out = deepwave.scalar(
     source_amplitudes=source_amplitudes,
     source_locations=source_locations,
     receiver_locations=receiver_locations,
-)[-1]
+).receiver_amplitudes
 
 torch.nn.MSELoss()(out, out_true).backward()
 
@@ -136,3 +143,9 @@ plt.figure(figsize=(10.5, 5))
 plt.imshow(v_smooth.detach())
 plt.title("Smooth model at the next iteration")
 plt.savefig("example_large_edge_gradient4.jpg")
+
+assert torch.isfinite(v.grad).all(), "velocity gradient is not finite"
+assert v.grad.abs().max() > 0, "velocity gradient is all zeros"
+assert math.isfinite(float(v_smooth.detach().abs().max())), (
+    "smoothed model is not finite"
+)

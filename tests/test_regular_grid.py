@@ -1,347 +1,129 @@
-"""Tests for deepwave.regular_grid."""
+"""Physical checks of regular-grid PML profiles."""
 
-from unittest.mock import patch
+import math
 
 import pytest
 import torch
 
-from deepwave.regular_grid import set_pml_profiles
+from deepwave import _common, _regular_grid
 
 
-def test_set_pml_profiles_basic_functionality() -> None:
-    """Test set_pml_profiles with basic functionality."""
-    pml_width = [10, 10, 10, 10]
-    accuracy = 4
-    fd_pad = [0, 0, 0, 0]
-    dt = 0.001
-    grid_spacing = [10.0, 10.0]
-    max_vel = 1500.0
-    dtype = torch.float32
-    device = torch.device("cpu")
-    pml_freq = 25.0
-    ny = 100
-    nx = 100
-
-    with patch("deepwave.common.setup_pml") as mock_setup_pml:
-        # Configure mock_setup_pml to return dummy tensors
-        mock_setup_pml.side_effect = [
-            (
-                torch.ones(ny, dtype=dtype, device=device),
-                torch.ones(ny, dtype=dtype, device=device),
-            ),  # For ay, by
-            (
-                torch.ones(nx, dtype=dtype, device=device),
-                torch.ones(nx, dtype=dtype, device=device),
-            ),  # For ax, bx
-        ]
-
-        result = set_pml_profiles(
-            pml_width,
-            accuracy,
-            fd_pad,
-            dt,
-            grid_spacing,
-            max_vel,
-            dtype,
-            device,
-            pml_freq,
-            [ny, nx],
-        )
-
-        # Assert that setup_pml was called twice with correct arguments
-        mock_setup_pml.assert_any_call(
-            pml_width[:2],  # [10, 10]
-            [
-                fd_pad[0] + pml_width[0],
-                ny - 1 - fd_pad[1] - pml_width[1],
-            ],  # [10, 89]
-            pytest.approx(
-                max(
-                    pml_width[0] * grid_spacing[0],
-                    pml_width[1] * grid_spacing[0],
-                    pml_width[2] * grid_spacing[1],
-                    pml_width[3] * grid_spacing[1],
-                ),
-            ),
-            dt,
-            ny,
-            max_vel,
-            dtype,
-            device,
-            pml_freq,
-        )
-        mock_setup_pml.assert_any_call(
-            pml_width[2:],  # [10, 10]
-            [
-                fd_pad[2] + pml_width[2],
-                nx - 1 - fd_pad[3] - pml_width[3],
-            ],  # [10, 89]
-            pytest.approx(
-                max(
-                    pml_width[0] * grid_spacing[0],
-                    pml_width[1] * grid_spacing[0],
-                    pml_width[2] * grid_spacing[1],
-                    pml_width[3] * grid_spacing[1],
-                ),
-            ),
-            dt,
-            nx,
-            max_vel,
-            dtype,
-            device,
-            pml_freq,
-        )
-
-        # Assert the return type and shape
-        assert isinstance(result, list)
-        assert len(result) == 6
-        assert all(isinstance(t, torch.Tensor) for t in result)
-
-        # Check shapes of the returned tensors after unsqueezing
-        for i in range(3):
-            assert result[i].shape == (1, ny, 1)
-        for i in range(3, 6):
-            assert result[i].shape == (1, 1, nx)
+def _profiles(width: list[int], spacing: list[float]) -> list[torch.Tensor]:
+    return _regular_grid.set_pml_profiles(
+        width,
+        4,
+        [0, 0, 0, 0],
+        0.001,
+        spacing,
+        1800.0,
+        torch.float64,
+        torch.device("cpu"),
+        20.0,
+        (61, 67),
+    )
 
 
-def test_set_pml_profiles_different_pml_width() -> None:
-    """Test set_pml_profiles with different PML widths."""
-    pml_width = [20, 5, 15, 0]  # Different widths, one side zero
-    accuracy = 2
-    fd_pad = [1, 1, 1, 1]
-    dt = 0.0005
-    grid_spacing = [5.0, 5.0]
-    max_vel = 2000.0
-    dtype = torch.float64
-    device = torch.device("cpu")  # Changed from cuda to cpu
-    pml_freq = 10.0
-    ny = 200
-    nx = 150
-
-    with patch("deepwave.common.setup_pml") as mock_setup_pml:
-        # Configure mock_setup_pml to return dummy tensors
-        mock_setup_pml.side_effect = [
-            (
-                torch.ones(ny, dtype=dtype, device=device),
-                torch.ones(ny, dtype=dtype, device=device),
-            ),
-            (
-                torch.ones(nx, dtype=dtype, device=device),
-                torch.ones(nx, dtype=dtype, device=device),
-            ),
-        ]
-
-        result = set_pml_profiles(
-            pml_width,
-            accuracy,
-            fd_pad,
-            dt,
-            grid_spacing,
-            max_vel,
-            dtype,
-            device,
-            pml_freq,
-            [ny, nx],
-        )
-
-        # Assert setup_pml calls with updated pml_start and max_pml
-        mock_setup_pml.assert_any_call(
-            pml_width[:2],  # [20, 5]
-            [
-                fd_pad[0] + pml_width[0],
-                ny - 1 - fd_pad[1] - pml_width[1],
-            ],  # [21, 200 - 1 - 1 - 5 = 193]
-            pytest.approx(
-                max(
-                    pml_width[0] * grid_spacing[0],
-                    pml_width[1] * grid_spacing[0],
-                    pml_width[2] * grid_spacing[1],
-                    pml_width[3] * grid_spacing[1],
-                ),
-            ),
-            dt,
-            ny,
-            max_vel,
-            dtype,
-            device,
-            pml_freq,
-        )
-        mock_setup_pml.assert_any_call(
-            pml_width[2:],  # [15, 0]
-            [
-                fd_pad[2] + pml_width[2],
-                nx - 1 - fd_pad[3] - pml_width[3],
-            ],  # [16, 150 - 1 - 1 - 0 = 148]
-            pytest.approx(
-                max(
-                    pml_width[0] * grid_spacing[0],
-                    pml_width[1] * grid_spacing[0],
-                    pml_width[2] * grid_spacing[1],
-                    pml_width[3] * grid_spacing[1],
-                ),
-            ),
-            dt,
-            nx,
-            max_vel,
-            dtype,
-            device,
-            pml_freq,
-        )
-
-        # Assert the return type and shape
-        assert isinstance(result, list)
-        assert len(result) == 6
-        assert all(isinstance(t, torch.Tensor) for t in result)
-
-        for i in range(3):
-            assert result[i].shape == (1, ny, 1)
-        for i in range(3, 6):
-            assert result[i].shape == (1, 1, nx)
+def test_faces_use_their_own_physical_width() -> None:
+    """Each face's outer damping has the independent polynomial integral."""
+    width = [8, 4, 6, 3]
+    spacing = [5.0, 12.0]
+    ay, by, dby, ax, bx, dbx = _profiles(width, spacing)
+    assert [t.shape for t in (ay, by, dby, ax, bx, dbx)] == [
+        (1, 61, 1),
+        (1, 61, 1),
+        (1, 61, 1),
+        (1, 1, 67),
+        (1, 1, 67),
+        (1, 1, 67),
+    ]
+    for profile, face_width, dx, i in (
+        (ay, 8, 5.0, 0),
+        (ay, 4, 5.0, -1),
+        (ax, 6, 12.0, 0),
+        (ax, 3, 12.0, -1),
+    ):
+        value = profile.flatten()[i].item()
+        sigma0 = -3 * 1800.0 * math.log(0.001) / (2 * face_width * dx)
+        assert value == pytest.approx(math.exp(-sigma0 * 0.001), rel=1e-12)
+        # A round trip through the continuous polynomial damping layer has
+        # attenuation exp(-2/v * integral(sigma dx)) = target R.
+        integral = sigma0 * face_width * dx / 3
+        assert math.exp(-2 * integral / 1800.0) == pytest.approx(0.001)
+    assert abs(by.flatten()[0].item()) > 0
+    assert abs(bx.flatten()[0].item()) > 0
+    assert bool((dby != 0).any())
+    assert bool((dbx != 0).any())
 
 
-def test_set_pml_profiles_edge_cases() -> None:
-    """Test set_pml_profiles with edge cases (zero PML width)."""
-    # Test with zero pml_width everywhere
-    pml_width = [0, 0, 0, 0]
-    accuracy = 2
-    fd_pad = [0, 0, 0, 0]
-    dt = 0.001
-    grid_spacing = [10.0, 10.0]
-    max_vel = 1500.0
-    dtype = torch.float32
-    device = torch.device("cpu")
-    pml_freq = 25.0
-    ny = 10
-    nx = 10
+def test_opposite_and_orthogonal_faces_are_independent() -> None:
+    """Changing one face cannot renormalise the other three."""
+    base = _profiles([8, 4, 6, 3], [5.0, 12.0])
+    changed = _profiles([8, 13, 6, 3], [5.0, 12.0])
+    for i in (0, 1, 2):
+        assert torch.equal(base[i].flatten()[:9], changed[i].flatten()[:9])
+    for i in (3, 4, 5):
+        assert torch.equal(base[i], changed[i])
+    assert not torch.equal(base[0], changed[0])
 
-    with patch("deepwave.common.setup_pml") as mock_setup_pml:
-        mock_setup_pml.side_effect = [
-            (
-                torch.zeros(ny, dtype=dtype, device=device),
-                torch.zeros(ny, dtype=dtype, device=device),
-            ),
-            (
-                torch.zeros(nx, dtype=dtype, device=device),
-                torch.zeros(nx, dtype=dtype, device=device),
-            ),
-        ]
 
-        result = set_pml_profiles(
-            pml_width,
-            accuracy,
-            fd_pad,
-            dt,
-            grid_spacing,
-            max_vel,
-            dtype,
-            device,
-            pml_freq,
-            [ny, nx],
-        )
+def test_zero_widths_and_raw_profiles_agree_with_ab() -> None:
+    """Absent faces produce zero memory; raw sigma/alpha give the same a/b."""
+    assert all(bool((p == 0).all()) for p in _profiles([0, 0, 0, 0], [5.0, 12.0]))
+    a, b = _common.setup_pml(
+        [8, 0],
+        [8.0, 60.0],
+        5.0,
+        0.001,
+        61,
+        1800.0,
+        torch.float64,
+        torch.device("cpu"),
+        20.0,
+    )
+    sigma, alpha = _common.setup_pml_sigma_alpha(
+        [8, 0],
+        [8.0, 60.0],
+        5.0,
+        61,
+        1800.0,
+        torch.float64,
+        torch.device("cpu"),
+        20.0,
+    )
+    active = sigma > 0
+    expected_a = torch.where(active, torch.exp(-(sigma + alpha) * 0.001), 0)
+    expected_b = torch.where(
+        active, sigma / (sigma + alpha) * torch.expm1(-(sigma + alpha) * 0.001), 0
+    )
+    torch.testing.assert_close(a, expected_a, rtol=8 * torch.finfo(a.dtype).eps, atol=0)
+    torch.testing.assert_close(b, expected_b, rtol=8 * torch.finfo(b.dtype).eps, atol=0)
+    assert bool(active.any())
+    assert bool((~active).any())
 
-        # setup_pml should still be called, but with pml_width of 0
-        mock_setup_pml.assert_any_call(
-            [0, 0],
-            [0, ny - 1],
-            pytest.approx(0.0),
-            dt,
-            ny,
-            max_vel,
-            dtype,
-            device,
-            pml_freq,
-        )
-        mock_setup_pml.assert_any_call(
-            [0, 0],
-            [0, nx - 1],
-            pytest.approx(0.0),
-            dt,
-            nx,
-            max_vel,
-            dtype,
-            device,
-            pml_freq,
-        )
 
-        assert all(torch.all(t == 0) for t in result)  # All profiles should be zero
+@pytest.mark.parametrize("accuracy", [2, 4, 6, 8])
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+@pytest.mark.parametrize("dim", [0, 1, 2])
+def test_second_derivative_preserves_constants(accuracy, dtype, dim) -> None:
+    """A constant has zero curvature, including near the floating-point limits."""
+    for value in (0.0, 1.0, -1.0, 0.1, torch.finfo(dtype).tiny, torch.finfo(dtype).max):
+        field = torch.full((9, 9, 9), value, dtype=dtype)
+        derivative = _regular_grid.diff2(field, dim, accuracy, 0.04, 3)
+        assert derivative[4, 4, 4].item() == 0.0
 
-    # Test with minimal grid size where PML might overlap
-    pml_width = [1, 1, 1, 1]
-    fd_pad = [0, 0, 0, 0]
-    ny = 2  # Minimal size
-    nx = 2
 
-    with patch("deepwave.common.setup_pml") as mock_setup_pml:
-        mock_setup_pml.side_effect = [
-            (
-                torch.ones(ny, dtype=dtype, device=device),
-                torch.ones(ny, dtype=dtype, device=device),
-            ),
-            (
-                torch.ones(nx, dtype=dtype, device=device),
-                torch.ones(nx, dtype=dtype, device=device),
-            ),
-        ]
-
-        result = set_pml_profiles(
-            pml_width,
-            accuracy,
-            fd_pad,
-            dt,
-            grid_spacing,
-            max_vel,
-            dtype,
-            device,
-            pml_freq,
-            [ny, nx],
-        )
-
-        # Check pml_start values for minimal grid
-        mock_setup_pml.assert_any_call(
-            pml_width[:2],
-            [
-                fd_pad[0] + pml_width[0],
-                ny - 1 - fd_pad[1] - pml_width[1],
-            ],  # [1, 2 - 1 - 0 - 1 = 0]
-            pytest.approx(
-                max(
-                    pml_width[0] * grid_spacing[0],
-                    pml_width[1] * grid_spacing[0],
-                    pml_width[2] * grid_spacing[1],
-                    pml_width[3] * grid_spacing[1],
-                ),
-            ),
-            dt,
-            ny,
-            max_vel,
-            dtype,
-            device,
-            pml_freq,
-        )
-        mock_setup_pml.assert_any_call(
-            pml_width[2:],
-            [
-                fd_pad[2] + pml_width[2],
-                nx - 1 - fd_pad[3] - pml_width[3],
-            ],  # [1, 2 - 1 - 0 - 1 = 0]
-            pytest.approx(
-                max(
-                    pml_width[0] * grid_spacing[0],
-                    pml_width[1] * grid_spacing[0],
-                    pml_width[2] * grid_spacing[1],
-                    pml_width[3] * grid_spacing[1],
-                ),
-            ),
-            dt,
-            nx,
-            max_vel,
-            dtype,
-            device,
-            pml_freq,
-        )
-
-        assert len(result) == 6
-        for i in range(3):
-            assert result[i].shape == (1, ny, 1)
-        for i in range(3, 6):
-            assert result[i].shape == (1, 1, nx)
+@pytest.mark.parametrize("accuracy", [2, 4, 6, 8])
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+@pytest.mark.parametrize("dim", [0, 1, 2])
+def test_second_derivative_of_quadratic(accuracy, dtype, dim) -> None:
+    """Every supported stencil differentiates a quadratic to its exact curvature."""
+    coords = torch.arange(-4, 5, dtype=dtype)
+    zz, yy, xx = torch.meshgrid(coords, coords, coords, indexing="ij")
+    field = zz.square() + yy.square() + xx.square()
+    derivative = _regular_grid.diff2(field, dim, accuracy, 0.04, 3)
+    torch.testing.assert_close(
+        derivative[4, 4, 4],
+        torch.tensor(0.08, dtype=dtype),
+        rtol=8 * torch.finfo(dtype).eps,
+        atol=0,
+    )

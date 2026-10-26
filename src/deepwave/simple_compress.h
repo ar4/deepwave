@@ -12,7 +12,7 @@ extern "C" {
 #define SC_CAT(name, ndim, dtype) SC_CAT_I(name, ndim, dtype)
 #define SC_FUNC(name) SC_CAT(name, DW_NDIM, DW_DTYPE)
 
-void SC_FUNC(compress_cpu)(void const *input, void *output,
+void SC_FUNC(compress_cpu)(void const* input, void* output,
 #if DW_NDIM >= 3
                            size_t nz,
 #endif
@@ -20,16 +20,16 @@ void SC_FUNC(compress_cpu)(void const *input, void *output,
                            size_t ny,
 #endif
                            size_t nx);
-int SC_FUNC(compress_cuda)(void const *input, void *output, size_t n_batch,
+int SC_FUNC(compress_cuda)(void const* input, void* output, size_t n_batch,
 #if DW_NDIM >= 3
                            size_t nz,
 #endif
 #if DW_NDIM >= 2
                            size_t ny,
 #endif
-                           size_t nx, void *stream);
+                           size_t nx, void* stream);
 
-void SC_FUNC(decompress_cpu)(void const *input, void *output,
+void SC_FUNC(decompress_cpu)(void const* input, void* output,
 #if DW_NDIM >= 3
                              size_t nz,
 #endif
@@ -37,14 +37,14 @@ void SC_FUNC(decompress_cpu)(void const *input, void *output,
                              size_t ny,
 #endif
                              size_t nx);
-int SC_FUNC(decompress_cuda)(void const *input, void *output, size_t n_batch,
+int SC_FUNC(decompress_cuda)(void const* input, void* output, size_t n_batch,
 #if DW_NDIM >= 3
                              size_t nz,
 #endif
 #if DW_NDIM >= 2
                              size_t ny,
 #endif
-                             size_t nx, void *stream);
+                             size_t nx, void* stream);
 #endif /* DW_NDIM && DW_DTYPE */
 
 #ifdef __cplusplus

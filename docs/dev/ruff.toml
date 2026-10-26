@@ -1,0 +1,19 @@
+extend = "../../ruff.toml"
+src = ["../../src"]
+
+# These developer notes are not rendered into the documentation (see
+# docs/conf.py's exclude_patterns), so the narrow line length docs/ruff.toml
+# imposes -- which exists so that example code fits inside a rendered code
+# block without a horizontal scrollbar -- does not apply here. The project's
+# ordinary line length does.
+line-length = 88
+
+[lint]
+# N802/N816 (function and global-variable names should be lowercase): these
+# scripts name their symbols after the physical quantities in the papers
+# they re-derive (`tauH2` is the 2-D flat-H surface stress, `solH2` its
+# elimination solution), so lowercasing them would break the one-to-one
+# correspondence with the cited equations that makes the derivation
+# auditable. The same rationale as the physics symbols elsewhere in the
+# documentation.
+extend-ignore = ["ANN", "INP001", "ERA001", "N802", "N816"]

@@ -1,0 +1,116 @@
+name: Sanitizers
+
+# CPU AddressSanitizer + UndefinedBehaviorSanitizer native path checks.
+# Long scientific simulations run in the normal/physics workflows. GPU is
+# out of scope here: DW_SANITIZE forces DW_SKIP_CUDA=ON (ASan/
+# UBSan CPU instrumentation and CUDA device code do not mix -- see
+# CMakeLists.txt); compute-sanitizer coverage of the CUDA kernels is a
+# maintainer/GPU-box activity (see CONTRIBUTING.md's "GPU sanitizer checks"
+# section), not something ubuntu-latest (no GPU)
+# can run.
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sanitize:
+    name: ASan+UBSan (${{ matrix.compiler }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - compiler: gcc
+            cc: gcc
+            cxx: g++
+          - compiler: clang
+            cc: clang
+            cxx: clang++
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+
+      - name: Install clang
+        if: matrix.compiler == 'clang'
+        run: sudo apt-get update && sudo apt-get install -y clang
+
+      - name: ccache
+        uses: hendrikmuhs/ccache-action@d62db5f07c26379fc4b4e0916f098a92573c3b03 # v1.2.23
+        with:
+          key: sanitize-${{ matrix.compiler }}
+
+      - name: Install torch (CPU) + build/test dependencies
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install scikit-build-core cmake ninja pytest pytest-xdist scipy sympy
+
+      - name: Build with DW_SANITIZE=ON
+        run: >
+          pip install -e . --no-build-isolation -Cbuild-dir=build-asan
+          -Ccmake.define.DW_SANITIZE=ON
+          -Ccmake.define.CMAKE_C_COMPILER=${{ matrix.cc }}
+          -Ccmake.define.CMAKE_CXX_COMPILER=${{ matrix.cxx }}
+          -Cbuild.tool-args=-j2
+
+      - name: Resolve the ASan runtime path
+        # Both paths are version-specific (see CONTRIBUTING.md's sanitizer
+        # recipe); resolve from this runner's actual compiler rather than
+        # hardcoding a version.
+        run: |
+          if [ "${{ matrix.compiler }}" = "gcc" ]; then
+            echo "ASAN_LIB=$(gcc -print-file-name=libasan.so.8)" >> "$GITHUB_ENV"
+          else
+            echo "ASAN_LIB=$(clang -print-resource-dir)/lib/linux/libclang_rt.asan-x86_64.so" >> "$GITHUB_ENV"
+          fi
+
+      - name: Native paths under ASan+UBSan
+        # Both libstdc++ and the sanitizer runtime must be preloaded together
+        # (see CONTRIBUTING.md's sanitizer recipe: without libstdc++, the
+        # first C++ exception anywhere in the process -- including ordinary
+        # PyTorch internals -- crashes the __cxa_throw interceptor).
+        env:
+          ASAN_OPTIONS: detect_leaks=0:halt_on_error=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+          CUDA_VISIBLE_DEVICES: ""
+        run: |
+          LD_PRELOAD="$ASAN_LIB /lib/x86_64-linux-gnu/libstdc++.so.6" \
+            python scripts/native_sanitizer_check.py --out native-sanitizer.json
+
+      - name: ABI and native boundary regressions under ASan+UBSan
+        env:
+          ASAN_OPTIONS: detect_leaks=0:halt_on_error=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+          CUDA_VISIBLE_DEVICES: ""
+        run: |
+          LD_PRELOAD="$ASAN_LIB /lib/x86_64-linux-gnu/libstdc++.so.6" \
+            python -m pytest tests/test_abi_drift.py tests/test_native_storage_boundaries.py -m "not slow"
+
+  qualification:
+    name: Record required qualification
+    if: always()
+    needs: [sanitize]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - name: Require every gate and record the actual tree
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: python scripts/release_artifacts.py record --kind sanitizers --directory evidence --needs "$NEEDS_JSON"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: qualification-sanitizers-a${{ github.run_attempt }}
+          path: evidence/receipt.json
+          retention-days: 90
+          if-no-files-found: error

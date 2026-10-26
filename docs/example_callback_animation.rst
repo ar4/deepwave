@@ -9,13 +9,21 @@ In this example, we will create an animation that shows three things side-by-sid
 2. The backward-propagating wavefield (the adjoint wavefield).
 3. The formation of the model gradient during backpropagation.
 
-We setup the propagation as normal, using a simple single layer model. Next, we define two callback functions to store the forward and backward wavefields and the current value of the gradient with respect to the velocity model as backpropagation progresses. We can use regular Python functions for these, but, to show you how it is done, I will use a callable class for the forward callback. The `ForwardCallback` instance will be called during the forward pass, and the `backward_callback` function will be called during the backward pass. Each receives a :py:class:`CallbackState <deepwave.common.CallbackState>` object when it is called that provides access to the simulation data. We use these to save the relevant tensors to our snapshot storage. The wavefield names are the same as those in the propagator signature, so the current wavefield is `wavefield_0`::
+We set up the propagation as normal, using a simple single-layer model.
+Next, we define two callback functions to store the forward and backward
+wavefields and the current value of the gradient with respect to the
+velocity model as backpropagation progresses. Regular Python functions
+would work for these, but the forward callback below uses a callable class
+instead, to show how that is done. The `ForwardCallback` instance is called
+during the forward pass, and the `backward_callback` function during the
+backward pass. Each receives a :py:class:`CallbackState <deepwave.CallbackState>` object when it is called that provides access to the simulation data. We use these to save the relevant tensors to our snapshot storage. The wavefield names are the same as those in the propagator signature, so the current wavefield is `wavefield_0`::
 
         # Storage for snapshots from callbacks
         callback_frequency = 1
-        forward_snapshots = torch.zeros(nt // callback_frequency, ny, nx)
-        backward_snapshots = torch.zeros(nt // callback_frequency, ny, nx)
-        gradient_snapshots = torch.zeros(nt // callback_frequency, ny, nx)
+        n_snapshots = -(-nt // callback_frequency)
+        forward_snapshots = torch.zeros(n_snapshots, ny, nx)
+        backward_snapshots = torch.zeros(n_snapshots, ny, nx)
+        gradient_snapshots = torch.zeros(n_snapshots, ny, nx)
 
         # Define callback functions
 
@@ -34,7 +42,7 @@ We setup the propagation as normal, using a simple single layer model. Next, we 
 
         # Could instead have used a function
         # def forward_callback(state):
-        #     forward_snapshots[state.step] = (
+        #     forward_snapshots[state.step // callback_frequency] = (
         #         state.get_wavefield("wavefield_0")[0].cpu().clone()
         #     )
 
@@ -42,13 +50,14 @@ We setup the propagation as normal, using a simple single layer model. Next, we 
         def backward_callback(state):
             """A function called during the backward pass."""
             # We use [0] to select the first shot in the batch
-            backward_snapshots[state.step] = (
+            index = state.step // callback_frequency
+            backward_snapshots[index] = (
                 state.get_wavefield("wavefield_0")[0].cpu().clone()
             )
-            gradient_snapshots[state.step] = state.get_gradient("v")[0].cpu().clone()
+            gradient_snapshots[index] = state.get_gradient("v")[0].cpu().clone()
 
 
-We then run the simulation, passing our callbacks to the propagator. We set `callback_frequency=1` to capture snapshots every time step::
+We then run the simulation, passing our callbacks to the propagator. We set `callback_frequency=1` to capture snapshots every user time step. `state.step` is the user step, and both directions visit the same callback grid, so `state.step // callback_frequency` indexes the snapshot at any positive frequency. Model-gradient history sampling does not change this grid::
 
         out = deepwave.scalar(
             v,
@@ -63,7 +72,9 @@ We then run the simulation, passing our callbacks to the propagator. We set `cal
             callback_frequency=callback_frequency,
         )
 
-        torch.nn.MSELoss()(out[-1], out_true[-1]).backward()
+        torch.nn.MSELoss()(
+            out.receiver_amplitudes, out_true.receiver_amplitudes
+        ).backward()
 
 
 Finally, we use Matplotlib to create and save the animation. We iterate through the snapshots backwards in time to see the accumulation of the gradient.

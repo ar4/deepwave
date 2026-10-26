@@ -1,0 +1,84 @@
+name: Benchmarks
+
+# Report-only, never PR-blocking: comparing wall-time against a baseline
+# captured on a different machine is inherently noisy on shared runners, and
+# a base-vs-head comparison would cost two extra cold ~20-min extension
+# builds per run. Instead this runs the current commit's CPU meso-tier
+# benchmarks on a schedule (or on demand) and publishes the numbers -- a
+# results artifact plus a job summary table -- with no pass/fail gate.
+# Enforced metrics recorded: CPU wall-time median + host peak RSS
+# (vmhwm_bytes). GPU numbers stay local/manual -- no GPU runner is
+# available here. For an actual regression gate, run
+# `benchmarks/run.py --compare` locally between two commits on the same box
+# (see benchmarks/README.md).
+on:
+  schedule:
+    # Weekly, Monday 03:00 UTC -- frequent enough to catch drift, rare enough
+    # that noisy shared-runner numbers don't spam a report every day.
+    - cron: "0 3 * * 1"
+  # Opt-in per-PR run for a suspect PR: apply the "benchmark" label.
+  pull_request:
+    types: [labeled]
+  workflow_dispatch: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  report:
+    if: >
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && github.event.label.name == 'benchmark')
+    name: Benchmark report (meso, CPU)
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+
+      - name: ccache
+        uses: hendrikmuhs/ccache-action@d62db5f07c26379fc4b4e0916f098a92573c3b03 # v1.2.23
+        with:
+          key: benchmarks-report
+
+      - name: Install torch (CPU) + build dependencies
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install scikit-build-core cmake ninja
+
+      - name: Build Deepwave
+        run: pip install -e . --no-build-isolation -Cbuild-dir=build
+
+      - name: Run meso-tier CPU benchmarks
+        # --all excludes CI_MEMORY_EXCLUDED_CASES by default (see
+        # benchmarks/cases.py): 4 of the full cross product's meso-tier
+        # cases exceed this runner's 16 GB RAM.
+        run: >
+          python benchmarks/run.py --tier meso --all --label candidate
+          --threads "$(nproc)"
+          | tee benchmark_output.txt
+
+      - name: Write job summary
+        run: |
+          {
+            echo "## Benchmark report (meso, CPU)"
+            echo
+            echo "Commit: ${{ github.sha }}"
+            echo
+            echo '```'
+            cat benchmark_output.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: benchmark-results
+          path: |
+            benchmarks/results/candidate.json
+            benchmark_output.txt

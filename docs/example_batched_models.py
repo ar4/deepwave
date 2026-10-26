@@ -4,6 +4,9 @@ This is useful when you want to propagate multiple shots through different
 models simultaneously.
 """
 
+import math
+import os
+
 import matplotlib.pyplot as plt
 import torch
 
@@ -16,8 +19,11 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # two different velocity models.
 
 # Create two velocity models
-ny = 100
-nx = 200
+# ``DEEPWAVE_SMOKE=1`` shrinks this example so that it can be run quickly as
+# an automated check; the default sizes are the ones the text describes.
+smoke = os.environ.get("DEEPWAVE_SMOKE") == "1"
+ny = 40 if smoke else 100
+nx = 60 if smoke else 200
 dx = 4.0
 v_background1 = 1500.0
 v_background2 = 3000.0
@@ -43,7 +49,7 @@ n_shots = 2
 n_sources_per_shot = 1
 n_receivers_per_shot = nx
 freq = 25
-nt = 250
+nt = 120 if smoke else 250
 dt = 0.004
 peak_time = 1.5 / freq
 
@@ -77,7 +83,7 @@ out = deepwave.scalar(
     receiver_locations=receiver_locations,
     max_vel=v.max().item(),
 )
-receiver_data = out[-1]
+receiver_data = out.receiver_amplitudes
 
 # Plot the receiver data
 vmax = torch.quantile(receiver_data, 0.95)
@@ -116,7 +122,7 @@ out = deepwave.scalar(
     max_vel=v.max().item(),
 )
 
-torch.nn.MSELoss()(out[-1], receiver_data).backward()
+torch.nn.MSELoss()(out.receiver_amplitudes, receiver_data).backward()
 
 # Plot the gradients
 grad = v_init.grad.detach().cpu()
@@ -173,7 +179,7 @@ true_data = deepwave.scalar(
     source_amplitudes=source_amplitudes_inv,
     source_locations=source_locations_inv,
     receiver_locations=receiver_locations_inv,
-)[-1]
+).receiver_amplitudes
 
 # Create initial models for inversion: one for each shot
 # Start with homogeneous models
@@ -188,7 +194,7 @@ optimiser = torch.optim.SGD([v_init], lr=1.0)
 loss_fn = torch.nn.MSELoss()
 
 n_plots = 3
-plot_freq = 20
+plot_freq = 3 if smoke else 20
 
 fig, ax = plt.subplots(
     n_plots + 1,
@@ -202,6 +208,7 @@ for i in range(n_shots_inversion):
 
 # Inversion loop
 n_epochs = n_plots * plot_freq + 1
+loss_history: list[float] = []
 for epoch in range(n_epochs):
     # The weight of the penalty term increases with epochs
     penalty_weight = 1e4 * (epoch / (n_epochs - 1)) ** 2
@@ -216,10 +223,11 @@ for epoch in range(n_epochs):
         source_amplitudes=source_amplitudes_inv,
         source_locations=source_locations_inv,
         receiver_locations=receiver_locations_inv,
-    )[-1]
+    ).receiver_amplitudes
 
     # Data misfit loss
     loss_mse = 1e9 * loss_fn(pred_data, true_data)
+    loss_history.append(float(loss_mse.item()))
 
     # Model difference penalty
     # Penalise the variance between the models
@@ -242,3 +250,8 @@ for epoch in range(n_epochs):
 
 plt.tight_layout()
 plt.savefig("example_batched_models_part2_inversion.jpg")
+
+assert all(math.isfinite(x) for x in loss_history), (
+    "loss history contains non-finite values"
+)
+assert loss_history[-1] < loss_history[0], "loss did not decrease"

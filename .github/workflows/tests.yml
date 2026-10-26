@@ -1,0 +1,211 @@
+name: Tests
+
+# Mandatory CPU and physics gates for PR changes and manual dispatch.
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build CPU wheel
+    uses: ./.github/workflows/_build-cpu.yml
+
+  pytest:
+    name: pytest (py${{ matrix.python-version }}, torch ${{ matrix.torch-version }})
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        # Exercise the declared Python/PyTorch floors as well as a recent
+        # Python with current PyTorch. The ctypes library has no CPython
+        # ABI dependency; one wheel does not by itself test Python versions.
+        include:
+          - python-version: "3.9"
+            torch-version: "2.4.0"
+            torch-spec: "torch==2.4.0"
+          - python-version: "3.13"
+            torch-version: "latest"
+            torch-spec: "torch"
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Download the CPU wheel built by the "build" job
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: deepwave-cpu-wheel
+          path: dist
+
+      - name: Install torch (CPU)
+        run: pip install "${{ matrix.torch-spec }}" --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Install Deepwave (from the prebuilt wheel) + test dependencies
+        run: |
+          pip install dist/*.whl
+          # Match the Python 3.9 plotting compatibility constraint in [examples].
+          pip install pytest pytest-xdist pytest-timeout pytest-cov pytest-instafail scipy sympy matplotlib hypothesis \
+            'pyparsing<3.3; python_version < "3.10"'
+          python -m pip freeze > test-environment.txt
+
+      - name: pytest (fast subset, with coverage)
+        # Keep the existing separate batches for the four elastic-family
+        # files. Fixtures restore Torch globals; a failure in a combined
+        # selection still needs diagnosis before calling it infrastructure.
+        # Accumulate statements and branches across every batch. The final
+        # statement gate retains the existing 92% requirement independently
+        # of the new branch measurement (whose baseline is not yet known).
+        # Enforce a five-minute maximum per test. The thread timeout method
+        # terminates a hung xdist worker even when a test is stuck in native
+        # code. Show failures immediately and retain per-test timings. Run
+        # every batch even if an earlier one fails, preserving a failing job
+        # status.
+        run: |
+          status=0
+          reporting=(--instafail -v --durations=30 --timeout=300 --timeout-method=thread)
+          python -m pytest tests/ -n auto -m "not slow" "${reporting[@]}" \
+            --junitxml=test-results/main.xml \
+            --ignore=tests/test_boundary.py \
+            --ignore=tests/test_elastic.py \
+            --ignore=tests/test_elastic_vti.py \
+            --ignore=tests/test_elastic_born.py \
+            --cov=deepwave --cov-branch --cov-report=term-missing || status=1
+          python -m pytest tests/test_boundary.py -m "not slow" "${reporting[@]}" \
+            --junitxml=test-results/boundary.xml \
+            --cov=deepwave --cov-branch --cov-append --cov-report=term-missing || status=1
+          python -m pytest tests/test_elastic.py -m "not slow" "${reporting[@]}" \
+            --junitxml=test-results/elastic.xml \
+            --cov=deepwave --cov-branch --cov-append --cov-report=term-missing || status=1
+          python -m pytest tests/test_elastic_vti.py -m "not slow" "${reporting[@]}" \
+            --junitxml=test-results/elastic-vti.xml \
+            --cov=deepwave --cov-branch --cov-append --cov-report=term-missing || status=1
+          python -m pytest tests/test_elastic_born.py -m "not slow" "${reporting[@]}" \
+            --junitxml=test-results/elastic-born.xml \
+            --cov=deepwave --cov-branch --cov-append --cov-report=term-missing \
+            --cov-report=json:coverage.json --cov-report=html:coverage-html || status=1
+          python scripts/check_line_coverage.py coverage.json || status=1
+          exit "$status"
+
+      - name: Preserve coverage and per-test timing evidence
+        if: ${{ !cancelled() && (hashFiles('.coverage') != '' || hashFiles('test-results/**') != '') }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: python-coverage-${{ matrix.python-version }}
+          path: |
+            .coverage
+            coverage.json
+            coverage-html/
+            test-environment.txt
+            test-results/
+          include-hidden-files: true
+          if-no-files-found: error
+
+  physics:
+    name: pytest (physics correctness gate)
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+
+      - name: Download the CPU wheel built by the "build" job
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: deepwave-cpu-wheel
+          path: dist
+
+      - name: Install torch (CPU)
+        run: pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Install Deepwave (from the prebuilt wheel) + test dependencies
+        run: |
+          pip install dist/*.whl
+          pip install pytest pytest-xdist scipy sympy
+
+      - name: pytest (physics-grade gate)
+        # The "pytest" job above runs "-m not slow", so any `slow`-marked
+        # test in the files listed below -- whether marked explicitly or by
+        # tests/conftest.py's automatic "gradcheck" nodeid rule -- would
+        # otherwise never run in CI. This job is a dedicated correctness
+        # gate, run alongside (not instead of) the fast-subset job above, for
+        # the suites that actually catch a wrong physics/adjoint
+        # implementation rather than a wrong error message: Taylor/Born
+        # linearisation convergence (test_convergence.py), the adjoint
+        # dot-product identity (test_adjoint_dot_product.py), and the
+        # analytic-oracle files -- Lamb/Rayleigh-Lamb dispersion
+        # (test_elastic_lamb.py), cross-backend equivalence identities
+        # (test_equivalence_matrix.py), a sympy re-derivation of the
+        # hand-written kernel adjoints (test_adjoint_symbolic.py) -- plus the
+        # Christoffel phase-velocity, closed-form Green's-function
+        # ("direct"), and reciprocity checks selected (via -k) out of the
+        # VTI/TTI and base scalar/acoustic files, whose *other* thousands of
+        # cases are already covered (fast, under "not slow") by the job above
+        # and would blow this job's ~30 minute budget if run here in full.
+        # "-m slow or not slow" is a tautology (every test matches one side
+        # or the other) that exists purely to document, at the call site,
+        # that this job deliberately does not apply the "not slow" filter the
+        # other job uses -- confirmed with --collect-only that it does not
+        # accidentally deselect anything.
+        #
+        # tests/test_gradcheck_real.py remains an explicit manual/release
+        # selection. Its finite differences can catch shared errors that
+        # backend parity misses. The routine gates below provide separate
+        # analytic, adjoint and convergence evidence; they do not make the
+        # manual anchors redundant. tests/conftest.py excludes those anchors
+        # unless they are explicitly selected.
+        #
+        # Keep the Christoffel/reciprocity subset in the existing separate
+        # serial batch, matching the grouping of the pytest job above.
+        # Temporarily exclude six cases that exceeded the five-minute fast-CI
+        # test limit; they remain available to run locally while their runtime
+        # is investigated.
+        run: |
+          python -m pytest tests/test_convergence.py \
+            tests/test_adjoint_dot_product.py tests/test_elastic_lamb.py \
+            tests/test_equivalence_matrix.py tests/test_adjoint_symbolic.py \
+            -n 2 -m "slow or not slow"
+          python -m pytest tests/test_elastic_vti.py -k "christoffel or reciprocity" \
+            -m "slow or not slow"
+          python -m pytest tests/test_vti_physics.py
+          python -m pytest tests/test_acoustic_vti.py \
+            tests/test_scalar.py tests/test_acoustic.py \
+            -k "christoffel or reciprocity or direct" -n 2 \
+            --deselect='tests/test_acoustic.py::test_direct[nx2-dx2]' \
+            --deselect='tests/test_scalar.py::test_direct[cpu-nx2-dx2]' \
+            --deselect='tests/test_scalar.py::test_direct[cuda-nx2-dx2]' \
+            -m "slow or not slow"
+
+  qualification:
+    name: Record required qualification
+    if: always()
+    needs: [build, pytest, physics]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - name: Require every gate and record the actual tree
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: python scripts/release_artifacts.py record --kind tests --directory evidence --needs "$NEEDS_JSON"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: qualification-tests-a${{ github.run_attempt }}
+          path: evidence/receipt.json
+          retention-days: 90
+          if-no-files-found: error

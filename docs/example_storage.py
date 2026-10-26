@@ -2,8 +2,12 @@
 
 This script shows how to perform 3D FWI using Deepwave, and how to use
 the storage features to reduce GPU memory consumption by storing
-intermediate data on the CPU (or disk) and optionally compressing it.
+intermediate data on the CPU (or disk) and optionally compressing it. It
+also shows how to find out what a run will cost, with ``deepwave.plan``,
+before paying for it.
 """
+
+import os
 
 import torch
 
@@ -11,6 +15,9 @@ import deepwave
 from deepwave import scalar
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# ``DEEPWAVE_SMOKE=1`` shrinks this example so that it can be run quickly as
+# an automated check; the default sizes are the ones the text describes.
+smoke = os.environ.get("DEEPWAVE_SMOKE") == "1"
 
 # Define the 3D model
 # A small 30x30x30 grid for demonstration purposes
@@ -26,7 +33,7 @@ v_background = torch.full((nz, ny, nx), 1500.0, device=device)
 
 # Create the true model by adding a block anomaly
 v_true = v_background.clone()
-# Anomaly in the center
+# Anomaly in the centre
 v_true[4:8, 13:18, 13:18] = 1600
 
 # Starting model for inversion (smooth background)
@@ -34,7 +41,7 @@ v = v_background.clone()
 v.requires_grad_()
 
 # Acquisition setup
-# 4 sources positioned around the center
+# 4 sources positioned around the centre
 n_shots = 4
 n_sources_per_shot = 1
 # Dense receiver grid on the surface
@@ -71,7 +78,7 @@ receiver_locations[:] = rec_locs
 
 # Time parameters
 freq = 25
-nt = 150  # Short simulation for speed
+nt = 60 if smoke else 150  # Short simulation for speed
 dt = 0.004
 peak_time = 1.5 / freq
 source_amplitudes = (
@@ -93,7 +100,31 @@ observed_data = scalar(
     source_locations=source_locations,
     receiver_locations=receiver_locations,
     pml_width=pml_width,
-)[-1]
+).receiver_amplitudes
+
+# The whole storage policy as one object. Setting mode='cpu' and
+# lossy_compression=True reduces GPU memory usage during the forward pass
+# required for backpropagation: the intermediate data is kept in CPU
+# memory, compressed. Passing storage_mode='cpu' and
+# storage_compression=True as individual arguments does exactly the
+# same thing; use whichever reads better.
+policy = deepwave.Storage(mode="cpu", lossy_compression=True)
+
+# What the run will cost, resolved by the propagator's own front end but
+# stopped before propagation and gradient-history allocation; source setup
+# can still allocate tensors proportional to the time steps.
+cost = deepwave.plan(
+    scalar,
+    v,
+    [dz, dy, dx],
+    dt,
+    source_amplitudes=source_amplitudes,
+    source_locations=source_locations,
+    receiver_locations=receiver_locations,
+    pml_width=pml_width,
+    storage=policy,
+)
+print(cost.summary())
 
 # Inversion loop
 optimizer = torch.optim.SGD([v], lr=1e8)
@@ -102,9 +133,6 @@ loss_fn = torch.nn.MSELoss()
 for _epoch in range(1):
     optimizer.zero_grad()
 
-    # We use storage_mode='cpu' and storage_compression=True to reduce
-    # GPU memory usage during the forward pass required for backpropagation.
-    # This stores the intermediate data in CPU memory, compressed.
     out = scalar(
         v,
         [dz, dy, dx],
@@ -113,10 +141,14 @@ for _epoch in range(1):
         source_locations=source_locations,
         receiver_locations=receiver_locations,
         pml_width=pml_width,
-        storage_mode="cpu",
-        storage_compression=True,
+        storage=policy,
     )
 
-    loss = loss_fn(out[-1], observed_data)
+    loss = loss_fn(out.receiver_amplitudes, observed_data)
     loss.backward()
     optimizer.step()
+
+assert torch.isfinite(out.receiver_amplitudes).all(), (
+    "receiver data is not finite"
+)
+assert out.receiver_amplitudes.abs().max() > 0, "receiver data is all zeros"

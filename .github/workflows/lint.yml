@@ -1,0 +1,191 @@
+name: Lint
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: ruff + mypy
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+
+      - name: Install lint tools
+        # Pinned to the versions available in the dev environment at the time
+        # this workflow was added, so local `ruff`/`mypy` runs match CI
+        # exactly (see CONTRIBUTING.md).
+        run: pip install ruff==0.15.6 mypy==1.19.1
+
+      - name: Install torch (CPU) for mypy
+        # mypy --strict needs torch's type stubs to resolve deepwave's
+        # torch.Tensor-heavy signatures.
+        run: pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Record lint environment
+        run: |
+          python --version
+          pip freeze
+
+      - name: ruff format --check
+        # docs/ has its own ruff.toml (a narrower line length, so example
+        # code fits in a rendered code block) and docs/dev/ another; ruff
+        # picks the closest one per file automatically.
+        run: ruff format --check src/deepwave/ tests/ docs/ scripts/ benchmarks/
+
+      - name: ruff check
+        run: ruff check --output-format=github src/deepwave/ tests/ docs/ scripts/ benchmarks/
+
+      - name: mypy
+        # --strict now comes from pyproject.toml's [tool.mypy] table rather
+        # than this flag; this still only checks src/, matching the
+        # project's mypy gate (benchmarks/ and tests/ are not held to
+        # mypy --strict).
+        run: |
+          echo "::add-matcher::.github/matchers/mypy.json"
+          mypy src/
+
+      - name: clone drift check
+        # Re-extracts each duplicated C/CUDA function named in
+        # scripts/clone_manifest.json from both its files and fails if the
+        # two copies have diverged (see scripts/check_clone_drift.py's
+        # module docstring). Pure standard library, no extra dependency.
+        run: python3 scripts/check_clone_drift.py
+
+  codespell:
+    name: codespell
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+
+      - name: Install codespell
+        run: pip install codespell==2.4.3
+
+      - name: codespell
+        # Config (skip list + ignore-words-list) lives in pyproject.toml's
+        # [tool.codespell] table.
+        run: codespell src/ docs/ tests/ scripts/ benchmarks/ README.md CONTRIBUTING.md CHANGELOG.md
+
+      - name: British-English dialect check
+        # codespell catches misspellings, not dialect drift (e.g. "color" is
+        # correctly spelled, just American). scripts/check_dialect.py is the
+        # narrow, explicit complement: a fixed wordlist of American forms
+        # this codebase has standardised away from, with its own small
+        # allowlist of deliberate exceptions documented inline.
+        run: python3 scripts/check_dialect.py
+
+  clang-format-tidy:
+    name: clang-format + clang-tidy
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+
+      - name: Install clang-format and clang-tidy
+        # Use the same current tools locally and in CI; image updates must not
+        # silently change either formatting rules or the static-analysis gate.
+        run: |
+          pip install clang-format==23.1.3 clang-tidy==23.1.3
+          clang-format --version
+          clang-tidy --version
+
+      - name: clang-format --dry-run --Werror
+        run: |
+          find src/deepwave \( -name '*.c' -o -name '*.cu' -o -name '*.cpp' -o -name '*.h' \) -print0 \
+            | xargs -0 clang-format --dry-run --Werror
+
+      - name: Configure (compile_commands.json only, CPU-only, no build)
+        # No CUDA toolkit on this runner; DW_SKIP_CUDA=ON keeps this a plain
+        # configure step (~1s), not a build -- clang-tidy only needs the
+        # generated compile_commands.json, never a linked .so.
+        run: cmake -S . -B build-tidy -DDW_SKIP_CUDA=ON -DCMAKE_BUILD_TYPE=Release
+
+      - name: clang-tidy (all configured CPU variants and native helpers)
+        # clang-tidy processes every compile-command entry for each file,
+        # including its configured NDIM/ACCURACY/DTYPE variants.
+        # All nine supported propagators have compiled kernels.
+        # This job checks CPU (.c) code; the .cu twins need a CUDA toolkit (see
+        # CONTRIBUTING.md's ".c and .cu are kept in lockstep" constraint;
+        # a maintainer/GPU CI validates .cu separately). Allow tens of minutes
+        # for static analysis of this full sweep of macro-heavy kernel code.
+        # Two files at a time use the runner's spare cores; each still checks
+        # every configured variant and xargs propagates any failing exit code.
+        run: |
+          printf '%s\0' src/deepwave/scalar.c \
+            src/deepwave/scalar_born.c \
+            src/deepwave/acoustic.c \
+            src/deepwave/acoustic_born.c \
+            src/deepwave/acoustic_vti.c \
+            src/deepwave/elastic.c \
+            src/deepwave/elastic_born.c \
+            src/deepwave/elastic_vti.c \
+            src/deepwave/viscoacoustic.c \
+            src/deepwave/storage_utils.c \
+            src/deepwave/simple_compress.c \
+            src/deepwave/cpu_features.c |
+            xargs -0 -n 1 -P 2 clang-tidy -p build-tidy \
+              --extra-arg=-idirafter --extra-arg="$(gcc -print-file-name=include)"
+
+      - name: clang-tidy (CUDA configuration lock; no toolkit required)
+        run: clang-tidy src/deepwave/cuda_config_lock.cpp -- -std=c++11
+
+  workflows:
+    name: actionlint + ShellCheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+      - name: Install actionlint and ShellCheck
+        run: |
+          pip install shellcheck-py==0.11.0.1
+          curl --fail --location --retry 3 https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz -o actionlint.tar.gz
+          echo '8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  actionlint.tar.gz' | sha256sum --check
+          tar -xzf actionlint.tar.gz actionlint
+      - name: Check workflows and their shell scripts
+        run: |
+          shellcheck --version
+          ./actionlint -color
+
+  qualification:
+    name: Record required qualification
+    if: always()
+    needs: [lint, codespell, clang-format-tidy, workflows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - name: Require every gate and record the actual tree
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: python scripts/release_artifacts.py record --kind lint --directory evidence --needs "$NEEDS_JSON"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: qualification-lint-a${{ github.run_attempt }}
+          path: evidence/receipt.json
+          retention-days: 90
+          if-no-files-found: error

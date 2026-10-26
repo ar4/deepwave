@@ -1,13 +1,23 @@
 PyTorch
 =======
 
-Deepwave leverages PyTorch to provide wave propagation as a differentiable operation. A solid understanding of PyTorch is key to maximising Deepwave's utility. While PyTorch offers extensive features and flexibility, and its `website <https://pytorch.org/tutorials>`_ provides comprehensive tutorials, this section offers a concise overview of its most crucial aspects.
+Deepwave uses PyTorch to provide wave propagation as a differentiable
+operation. Understanding PyTorch well makes Deepwave easier to use. Its
+`website <https://pytorch.org/tutorials>`_ has full tutorials; this page
+gives a short overview of the parts of PyTorch that matter most for Deepwave.
 
-PyTorch, much like the popular Python package `NumPy <https://numpy.org/>`_, offers tools for numerical computation in Python. Many NumPy functions have direct PyTorch equivalents. However, two key differences set PyTorch apart: Tensors and automatic differentiation (autograd).
+PyTorch, like the Python package `NumPy <https://numpy.org/>`_, provides
+tools for numerical computation. Many NumPy functions have direct PyTorch
+equivalents. Two things set PyTorch apart: Tensors, and automatic
+differentiation (autograd).
 
 **Tensors**
 
-NumPy stores data in multi-dimensional arrays called ndarrays. PyTorch uses Tensors, which are similar but offer significant advantages. Unlike ndarrays, which are restricted to CPUs, Tensors can reside on either a CPU or a GPU (if available), enabling substantially better performance. You can create, manipulate, and move Tensors between devices:
+NumPy stores data in multi-dimensional arrays called ndarrays. PyTorch uses
+Tensors, which are similar but can do more. An ndarray is restricted to the
+CPU; a Tensor can reside on either a CPU or a GPU (if one is available),
+which allows better performance. You can create, manipulate, and move
+Tensors between devices:
 
 .. code-block:: python
 
@@ -20,9 +30,11 @@ NumPy stores data in multi-dimensional arrays called ndarrays. PyTorch uses Tens
 
 **Automatic Differentiation (Autograd)**
 
-The second, and arguably more crucial, difference is PyTorch's autograd system. It allows you to automatically compute gradients through complex chains of operations, enabling inversion and optimisation tasks by simply defining the forward pass of your calculations.
+The second difference is PyTorch's autograd system. It computes gradients
+through chains of operations automatically: you define the forward pass of
+your calculation, and PyTorch works out how to backpropagate through it.
 
-Let's illustrate with a simple example:
+The following example illustrates this:
 
 .. code-block:: python
 
@@ -38,9 +50,16 @@ Let's illustrate with a simple example:
     # Expected output:
     # tensor([2., 2., 2.])
 
-Here, we create a Tensor `a` with `requires_grad=True`, indicating that we need to compute gradients with respect to it. The operation `(2 * a).sum()` computes a scalar `b`. When `b.backward()` is called, PyTorch automatically computes the gradient of `b` with respect to `a` and stores it in `a.grad`. In this case, if we change any element of `a` by :math:`\delta`, `b` changes by :math:`2\delta`, so the gradient for each element of `a` is 2.
+This creates a Tensor `a` with `requires_grad=True`, which tells PyTorch to
+track gradients with respect to it. The operation `(2 * a).sum()` computes a
+scalar `b`. When `b.backward()` is called, PyTorch computes the gradient of
+`b` with respect to `a` and stores it in `a.grad`. Here, changing any element
+of `a` by :math:`\delta` changes `b` by :math:`2\delta`, so the gradient for
+each element of `a` is 2.
 
-While this example is simple, the power of PyTorch's autograd becomes evident with more complex calculations. You only need to define the forward pass, and PyTorch handles the gradient computation.
+This example is simple, but the same mechanism scales to much longer chains
+of operations: you still only need to define the forward pass, and PyTorch
+computes the gradients.
 
 Consider a slightly more complex chain of operations:
 
@@ -55,16 +74,55 @@ Consider a slightly more complex chain of operations:
     d.backward()
     print(a.grad)
     # Expected output:
-    # tensor([5., 5., 5.])
+    # tensor([3., 3., 3.])
     print(c.grad)
     # Expected output:
     # tensor([0., 1., 2.])
 
-Even with a longer and more intricate operation chain, PyTorch effortlessly calculates the gradients. Notice that `d` depends on `a` both directly (through `a * c`) and indirectly (through `b`). Also, the reported gradient for `a` is `[5., 5., 5.]`, not `[3., 3., 3.]`. This is because PyTorch accumulates gradients. If `a.grad` was not explicitly cleared from a previous computation, the new gradients are added to the existing ones. This accumulation is particularly useful when processing large datasets in smaller batches, allowing you to accumulate gradients across batches before an optimiser step.
+PyTorch computes the gradients for this longer, more intricate operation
+chain in the same way. `d` depends on each element of `a` along two paths:
+directly through `a * c`, which contributes `c_i` (1, for every element),
+and indirectly through `b`, which contributes 2. Autograd sums the
+contributions of every path, so `a.grad` is `[3., 3., 3.]`. `d`'s dependence
+on `c` only involves the direct path, `a * c`, so `c.grad` is simply `a`
+itself, `[0., 1., 2.]`.
+
+Gradients accumulate across separate calls to `backward()`, though: if you
+do not clear `a.grad` before calling `backward()` again, the new gradients
+are added to whatever is already stored there.
+
+.. code-block:: python
+
+    import torch
+
+    a = torch.arange(3.0, requires_grad=True)
+    b = (2 * a).sum()
+    b.backward()
+    print(a.grad)
+    # Expected output:
+    # tensor([2., 2., 2.])
+    b2 = (3 * a).sum()
+    b2.backward()
+    print(a.grad)
+    # Expected output:
+    # tensor([5., 5., 5.])
+    a.grad = None  # equivalent to optimiser.zero_grad()
+    print(a.grad)
+    # Expected output:
+    # None
+
+The second `backward()` call added the gradient of `b2` with respect to `a`,
+`[3., 3., 3.]`, to the `[2., 2., 2.]` already stored from the first call.
+Setting `a.grad = None` (or calling `optimiser.zero_grad()`, as in the next
+example) clears it. This accumulation is useful when processing large
+datasets in smaller batches, since it lets you sum gradients across batches
+before taking an optimiser step.
 
 **Optimisation and Inversion**
 
-With the ability to compute gradients, we can perform optimisation and inversion. PyTorch offers various optimisers, or you can implement your own. Here's an example using the Stochastic Gradient Descent (SGD) method:
+The ability to compute gradients enables optimisation and inversion. PyTorch
+provides several optimisers, and you can also implement your own. Here is an
+example using the Stochastic Gradient Descent (SGD) method:
 
 .. code-block:: python
 
@@ -93,10 +151,44 @@ With the ability to compute gradients, we can perform optimisation and inversion
     # Expected output (approximately):
     # tensor([0.1230, 0.3210], requires_grad=True)
 
-In this example, `f` represents our forward model. We define `x_true` and its corresponding `y_true`. Starting with an initial guess for `x` (zeros), we iteratively: clear previous gradients, compute the model output `y`, calculate the Mean Squared Error (MSE) loss between `y` and `y_true`, backpropagate to get the gradient of the loss with respect to `x`, and then update `x` using the optimiser. After 2000 iterations, `x` converges to the correct solution. It's crucial to call `opt.zero_grad()` at the beginning of each iteration to prevent gradient accumulation from previous steps.
+Here, `f` represents the forward model. `x_true` and its corresponding
+`y_true` are the target values. Starting from an initial guess for `x`
+(zeros), each iteration:
+
+1. clears gradients from the previous iteration (``opt.zero_grad()``);
+2. computes the model output `y`;
+3. calculates the Mean Squared Error (MSE) loss between `y` and `y_true`;
+4. backpropagates to get the gradient of the loss with respect to `x`
+   (``loss.backward()``);
+5. updates `x` using the optimiser (``opt.step()``).
+
+After 2000 iterations, `x` converges to the correct solution. Calling
+``opt.zero_grad()`` at the start of each iteration is required to prevent
+gradient accumulation from previous steps.
 
 **Deepwave's Role**
 
-Deepwave integrates seamlessly into this PyTorch ecosystem by providing wave propagation as a PyTorch operation. Just as you would use basic operations like multiplication or sine, Deepwave allows you to apply wave propagation and then backpropagate through it to compute gradients for inversion. Deepwave propagators accept various inputs as Tensors, such as wavespeeds, source amplitudes, and initial wavefields. By setting `requires_grad=True` on these input Tensors, you can calculate gradients with respect to them.
+Deepwave fits into this PyTorch ecosystem by providing wave propagation as a
+PyTorch operation. Just as you would use a basic operation like
+multiplication or sine, Deepwave lets you apply wave propagation and then
+backpropagate through it to compute gradients for inversion. Deepwave
+propagators accept wavespeeds, source amplitudes, initial wavefields, and
+similar inputs as Tensors. Setting `requires_grad=True` on these input
+Tensors lets you calculate gradients with respect to them.
 
-Furthermore, you can chain multiple operations together. For instance, you could use a neural network to transform a latent vector into a wavespeed model, feed this model into Deepwave's propagator, and then apply further operations before computing a loss function. PyTorch's autograd will then perform end-to-end backpropagation through this entire computational graph, calculating gradients for your loss function with respect to the latent vector and any other `requires_grad=True` variables. This flexibility significantly accelerates the process of testing new ideas. I hope that you find it useful.
+You can also chain multiple operations together. For example, a neural
+network could transform a latent vector into a wavespeed model; that model
+could be fed into Deepwave's propagator; further operations could then
+compute a loss function from the propagator's output. PyTorch's autograd
+performs end-to-end backpropagation through this entire computational graph,
+calculating gradients for the loss function with respect to the latent
+vector and any other `requires_grad=True` variables. This is what makes it
+straightforward to test new modelling and inversion ideas.
+
+A composition like that must use the *functional* interface
+(`deepwave.scalar(v, ...)`), not the Module (`deepwave.Scalar(v, ...)`). A
+Module wraps the model you give it in a `torch.nn.Parameter` that it owns,
+and a Parameter is a leaf tensor: it cannot carry the autograd graph that
+produced it, so wrapping a network-produced wavespeed in a Module severs the
+graph and no gradient ever reaches the network. The functional interface
+takes the model as an ordinary Tensor argument and backpropagates through it.

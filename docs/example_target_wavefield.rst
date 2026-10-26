@@ -1,9 +1,18 @@
 Matching a target final wavefield
 =================================
 
-In addition to calculating the gradient with respect to the velocity model of a loss function involving the receiver amplitudes, Deepwave can also calculate gradients involving any of the propagation outputs with respect to any of the float tensor inputs. So the Born scalar propagator, for example, supports calculating gradients not only with respect to the scattering potential, but also with respect to the velocity model and source. This can involve multiple inputs and outputs of a propagation simultaneously, so you can calculate the gradient with respect to multiple inputs (say velocity and source amplitudes) of a loss function that involves multiple outputs (such as receiver amplitudes and final wavefield amplitudes).
-
-In previous examples we have seen several demonstrations of typical optimisations of the velocity model or scattering potential to reduce the difference between predicted and observed data. This time, let's optimise source amplitudes to make the final wavefield match a target.
+This example optimises the source amplitudes so that the final wavefield of
+a propagation matches a target image, rather than optimising the model to
+match receiver data as in earlier examples. Deepwave can calculate the
+gradient of a loss function with respect to any float tensor input, using
+any of the propagation outputs, not just the gradient of the velocity model
+with respect to receiver amplitudes. The scalar Born propagator, for
+example, supports gradients with respect to the velocity model and the
+source, as well as the scattering potential. Multiple inputs and outputs
+can be involved simultaneously, so the gradient with respect to several
+inputs (say, velocity and source amplitudes) can be calculated for a loss
+function involving several outputs (such as receiver amplitudes and the
+final wavefield).
 
 We will use this image as a target:
 
@@ -50,7 +59,7 @@ The optimisation loop is then not very dissimilar to earlier examples. We'll set
                               source_amplitudes=source_amplitudes,
                               source_locations=source_locations,
                               pml_width=0)
-        y = out[0][0]
+        y = out.wavefield_0[0]
         loss = loss_fn(y, target) + 1e-3*source_amplitudes.norm()
         loss.backward()
         return loss.item()
@@ -58,7 +67,23 @@ The optimisation loop is then not very dissimilar to earlier examples. We'll set
     for i in range(50):
         optimiser.step(closure)
 
-Lastly, we will save the wave propagation time steps so that we can make them into an animated GIF. The full example code shows two ways of achieving this. The simplest is to use Deepwave's :doc:`callback feature <example_callback_animation>`. The other uses the approach discussed in :doc:`the checkpointing example <example_checkpointing>`.
+Lastly, we will save the wave propagation time steps so that we can make them into an animated GIF. The full example code shows two ways of achieving this, and asserts that they agree. The simplest is to use Deepwave's :doc:`callback feature <example_callback_animation>`. The other uses the approach discussed in :doc:`the checkpointing example <example_checkpointing>`: it advances the propagation one user time step at a time and passes each call's output back in as the next call's ``initial_state``::
+
+    inner_dt, step_ratio = deepwave.discretisation.cfl_condition(dx, dx, dt, 2000)
+    upsampled_amplitudes = deepwave.discretisation.upsample(
+        source_amplitudes.detach(), step_ratio
+    )
+
+    out = None
+    for i in range(nt):
+        chunk = upsampled_amplitudes[..., i*step_ratio:(i+1)*step_ratio]
+        out = deepwave.scalar(v, dx, inner_dt,
+                              source_amplitudes=chunk,
+                              source_locations=source_locations,
+                              pml_width=0, pml_freq=freq,
+                              initial_state=out)
+
+``initial_state=out`` carries the whole propagator state -- both wavefields, and the PML's auxiliary fields when a PML is in use -- from one chunk into the next, which is what makes the restarted run equivalent to a single call. Two details matter here. The resampling to satisfy the CFL condition is done once, before the loop, rather than being left to each call, so that the chunk boundaries fall on user time steps. And ``pml_freq`` is passed explicitly: when it is omitted Deepwave infers it from the peak of the source amplitudes' spectrum, and each chunk is only a few samples long, so every chunk would infer a different frequency and, with a non-zero ``pml_width``, would get a different absorbing boundary.
 
 Using `FFmpeg <https://ffmpeg.org>`_ to join these individual time steps into an animated GIF (although you could use other tools, such as Matplotlib)::
 

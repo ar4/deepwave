@@ -6,4 +6,27 @@ src = ["../src"]
 line-length = 76
 
 [lint]
-extend-ignore = ["ANN", "INP001", "ERA001", "B023"]
+extend-ignore = ["ANN", "INP001", "ERA001"]
+
+[lint.per-file-ignores]
+# The example scripts, and their jupytext-paired notebook copies, end with
+# an `assert` that checks the example actually produced a sensible result;
+# `scripts/run_examples_smoke.py` runs the scripts as automated checks and
+# relies on those assertions firing.
+"example_*.py" = ["S101"]
+# E402 (import not at top of cell) as well, in the notebooks: jupytext pairs
+# each notebook with the `.py` above, and the notebook's first code cell
+# opens with the Colab install line and the narrative comments that the
+# paired script carries as a module docstring, so the imports necessarily
+# follow them. The `.py` source is where import order is checked.
+"example_*.ipynb" = ["S101", "E402"]
+
+# Each optimiser consumes its closure before the next outer-loop iteration.
+# The paired notebooks contain the same closures. Other examples keep B023.
+"example_distributed_ddp.{py,ipynb}" = ["B023"]
+"example_distributed_dp.{py,ipynb}" = ["B023"]
+"example_fwi.{py,ipynb}" = ["B023"]
+"example_gsot.{py,ipynb}" = ["B023"]
+
+# Sphinx event callbacks receive the application object by protocol.
+"conf.py" = ["ARG001"]

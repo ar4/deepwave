@@ -1,63 +1,198 @@
 name: Build and test
 
-on: [push, pull_request, workflow_dispatch]
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build_wheels:
-    name: Build wheels on ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-2022, macos-15-intel, macos-14]
-
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Check if tests should be skipped
-        id: check-skip
-        run: |
-          if echo "${{ github.event.head_commit.message }}" | grep -q "\[skip tests\]"; then
-            echo "skip_tests=true" >> $GITHUB_OUTPUT
-          else
-            echo "skip_tests=false" >> $GITHUB_OUTPUT
-          fi
-        shell: bash
-
-      - name: Build wheels
-        uses: pypa/cibuildwheel@v3.3.0
-        env:
-          # For Linux, install CUDA in the container. Note that manylinux_2_28
-          # is specified in pyproject.toml
-          CIBW_BEFORE_ALL_LINUX: >
-            curl -sL https://developer.download.nvidia.com/compute/cuda/repos/rhel8/x86_64/cuda-rhel8.repo -o /etc/yum.repos.d/cuda-rhel8.repo && dnf install -y cuda-nvcc-12-4 cuda-cudart-devel-12-4 gcc-toolset-13
-          CIBW_ENVIRONMENT_LINUX: PATH="/opt/rh/gcc-toolset-13/root/usr/bin/:$PATH:/usr/local/cuda-12.4/bin" CUDA_PATH="/usr/local/cuda-12.4/bin" CUDA_HOME="/usr/local/cuda-12.4" CUDA_ROOT="/usr/local/cuda-12.4" LD_LIBRARY_PATH="/opt/rh/gcc-toolset-13/root/usr/lib64:$LD_LIBRARY_PATH:/usr/local/cuda-12.4/lib64" CUDACXX="/usr/local/cuda-12.4/bin/nvcc" CC=/opt/rh/gcc-toolset-13/root/usr/bin/gcc CXX=/opt/rh/gcc-toolset-13/root/usr/bin/g++ CMAKE_CUDA_HOST_COMPILER=/opt/rh/gcc-toolset-13/root/usr/bin/g++
-          # For Windows, install CUDA
-          CIBW_BEFORE_ALL_WINDOWS: >
-            nuget install intelopenmp.devel.win -DirectDownload -NonInteractive &&
-            nuget install intelopenmp.redist.win -DirectDownload -NonInteractive &&
-            cp intelopenmp.devel.win*/build/native/win-x64/libiomp5md.lib src/deepwave &&
-            cp intelopenmp.redist.win*/runtimes/win-x64/native/libiomp5md.dll src/deepwave &&
-            curl https://developer.download.nvidia.com/compute/cuda/12.4.0/network_installers/cuda_12.4.0_windows_network.exe -o cuda_12.4.0_windows_network.exe &&
-            cuda_12.4.0_windows_network.exe -s nvcc_12.4 cudart_12.4 visual_studio_integration_12.4
-          CIBW_ENVIRONMENT_WINDOWS: PATH="$PATH;C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4\\bin" CudaToolkitDir="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4" CUDA_PATH="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4" CUDA_HOME="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4" CUDAToolkit_ROOT="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4" CUDACXX="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4\\bin\\nvcc.exe"
-          CIBW_BEFORE_TEST_MACOS: pip install "numpy<2"
-          CIBW_TEST_SKIP: ${{ steps.check-skip.outputs.skip_tests == 'true' && '*' || '' }}
-
-      - uses: actions/upload-artifact@v7
-        with:
-          name: cibw-wheels-${{ matrix.os }}-${{ strategy.job-index }}
-          path: ./wheelhouse/*.whl
-
   build_sdist:
     name: Build source distribution
     runs-on: ubuntu-latest
+    timeout-minutes: 300
     steps:
-      - uses: actions/checkout@v5
-
-      - name: Build sdist
-        run: pipx run build --sdist
-
-      - uses: actions/upload-artifact@v7
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          path: dist/*.tar.gz
+          python-version: '3.12'
+
+      - name: Build the sole wheel source
+        run: |
+          pipx run build --sdist
+          python scripts/release_artifacts.py record --kind sdist --directory dist
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-sdist-a${{ github.run_attempt }}
+          path: dist/
+          retention-days: 90
+          if-no-files-found: error
+
+  build_wheels:
+    name: Build wheels on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    needs: build_sdist
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            cpu_config: cmake.define.DW_FIXED_AVX2_OPT_IN=ON
+          - os: windows-2022
+            cpu_config: cmake.define.DW_FIXED_AVX2_OPT_IN=ON
+          - os: macos-14
+            cpu_config: ""
+
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-sdist-a${{ github.run_attempt }}
+          path: source-artifact
+
+      - name: Verify and extract the sole source distribution
+        id: source
+        shell: bash
+        run: |
+          python - <<'PY'
+          import hashlib
+          import os
+          import tarfile
+          from pathlib import Path
+
+          artifact = Path('source-artifact')
+          archives = list(artifact.glob('*.tar.gz'))
+          if len(archives) != 1:
+              raise SystemExit(f'expected one sdist, found {len(archives)}')
+          archive = archives[0]
+          import json
+          expected = json.loads((artifact / 'receipt.json').read_text())['sdist']['sha256']
+          actual = hashlib.sha256(archive.read_bytes()).hexdigest()
+          if actual != expected:
+              raise SystemExit(f'sdist digest mismatch: {actual} != {expected}')
+          with tarfile.open(archive, 'r:gz') as source:
+              roots = {Path(member.name).parts[0] for member in source.getmembers()}
+              if len(roots) != 1:
+                  raise SystemExit(f'expected one sdist root, found {roots}')
+              source.extractall('source-tree', filter='data')
+          package = Path('source-tree') / roots.pop()
+          if not (package / 'pyproject.toml').is_file():
+              raise SystemExit('sdist is missing pyproject.toml')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              print(f'package_dir={package.as_posix()}', file=output)
+          print(f'verified sdist sha256={actual}, source={package}')
+          PY
+
+      - name: Install Windows build dependencies
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          DEEPWAVE_PACKAGE_DIR: ${{ steps.source.outputs.package_dir }}
+        run: ./scripts/install_windows_build_deps.ps1 -PackageDir $env:DEEPWAVE_PACKAGE_DIR
+
+      # The Windows wheel tests run torch.compile with its default Inductor
+      # backend, which needs cl.exe in PATH. cibuildwheel's MSVC setup for the
+      # extension build does not guarantee that PATH is present in its test
+      # subprocess, so configure the developer environment at the job level.
+      - name: Set up MSVC developer environment
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+        with:
+          arch: x64
+
+      - name: Verify MSVC compiler is available to wheel build and tests
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Get-Command cl.exe -ErrorAction Stop | Select-Object -ExpandProperty Source
+
+      - name: Build wheels
+        uses: pypa/cibuildwheel@63fd63b352a9a8bdcc24791c9dbee952ee9a8abc # v3.3.0
+        with:
+          package-dir: ${{ steps.source.outputs.package_dir }}
+        env:
+          # Release x86 wheels target AVX2. Source builds retain the portable
+          # baseline unless a builder explicitly opts in.
+          CIBW_CONFIG_SETTINGS: ${{ matrix.cpu_config }}
+          # Actual compiler versions are emitted in retained build logs.
+          # Prove the sanitizer toolchain links and runs before compiling the
+          # wheel. The integer-range tests require UBSan as well as a compiler.
+          CIBW_BEFORE_BUILD_LINUX: >
+            nvcc --version && gcc --version &&
+            printf 'int main(void) { volatile int n = 1; return n - 1; }\n' > /tmp/deepwave-ubsan-check.c &&
+            gcc -fsanitize=undefined -fno-sanitize-recover=all /tmp/deepwave-ubsan-check.c -o /tmp/deepwave-ubsan-check &&
+            /tmp/deepwave-ubsan-check &&
+            g++ -fsanitize=undefined -fno-sanitize-recover=all /tmp/deepwave-ubsan-check.c -o /tmp/deepwave-ubsan-check-cxx &&
+            /tmp/deepwave-ubsan-check-cxx
+          CIBW_BEFORE_BUILD_WINDOWS: nvcc --version
+          # For Linux, install CUDA in the container. Note that manylinux_2_28
+          # is specified in pyproject.toml
+          CIBW_BEFORE_ALL_LINUX: >
+            curl -sL https://developer.download.nvidia.com/compute/cuda/repos/rhel8/x86_64/cuda-rhel8.repo -o /etc/yum.repos.d/cuda-rhel8.repo &&
+            dnf install -y cuda-nvcc-12-4 cuda-cudart-devel-12-4 cuda-documentation-12-4 gcc-toolset-13 gcc-toolset-13-libubsan-devel &&
+            mkdir -p {package}/runtime-notices &&
+            cp /usr/share/licenses/gcc/COPYING3 {package}/runtime-notices/GNU_GPL_3.txt &&
+            cp /usr/share/licenses/gcc/COPYING.RUNTIME {package}/runtime-notices/GCC_RUNTIME_EXCEPTION.txt
+          CIBW_ENVIRONMENT_LINUX: PATH="/opt/rh/gcc-toolset-13/root/usr/bin/:$PATH:/usr/local/cuda-12.4/bin" CUDA_PATH="/usr/local/cuda-12.4/bin" CUDA_HOME="/usr/local/cuda-12.4" CUDA_ROOT="/usr/local/cuda-12.4" LD_LIBRARY_PATH="/opt/rh/gcc-toolset-13/root/usr/lib64:$LD_LIBRARY_PATH:/usr/local/cuda-12.4/lib64" CUDACXX="/usr/local/cuda-12.4/bin/nvcc" CC=/opt/rh/gcc-toolset-13/root/usr/bin/gcc CXX=/opt/rh/gcc-toolset-13/root/usr/bin/g++ CMAKE_CUDA_HOST_COMPILER=/opt/rh/gcc-toolset-13/root/usr/bin/g++
+          CIBW_ENVIRONMENT_WINDOWS: PATH="$PATH;C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4\\bin" CudaToolkitDir="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4" CUDA_PATH="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4" CUDA_HOME="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4" CUDAToolkit_ROOT="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4" CUDACXX="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4\\bin\\nvcc.exe"
+
+      - name: Check wheel size budget
+        run: |
+          budget=103809024  # 99 MiB, below PyPI's default 100 MiB per-file limit
+          for f in wheelhouse/*.whl; do
+            size=$(stat -c%s "$f" 2>/dev/null || stat -f%z "$f")
+            if [ "$size" -gt "$budget" ]; then
+              echo "wheel $f is $size bytes, exceeds the 99 MiB ($budget byte) budget" >&2
+              exit 1
+            fi
+          done
+        shell: bash
+
+      - name: Record accepted wheel provenance
+        env:
+          WHEEL_PLATFORM: ${{ matrix.os }}
+          CIBW_CONFIG_SETTINGS: ${{ matrix.cpu_config }}
+        run: python scripts/release_artifacts.py record --kind "$WHEEL_PLATFORM" --directory wheelhouse
+        shell: bash
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-wheels-${{ matrix.os }}-a${{ github.run_attempt }}
+          path: ./wheelhouse/
+          retention-days: 90
+          if-no-files-found: error
+
+  qualification:
+    name: Require complete release artifacts
+    if: always()
+    needs: [build_sdist, build_wheels]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: release-*-a${{ github.run_attempt }}
+          path: accepted
+      - name: Require all matrix jobs and artifacts
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: python scripts/release_artifacts.py aggregate --directory accepted --needs "$NEEDS_JSON"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-manifest-a${{ github.run_attempt }}
+          path: accepted/release-manifest.json
+          retention-days: 90
+          if-no-files-found: error

@@ -40,7 +40,7 @@ We can now set up our sources and receivers. We will have two shots, and the fir
         receiver_locations=receiver_locations,
         max_vel=v.max().item(),
     )
-    receiver_data = out[-1]
+    receiver_data = out.receiver_amplitudes
 
 The output ``receiver_data`` will have a batch dimension corresponding to the shots and models. As you can see in the plot below, the data for the two shots are quite different, despite having the same source location, due to the different background velocities and anomaly locations.
 
@@ -83,7 +83,7 @@ The total loss is the sum of these two terms. We also introduce a ``penalty_weig
             source_amplitudes=source_amplitudes_inv,
             source_locations=source_locations_inv,
             receiver_locations=receiver_locations_inv,
-        )[-1]
+        ).receiver_amplitudes
     
         # Data misfit loss
         loss_mse = 1e9 * loss_fn(pred_data, true_data)
