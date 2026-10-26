@@ -86,6 +86,6 @@ jobs:
           path: dist
           merge-multiple: true
       - name: Publish the validated distributions
-        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # verified release/v1
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # verified release/v1
         with:
           packages-dir: dist/
