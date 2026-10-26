@@ -117,7 +117,7 @@ jobs:
         run: Get-Command cl.exe -ErrorAction Stop | Select-Object -ExpandProperty Source
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@63fd63b352a9a8bdcc24791c9dbee952ee9a8abc # v3.3.0
+        uses: pypa/cibuildwheel@b9e566a2b284570af229f6c2a33673410d0389a3 # v4.3.4
         with:
           package-dir: ${{ steps.source.outputs.package_dir }}
         env:
