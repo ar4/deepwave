@@ -2151,6 +2151,13 @@ DW_TARGET_CLONES int FUNC(backward)(
             n_receivers_sigma_v_per_shot);
       }
     }
+
+    /* The last backward update can leave normal-stress adjoints in guard
+     * cells. Apply the transpose boundary fills before returning the initial
+     * stress gradients. */
+    if (has_bc_axis) FILL_SIGMA_V_BC_ADJOINT();
+    if (has_bc_transverse) FILL_SIGMA_H_BC_ADJOINT();
+
   storage_cleanup:
 #if DW_NDIM >= 3
     CLOSE_FILE(dvzdbuoyancy)

@@ -1792,6 +1792,33 @@ DW_TARGET_CLONES int FUNC(backward)(
       }
     }
 
+    /* The final reverse step can leave pressure and memory adjoints in guard
+     * cells. Fold them into the initial physical fields before returning. */
+    if (has_per) {
+      ADJ_FOLD_P_BC(p_shot);
+#ifdef DW_GSLS
+      {
+        int64_t l;
+        for (l = 0; l < n_mech; ++l)
+          ADJ_FOLD_P_BC(rmem_shot + l * r_lstride);
+      }
+#else
+      ADJ_FOLD_P_BC(rmem_shot);
+#endif
+    }
+    if (has_frx) {
+      ADJ_FOLD_P_BC_FRX(p_shot);
+#ifdef DW_GSLS
+      {
+        int64_t l;
+        for (l = 0; l < n_mech; ++l)
+          ADJ_FOLD_P_BC_FRX(rmem_shot + l * r_lstride);
+      }
+#else
+      ADJ_FOLD_P_BC_FRX(rmem_shot);
+#endif
+    }
+
   storage_cleanup:
     CLOSE_FILE(m1_grad)
     CLOSE_FILE(c2_grad)

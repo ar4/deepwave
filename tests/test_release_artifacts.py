@@ -141,6 +141,32 @@ def candidate(tmp_path: Path) -> dict[str, Any]:
     return identity
 
 
+def test_identity_reads_github_event_as_utf8(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Windows' locale encoding must not be used for GitHub's UTF-8 event."""
+    event_path = tmp_path / "event.json"
+    event_path.write_bytes(
+        json.dumps(
+            {"pull_request": {"head": {"repo": {"full_name": "org/\u0410"}}}},
+            ensure_ascii=False,
+        ).encode("utf-8")
+    )
+    monkeypatch.setenv("GITHUB_EVENT_PATH", str(event_path))
+    monkeypatch.setenv("GITHUB_REPOSITORY", "ar4/deepwave")
+    monkeypatch.setenv("GITHUB_RUN_ID", "123")
+    monkeypatch.setenv("GITHUB_RUN_ATTEMPT", "2")
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "pull_request")
+    monkeypatch.setenv("GITHUB_REF", "refs/pull/7/merge")
+    monkeypatch.setenv("GITHUB_SHA", "merge")
+    monkeypatch.setattr(release, "git", lambda *_args: "commit")
+    monkeypatch.setattr(release, "version", lambda: "0.1.1")
+
+    receipt = release.identity()
+
+    assert receipt["pr"]["head_repository"] == "org/\u0410"
+
+
 def validate(manifest: dict[str, Any]) -> None:
     """The accepted run/tree/version are supplied independently."""
     release.validate_manifest(

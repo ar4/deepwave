@@ -7,13 +7,13 @@ Deepwave is a PyTorch module like any other, it shares these abilities: in
 practice, Deepwave is used shot-parallel across the GPUs of one node, not
 across multiple nodes (see :doc:`comparison` for how this compares to
 distributed-memory codes such as Devito, which do scale across nodes). The
-most obvious way to use multiple GPUs with Deepwave is to divide the shots
+one way to use multiple GPUs with Deepwave is to divide the shots
 between them: with two GPUs and one hundred shots to propagate, fifty could
 run on each. PyTorch takes care of combining gradients correctly during
 backpropagation, so both GPUs end up with the same model parameters for the
 optimiser's next step.
 
-The easiest way to divide shots over multiple GPUs is with `DataParallel <https://pytorch.org/docs/stable/generated/torch.nn.DataParallel.html>`_, which you simply have to apply to the model you wish to use::
+A direct way to divide shots over multiple GPUs is with `DataParallel <https://pytorch.org/docs/stable/generated/torch.nn.DataParallel.html>`_, which can be applied to the model as follows::
 
     class ReceiverModel(torch.nn.Module):
         def __init__(self, v_init, dx, dt):
@@ -68,8 +68,8 @@ see the fuller DataParallel example linked below.
 (``DistributedDataParallel``, covered next, does not gather this way and has
 no such restriction.)
 
-This is convenient, but the PyTorch documentation instead recommends the
-more complicated `DistributedDataParallel
+This approach is convenient for simple cases. The PyTorch documentation
+recommends `DistributedDataParallel
 <https://pytorch.org/docs/stable/generated/torch.nn.parallel.DistributedDataParallel.html#torch.nn.parallel.DistributedDataParallel>`_.
 It requires larger code changes, since more of the setup must be done
 manually, but it can give better performance::

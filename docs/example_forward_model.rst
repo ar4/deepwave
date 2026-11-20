@@ -61,8 +61,8 @@ checksum, transposes it into the ``751 x 2301`` depth-first little-endian
 ``float32`` layout this page's code expects and writes that out as
 ``marmousi_vp.bin``, then runs this very example's forward-modelling
 recipe at full size to generate ``marmousi_data.bin``. Generating the full
-115-shot dataset can take a while on CPU; pass ``--smoke`` for a small,
-fast version of both files if you just want to try the pipeline out. If you
+115-shot dataset can take a while on CPU; pass ``--smoke`` to generate a
+smaller dataset for an abbreviated run. If you
 downloaded ``marmousi_vp.bin`` before Deepwave 0.1.0, it is in the older
 untransposed layout and must be regenerated: the examples detect this and
 tell you so rather than silently propagating through a rotated model. See
@@ -73,8 +73,9 @@ Bourgeois et al. (1991), "Marmousi, model and data".
 If you only want to check that this example runs, setting
 ``DEEPWAVE_SMOKE=1`` (see :ref:`running-the-examples`) replaces the
 downloaded model with a generated stand-in of the same shape and velocity
-range, so no download is needed. The stand-in is not Marmousi, and nothing
-in the resulting figures is worth interpreting.
+range, so no download is needed. The stand-in is not Marmousi; results from
+this run are for execution checks only and should not be interpreted as
+geological results.
 
 Next we specify where to place the sources and receivers, and what the
 source wavelets should be. Deepwave can propagate batches of shots

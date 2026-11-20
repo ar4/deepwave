@@ -3167,6 +3167,17 @@ extern "C"
     std::swap(psi_x_sc, psi_xn_sc);
   }
 
+  // The final scattered reverse step can leave pressure-adjoint values in
+  // guard cells. Fold them into the initial scattered pressure gradient.
+  if (has_per) {
+    LAUNCH_ADJ_FOLD_P_BC(psc);
+    CHECK_KERNEL_ERROR
+  }
+  if (has_frx) {
+    LAUNCH_ADJ_FOLD_P_BC_FRX(psc);
+    CHECK_KERNEL_ERROR
+  }
+
 #if DW_NDIM == 3
   dim3 const dimBlock_combine(32, 4, 1);
   unsigned int const gridx_combine = ceil_div(nx_h, dimBlock_combine.x);
@@ -4056,6 +4067,21 @@ extern "C"
 #endif
     std::swap(psi_x, psi_xn);
     std::swap(psi_x_sc, psi_xn_sc);
+  }
+
+  // The final coupled reverse step can leave both pressure adjoints in guard
+  // cells. Fold them into their initial physical gradients.
+  if (has_per) {
+    LAUNCH_ADJ_FOLD_P_BC(p);
+    CHECK_KERNEL_ERROR
+    LAUNCH_ADJ_FOLD_P_BC(psc);
+    CHECK_KERNEL_ERROR
+  }
+  if (has_frx) {
+    LAUNCH_ADJ_FOLD_P_BC_FRX(p);
+    CHECK_KERNEL_ERROR
+    LAUNCH_ADJ_FOLD_P_BC_FRX(psc);
+    CHECK_KERNEL_ERROR
   }
 
 #if DW_NDIM == 3

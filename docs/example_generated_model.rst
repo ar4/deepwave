@@ -43,7 +43,7 @@ that Deepwave propagates through::
                 .reshape(-1, 1).repeat(1, self.nx)
             )
 
-Let's pick some velocities to use in our "true" model::
+Set the layer velocities for the true model::
 
     layer_thickness = 5
     nx = 100
@@ -90,13 +90,13 @@ data::
     for i in range(100):
         opt.step(closure)
 
-The vector `x` being inverted for is just a Tensor of four numbers. Gradients
+The vector `x` being inverted for is a tensor containing four values. Gradients
 flow back through the full-sized velocity model and on into those four
 numbers, so each iteration computes the derivative of the loss with respect
 to each of them. The optimiser (Adam, here) then knows how to change them to
 reduce the loss.
 
-The output is [1502.6620, 1595.3390, 1746.9484, 1914.4209], which is pretty close to the true values, as we can see:
+The recovered values are [1502.6620, 1595.3390, 1746.9484, 1914.4209], close to the true values:
 
 .. image:: example_generated_model.jpg
 

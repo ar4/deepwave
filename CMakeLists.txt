@@ -334,15 +334,12 @@ if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
     # codebase).
     #
     # -Wno-pass-failed (Clang-only diagnostic, silently accepted by GCC): the
-    # kernel loops are annotated with `#pragma omp simd collapse(DW_NDIM)`
-    # throughout (a vectorisation HINT to the compiler, not a correctness
-    # requirement -- OpenMP still executes the loop correctly either way).
-    # Clang treats a failure to satisfy an explicitly-requested transform as
-    # a build warning ("loop not vectorized"), unlike GCC, which does not
-    # warn about this at all; it is a pure optimiser-feedback diagnostic
-    # about the multi-dimensional (NDIM>=2) collapsed loops specifically,
-    # not a functional problem, and fires on essentially every kernel hot
-    # loop given how pervasive the pragma is.
+    # serial kernel loops retain the explicit SIMD hint. In OpenMP builds,
+    # multi-dimensional loops distribute outer rows and leave the contiguous
+    # innermost loop to compiler auto-vectorisation. Clang treats a failed
+    # explicitly-requested SIMD transform as a build warning ("loop not
+    # vectorized"), unlike GCC, which does not warn about it; this remains
+    # pure optimiser feedback, not a functional problem.
     set(C_WARNING_FLAGS
         -Wall
         -Wextra

@@ -22,7 +22,7 @@ upload job checks out no source and executes no scripts from downloaded artifact
 The official PyPI action is pinned to a full commit. Upload concurrency does not
 cancel an upload already in progress, and `skip-existing` is not enabled.
 
-The prepared 0.1.0 metadata omits the obsolete August placeholder date and
+The prepared 0.1.1 metadata omits the obsolete August placeholder date and
 citation month. Its eventual tag/release records the publication date. If a date
 is added to source metadata, do that before qualification, since it changes the
 accepted tree and sdist. The changelog version section is undated.
@@ -32,11 +32,11 @@ accepted tree and sdist. The changelog version section is undated.
 From the clean release checkout, inspect the branch and its one-commit history:
 
 ```bash
-git switch release/0.1.0
+git switch release/0.1.1
 git status --short
 git log --oneline origin/master..HEAD
-git push origin release/0.1.0:refs/heads/release/0.1.0
-gh pr create --base master --head release/0.1.0 --title 'Release Deepwave 0.1.0'
+git push origin release/0.1.1:refs/heads/release/0.1.1
+gh pr create --base master --head release/0.1.1 --title 'Release Deepwave 0.1.1'
 ```
 
 Never push private campaign refs, all branches, a mirror or all tags. Preserve
@@ -91,9 +91,9 @@ git switch master
 git merge --ff-only origin/master
 TESTED_TREE=$(python -c 'import json; print(json.load(open("release-manifest.json"))["tree"])')
 test "$(git rev-parse HEAD^{tree})" = "$TESTED_TREE"
-git tag -a v0.1.0 -m 'Deepwave 0.1.0'
-test "$(git rev-parse v0.1.0^{tree})" = "$TESTED_TREE"
-git push origin refs/tags/v0.1.0:refs/tags/v0.1.0
+git tag -a v0.1.1 -m 'Deepwave 0.1.1'
+test "$(git rev-parse v0.1.1^{tree})" = "$TESTED_TREE"
+git push origin refs/tags/v0.1.1:refs/tags/v0.1.1
 ```
 
 If master or PR base changes the content, update the candidate and obtain fresh
@@ -104,13 +104,13 @@ links: save links in PR/release evidence and release assets. Commit SHAs may
 change through squash or rebase while the tree remains identical.
 
 In Actions → **Publish accepted distributions** → **Run workflow**, select
-`master`, supply `build_run_id`, `build_attempt` and `release_tag` (`v0.1.0`).
+`master`, supply `build_run_id`, `build_attempt` and `release_tag` (`v0.1.1`).
 Equivalent command:
 
 ```bash
 gh workflow run publish.yml --ref master \
   -f build_run_id=ACCEPTED_RUN_ID -f build_attempt=ACCEPTED_ATTEMPT \
-  -f release_tag=v0.1.0
+  -f release_tag=v0.1.1
 ```
 
 The validator rejects untrusted fork PRs, arbitrary workflows, unsuccessful or
@@ -127,7 +127,7 @@ After publication, compare PyPI's file SHA-256 digests with
 
 ```bash
 python -m venv release-install-check
-release-install-check/bin/python -m pip install deepwave==0.1.0
+release-install-check/bin/python -m pip install deepwave==0.1.1
 release-install-check/bin/python -c 'import deepwave; print(deepwave.__version__)'
 release-install-check/bin/python scripts/platform_wheel_smoke.py
 ```
@@ -159,7 +159,7 @@ python -m pip install twine
 export GH_TOKEN="$(gh auth token)"
 python -m scripts.prepare_publication \
   --run-id ACCEPTED_RUN_ID --attempt ACCEPTED_ATTEMPT \
-  --tag v0.1.0 --directory accepted-manual
+  --tag v0.1.1 --directory accepted-manual
 python -m twine check accepted-manual/publish/*
 python -m twine upload accepted-manual/publish/*
 ```

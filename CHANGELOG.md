@@ -22,6 +22,17 @@ by name and continue with `initial_state=out`. If you pin Deepwave in a
 downstream project, consult this changelog before upgrading, especially for
 changes to gradients or boundary conditions.
 
+## [0.1.1]
+
+### Fixed
+
+- Correct compiled gradients for initial wavefields at supported non-PML
+  boundaries. The native backward now folds final guard-cell adjoints into
+  the initial physical wavefields, including elastic stresses and attenuation
+  memory fields.
+- Change multidimensional OpenMP CPU loops to distribute outer rows and leave
+  the contiguous innermost loop to compiler vectorisation.
+
 ## [0.1.0]
 
 The first release since `v0.0.27`, which shipped four propagators (`scalar`,

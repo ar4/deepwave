@@ -1,30 +1,33 @@
 Upgrading
 =========
 
-Deepwave 0.1.0 is the first release since ``v0.0.27``, and it changes a lot.
+Deepwave 0.1.0 is the first release since ``v0.0.27`` and includes substantial
+interface and numerical changes.
 This page records interface and numerical changes from ``v0.0.27`` and the
 available migration for each.
 
-**The two-minute version.** Read receiver results by name and continue a run
-with ``initial_state=out``. Most changed spellings raise or warn. Some tuple
-indices remain valid Python but now refer to a different field, and an
-unrequested receiver tensor has a new empty shape. Audit positional output
-uses even if the script runs without a message. Released deprecated aliases
+**Summary.** Read receiver results by name and continue a run
+with ``initial_state=out``. Most changes to argument and output names produce
+an exception or warning. Some tuple indices remain valid Python syntax but
+refer to a different field; an unrequested receiver tensor has a new empty
+shape. Audit positional output uses even if the script emits no warning.
+Released deprecated aliases
 remain available through ``0.3``; see :doc:`stability`.
 
-**The exception**, stated here because it is the only one: the 42
+**One exception applies:** the 42
 absorbing-boundary auxiliary-field **input keyword arguments**
 (``psiy_m1=``, ``zetax_m1=``, ``psiy_sc_m1=``, ``phi_y_0=``, ``psi_x_0=``,
-``m_vzz_0=``, ``m_sigmaxxx_0=`` and the rest) are gone outright, with no
-alias. Passing one now raises ``TypeError``. The fields themselves are still
-there -- carried opaquely in ``out.auxiliary_state`` -- but the whole set now
+``m_vzz_0=``, ``m_sigmaxxx_0=`` and the remaining names) were removed
+without aliases. Passing one now raises ``TypeError``. The fields remain
+available through ``out.auxiliary_state``, but the whole set now
 occupies that one element of the returned tuple instead of one element each,
 so the tuple is shorter (:ref:`upgrade-tuple-length`) and code that read a
 boundary field by index has to change. The individual names are neither
 attributes of the output nor ``initial_state`` keys, and asking for one by
 either spelling raises; they remain the keys of ``auxiliary_state``. See
-:ref:`upgrade-auxiliary-state-input` for the list and the replacement. So
-when your script raises or warns, search this page for the message text.
+:ref:`upgrade-auxiliary-state-input` for the list and the replacement. When a
+call raises an exception or emits a warning, search this page for the
+corresponding message text.
 
 Five numerical changes from ``v0.0.27`` emit
 :class:`deepwave.MigrationWarning`:
@@ -34,11 +37,12 @@ than truncated), :ref:`upgrade-hicks-stencil` (an off-node interpolation
 window is placed correctly), :ref:`upgrade-hicks-dtype` (``Hicks`` weights
 follow the default dtype) and :ref:`upgrade-born-edge-scatter`
 (``scalar_born`` extends its scattering model into the absorbing layer).
-Four of the five name the one line that restores the old numbers; the fifth
-has no such line, and says so, naming instead the cells the difference is
-confined to. Each is emitted once per cause per process, and all five are
-removed in Deepwave 0.4.0 -- they exist to explain a difference against an
-older run, not to be lived with. Silence all five at once with
+Four of the five identify the setting that restores the previous numerical
+results. The remaining warning identifies the cells where the difference
+occurs and does not provide a compatibility setting. Each warning is emitted
+once per cause per process. All five warnings are removed in Deepwave 0.4.0;
+they document differences from older results during the transition period.
+Suppress all five with
 ``warnings.filterwarnings("ignore", category=deepwave.MigrationWarning)``.
 
 :doc:`stability` is the authoritative statement of what may change in a
@@ -62,12 +66,13 @@ emit one of the five migration warnings above.
    :local:
    :depth: 2
 
-Every break, in one table
+Changes at a glance
 -------------------------
 
-Ordered roughly by how likely you are to meet it. "Loud" means it raises;
-"warned" means it runs and tells you; "silent" means you have to read the
-row.
+The table is ordered approximately by how often users are likely to encounter
+each change. "Raises" means that the call fails; "warns" means that it
+continues and emits a warning; "silent" means that the change produces no
+diagnostic.
 
 Interpreter-generated ``TypeError`` wording can vary with Python version;
 for example, Python 3.9 prints ``__init__`` where newer versions include

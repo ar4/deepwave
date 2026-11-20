@@ -118,9 +118,9 @@ def _maturity(records: list[warnings.WarningMessage]) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
-def test_version_is_0_1_0() -> None:
+def test_version_is_0_1_1() -> None:
     """``deepwave.__version__`` is the version this release ships as."""
-    assert deepwave.__version__ == "0.1.0"
+    assert deepwave.__version__ == "0.1.1"
 
 
 # The exact recipe printed in docs/stability.rst, as a runnable program: it
