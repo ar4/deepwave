@@ -47,7 +47,7 @@ jobs:
             cpu_config: cmake.define.DW_FIXED_AVX2_OPT_IN=ON
           - os: windows-2022
             cpu_config: cmake.define.DW_FIXED_AVX2_OPT_IN=ON
-          - os: macos-14
+          - os: macos-15
             cpu_config: ""
 
     steps:

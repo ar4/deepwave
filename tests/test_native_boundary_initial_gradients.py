@@ -213,6 +213,9 @@ def test_compiled_gsls_initial_memory_gradients_match_eager() -> None:
         "pml_freq": 2.0,
         "q_n_mechanisms": 2,
         "q_band": (5.0, 50.0),
+        # The API requires a wavefield or source even when the initial
+        # auxiliary state contains the quantity under test.
+        "pressure_0": torch.zeros((1, 24, 24), dtype=dtype),
         "receiver_locations_p": locations,
     }
     template = deepwave.viscoacoustic(model, model, q, backend="eager", **common)

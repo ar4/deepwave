@@ -18,7 +18,7 @@ from platform import python_version
 from typing import Any
 
 REPOSITORY = "ar4/deepwave"
-PLATFORMS = ("ubuntu-latest", "windows-2022", "macos-14")
+PLATFORMS = ("ubuntu-latest", "windows-2022", "macos-15")
 GATES = ("tests", "docs", "lint", "sanitizers")
 BUDGET = 99 * 1024 * 1024
 LOCAL_GPU = {
@@ -313,7 +313,7 @@ def validate_manifest(
         tags = {
             "ubuntu-latest": r"manylinux[0-9_]+_x86_64(?:\.manylinux[0-9_]+_x86_64)*",
             "windows-2022": r"win_amd64",
-            "macos-14": r"macosx_\d+_\d+_arm64(?:\.macosx_\d+_\d+_arm64)*",
+            "macos-15": r"macosx_\d+_\d+_arm64(?:\.macosx_\d+_\d+_arm64)*",
         }
         pattern = re.escape(f"deepwave-{release}-py3-none-") + tags[platform] + r"\.whl"
         require(

@@ -244,7 +244,7 @@ def test_manifest_negative_controls(tmp_path: Path, fault: str) -> None:
     elif fault == "manual_branch":
         manifest.update(event="workflow_dispatch", ref="refs/heads/feature")
     else:
-        manifest["platforms"]["macos-14"]["wheels"][0]["filename"] = (
+        manifest["platforms"]["macos-15"]["wheels"][0]["filename"] = (
             "deepwave-0.1.0-py3-none-macosx_11_0_x86_64.whl"
         )
     with pytest.raises(ValueError, match=r".+"):
