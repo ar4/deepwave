@@ -19,6 +19,13 @@ option(DW_SANITIZE "Build the CPU object libraries with AddressSanitizer + Undef
 # (used for fast kernel iteration; the CUDA translation units, which cannot be
 # unit-tested on a CPU-only host, are skipped -- do a full build before release).
 option(DW_SKIP_CUDA "Skip building the CUDA object libraries (CPU-only build)" OFF)
+# Build only 2D CPU variants when exercising a change without compiling the
+# full 1D/2D/3D, CPU/CUDA matrix (see scripts/focused_native_test.py).
+option(DW_FOCUSED_TEST_BUILD
+       "Build focused 2D CPU variants for local tests" OFF)
+if(DW_FOCUSED_TEST_BUILD)
+    set(DW_SKIP_CUDA ON)
+endif()
 
 # DW_FAST_MATH controls whether the CPU/CUDA kernels build with
 # -Ofast/--use_fast_math (IEEE-noncompliant NaN/Inf handling, in exchange
@@ -671,8 +678,13 @@ endif()
 # Prepare lists that will collect the object files
 set(DEEPWAVE_OBJECTS)
 set(CPU_TARGETS)
-set(NDIMS 1 2 3)
-set(ACCURACIES 2 4 6 8)
+if(DW_FOCUSED_TEST_BUILD)
+    set(NDIMS 2)
+    set(ACCURACIES 2 4 6 8)
+else()
+    set(NDIMS 1 2 3)
+    set(ACCURACIES 2 4 6 8)
+endif()
 set(DTYPES float double)
 
 # --- CPU object libraries ---

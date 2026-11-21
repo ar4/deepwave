@@ -2438,7 +2438,9 @@ def _make_elastic_born_forward_call(ndim: int) -> Any:
     return make_call
 
 
-def _make_elastic_born_backward_sc_call(ndim: int) -> Any:
+def _make_elastic_born_backward_sc_call(
+    ndim: int, scattering_requires_grad: tuple[bool, bool, bool] = (True, True, True)
+) -> Any:
     """Builds the ``make_call`` closure for the compiled scattered-only adjoint.
 
     Mirrors ``elastic_born.c``'s ``FUNC(backward_sc)`` parameter order exactly:
@@ -2515,9 +2517,7 @@ def _make_elastic_born_backward_sc_call(ndim: int) -> Any:
                 batched(bg_models[0]),
                 batched(bg_models[1]),
                 batched(bg_models[-1]),
-                True,  # dlamb_requires_grad: backward_sc always wants every
-                True,  # dmu_requires_grad: scattering-model gradient (all
-                True,  # dbuoyancy_requires_grad: computed in one adjoint pass)
+                *scattering_requires_grad,
                 batched(sc_models[0]),
                 batched(sc_models[1]),
                 batched(sc_models[-1]),
@@ -3039,19 +3039,28 @@ class ElasticBornForwardFunc(torch.autograd.Function):
             for g in grad_outputs[2 * n_wf + n_src : 2 * n_wf + 2 * n_src]
         ]
 
-        # The kernel's dlamb/dmu/dbuoyancy_requires_grad flags are hardcoded
-        # True below (backward_sc always computes the full scattering-model
-        # correlation in one pass), so allocate_model_gradients must always
-        # provide real (non-empty) buffers for all three scattering-model
-        # families, regardless of which specific ones this particular
-        # backward call's args actually have requires_grad=True (a user
-        # differentiating only dmu, say, would otherwise leave dlamb/
-        # dbuoyancy's grad buffers NULL and the kernel writes through them --
-        # segfault). Force detached copies for run_backward_core's models=
-        # only; args[pos].requires_grad below (which gates whether a
-        # particular caller-visible grad gets returned at all) still reads
-        # the ORIGINAL (unforced) tensors.
-        sc_models_rg = [m.detach().requires_grad_(True) for m in args[sc_model_sl]]
+        # The forward only records background imaging stores for scattering
+        # model families that require gradients. Match the backward kernel's
+        # family flags and allocated gradient buffers to those original
+        # requires_grad values. The scattered-wavefield adjoint itself does
+        # not need these stores, so forcing every family on breaks callers
+        # differentiating only initial fields (the stores were never saved).
+        sc_models = list(args[sc_model_sl])
+        mu_family = sc_models[1 : n_models - ndim]
+        buoyancy_family = sc_models[n_models - ndim :]
+        scattering_requires_grad = (
+            sc_models[0].requires_grad,
+            any(m.requires_grad for m in mu_family),
+            any(m.requires_grad for m in buoyancy_family),
+        )
+        sc_rg_flags = (
+            [scattering_requires_grad[0]]
+            + [scattering_requires_grad[1]] * len(mu_family)
+            + [scattering_requires_grad[2]] * len(buoyancy_family)
+        )
+        sc_models_rg = [
+            m.detach().requires_grad_(rg) for m, rg in zip(sc_models, sc_rg_flags)
+        ]
         # The compiled adjoint reads both model groups at neighbour offsets
         # near a reflecting face, so each needs the mirror-pad guard ring
         # (:func:`deepwave._boundaries.mirror_pad_elastic_models`), applied
@@ -3125,7 +3134,9 @@ class ElasticBornForwardFunc(torch.autograd.Function):
             callback_frequency=ctx.callback_frequency,
             make_aux_wavefields=_elastic_module._elastic_make_aux_wavefields,  # noqa: SLF001
             zero_wavefields=zero_wavefields,
-            make_call=_make_elastic_born_backward_sc_call(ndim),
+            make_call=_make_elastic_born_backward_sc_call(
+                ndim, scattering_requires_grad
+            ),
             swap=_elastic_module._elastic_swap,  # noqa: SLF001
             wavefield_names=_elastic_module.elastic_wavefield_names(ndim),
             backend_extra="_sc",
