@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.19.1
+#       jupytext_version: 1.19.6
 #   kernelspec:
 #     display_name: Python 3
 #     language: python
@@ -97,7 +97,7 @@ class Model(torch.nn.Module):
 
 
 # %% [markdown]
-# Let's pick some velocities to use in our "true" model, and set up the
+# Set the layer velocities for the true model and set up the
 # survey (source/receiver geometry) and the source wavelet.
 
 # %%
