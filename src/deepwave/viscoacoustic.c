@@ -1799,8 +1799,7 @@ DW_TARGET_CLONES int FUNC(backward)(
 #ifdef DW_GSLS
       {
         int64_t l;
-        for (l = 0; l < n_mech; ++l)
-          ADJ_FOLD_P_BC(rmem_shot + l * r_lstride);
+        for (l = 0; l < n_mech; ++l) ADJ_FOLD_P_BC(rmem_shot + l * r_lstride);
       }
 #else
       ADJ_FOLD_P_BC(rmem_shot);

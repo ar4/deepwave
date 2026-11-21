@@ -338,7 +338,7 @@ if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
     # multi-dimensional loops distribute outer rows and leave the contiguous
     # innermost loop to compiler auto-vectorisation. Clang treats a failed
     # explicitly-requested SIMD transform as a build warning ("loop not
-    # vectorized"), unlike GCC, which does not warn about it; this remains
+    # vectorised"), unlike GCC, which does not warn about it; this remains
     # pure optimiser feedback, not a functional problem.
     set(C_WARNING_FLAGS
         -Wall

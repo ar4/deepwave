@@ -7406,9 +7406,8 @@ extern "C"
   /* Fold final stress-adjoint guard values into both initial stress fields,
    * matching the CPU backward path. */
   if (has_bc) {
-    LAUNCH_FILL_ELASTIC_BORN_STRESS_BC_ADJOINT(sigmazz_bg, sigmayz_bg,
-                                               sigmaxz_bg, sigmayy_bg,
-                                               sigmaxy_bg, sigmaxx_bg);
+    LAUNCH_FILL_ELASTIC_BORN_STRESS_BC_ADJOINT(
+        sigmazz_bg, sigmayz_bg, sigmaxz_bg, sigmayy_bg, sigmaxy_bg, sigmaxx_bg);
     CHECK_KERNEL_ERROR
     LAUNCH_FILL_ELASTIC_BORN_STRESS_BC_ADJOINT(sigmazz, sigmayz, sigmaxz,
                                                sigmayy, sigmaxy, sigmaxx);
