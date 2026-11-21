@@ -2783,6 +2783,32 @@ DW_TARGET_CLONES int FUNC(backward)(
             n_receivers_p_per_shot);
       }
     }
+    /* The last backward iteration can create stress-adjoint values in guard
+     * cells. There is no following iteration to fold them, but they still
+     * contribute to the gradient of the initial physical stress. Apply the
+     * transpose of the forward stress boundary fill once more before the
+     * Python wrapper crops the guard ring. */
+    if (has_bc) {
+      FUNC(fill_elastic_stress_bc_adjoint)(
+#if DW_NDIM >= 3
+          sigmazz_shot, sigmayz_shot, sigmaxz_shot,
+#endif
+#if DW_NDIM >= 2
+          sigmayy_shot, sigmaxy_shot,
+#endif
+          sigmaxx_shot, bc,
+#if DW_NDIM >= 3
+          nz,
+#else
+          0,
+#endif
+#if DW_NDIM >= 2
+          ny,
+#else
+          0,
+#endif
+          nx);
+    }
   storage_cleanup:
 #if DW_NDIM >= 3
     CLOSE_FILE(dvzdbuoyancy)

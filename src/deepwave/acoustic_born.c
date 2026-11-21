@@ -1891,6 +1891,11 @@ DW_TARGET_CLONES int FUNC(backward_sc)(
       }
     }
 
+    /* The final scattered reverse step can leave pressure-adjoint values in
+     * guard cells. Fold them into the initial scattered pressure gradient. */
+    if (has_per) ADJ_FOLD_P_BC(psc_shot);
+    if (has_frx) ADJ_FOLD_P_BC_FRX(psc_shot);
+
 #define CLOSE_FILE(name) \
   if (dw_close_file(&fp_##name) != 0) storage_err = 1;
 
@@ -3118,6 +3123,17 @@ DW_TARGET_CLONES int FUNC(backward)(
                              rcv_i_vx_sc,
                          n_receivers_vx_sc_per_shot);
       }
+    }
+
+    /* The final coupled reverse step can leave both pressure adjoints in
+     * guard cells. Fold them into their initial physical gradients. */
+    if (has_per) {
+      ADJ_FOLD_P_BC(p_shot);
+      ADJ_FOLD_P_BC(psc_shot);
+    }
+    if (has_frx) {
+      ADJ_FOLD_P_BC_FRX(p_shot);
+      ADJ_FOLD_P_BC_FRX(psc_shot);
     }
 
   storage_cleanup:

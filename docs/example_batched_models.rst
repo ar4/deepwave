@@ -42,18 +42,24 @@ We can now set up our sources and receivers. We will have two shots, and the fir
     )
     receiver_data = out.receiver_amplitudes
 
-The output ``receiver_data`` will have a batch dimension corresponding to the shots and models. As you can see in the plot below, the data for the two shots are quite different, despite having the same source location, due to the different background velocities and anomaly locations.
+The output ``receiver_data`` has a batch dimension corresponding to the shots
+and models. The data for the two shots differ despite their shared source
+location because their background velocities and anomaly locations differ.
 
 .. image:: example_batched_models_part1_data.jpg
 
-This batching also works for backpropagation. When we compute the gradient, a separate gradient is calculated for each model in the batch. We can see this in action by backpropagating a simple loss function and plotting the gradients. The resulting gradients show the anomalies from their respective velocity models, confirming that they were calculated independently.
+This batching also applies to backpropagation. A separate gradient is
+calculated for each model in the batch. The plotted gradients show the
+anomalies in their respective velocity models, confirming that the gradients
+are calculated independently.
 
 .. image:: example_batched_models_part1_gradients.jpg
 
 Inversion with a Model-Difference Penalty
 ------------------------------------------
 
-As an example of the kind of ideas that this feature enables, we will now apply inversion to a survey, but each shot will have its own velocity model. We will then add a penalty term to the loss function to encourage all of these individual models to converge towards a similar result.
+The following inversion assigns each shot its own velocity model and adds a
+penalty term to encourage the models to converge towards a similar result.
 
 First, we create a single "true" model and use it to generate synthetic data for three shots.
 

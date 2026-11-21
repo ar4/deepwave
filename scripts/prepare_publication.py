@@ -248,7 +248,9 @@ def prepare(
     manifest_name = f"release-manifest-a{attempt}"
     api.download(artifacts[manifest_name], directory / manifest_name)
     manifest = json.loads(
-        (directory / manifest_name / "release-manifest.json").read_text()
+        (directory / manifest_name / "release-manifest.json").read_text(
+            encoding="utf-8"
+        )
     )
     validate_manifest(
         manifest, tree=tree, run_id=run_id, attempt=attempt, release=release
@@ -274,7 +276,9 @@ def prepare(
                     / f"gate-{name}-{candidate['id']}-a{candidate['run_attempt']}"
                 )
                 api.download(artifact, location)
-                receipt = json.loads((location / "receipt.json").read_text())
+                receipt = json.loads(
+                    (location / "receipt.json").read_text(encoding="utf-8")
+                )
                 check_receipt_run(api, receipt, candidate)
                 # Validate all gates together below; match candidate content here.
                 require(
@@ -297,7 +301,9 @@ def prepare(
     validate_gates(manifest, gates)
     for name in sorted(names - {manifest_name}):
         api.download(artifacts[name], directory / name)
-        receipt = json.loads((directory / name / "receipt.json").read_text())
+        receipt = json.loads(
+            (directory / name / "receipt.json").read_text(encoding="utf-8")
+        )
         expected = (
             manifest
             if name.startswith("release-sdist")
@@ -338,7 +344,8 @@ def prepare(
     evidence = directory / "evidence"
     evidence.mkdir()
     (evidence / "publication-validation.json").write_text(
-        json.dumps(summary, indent=2, sort_keys=True) + "\n"
+        json.dumps(summary, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
     )
     (evidence / "sha256sums.txt").write_text(
         "".join(
@@ -347,7 +354,8 @@ def prepare(
                 manifest["sdist"],
                 *[w for p in PLATFORMS for w in manifest["platforms"][p]["wheels"]],
             ]
-        )
+        ),
+        encoding="utf-8",
     )
     print(
         json.dumps(

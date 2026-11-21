@@ -18,7 +18,7 @@ from platform import python_version
 from typing import Any
 
 REPOSITORY = "ar4/deepwave"
-PLATFORMS = ("ubuntu-latest", "windows-2022", "macos-14")
+PLATFORMS = ("ubuntu-latest", "windows-2022", "macos-15")
 GATES = ("tests", "docs", "lint", "sanitizers")
 BUDGET = 99 * 1024 * 1024
 LOCAL_GPU = {
@@ -59,7 +59,8 @@ def git(*args: str) -> str:
 def version() -> str:
     """Read the version as data, never by importing the source package."""
     match = re.search(
-        r'__version__ = [\'"]([^\'"]+)', Path("src/deepwave/_version.py").read_text()
+        r'__version__ = [\'"]([^\'"]+)',
+        Path("src/deepwave/_version.py").read_text(encoding="utf-8"),
     )
     if match is None:
         raise ValueError("missing version")
@@ -74,7 +75,8 @@ def require(condition: bool, message: str) -> None:
 
 def identity() -> dict[str, Any]:
     """Record the actual checkout, independently of the PR head."""
-    event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())
+    event_path = Path(os.environ["GITHUB_EVENT_PATH"])
+    event = json.loads(event_path.read_text(encoding="utf-8"))
     pr = event.get("pull_request", {})
     return {
         "repository": os.environ["GITHUB_REPOSITORY"],
@@ -227,14 +229,18 @@ def record(kind: str, directory: Path, needs: dict[str, Any]) -> None:
     else:
         successful_jobs(needs)
     (directory / "receipt.json").write_text(
-        json.dumps(receipt, indent=2, sort_keys=True) + "\n"
+        json.dumps(receipt, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
     )
 
 
 def aggregate(directory: Path, needs: dict[str, Any]) -> dict[str, Any]:
     """Combine the source and each expected successful platform artifact set."""
     successful_jobs(needs)
-    receipts = [json.loads(p.read_text()) for p in directory.rglob("receipt.json")]
+    receipts = [
+        json.loads(p.read_text(encoding="utf-8"))
+        for p in directory.rglob("receipt.json")
+    ]
     require(len(receipts) == 1 + len(PLATFORMS), "missing/extra artifact set")
     by_kind = {r["kind"]: r for r in receipts}
     require(set(by_kind) == {"sdist", *PLATFORMS}, "missing/duplicate platform")
@@ -268,7 +274,8 @@ def aggregate(directory: Path, needs: dict[str, Any]) -> dict[str, Any]:
     with tempfile.TemporaryDirectory() as temporary:
         verify_files(manifest, directory, Path(temporary) / "verified")
     (directory / "release-manifest.json").write_text(
-        json.dumps(manifest, indent=2, sort_keys=True) + "\n"
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
     )
     return manifest
 
@@ -306,7 +313,7 @@ def validate_manifest(
         tags = {
             "ubuntu-latest": r"manylinux[0-9_]+_x86_64(?:\.manylinux[0-9_]+_x86_64)*",
             "windows-2022": r"win_amd64",
-            "macos-14": r"macosx_\d+_\d+_arm64(?:\.macosx_\d+_\d+_arm64)*",
+            "macos-15": r"macosx_\d+_\d+_arm64(?:\.macosx_\d+_\d+_arm64)*",
         }
         pattern = re.escape(f"deepwave-{release}-py3-none-") + tags[platform] + r"\.whl"
         require(
@@ -408,7 +415,7 @@ def main() -> None:
             args.manifest is not None and args.output is not None,
             "manifest/output required",
         )
-        manifest = json.loads(args.manifest.read_text())
+        manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
         verify_files(manifest, args.directory, args.output)
 
 

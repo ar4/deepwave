@@ -26,7 +26,7 @@ We can load it using::
     ).float()/255
     target = (target[0] - target.mean()).to(device)
 
-Let's create `n_sources_per_shot` sources located at random cells, without more than one at the same location::
+Create `n_sources_per_shot` sources at randomly selected cells, with no two sources at the same location::
 
     source_locations = torch.zeros(n_shots, n_sources_per_shot, 2,
                                    dtype=torch.long, device=device)

@@ -4,7 +4,7 @@
 /* MSVC /openmp:experimental accepts standalone simd, but rejects the
  * combined for simd directive (C3002). Its legacy OpenMP mode also lacks
  * work-sharing collapse. Distribute the outer loop on MSVC and let /O2
- * vectorise the inner loops; GCC/Clang distribute the flattened loop nest.
+ * vectorise the contiguous inner loop; GCC/Clang distribute the outer loops.
  * Keep scheduling and nowait clauses in both parallel paths. */
 #if defined(_MSC_VER) && !defined(__clang__)
 #ifdef _OPENMP
@@ -15,11 +15,19 @@
 #else
 #define DW_PRAGMA_IMPL(x) _Pragma(#x)
 #define DW_PRAGMA(x) DW_PRAGMA_IMPL(x)
+#if DW_NDIM == 1
+#ifdef _OPENMP
+#define DW_OMP_FOR_SIMD(...) DW_PRAGMA(omp for simd __VA_ARGS__)
+#else
+#define DW_OMP_FOR_SIMD(...) DW_PRAGMA(omp simd)
+#endif
+#else
 #ifdef _OPENMP
 #define DW_OMP_FOR_SIMD(...) \
-  DW_PRAGMA(omp for simd collapse(DW_NDIM) __VA_ARGS__)
+  DW_PRAGMA(omp for collapse(DW_NDIM - 1) __VA_ARGS__)
 #else
 #define DW_OMP_FOR_SIMD(...) DW_PRAGMA(omp simd collapse(DW_NDIM))
+#endif
 #endif
 #endif
 

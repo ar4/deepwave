@@ -2611,6 +2611,18 @@ extern "C"
     std::swap(psi_x, psi_xn);
   }
 
+  // The final reverse step gathers pressure-adjoint contributions into guard
+  // cells. No next time step remains to fold them into the returned physical
+  // pressure gradient.
+  if (has_per) {
+    LAUNCH_ADJ_FOLD_P_BC(p);
+    CHECK_KERNEL_ERROR
+  }
+  if (has_frx) {
+    LAUNCH_ADJ_FOLD_P_BC_FRX(p);
+    CHECK_KERNEL_ERROR
+  }
+
 #if DW_NDIM == 3
   dim3 const dimBlock_combine(32, 4, 1);
   unsigned int const gridx_combine = ceil_div(nx_h, dimBlock_combine.x);

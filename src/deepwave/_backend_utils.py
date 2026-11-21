@@ -10,6 +10,7 @@ Internal module -- no stability guarantee.
 
 import ctypes
 import importlib.util
+import os
 import pathlib
 import platform
 from ctypes import c_bool, c_double, c_float, c_int64, c_size_t, c_void_p
@@ -50,6 +51,16 @@ def _find_compiled_library() -> str:
     therefore ask importlib rather than guessing the path from ``__file__``,
     falling back to a sibling file only if the module is not registered.
     """
+    # Test harness override used by scripts/focused_native_test.py. Normal
+    # package imports continue to discover the installed extension below.
+    focused_library = os.environ.get("DEEPWAVE_NATIVE_LIBRARY")
+    if focused_library:
+        path = pathlib.Path(focused_library).expanduser().resolve()
+        if not path.is_file():
+            raise DeepwaveRuntimeError(
+                f"DEEPWAVE_NATIVE_LIBRARY does not point to a file: {path}"
+            )
+        return str(path)
     spec = importlib.util.find_spec("deepwave.libdeepwave_C")
     if spec is not None and spec.origin is not None:
         return spec.origin
