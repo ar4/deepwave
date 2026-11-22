@@ -154,7 +154,8 @@ def pytest_collection_modifyitems(
         items[:] = kept
 
 
-if os.environ.get("PYTEST_XDIST_WORKER"):
+_xdist_worker = bool(os.environ.get("PYTEST_XDIST_WORKER"))
+if _xdist_worker:
     for _var in (
         "OMP_NUM_THREADS",
         "OPENBLAS_NUM_THREADS",
@@ -164,6 +165,13 @@ if os.environ.get("PYTEST_XDIST_WORKER"):
     ):
         os.environ.setdefault(_var, "1")
 
-    import torch
+import torch
 
+if _xdist_worker:
     torch.set_num_threads(1)
+
+# PyTorch 2.4 enables flush-to-zero/denormals-are-zero on some x86 builds.
+# That mode also changes Python's scalar comparisons and arithmetic, so a
+# literal such as 1e-320 can behave like 0.0 in tests that exercise subnormal
+# unit scales. Keep IEEE subnormal handling enabled for the numerical suite.
+torch.set_flush_denormal(False)

@@ -787,4 +787,4 @@ def run_checkpoint_equivalence(
     checkpointed = grad(checkpointed=True)
     # A non-trivial reference gradient ensures the comparison is meaningful.
     assert reference.norm() > 0
-    assert torch.allclose(reference, checkpointed, atol=atol, rtol=rtol)
+    torch.testing.assert_close(reference, checkpointed, atol=atol, rtol=rtol)
