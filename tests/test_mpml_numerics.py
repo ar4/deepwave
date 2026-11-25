@@ -115,7 +115,6 @@ def test_mpml_profiles_match_defining_equation(
     finfo = torch.finfo(dtype)
     # Three-axis summation plus log/exp round trips in exceptional ranges.
     rtol = max(16 * finfo.eps, 2e-12)
-    atol = 2 * finfo.tiny * finfo.eps
     for index, (value, reference) in enumerate(zip(actual, expected)):
         reference = torch.tensor(
             reference, dtype=dtype, device=numerics_device
@@ -124,12 +123,10 @@ def test_mpml_profiles_match_defining_equation(
         assert value.dtype == dtype
         assert torch.isfinite(value).all()
         if index % 2 == 0:
-            bound = atol + rtol * reference * (
-                1 + reference.clamp_min(finfo.tiny).log().abs()
-            )
+            bound = rtol * reference * (1 + reference.clamp_min(finfo.tiny).log().abs())
             assert ((value - reference).abs() <= bound).all()
         else:
-            torch.testing.assert_close(value, reference, rtol=rtol, atol=atol)
+            torch.testing.assert_close(value, reference, rtol=rtol, atol=0)
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])

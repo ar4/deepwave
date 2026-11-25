@@ -58,6 +58,7 @@ def _restore_torch_globals() -> Iterator[None]:
     threads = torch.get_num_threads()
     anomaly = torch.is_anomaly_enabled()
     try:
+        torch.set_flush_denormal(False)
         yield
     finally:
         if torch.get_default_dtype() != dtype:
@@ -165,13 +166,13 @@ if _xdist_worker:
     ):
         os.environ.setdefault(_var, "1")
 
-import torch
 
-if _xdist_worker:
-    torch.set_num_threads(1)
+def pytest_configure(config: pytest.Config) -> None:
+    """Set worker runtime options before pytest imports test modules."""
+    import torch
 
-# PyTorch 2.4 enables flush-to-zero/denormals-are-zero on some x86 builds.
-# That mode also changes Python's scalar comparisons and arithmetic, so a
-# literal such as 1e-320 can behave like 0.0 in tests that exercise subnormal
-# unit scales. Keep IEEE subnormal handling enabled for the numerical suite.
-torch.set_flush_denormal(False)
+    if _xdist_worker:
+        torch.set_num_threads(1)
+    # Some PyTorch CPU builds enable flush-to-zero/denormals-are-zero. The
+    # numerical tests include subnormal inputs, so leave IEEE handling enabled.
+    torch.set_flush_denormal(False)

@@ -50,15 +50,14 @@ def _assert_profiles_close(actual, expected, extreme=False):
     """Allow rounding and the known conditioning of exp, without a unit floor."""
     finfo = torch.finfo(actual[0].dtype)
     rtol = max(8 * finfo.eps, 2e-12 if extreme else 0)
-    atol = 2 * finfo.tiny * finfo.eps
     # For a=exp(-z), a relative rounding error in z becomes about z times
     # that relative error in a. This matters for strongly damped, tiny a;
     # imposing a fixed relative bound would demand excess precision in z.
     exponent_size = expected[0].clamp_min(finfo.tiny).log().abs()
-    a_error_bound = atol + rtol * expected[0] * (1 + exponent_size)
-    relative_to_bound = (actual[0] - expected[0]).abs() / a_error_bound
-    assert bool((relative_to_bound <= 1).all()), relative_to_bound
-    torch.testing.assert_close(actual[1], expected[1], rtol=rtol, atol=atol)
+    a_error_bound = rtol * expected[0] * (1 + exponent_size)
+    a_error = (actual[0] - expected[0]).abs()
+    assert bool((a_error <= a_error_bound).all()), a_error
+    torch.testing.assert_close(actual[1], expected[1], rtol=rtol, atol=0)
 
 
 _CASES = [
