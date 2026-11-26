@@ -1362,8 +1362,10 @@ def test_negative_vel(
             x_r,
             prop_kwargs=prop_kwargs,
         )
-        assert torch.allclose(out_positive[0], out[0])
-        assert torch.allclose(out_positive[-1], out[-1])
+        # A negative dt is mathematically equivalent, but torch.compile can
+        # reassociate float32 operations and produce small rounding changes.
+        torch.testing.assert_close(out_positive[0], out[0], rtol=5e-4, atol=1e-8)
+        torch.testing.assert_close(out_positive[-1], out[-1], rtol=5e-4, atol=1e-8)
 
         # With zero velocity the source is multiplied by v**2 = 0.
         out = propagator(
