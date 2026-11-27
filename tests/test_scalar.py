@@ -1362,10 +1362,14 @@ def test_negative_vel(
             x_r,
             prop_kwargs=prop_kwargs,
         )
-        # A negative dt is mathematically equivalent, but torch.compile can
-        # reassociate float32 operations and produce small rounding changes.
-        torch.testing.assert_close(out_positive[0], out[0], rtol=5e-4, atol=1e-8)
-        torch.testing.assert_close(out_positive[-1], out[-1], rtol=5e-4, atol=1e-8)
+        # Match the peak-scaled tolerance used for backend parity above. This
+        # avoids an over-strict relative comparison at near-zero wavefield
+        # samples after torch.compile reassociates float32 operations.
+        for expected, actual in zip(
+            (out_positive[0], out_positive[-1]), (out[0], out[-1])
+        ):
+            atol = 5e-4 * expected.abs().max().item()
+            assert torch.allclose(expected, actual, atol=atol)
 
         # With zero velocity the source is multiplied by v**2 = 0.
         out = propagator(
