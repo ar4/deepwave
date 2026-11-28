@@ -168,6 +168,8 @@ linkcheck_ignore = [
     r"^https://doi\.org/10\.1190/1\.3513453$",
     r"^https://doi\.org/10\.1190/geo2018-0098\.1$",
     r"^https://doi\.org/10\.1190/1\.3059320$",
+    # The cited SLIM record is valid, but slim.gatech.edu times out in CI.
+    r"^https://doi\.org/10\.1190/segam2015-5924937\.1$",
     # Crossref confirms these DOIs; the publisher pages reject automated
     # requests with HTTP 403 (Oxford Academic, International Press, and
     # IOP).

@@ -108,7 +108,7 @@ wavefields or wavefield objectives can violate it. Further sampling with
 bandwidth. For the sampling basis, see `Prandoni and Vetterli, Signal Processing
 for Communications <https://www.sp4comm.org/docs/sp4comm_corrected.pdf>`_;
 Nyquist-rate wavefield storage is also used in `time-subsampled FWI
-<https://slim.gatech.edu/node/6028>`_.
+<https://doi.org/10.1190/segam2015-5924937.1>`_.
 
 **The honest caveat: the model gradient at** ``step_ratio > 1``. The gradient
 with respect to the *model* parameters (e.g. the wavespeed ``v``) is a time
