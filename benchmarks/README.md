@@ -208,6 +208,27 @@ python benchmarks/run.py --storage-modes [--threads N] [--reps N]
   regression check between two runs captured back-to-back on the same
   box -- e.g. before/after a performance-motivated kernel change such as
   a possible single-sourced `.c`/`.cu` kernel-body investigation.
+
+For an OpenMP loop change, build each revision with the same compiler and
+OpenMP runtime on the same host, then capture baseline and candidate runs
+back-to-back at matching thread counts. Use the toolchain and hardware where
+the change matters; for the reported macOS issue, that means Apple clang and
+the same `libomp` runtime on an M1 machine. Compare both one-thread throughput
+and multi-thread scaling; for example, repeat the following pair with
+`--threads 1` and `--threads 4` (and optionally `8`):
+
+```bash
+python benchmarks/run.py --tier micro --reps 7 --threads 1 --label baseline_t1
+python benchmarks/run.py --tier micro --reps 7 --threads 1 --label candidate_t1
+python benchmarks/run.py --compare benchmarks/results/baseline_t1.json \
+  benchmarks/results/candidate_t1.json
+```
+
+Use the same case selection, compiler, OpenMP runtime, PyTorch build, and CPU
+power/thread settings for each pair. The scheduled and `benchmark`-label
+GitHub Actions runs are report-only: they do not compare against the base
+revision or fail on a performance threshold, because hosted-runner timing is
+too noisy for that gate.
 - `--thread-scaling`: runs a single-shot `scalar` 2-D `meso` forward case at
   1, 2, and 4 threads and prints the speedup. This report was written to
   track the (since-closed) gap where a single shot pinned one core; with

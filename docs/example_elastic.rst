@@ -106,7 +106,8 @@ The first is that we pass the three elastic model parameters. We are parameteris
 
 The elastic propagator can have sources and receivers oriented in each of the spatial dimensions. In this example we are only going to use sources and receivers that are oriented in the first (y) dimension. We could also provide `receiver_locations_x` if we wanted receivers that record particle velocity in the second dimension, for example.
 
-Now let's try starting from the background models (constant, without the boxes) and see if we can obtain something close to the true model when we invert with the true observed data::
+Starting from the background models (constant, without the boxes), we now
+invert the observed data to estimate the true model::
 
     vp = vp_background.clone().requires_grad_()
     vs = vs_background.clone().requires_grad_()
@@ -134,14 +135,14 @@ Now let's try starting from the background models (constant, without the boxes) 
 
         optimiser.step(closure)
 
-This just used a standard inversion with the LBFGS optimiser, but the result looks quite good.
+This example uses a standard inversion with the LBFGS optimiser. The recovered
+models are shown below.
 
 .. image:: example_elastic.jpg
 
-The gradients flowed end-to-end, back into the `vp`, `vs`, and `rho`
-parameters. There is a little crosstalk between the parameters, though.
-Perhaps a different model parameterisation, or a different loss function,
-would do better?
+Gradients propagate through the full computation graph to the `vp`, `vs`, and
+`rho` parameters. Some parameter crosstalk remains; alternative model
+parameterisations or loss functions may reduce it.
 
 Another interesting aspect of the elastic wave equation is that it can
 produce **ground-roll**, caused by a free surface on the model. Deepwave's

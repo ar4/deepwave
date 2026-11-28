@@ -3670,6 +3670,81 @@ def test_elastic_compiled_forward_final_state_matches_eager(
         assert rel < 1e-12, f"{field} final-state rel err {rel.item()}"
 
 
+@pytest.mark.parametrize("ndim", [1, 2, 3])
+@pytest.mark.parametrize("accuracy", [2, 4, 6, 8])
+def test_elastic_compiled_initial_stress_gradient_at_rigid_boundary(
+    ndim: int, accuracy: int
+) -> None:
+    """Initial normal-stress gradients match eager autograd at rigid faces.
+
+    Forward boundary filling copies normal stress into guard cells. Its
+    transpose must fold their adjoints back into the initial physical stress,
+    including after the final backward iteration. Check every supported
+    spatial accuracy in 1-D, 2-D and 3-D against eager autograd. High-index
+    rigid faces are intentionally unsupported for accuracy 4 and above.
+    """
+    shape = (24,) * ndim
+    m = torch.ones(shape, dtype=torch.double)
+    stress = torch.zeros(1, *shape, dtype=torch.double)
+    boundary = ["rigid", "pml"] + ["pml", "pml"] * (ndim - 1)
+    center = [12] * ndim
+    first = [0, *center[1:]]
+    second = [1, *center[1:]]
+    stress[(0, *first)] = 0.3
+    stress[(0, *second)] = 0.1
+    stress.requires_grad_()
+    locations = torch.tensor([[[axis, *center[1:]] for axis in (1, 2, 3)]])
+
+    def loss(value: torch.Tensor, backend: str) -> torch.Tensor:
+        common = {
+            "grid_spacing": 1.0,
+            "dt": 0.05,
+            "nt": 4,
+            "accuracy": accuracy,
+            "pml_width": 0,
+            "pml_freq": 2.0,
+            "origin": [0] * ndim,
+            "boundary": boundary,
+            "backend": backend,
+        }
+        if ndim == 1:
+            out = elastic(
+                2 * m,
+                m,
+                m,
+                sigmaxx_0=value,
+                receiver_locations_x=locations,
+                **common,
+            )
+            return out.receiver_amplitudes_x.sum()
+        if ndim == 2:
+            out = elastic(
+                2 * m,
+                m,
+                m,
+                sigmayy_0=value,
+                receiver_locations_y=locations,
+                **common,
+            )
+            return out.receiver_amplitudes_y.sum()
+        out = elastic(
+            2 * m,
+            m,
+            m,
+            sigmazz_0=value,
+            receiver_locations_z=locations,
+            **common,
+        )
+        return out.receiver_amplitudes_z.sum()
+
+    (actual,) = torch.autograd.grad(loss(stress, "compiled"), stress)
+    (eager_actual,) = torch.autograd.grad(loss(stress, "eager"), stress)
+    assert torch.isfinite(actual).all()
+    assert torch.isfinite(eager_actual).all()
+    assert eager_actual.abs().max() > 0
+    torch.testing.assert_close(actual, eager_actual, rtol=1e-7, atol=1e-12)
+
+
 @pytest.mark.parametrize("ndim", [2, 3])
 def test_elastic_forward_callback_shear_fields_match_compiled(ndim) -> None:
     """Eager forward-callback shear/memory fields match the compiled backend.

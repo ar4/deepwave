@@ -58,6 +58,7 @@ def _restore_torch_globals() -> Iterator[None]:
     threads = torch.get_num_threads()
     anomaly = torch.is_anomaly_enabled()
     try:
+        torch.set_flush_denormal(False)
         yield
     finally:
         if torch.get_default_dtype() != dtype:
@@ -154,7 +155,8 @@ def pytest_collection_modifyitems(
         items[:] = kept
 
 
-if os.environ.get("PYTEST_XDIST_WORKER"):
+_xdist_worker = bool(os.environ.get("PYTEST_XDIST_WORKER"))
+if _xdist_worker:
     for _var in (
         "OMP_NUM_THREADS",
         "OPENBLAS_NUM_THREADS",
@@ -164,6 +166,13 @@ if os.environ.get("PYTEST_XDIST_WORKER"):
     ):
         os.environ.setdefault(_var, "1")
 
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Set worker runtime options before pytest imports test modules."""
     import torch
 
-    torch.set_num_threads(1)
+    if _xdist_worker:
+        torch.set_num_threads(1)
+    # Some PyTorch CPU builds enable flush-to-zero/denormals-are-zero. The
+    # numerical tests include subnormal inputs, so leave IEEE handling enabled.
+    torch.set_flush_denormal(False)

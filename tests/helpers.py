@@ -787,4 +787,19 @@ def run_checkpoint_equivalence(
     checkpointed = grad(checkpointed=True)
     # A non-trivial reference gradient ensures the comparison is meaningful.
     assert reference.norm() > 0
-    assert torch.allclose(reference, checkpointed, atol=atol, rtol=rtol)
+    if not torch.allclose(reference, checkpointed, atol=atol, rtol=rtol):
+        error = (reference - checkpointed).abs()
+        limit = atol + rtol * reference.abs()
+        indices = (error > limit).nonzero(as_tuple=False)[:8]
+        details = [
+            (
+                tuple(int(index) for index in row),
+                float(reference[tuple(row)].item()),
+                float(checkpointed[tuple(row)].item()),
+            )
+            for row in indices
+        ]
+        raise AssertionError(
+            f"checkpoint gradient mismatches (index, expected, actual): {details}"
+        )
+    torch.testing.assert_close(reference, checkpointed, atol=atol, rtol=rtol)

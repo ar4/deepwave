@@ -64,7 +64,7 @@ baseline by default. See
 Citing
 ------
 
-Deepwave is archived on Zenodo with the DOI `10.5281/zenodo.3829886 <https://doi.org/10.5281/zenodo.3829886>`_ (this DOI always resolves to the latest release). If you would like to cite Deepwave, I suggest:
+Deepwave is archived on Zenodo with the DOI `10.5281/zenodo.3829886 <https://doi.org/10.5281/zenodo.3829886>`_ (this DOI always resolves to the latest release). The following BibTeX entry can be used to cite Deepwave:
 
 .. parsed-literal::
 

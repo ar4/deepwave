@@ -4532,6 +4532,16 @@ extern "C"
     std::swap(m_sigmaxxx, m_sigmaxxxn);
   }
 
+  /* The last backward iteration can create stress-adjoint values in guard
+   * cells. There is no following iteration to fold them, but they still
+   * contribute to the gradient of the initial physical stress. Apply the
+   * transpose of the forward stress boundary fill before returning; the
+   * Python wrapper subsequently crops the guard ring. */
+  if (has_bc) {
+    LAUNCH_FILL_ELASTIC_STRESS_BC_ADJOINT();
+    CHECK_KERNEL_ERROR
+  }
+
 #if DW_NDIM == 3
   dim3 const dimBlock_combine(32, 4, 1);
   unsigned int const gridx_combine = ceil_div(nx_h, dimBlock_combine.x);

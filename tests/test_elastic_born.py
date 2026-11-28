@@ -2192,6 +2192,43 @@ def test_compiled_backward_sc_matches_eager_imaging(ndim, pml):
     assert max_rel > 0  # sanity: the gradients are nontrivial
 
 
+@pytest.mark.parametrize("family", ["dlamb", "dmu", "dbuoyancy"])
+def test_compiled_backward_sc_partial_model_family_matches_eager(family):
+    """Scattered-only backward supports selectively requested model families.
+
+    The forward stores only the background correlations needed by model
+    families that require gradients. Other families must stay disabled in the
+    compiled adjoint while the selected family's gradient is still computed.
+    """
+    s = _born_setup(2)
+
+    def gradient(backend):
+        scatter = {
+            name: s[name].detach().clone().requires_grad_(name == family)
+            for name in ("dlamb", "dmu", "dbuoyancy")
+        }
+        out = _eb.elastic_born(
+            s["lamb"],
+            s["mu"],
+            s["buoyancy"],
+            s["dx"],
+            s["dt"],
+            **scatter,
+            **s["rk"],
+            **s["sk"],
+            **{**s["common"], "backend": backend},
+        )
+        return torch.autograd.grad(out.sc_receiver_amplitudes_y.sum(), scatter[family])[
+            0
+        ]
+
+    compiled_grad = gradient("compiled")
+    eager_grad = gradient("eager")
+    assert torch.isfinite(compiled_grad).all()
+    assert eager_grad.abs().max() > 0
+    torch.testing.assert_close(compiled_grad, eager_grad, rtol=1e-8, atol=1e-12)
+
+
 @pytest.mark.parametrize("ndim", [2, 3])
 def test_compiled_backward_sc_multi_chunk_matches_single_chunk(ndim):
     """Chunked backward_sc (small callback_frequency) matches the single call.

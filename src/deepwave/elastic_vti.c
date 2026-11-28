@@ -3204,6 +3204,22 @@ DW_TARGET_CLONES int FUNC(backward)(
             n_receivers_p_per_shot);
       }
     }
+    /* The final reverse iteration can create stress-adjoint values in guard
+     * cells. Fold them into the initial physical stress before the Python
+     * wrapper crops the guard ring. */
+    if (has_bc) {
+      FUNC(fill_elastic_stress_bc_adjoint)(
+#if DW_NDIM == 3
+          sigmazz_shot, sigmayz_shot, sigmaxz_shot,
+#endif
+          sigmayy_shot, sigmaxy_shot, sigmaxx_shot, bc,
+#if DW_NDIM == 3
+          nz,
+#else
+          0,
+#endif
+          ny, nx);
+    }
   storage_cleanup:
 #if DW_NDIM >= 3
     CLOSE_FILE(dvzdbuoyancy)

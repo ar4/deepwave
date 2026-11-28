@@ -46,8 +46,8 @@ group, plus the two fuller distributed-execution examples linked from
 :doc:`example_distributed`, use the Marmousi velocity model and therefore
 require two data files, ``marmousi_vp.bin`` and ``marmousi_data.bin``, in
 the directory you run them from (the download and conversion steps are
-described at the top of the forward modelling example). The short version:
-run ``python docs/get_marmousi.py`` once from that directory -- it
+described at the top of the forward modelling example). To prepare these
+files, run ``python docs/get_marmousi.py`` once from that directory. The script
 downloads the model from its original source and generates the synthetic
 data file with Deepwave itself; see :doc:`example_forward_model` for what
 it does and why Deepwave does not ship these files directly. As of Deepwave

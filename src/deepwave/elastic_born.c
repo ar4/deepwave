@@ -3397,6 +3397,29 @@ DW_TARGET_CLONES int FUNC(backward_sc)(
             n_receivers_p_per_shot);
       }
     }
+    /* The final scattered reverse iteration can leave stress adjoints in
+     * guard cells. Fold them into the initial scattered physical stresses. */
+    if (has_bc) {
+      FUNC(fill_elastic_stress_bc_adjoint)(
+#if DW_NDIM >= 3
+          sigmazz_shot, sigmayz_shot, sigmaxz_shot,
+#endif
+#if DW_NDIM >= 2
+          sigmayy_shot, sigmaxy_shot,
+#endif
+          sigmaxx_shot, bc,
+#if DW_NDIM >= 3
+          nz,
+#else
+          0,
+#endif
+#if DW_NDIM >= 2
+          ny,
+#else
+          0,
+#endif
+          nx);
+    }
   storage_cleanup:
 #if DW_NDIM >= 3
     CLOSE_FILE(dvzdbuoyancy)
@@ -5719,6 +5742,48 @@ DW_TARGET_CLONES int FUNC(backward)(
             grad_r_p_shot + t * n_shots * n_receivers_p_per_shot,
             n_receivers_p_per_shot);
       }
+    }
+    /* The final coupled reverse iteration can leave both stress adjoints in
+     * guard cells. Fold them into the two initial physical stress fields. */
+    if (has_bc) {
+      FUNC(fill_elastic_stress_bc_adjoint)(
+#if DW_NDIM >= 3
+          sigmazz_bg_shot, sigmayz_bg_shot, sigmaxz_bg_shot,
+#endif
+#if DW_NDIM >= 2
+          sigmayy_bg_shot, sigmaxy_bg_shot,
+#endif
+          sigmaxx_bg_shot, bc,
+#if DW_NDIM >= 3
+          nz,
+#else
+          0,
+#endif
+#if DW_NDIM >= 2
+          ny,
+#else
+          0,
+#endif
+          nx);
+      FUNC(fill_elastic_stress_bc_adjoint)(
+#if DW_NDIM >= 3
+          sigmazz_shot, sigmayz_shot, sigmaxz_shot,
+#endif
+#if DW_NDIM >= 2
+          sigmayy_shot, sigmaxy_shot,
+#endif
+          sigmaxx_shot, bc,
+#if DW_NDIM >= 3
+          nz,
+#else
+          0,
+#endif
+#if DW_NDIM >= 2
+          ny,
+#else
+          0,
+#endif
+          nx);
     }
   storage_cleanup:
 #if DW_NDIM >= 3

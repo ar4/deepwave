@@ -1485,6 +1485,12 @@ DW_TARGET_CLONES int FUNC(backward)(
       }
     }
 
+    /* The final reverse step gathers pressure-adjoint contributions into
+     * guard cells. No next time step remains to fold them into the returned
+     * physical pressure gradient. */
+    if (has_per) ADJ_FOLD_P_BC(p_shot);
+    if (has_frx) ADJ_FOLD_P_BC_FRX(p_shot);
+
   storage_cleanup:
     CLOSE_FILE(k_grad)
 #if DW_NDIM >= 3

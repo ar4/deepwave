@@ -12,7 +12,7 @@ on:
         required: true
         type: string
       release_tag:
-        description: Existing version tag on master history, for example v0.1.0
+        description: Existing version tag on master history, for example v0.1.1
         required: true
         type: string
 

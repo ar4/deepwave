@@ -20,7 +20,10 @@ jobs:
   pytest:
     name: pytest (py${{ matrix.python-version }}, torch ${{ matrix.torch-version }})
     needs: build
-    runs-on: ubuntu-latest
+    # Ubuntu 24.04 and later no longer provide Python 3.9 in setup-python's
+    # hosted toolcache. Keep this compatibility matrix on the last supported
+    # runner image instead of making the declared Python floor untestable.
+    runs-on: ubuntu-22.04
     timeout-minutes: 180
     strategy:
       fail-fast: false

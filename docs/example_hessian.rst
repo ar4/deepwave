@@ -65,6 +65,8 @@ We can use this improved update direction to optimise our velocity model using t
 
 .. image:: example_hessian_result.jpg
 
-Although the result is quite good after just three iterations, the high computational cost of the Hessian (both runtime and memory) means that in many cases it might be better to use more iterations of a method that only uses the gradient.
+The model improves after three iterations. However, the Hessian's computational
+cost in runtime and memory may make additional iterations of a gradient-only
+method preferable in many cases.
 
 `Full example code <https://github.com/ar4/deepwave/blob/master/docs/example_hessian.py>`_

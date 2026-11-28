@@ -329,7 +329,7 @@ def _pytest(
     data: dict[str, Any] = {}
     if result_path.is_file():
         try:
-            data = json.loads(result_path.read_text())
+            data = json.loads(result_path.read_text(encoding="utf-8"))
         except (ValueError, OSError):
             data = {}
     selected = data.get("selected_ids")
@@ -379,7 +379,8 @@ def _self_test(out: Path) -> bool:
     """A failed pytest child stays failed when a later child succeeds."""
     fake = out / "test_fake_release_child.py"
     fake.write_text(
-        "def test_bad():\n    assert False\n\ndef test_good():\n    assert True\n"
+        "def test_bad():\n    assert False\n\ndef test_good():\n    assert True\n",
+        encoding="utf-8",
     )
     bad = _pytest(sys.executable, (str(fake), "-k", "test_bad"), out, "fake_bad")
     good = _pytest(sys.executable, (str(fake), "-k", "test_good"), out, "fake_good")
@@ -498,7 +499,8 @@ def _self_test(out: Path) -> bool:
                 "reference_controls": reference_controls,
                 "valid": result,
             }
-        )
+        ),
+        encoding="utf-8",
     )
     return result
 

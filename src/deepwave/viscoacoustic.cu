@@ -3017,6 +3017,35 @@ extern "C"
     std::swap(psi_x, psi_xn);
   }
 
+  // The final reverse step can leave pressure and memory adjoints in guard
+  // cells. Fold them into the initial physical fields before returning.
+  if (has_per) {
+    LAUNCH_ADJ_FOLD_P_BC(p);
+    CHECK_KERNEL_ERROR
+#ifdef DW_GSLS
+    for (int64_t l = 0; l < n_mech; ++l) {
+      LAUNCH_ADJ_FOLD_P_BC(rmem + l * n_shots_h * shot_numel_h);
+      CHECK_KERNEL_ERROR
+    }
+#else
+    LAUNCH_ADJ_FOLD_P_BC(rmem);
+    CHECK_KERNEL_ERROR
+#endif
+  }
+  if (has_frx) {
+    LAUNCH_ADJ_FOLD_P_BC_FRX(p);
+    CHECK_KERNEL_ERROR
+#ifdef DW_GSLS
+    for (int64_t l = 0; l < n_mech; ++l) {
+      LAUNCH_ADJ_FOLD_P_BC_FRX(rmem + l * n_shots_h * shot_numel_h);
+      CHECK_KERNEL_ERROR
+    }
+#else
+    LAUNCH_ADJ_FOLD_P_BC_FRX(rmem);
+    CHECK_KERNEL_ERROR
+#endif
+  }
+
 #if DW_NDIM == 3
   dim3 const dimBlock_combine(32, 4, 1);
   unsigned int const gridx_combine = ceil_div(nx_h, dimBlock_combine.x);

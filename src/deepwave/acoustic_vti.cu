@@ -2858,6 +2858,18 @@ extern "C"
     std::swap(m_sigma_h_x, m_sigma_h_xn);
   }
 
+  // The last backward update can leave normal-stress adjoints in guard
+  // cells. Apply the transpose boundary fills before returning the initial
+  // stress gradients.
+  if (has_bc_axis) {
+    LAUNCH_FILL_SIGMA_V_BC_ADJOINT();
+    CHECK_KERNEL_ERROR
+  }
+  if (has_bc_transverse) {
+    LAUNCH_FILL_SIGMA_H_BC_ADJOINT();
+    CHECK_KERNEL_ERROR
+  }
+
 #if DW_NDIM == 3
   dim3 const dimBlock_combine(32, 4, 1);
   unsigned int const gridx_combine = ceil_div(nx_h, dimBlock_combine.x);
